@@ -5,10 +5,83 @@ Supports pipes, redirects, variables, job control
 
 import shlex
 import re
+import random
 from typing import Dict, List, Optional, Tuple, Any, Callable
 from dataclasses import dataclass
 from io import BytesIO
 from core.pooscript import is_pooscript, execute_pooscript
+
+
+def get_command_not_found_message(command: str) -> str:
+    """Generate a fun, personality-filled 'command not found' message"""
+
+    # Easter eggs for specific typos
+    easter_eggs = {
+        'sl': "Did you mean 'ls'? Or were you trying to ride the Steam Locomotive? choo choo!",
+        'cta': "Did you mean 'cat'? Even cats make typos.",
+        'pign': "Did you mean 'ping'? Your fingers are doing the QWERTY shuffle!",
+        'mroe': "Did you mean 'more'? I can tell you want mroe!",
+        'grpe': "Did you mean 'grep'? Don't let your typos grep you!",
+        'hotsname': "Did you mean 'hostname'? That's one hot sname!",
+        'suod': "Did you mean 'sudo'? SUOD: Super User... Oh Damn!",
+        'cd..': "Did you mean 'cd ..'? Space: the final frontier.",
+        'quit': "This isn't vim. Try 'exit' instead.",
+        'q': "This isn't vim. Try 'exit' instead.",
+        ':q': "This isn't vim. Try 'exit' instead.",
+        ':wq': "This isn't vim. Try 'exit' instead.",
+        'help': "You're in Poodillion. Try 'ls /bin' to see available commands, or just... explore!",
+        'man': "There are no manuals here, only mysteries. Try commands and see what happens!",
+        'apt': "This ain't Debian! But I like your style. Try 'ls /bin' instead.",
+        'yum': "This ain't RedHat! But yum... Try 'ls /bin' for tasty commands.",
+        'brew': "This ain't macOS! But I appreciate the caffeine reference.",
+        'hack': "Now we're talking! Try 'nmap', 'ssh', or 'exploit' for actual hacking.",
+        'hax': "l33t sp34k detected! Try 'nmap' or 'exploit' for real hax.",
+        'python': "You're already IN Python! This whole OS is Python! Mind = blown.",
+        'bash': "This IS a shell! You're already bashing! Try some commands.",
+        'zsh': "Sorry, we're more of a 'PooshShell' kind of place.",
+        'vim': "No vim here. But you can 'cat' files and dream of modal editing.",
+        'emacs': "No emacs here. But you can 'cat' files and dream of meta keys.",
+        'nano': "No nano here. But you can 'cat' files and pretend you're editing.",
+        'please': "Politeness won't help you here. Try 'sudo' if you need power.",
+        'sudo please': "Well since you asked nicely... just kidding, still not found!",
+        'fuck': "I know you're frustrated. Take a breath. Try 'ls /bin' to see what's available.",
+    }
+
+    if command.lower() in easter_eggs:
+        return easter_eggs[command.lower()]
+
+    # Different random messages for variety
+    messages = [
+        f"{command}: command not found (did you make that up?)",
+        f"{command}: command not found (nice try though!)",
+        f"{command}: command not found (maybe in another universe?)",
+        f"{command}: not found (did you mean something else?)",
+        f"bash: {command}: command not found (this is classic!)",
+        f"{command}: command not found (have you tried turning it off and on again?)",
+        f"{command}: not found (try 'ls /bin' to see what's available)",
+        f"{command}: command not found (it's not you, it's me... wait, it's you)",
+        f"{command}: not found in PATH (or anywhere else for that matter)",
+        f"{command}: command not found (404: command not found)",
+        f"Error 404: {command} not found (wrong error, right vibe)",
+        f"{command}: command not found (are you sure you didn't just slam the keyboard?)",
+        f"{command}: not found (maybe it's hiding? try 'find')",
+        f"{command}: command not found (spellcheck says: ¯\\_(ツ)_/¯)",
+        f"{command}: not found (this command has left the building)",
+    ]
+
+    # Add helpful suggestions for common patterns
+    if command.startswith('install'):
+        return f"{command}: command not found (this is a virtual OS! Everything's already here. Try 'ls /bin')"
+    elif command.startswith('download'):
+        return f"{command}: command not found (no downloads here! This is a self-contained world)"
+    elif len(command) > 30:
+        return f"{command}: command not found (that's quite a command! maybe try something shorter?)"
+    elif ' ' in command:
+        return f"{command}: command not found (are you missing quotes?)"
+    elif command.isupper():
+        return f"{command}: command not found (STOP YELLING! try lowercase)"
+
+    return random.choice(messages)
 
 
 @dataclass
@@ -282,12 +355,14 @@ class ShellExecutor:
             # For all other commands, check if binary exists in filesystem
             binary_path = self.find_binary(command.executable, process.cwd)
             if not binary_path:
-                return 127, b'', f'{command.executable}: command not found\n'.encode()
+                error_msg = get_command_not_found_message(command.executable)
+                return 127, b'', f'{error_msg}\n'.encode()
 
             # Check execute permissions
             binary_inode = self.vfs.stat(binary_path, process.cwd)
             if not binary_inode:
-                return 127, b'', f'{command.executable}: command not found\n'.encode()
+                error_msg = get_command_not_found_message(command.executable)
+                return 127, b'', f'{error_msg}\n'.encode()
 
             if not self.permissions.can_execute(process.uid, binary_inode.mode,
                                                binary_inode.uid, binary_inode.gid):
