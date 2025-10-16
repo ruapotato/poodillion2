@@ -10,6 +10,7 @@ from core.shell import Shell
 from core.network import VirtualNetwork, NetworkCommands
 from core.packet_queue import PacketQueue
 from core.network_physical import NetworkInterface
+from core.daemon import DaemonManager
 from core.script_installer import install_scripts
 from commands.fs import FilesystemCommands
 from typing import Optional, Tuple, Dict
@@ -61,6 +62,7 @@ class UnixSystem:
         self.vfs = VFS()
         self.permissions = PermissionSystem()
         self.processes = ProcessManager()
+        self.daemon_manager = DaemonManager()  # Background daemon support
         self.network: Optional[VirtualNetwork] = None
         self.packet_queue = PacketQueue(self, self.network)
         self.shell = Shell(self.vfs, self.permissions, self.processes, self.network, self.ip, system=self)
@@ -295,11 +297,13 @@ class UnixSystem:
 
             # After init completes, start network daemon if it exists
             if self.vfs.stat('/sbin/netd', 1):
-                # Spawn netd as a background daemon
-                # Note: This would ideally run continuously, but for now we mark it as a service
-                netd_pid = self.spawn_service('netd', ['network', 'daemon'], uid=0)
+                # Spawn netd as a TRUE background daemon
+                netd_pid = self.daemon_manager.spawn_daemon('netd', '/sbin/netd', self)
                 if netd_pid:
-                    print(f"[  OK  ] Network daemon started (PID {netd_pid})")
+                    print(f"[  OK  ] Network daemon started as background process (PID {netd_pid})")
+                    # Give netd a moment to initialize
+                    import time
+                    time.sleep(0.2)
                 else:
                     print("[WARN ] Failed to start network daemon")
 
