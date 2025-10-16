@@ -155,13 +155,21 @@ class UnixSystem:
 
     def execute_command(self, command: str) -> Tuple[int, str, str]:
         """
-        Execute a command in the current shell
+        Execute a command in the current shell (via VirtualScript /bin/sh)
         Returns (exit_code, stdout, stderr) as strings
         """
         if self.shell_pid is None:
             return 1, '', 'Not logged in'
 
-        exit_code, stdout, stderr = self.shell.execute(command, self.shell_pid)
+        # Check if /bin/sh exists as a VirtualScript
+        sh_binary = self.vfs.stat('/bin/sh', 1)
+        if sh_binary:
+            # Execute via VirtualScript shell
+            # The shell script will handle built-ins and execute external commands
+            exit_code, stdout, stderr = self.shell.execute(f'/bin/sh -c \'{command}\'', self.shell_pid)
+        else:
+            # Fallback to Python shell
+            exit_code, stdout, stderr = self.shell.execute(command, self.shell_pid)
 
         return exit_code, stdout.decode('utf-8', errors='ignore'), stderr.decode('utf-8', errors='ignore')
 

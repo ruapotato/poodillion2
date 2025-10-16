@@ -279,6 +279,60 @@ class ProcessInterface:
         """Get parent process PID"""
         return self._process.ppid
 
+    def chdir(self, path: str) -> None:
+        """Change current working directory"""
+        # Resolve path
+        target_ino = self._shell_executor.vfs._resolve_path(path, self.cwd)
+        if target_ino is None:
+            raise RuntimeError(f"chdir: {path}: No such file or directory")
+
+        target_inode = self._shell_executor.vfs.inodes.get(target_ino)
+        if not target_inode or not target_inode.is_dir():
+            raise RuntimeError(f"chdir: {path}: Not a directory")
+
+        # Update process cwd
+        self._process.cwd = target_ino
+        self.cwd = target_ino
+
+    def getcwd_path(self) -> str:
+        """Get current working directory as path"""
+        # Use the VFS interface's method
+        from core.vfs import VFS
+        vfs = self._shell_executor.vfs
+
+        def inode_to_path(ino: int, visited=None) -> str:
+            """Convert inode to path"""
+            if ino == 1:
+                return '/'
+
+            if visited is None:
+                visited = set()
+
+            if ino in visited:
+                return '???'
+
+            visited.add(ino)
+
+            # Search all directories for this inode
+            for parent_ino, parent_inode in vfs.inodes.items():
+                if not parent_inode.is_dir():
+                    continue
+
+                entries = parent_inode.content
+                if not isinstance(entries, dict):
+                    continue
+
+                for name, child_ino in entries.items():
+                    if child_ino == ino and name not in ('.', '..'):
+                        parent_path = inode_to_path(parent_ino, visited)
+                        if parent_path == '/':
+                            return f'/{name}'
+                        return f'{parent_path}/{name}'
+
+            return '???'
+
+        return inode_to_path(self.cwd)
+
 
 class VirtualScriptInterpreter:
     """
@@ -368,7 +422,8 @@ class VirtualScriptInterpreter:
                 raise SyntaxError(f"Operation not allowed: {type(child).__name__}")
 
     def execute(self, script: str, args: List[str], stdin: str, env: Dict[str, str],
-                vfs, process, process_manager=None, shell_executor=None) -> Tuple[int, bytes, bytes]:
+                vfs, process, process_manager=None, shell_executor=None,
+                input_callback=None) -> Tuple[int, bytes, bytes]:
         """
         Execute a VirtualScript
 
