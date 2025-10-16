@@ -471,6 +471,40 @@ class VFS:
 
         return current
 
+    def inode_to_path(self, ino: int, visited=None) -> str:
+        """
+        Convert inode number to path (reverse resolution)
+        Returns the path as a string, or '???' if not found
+        """
+        if ino == 1:
+            return '/'
+
+        if visited is None:
+            visited = set()
+
+        if ino in visited:
+            return '???'
+
+        visited.add(ino)
+
+        # Search all directories for this inode
+        for parent_ino, parent_inode in self.inodes.items():
+            if not parent_inode.is_dir():
+                continue
+
+            entries = parent_inode.content
+            if not isinstance(entries, dict):
+                continue
+
+            for name, child_ino in entries.items():
+                if child_ino == ino and name not in ('.', '..'):
+                    parent_path = self.inode_to_path(parent_ino, visited)
+                    if parent_path == '/':
+                        return f'/{name}'
+                    return f'{parent_path}/{name}'
+
+        return '???'
+
     def mkdir(self, path: str, mode: int, uid: int, gid: int, current_dir_ino: int = 1) -> bool:
         """Create a directory"""
         parent_path = '/'.join(path.rstrip('/').split('/')[:-1]) or '/'

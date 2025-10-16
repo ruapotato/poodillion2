@@ -13,7 +13,6 @@ from core.network_physical import NetworkInterface
 from core.daemon import DaemonManager
 from core.script_installer import install_scripts
 from core.kernel import Kernel  # NEW: Kernel layer
-from commands.fs import FilesystemCommands
 from typing import Optional, Tuple, Dict
 
 
@@ -270,8 +269,40 @@ class UnixSystem:
     def _register_commands(self):
         """Register shell builtins (commands that must modify shell state)"""
         # cd is a true builtin - it needs to modify the shell process's cwd
-        fs_cmds = FilesystemCommands(self.vfs, self.permissions, self.processes)
-        self.shell.register_builtin('cd', fs_cmds.cmd_cd)
+        def cmd_cd(command, current_pid, input_data):
+            """Change directory builtin"""
+            process = self.processes.get_process(current_pid)
+            if not process:
+                return 1, b'', b'Process not found\n'
+
+            if not command.args:
+                # cd with no args goes to HOME
+                user = self.permissions.get_user(process.uid)
+                if user:
+                    target = user.home
+                else:
+                    target = '/'
+            else:
+                target = command.args[0]
+
+            # Resolve path
+            target_ino = self.vfs._resolve_path(target, process.cwd)
+            if target_ino is None:
+                return 1, b'', f'cd: {target}: No such file or directory\n'.encode()
+
+            target_inode = self.vfs.inodes.get(target_ino)
+            if not target_inode or not target_inode.is_dir():
+                return 1, b'', f'cd: {target}: Not a directory\n'.encode()
+
+            # Check permissions
+            if not self.permissions.can_execute(process.uid, target_inode.mode, target_inode.uid, target_inode.gid):
+                return 1, b'', f'cd: {target}: Permission denied\n'.encode()
+
+            # Update process cwd
+            self.processes.update_cwd(current_pid, target_ino)
+            return 0, b'', b''
+
+        self.shell.register_builtin('cd', cmd_cd)
 
         # All other commands are now PooScript binaries in /bin, /usr/bin, etc.
         # They are executed by the shell finding them in $PATH
@@ -430,8 +461,7 @@ class UnixSystem:
 
         # Get current directory
         cwd_ino = process.cwd
-        fs_cmds = FilesystemCommands(self.vfs, self.permissions, self.processes)
-        cwd = fs_cmds._inode_to_path(cwd_ino)
+        cwd = self.vfs.inode_to_path(cwd_ino)
 
         # Simplify home directory
         if user and cwd.startswith(user.home):
