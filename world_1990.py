@@ -84,6 +84,24 @@ def create_december_1990_world():
     cybermart.add_network(network)
 
     # ========================================
+    # NETWORK ROUTING - Connect all systems
+    # ========================================
+
+    # Allow attacker to reach all systems
+    ips = ['192.168.1.10', '192.168.1.11', '192.168.2.50', '192.168.3.100',
+           '192.168.4.66', '192.168.5.100', '192.168.99.1']
+
+    for ip in ips:
+        network.add_route('192.168.13.37', ip)
+        network.add_route(ip, '192.168.13.37')
+
+    # Allow systems to reach each other (full mesh network)
+    for ip1 in ips:
+        for ip2 in ips:
+            if ip1 != ip2:
+                network.add_route(ip1, ip2)
+
+    # ========================================
     # POPULATE THE WORLD
     # ========================================
 
@@ -867,4 +885,7 @@ Payment logs: /shop/payments/
 
 For support contact: admin@cybermart.com
 """.encode('utf-8'), 1)
+
+    # Add admin user to the system
+    system.add_user('admin', 'cyber@mart90', 1000, '/home/admin')
 

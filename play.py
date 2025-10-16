@@ -176,7 +176,14 @@ def interactive_shell(system, network, username='root', password='root'):
                                 print(f'\nssh: connect to host {target_host} port 22: No route to host')
                                 continue
 
-                            success = interactive_shell(target_system, network, target_user, 'root')
+                            # Prompt for password
+                            try:
+                                password = input(f"{target_user}@{target_host}'s password: ")
+                            except (EOFError, KeyboardInterrupt):
+                                print("\n")
+                                continue
+
+                            success = interactive_shell(target_system, network, target_user, password)
                             print(f'\nConnection to {target_host} closed.')
                             print(f'Back on {system.hostname} ({system.ip})')
                             continue
