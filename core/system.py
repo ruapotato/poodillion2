@@ -322,12 +322,22 @@ class UnixSystem:
         """Check if system is running and can process packets"""
         return self.running and not self.crashed
 
-    def add_network(self, network: VirtualNetwork):
-        """Attach system to a virtual network"""
+    def add_network(self, network):
+        """
+        Attach system to a virtual network
+
+        Supports both VirtualNetwork (old) and NetworkAdapter (new)
+        """
         self.network = network
 
         # Update packet queue's network reference
-        self.packet_queue.network = network
+        # NetworkAdapter wraps VirtualNetwork, so use .virtual_network if available
+        if hasattr(network, 'virtual_network'):
+            self.packet_queue.network = network.virtual_network
+            shell_network = network.virtual_network
+        else:
+            self.packet_queue.network = network
+            shell_network = network
 
         # Register system for ALL its IP addresses (not just primary)
         # This allows routing to work with multi-interface systems
@@ -336,8 +346,8 @@ class UnixSystem:
                 network.register_system(ip, self)
 
         # Update shell's network reference
-        self.shell.network = network
-        self.shell.executor.network = network
+        self.shell.network = shell_network
+        self.shell.executor.network = shell_network
         self.shell.executor.local_ip = self.ip
 
         # Network commands (ifconfig, netstat, nmap, ssh) can be added as VirtualScripts later

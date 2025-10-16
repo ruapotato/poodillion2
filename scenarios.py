@@ -5,7 +5,7 @@ Each scenario creates a realistic network topology with multiple systems
 """
 
 from core.system import UnixSystem
-from core.network import VirtualNetwork
+from core.network_adapter import NetworkAdapter
 
 
 def create_scenario_zero():
@@ -16,7 +16,7 @@ def create_scenario_zero():
     - Learn to SSH between systems
     - Practice basic Unix commands across multiple hosts
     """
-    network = VirtualNetwork()
+    network = NetworkAdapter()
 
     # Attacker system (your machine)
     attacker = UnixSystem('training-box', '192.168.1.100')
@@ -159,6 +159,9 @@ def create_scenario_zero():
             if ip1 != ip2:
                 network.add_route(ip1, ip2)
 
+    # Configure routing tables on all routers
+    network._configure_routing_tables()
+
     return attacker, network, {
         'title': 'Scenario 0: SSH Training',
         'description': 'Learn to navigate between systems using SSH',
@@ -181,7 +184,7 @@ def create_beginner_scenario():
     - Router with IP forwarding between networks
     - One web server behind router (192.168.1.0/24)
     """
-    network = VirtualNetwork()
+    network = NetworkAdapter()
 
     # Attacker system (your machine)
     attacker = UnixSystem('kali-box', '10.0.0.100')
@@ -292,6 +295,9 @@ def create_beginner_scenario():
     # Firewall rules - allow web traffic, block SSH from outside
     network.add_firewall_rule('192.168.1.50', 'DENY', 22)  # Block SSH from outside
 
+    # Configure routing tables
+    network._configure_routing_tables()
+
     return attacker, network, {
         'title': 'Beginner: Simple Corporate Hack',
         'description': 'Compromise a web server behind a router/firewall',
@@ -316,7 +322,7 @@ def create_intermediate_scenario():
     - Database server in internal network (192.168.10.0/24)
     - Jump host for internal access
     """
-    network = VirtualNetwork()
+    network = NetworkAdapter()
 
     # Attacker
     attacker = UnixSystem('kali-box', '10.0.0.100')
@@ -439,6 +445,9 @@ def create_intermediate_scenario():
     # Firewall rules - block direct external->internal access
     # (attacker must pivot through DMZ)
 
+    # Configure routing tables
+    network._configure_routing_tables()
+
     return attacker, network, {
         'title': 'Intermediate: Corporate DMZ Breach',
         'description': 'Pivot through DMZ to access internal database',
@@ -456,7 +465,7 @@ def create_advanced_scenario():
     - Segmented networks
     - Multiple attack vectors
     """
-    network = VirtualNetwork()
+    network = NetworkAdapter()
 
     # Attacker
     attacker = UnixSystem('kali-box', '10.0.0.100')
@@ -601,6 +610,9 @@ def create_advanced_scenario():
     # Firewall rules
     network.add_firewall_rule('192.168.1.100', 'DENY', 22)  # Mail server SSH blocked from outside
     network.add_firewall_rule('192.168.1.100', 'DENY', 25)  # SMTP blocked from outside
+
+    # Configure routing tables
+    network._configure_routing_tables()
 
     return attacker, network, {
         'title': 'Advanced: Multi-Site Enterprise Compromise',
