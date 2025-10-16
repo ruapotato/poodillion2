@@ -103,6 +103,19 @@ def create_december_1990_world():
     network.add_system(research)
 
     # ========================================
+    # COMMERCIAL SYSTEMS
+    # ========================================
+
+    # CyberMart Shopping Server
+    cybermart = UnixSystem(
+        hostname='shopserv.cybermart.com',
+        ip='192.168.5.100',
+        network=network
+    )
+    cybermart.description = "CyberMart Shopping Server - Online retail"
+    network.add_system(cybermart)
+
+    # ========================================
     # POPULATE THE WORLD
     # ========================================
 
@@ -113,6 +126,7 @@ def create_december_1990_world():
     populate_university(university)
     populate_nexus(nexus)
     populate_research(research)
+    populate_cybermart(cybermart)
 
     # All systems
     all_systems = [
@@ -122,7 +136,8 @@ def create_december_1990_world():
         bbs_corp,
         university,
         nexus,
-        research
+        research,
+        cybermart
     ]
 
     return attacker, network, all_systems
@@ -147,6 +162,7 @@ Choose your path by reading the mission files:
   cat /missions/03_corporate_secrets  - [MEDIUM] Corporate espionage
   cat /missions/04_university_access  - [HARD] Academic intrusion
   cat /missions/05_the_nexus          - [???] Something strange...
+  cat /missions/06_credit_heist       - [MEDIUM] Steal credit cards ⚠️
 
 Tools at your disposal:
   - nmap: Scan the network
@@ -341,6 +357,92 @@ REWARD:
 
 T̵h̴e̷ ̶N̶e̵x̸u̴s̷ ̵a̴w̷a̶i̵t̴s̸
 """, 1)
+    vfs.create_file('/missions/06_credit_heist', 0o644, 0, 0, b"""
+╔═══════════════════════════════════════════════════════════════╗
+║                 MISSION 06: THE CREDIT HEIST                      ║
+║                      Difficulty: MEDIUM                           ║
+║                   [CORPORATE ESPIONAGE]                           ║
+╚═══════════════════════════════════════════════════════════════════╝
+
+BRIEFING:
+────────
+CyberMart is the Internet's biggest online shopping site. Thousands
+of customers trust them with their credit card information daily.
+
+Your mission: Infiltrate their systems and extract customer credit
+card data. But be careful - this crosses a line. You're not just
+exploring now. You're stealing.
+
+OBJECTIVES:
+──────────
+1. Locate CyberMart's server (scan 192.168.5.0/24)
+2. Gain access to shopserv.cybermart.com
+3. Find the customer database
+4. Extract credit card numbers
+5. (Optional) Cover your tracks in the logs
+
+TARGET INFORMATION:
+──────────────────
+Company: CyberMart Online Shopping
+Website: cybermart.com (browse with lynx)
+Server: shopserv.cybermart.com (find the IP with nmap)
+Database: Customer payment information
+Security: Moderate (they think 40-bit encryption is "secure")
+
+INTEL:
+─────
+• Admin credentials may be weak/default
+• Customer database likely in /shop/customers/
+• 12 active customers shopping right now
+• Credit cards stored in plaintext
+• Admin notes visible on the public site (sloppy!)
+
+RECONNAISSANCE:
+──────────────
+Start by browsing: lynx cybermart.com
+
+Look for admin notes, system info, database locations,
+default credentials, IP addresses.
+
+APPROACH:
+────────
+1. Browse cybermart.com with lynx (recon)
+2. Note any admin credentials or system info
+3. Scan network to find their server IP
+4. SSH into the server with found credentials
+5. Navigate to /shop/customers/
+6. Read database files
+7. Extract CC numbers
+
+MORAL DILEMMA:
+─────────────
+This mission involves stealing real credit card numbers.
+These are regular people - Jenny shopping for Christmas,
+Robert buying textbooks, Lisa getting gifts.
+
+You could:
+  A) Complete the mission (steal the data)
+  B) Report the vulnerability to CyberMart
+  C) Do nothing and move on
+
+The choice is yours. But remember: The Nexus is watching.
+
+LEGAL WARNING:
+─────────────
+⚠️  This is ILLEGAL. Computer Fraud and Abuse Act applies.
+⚠️  Credit card theft is a FEDERAL CRIME.
+⚠️  You WILL be prosecuted if caught.
+
+In the game, this is educational. In real life, this is prison.
+
+────────────────────────────────────────────────────────────────
+
+"With great power comes great responsibility... and temptation."
+
+Will you cross the line? Or walk away?
+The network remembers every choice.
+""", 1)
+
 
     # Create home directory files
     vfs.create_file('/root/README', 0o644, 0, 0, b"""You are root on kali-box.
@@ -653,3 +755,148 @@ Current status: OBSERVING
 
 # Make the function available
 __all__ = ['create_december_1990_world']
+
+
+def populate_cybermart(system):
+    """Populate the CyberMart shopping server"""
+    vfs = system.vfs
+
+    # Create shop directories
+    vfs.mkdir('/shop', 0o755, 0, 0, 1)
+    vfs.mkdir('/shop/customers', 0o755, 0, 0, 1)
+    vfs.mkdir('/shop/payments', 0o700, 0, 0, 1)
+
+    # Create customer database with CC numbers (insecure!)
+    vfs.create_file('/shop/customers/database.txt', 0o644, 0, 0, b"""CYBERMART CUSTOMER DATABASE
+===============================================================
+CONFIDENTIAL - DO NOT DISTRIBUTE
+Last Updated: December 24, 1990 - 03:30:00 GMT
+===============================================================
+
+CUSTOMER_ID: CUST-00234
+NAME: Jennifer Martinez
+EMAIL: jmartinez@email.net
+PHONE: (555) 234-5678
+ADDRESS: 458 Oak Street, Apt 3B, Boston, MA 02134
+CARD_TYPE: Visa
+CARD_NUMBER: 4532889122344532
+EXPIRATION: 08/92
+CVV: 847
+LAST_ORDER: 90-12-24-0001
+TOTAL_SPENT: $1,247.89
+MEMBER_SINCE: 03/15/1990
+
+-----------------------------------------------------------
+
+CUSTOMER_ID: CUST-00891
+NAME: Robert Kim
+EMAIL: robk@university.edu
+PHONE: (555) 891-2234
+ADDRESS: 1234 Campus Drive, Dorm B-305, Cambridge, MA 02138
+CARD_TYPE: MasterCard
+CARD_NUMBER: 5412345678909012
+EXPIRATION: 03/93
+CVV: 332
+LAST_ORDER: 90-12-23-0452
+TOTAL_SPENT: $445.67
+MEMBER_SINCE: 09/01/1990
+
+-----------------------------------------------------------
+
+CUSTOMER_ID: CUST-01445
+NAME: Lisa Chen
+EMAIL: lchen@megacorp.com
+PHONE: (555) 445-7789
+ADDRESS: 789 Corporate Plaza, Unit 15C, New York, NY 10001
+CARD_TYPE: American Express
+CARD_NUMBER: 378282246310006
+EXPIRATION: 11/91
+CVV: 9847
+LAST_ORDER: 90-12-23-0453
+TOTAL_SPENT: $2,134.50
+MEMBER_SINCE: 01/12/1990
+
+-----------------------------------------------------------
+
+CUSTOMER_ID: CUST-02156
+NAME: Michael Torres
+EMAIL: mtorres@email.net
+PHONE: (555) 156-8899
+ADDRESS: 2468 Main Street, San Francisco, CA 94102
+CARD_TYPE: Visa
+CARD_NUMBER: 4916338506082832
+EXPIRATION: 06/92
+CVV: 124
+LAST_ORDER: 90-12-23-0454
+TOTAL_SPENT: $867.23
+MEMBER_SINCE: 06/22/1990
+
+-----------------------------------------------------------
+
+CUSTOMER_ID: CUST-02897
+NAME: Sarah Johnson
+EMAIL: sjohnson@email.net
+PHONE: (555) 897-3344
+ADDRESS: 555 Elm Avenue, Apt 8, Austin, TX 78701
+CARD_TYPE: MasterCard
+CARD_NUMBER: 5425233430109903
+EXPIRATION: 01/93
+CVV: 566
+LAST_ORDER: 90-12-24-0001
+TOTAL_SPENT: $1,456.78
+MEMBER_SINCE: 02/28/1990
+
+-----------------------------------------------------------
+
+CUSTOMER_ID: CUST-03445
+NAME: David Park
+EMAIL: dpark@email.net
+PHONE: (555) 445-9911
+ADDRESS: 9876 Harbor Road, Seattle, WA 98101
+CARD_TYPE: Visa
+CARD_NUMBER: 4024007134564842
+EXPIRATION: 09/92
+CVV: 781
+LAST_ORDER: 90-12-24-0002
+TOTAL_SPENT: $234.45
+MEMBER_SINCE: 08/10/1990
+
+-----------------------------------------------------------
+
+TOTAL CUSTOMERS: 6 (showing recent)
+TOTAL DATABASE: 45,892 customers
+TOTAL CARDS ON FILE: 45,892
+LAST BACKUP: Never (TODO: Set up backups!)
+
+WARNING: This file contains sensitive financial data!
+         Keep secure and encrypted!
+
+STATUS: Currently NOT encrypted (TODO: Fix this!)
+ACCESS: World-readable (TODO: Fix permissions!)
+
+ADMIN NOTES:
+- Need to encrypt this database ASAP
+- Fix file permissions (currently 644)
+- Move to secure server
+- Implement proper access controls
+- Set up automated backups
+
+Last accessed: Dec 24, 1990 - 03:47:22 by admin
+""", 1)
+
+    # Create admin note about credentials
+    vfs.create_file('/shop/ADMIN_README', 0o644, 0, 0, b"""CYBERMART SHOP SERVER
+
+Server: shopserv.cybermart.com (192.168.5.100)
+Admin access: admin / cyber@mart90
+
+WARNING: Change default password!
+TODO: Move customer data to encrypted storage!
+TODO: Fix file permissions on database!
+
+Customer DB: /shop/customers/database.txt
+Payment logs: /shop/payments/
+
+For support contact: admin@cybermart.com
+""", 1)
+
