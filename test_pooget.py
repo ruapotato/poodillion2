@@ -58,6 +58,20 @@ def run_tests():
     print(f"✓ Repository server: {repo_server.hostname} ({repo_server.ip})")
     print(f"✓ Attacker system: {attacker.hostname} ({attacker.ip})")
 
+    # Login to systems
+    print("\nLogging into systems...")
+    if attacker.login('root', 'root'):
+        print("✓ Logged into attacker system as root")
+    else:
+        print("✗ Failed to login to attacker system")
+        return False
+
+    if repo_server.login('root', 'root'):
+        print("✓ Logged into repo server as root")
+    else:
+        print("✗ Failed to login to repo server")
+        return False
+
     # ========================================
     # TEST 1: Basic pooget commands
     # ========================================
