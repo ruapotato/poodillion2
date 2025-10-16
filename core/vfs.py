@@ -61,14 +61,41 @@ class Inode:
         }.get(ft, '?')
 
     def permission_string(self) -> str:
-        """Return ls-style permission string (e.g., rwxr-xr-x)"""
+        """Return ls-style permission string (e.g., rwxr-xr-x, rwsr-xr-x for SUID)"""
         perms = self.mode & 0o777
+        special = self.mode & 0o7000
         chars = []
-        for shift in [6, 3, 0]:  # owner, group, other
-            p = (perms >> shift) & 7
-            chars.append('r' if p & 4 else '-')
-            chars.append('w' if p & 2 else '-')
+
+        # Owner permissions
+        p = (perms >> 6) & 7
+        chars.append('r' if p & 4 else '-')
+        chars.append('w' if p & 2 else '-')
+        # SUID: s if executable, S if not executable
+        if special & 0o4000:  # SUID bit
+            chars.append('s' if p & 1 else 'S')
+        else:
             chars.append('x' if p & 1 else '-')
+
+        # Group permissions
+        p = (perms >> 3) & 7
+        chars.append('r' if p & 4 else '-')
+        chars.append('w' if p & 2 else '-')
+        # SGID: s if executable, S if not executable
+        if special & 0o2000:  # SGID bit
+            chars.append('s' if p & 1 else 'S')
+        else:
+            chars.append('x' if p & 1 else '-')
+
+        # Other permissions
+        p = perms & 7
+        chars.append('r' if p & 4 else '-')
+        chars.append('w' if p & 2 else '-')
+        # Sticky bit: t if executable, T if not executable
+        if special & 0o1000:  # Sticky bit
+            chars.append('t' if p & 1 else 'T')
+        else:
+            chars.append('x' if p & 1 else '-')
+
         return ''.join(chars)
 
 

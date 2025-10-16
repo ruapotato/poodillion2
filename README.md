@@ -16,7 +16,7 @@ A terminal-based hacking game featuring a complete Unix-like operating system em
 #### Filesystem Commands
 - `ls` - List directory contents (supports `-l`, `-a`)
 - `cd` - Change directory
-- `pwd` - Print working directory
+- `pwd` - Print working directory ✅ FIXED
 - `cat` - Display file contents
 - `mkdir` - Create directories
 - `touch` - Create files or update timestamps
@@ -24,6 +24,11 @@ A terminal-based hacking game featuring a complete Unix-like operating system em
 - `echo` - Print text
 - `grep` - Search text patterns
 - `find` - Search for files
+- `cp` - Copy files ⭐ NEW
+- `mv` - Move/rename files ⭐ NEW
+- `chmod` - Change file permissions (supports SUID/SGID) ⭐ NEW
+- `chown` - Change file ownership ⭐ NEW
+- `ln` - Create symbolic links ⭐ NEW
 
 #### Process Commands
 - `ps` - List processes (supports `-a`, `-e`, `-f`)
@@ -42,8 +47,46 @@ A terminal-based hacking game featuring a complete Unix-like operating system em
 - **Pipe chaining**: `cat file.txt | grep password | grep -i admin`
 - **Output redirection**: `echo "data" > file.txt`, `cat file1.txt >> file2.txt`
 - **Shell variables**: `$PATH`, `$HOME`, `$USER`
-- **Permission checking**: Realistic Unix permission enforcement
-- **SUID execution**: Commands can run with elevated privileges
+- **Permission checking**: Realistic Unix permission enforcement ⭐ ENHANCED
+- **SUID/SGID execution**: Commands can run with elevated privileges ⭐ ENHANCED
+- **VirtualScript**: Python-like scripting language for creating custom binaries ⭐ NEW
+
+### VirtualScript - Scriptable Binaries ⭐ NEW
+
+VirtualScript is a safe, sandboxed Python-like scripting language that allows you to create custom executable binaries in the game world!
+
+#### Example VirtualScript
+
+```python
+#!/usr/bin/virtualscript
+# Custom ls command
+if len(args) == 0:
+    path = "."
+else:
+    path = args[0]
+
+entries = vfs.list(path)
+for name in entries:
+    print(name)
+```
+
+#### Built-in Objects
+- `args` - Command line arguments
+- `stdin` - Standard input
+- `vfs` - Filesystem access (list, read, stat, exists)
+- `env` - Environment variables
+- `process` - Process info (uid, gid, euid, egid, cwd)
+
+#### Built-in Functions
+- `print()`, `error()`, `exit()`
+- Standard Python: `len()`, `str()`, `int()`, `range()`, etc.
+
+#### Use Cases
+- Create custom commands
+- Build backdoors and rootkits
+- Modify system binaries (`/bin/ls`, `/bin/ps`)
+- Exploit SUID binaries for privilege escalation
+- Solve security challenges
 
 ## Installation
 
@@ -69,6 +112,20 @@ python3 demo.py
 ```
 
 Launches an interactive shell on an "attacker" system with a vulnerable target to compromise.
+
+### New Features Demo ⭐ NEW
+```bash
+python3 demo_features.py
+```
+
+Demonstrates all new features: chmod, chown, ln, cp, mv, SUID/SGID, and VirtualScript.
+
+### Game Scenario Demo ⭐ NEW
+```bash
+python3 game_scenario.py
+```
+
+Shows a realistic hacking scenario exploiting SUID binaries and using VirtualScript for privilege escalation.
 
 ### Example Session
 ```

@@ -76,7 +76,7 @@ class UnixSystem:
 
         # Populate /bin with "executable" files (just placeholders)
         binaries = ['ls', 'cat', 'grep', 'ps', 'kill', 'echo', 'mkdir', 'rm',
-                    'touch', 'sh', 'bash', 'cp', 'mv', 'chmod', 'chown', 'ln', 'tar',
+                    'touch', 'pwd', 'sh', 'bash', 'cp', 'mv', 'chmod', 'chown', 'ln', 'tar',
                     'gzip', 'gunzip', 'date', 'hostname', 'netstat', 'mount']
 
         for binary in binaries:
@@ -143,6 +143,8 @@ class UnixSystem:
         self.shell.register_command('chmod', fs_cmds.cmd_chmod)
         self.shell.register_command('chown', fs_cmds.cmd_chown)
         self.shell.register_command('ln', fs_cmds.cmd_ln)
+        self.shell.register_command('cp', fs_cmds.cmd_cp)
+        self.shell.register_command('mv', fs_cmds.cmd_mv)
 
         # Process commands
         proc_cmds = ProcessCommands(self.vfs, self.permissions, self.processes)

@@ -8,6 +8,7 @@ import re
 from typing import Dict, List, Optional, Tuple, Any, Callable
 from dataclasses import dataclass
 from io import BytesIO
+from core.virtualscript import is_virtualscript, execute_virtualscript
 
 
 @dataclass
@@ -190,7 +191,7 @@ class ShellExecutor:
         self.processes = processes
         self.builtins: Dict[str, Callable] = {}
         self.commands: Dict[str, Callable] = {}
-        self.path_dirs = ['/bin', '/usr/bin', '/sbin', '/usr/sbin']
+        self.path_dirs = ['/bin', '/usr/bin', '/sbin', '/usr/sbin', '/usr/local/bin']
 
     def register_builtin(self, name: str, func: Callable):
         """Register a shell builtin command"""
@@ -202,9 +203,17 @@ class ShellExecutor:
 
     def find_binary(self, name: str, cwd: int) -> Optional[str]:
         """
-        Check if a binary exists in PATH
+        Check if a binary exists in PATH or as absolute/relative path
         Returns binary path if found, None otherwise
         """
+        # If name contains '/', treat it as a path (absolute or relative)
+        if '/' in name:
+            inode = self.vfs.stat(name, cwd)
+            if inode and inode.is_file():
+                return name
+            return None
+
+        # Otherwise search in PATH
         for path_dir in self.path_dirs:
             binary_path = f'{path_dir}/{name}'
             inode = self.vfs.stat(binary_path, cwd)
@@ -260,8 +269,8 @@ class ShellExecutor:
         if command.executable in self.builtins:
             func = self.builtins[command.executable]
             exit_code, stdout, stderr = func(command, current_pid, input_data)
-        elif command.executable in self.commands:
-            # For regular commands, check if binary exists in filesystem
+        else:
+            # For all other commands, check if binary exists in filesystem
             binary_path = self.find_binary(command.executable, process.cwd)
             if not binary_path:
                 return 127, b'', f'{command.executable}: command not found\n'.encode()
@@ -275,10 +284,43 @@ class ShellExecutor:
                                                binary_inode.uid, binary_inode.gid):
                 return 126, b'', f'{command.executable}: Permission denied\n'.encode()
 
-            func = self.commands[command.executable]
-            exit_code, stdout, stderr = func(command, current_pid, input_data)
-        else:
-            return 127, b'', f'{command.executable}: command not found\n'.encode()
+            # Handle SUID/SGID privilege escalation
+            original_euid = process.euid
+            original_egid = process.egid
+
+            # Check for SUID bit - if set, run with file owner's privileges
+            if self.permissions.is_suid(binary_inode.mode):
+                process.euid = binary_inode.uid
+
+            # Check for SGID bit - if set, run with file group's privileges
+            if self.permissions.is_sgid(binary_inode.mode):
+                process.egid = binary_inode.gid
+
+            # Check if binary is a VirtualScript
+            binary_content = self.vfs.read_file(binary_path, process.cwd)
+            if binary_content and is_virtualscript(binary_content):
+                # Execute as VirtualScript with full system access
+                exit_code, stdout, stderr = execute_virtualscript(
+                    binary_content,
+                    command.args,
+                    input_data,
+                    process.env,
+                    self.vfs,
+                    process,
+                    self.processes,  # Pass process manager
+                    self              # Pass shell executor (self)
+                )
+            elif command.executable in self.commands:
+                # Execute as Python command handler
+                func = self.commands[command.executable]
+                exit_code, stdout, stderr = func(command, current_pid, input_data)
+            else:
+                # Binary exists but no handler - treat as error
+                exit_code, stdout, stderr = 127, b'', f'{command.executable}: not implemented\n'.encode()
+
+            # Restore original effective UID/GID after execution
+            process.euid = original_euid
+            process.egid = original_egid
 
         # Handle stdout redirect
         if command.stdout_redirect:
@@ -320,7 +362,7 @@ class Shell:
         self.processes = processes
 
         # Set default variables
-        self.parser.set_variable('PATH', '/bin:/usr/bin:/sbin:/usr/sbin')
+        self.parser.set_variable('PATH', '/bin:/usr/bin:/sbin:/usr/sbin:/usr/local/bin')
         self.parser.set_variable('HOME', '/root')
         self.parser.set_variable('USER', 'root')
 

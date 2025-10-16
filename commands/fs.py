@@ -118,7 +118,8 @@ class FilesystemCommands:
                 return 1, b'', f'cat: {path}: No such file or directory\n'.encode()
 
             inode = self.vfs.stat(path, process.cwd)
-            if inode and not self.permissions.can_read(process.uid, inode.mode, inode.uid, inode.gid):
+            # Use effective UID for permission checks (supports SUID)
+            if inode and not self.permissions.can_read(process.euid, inode.mode, inode.uid, inode.gid):
                 return 1, b'', f'cat: {path}: Permission denied\n'.encode()
 
             output.append(content)
@@ -350,9 +351,9 @@ class FilesystemCommands:
                     inode.mode = (inode.mode & ~0o777) | new_perms
                     inode.ctime = time.time()
             else:
-                # Octal mode (e.g., 755, 644)
-                new_perms = int(mode_str, 8)
-                if new_perms > 0o777:
+                # Octal mode (e.g., 755, 644, 4755 for SUID, 2755 for SGID)
+                new_mode = int(mode_str, 8)
+                if new_mode > 0o7777:
                     return 1, b'', f'chmod: invalid mode: {mode_str}\n'.encode()
 
                 for path in paths:
@@ -364,8 +365,9 @@ class FilesystemCommands:
                     if process.uid != 0 and process.uid != inode.uid:
                         return 1, b'', f'chmod: {path}: Permission denied\n'.encode()
 
-                    # Preserve file type, update permissions
-                    inode.mode = (inode.mode & ~0o777) | new_perms
+                    # Preserve file type, update permissions and special bits
+                    # Clear old permissions and special bits, set new ones
+                    inode.mode = (inode.mode & 0o170000) | (new_mode & 0o7777)
                     inode.ctime = time.time()
 
         except ValueError:
@@ -456,5 +458,107 @@ class FilesystemCommands:
         else:
             # Hard links not fully implemented yet
             return 1, b'', b'ln: hard links not yet supported\n'
+
+        return 0, b'', b''
+
+    def cmd_cp(self, command, current_pid: int, input_data: bytes) -> Tuple[int, bytes, bytes]:
+        """Copy files"""
+        process = self.processes.get_process(current_pid)
+        if not process:
+            return 1, b'', b'Process not found\n'
+
+        if len(command.args) < 2:
+            return 1, b'', b'cp: missing operand\n'
+
+        # Parse options
+        recursive = '-r' in command.args or '-R' in command.args
+        paths = [arg for arg in command.args if not arg.startswith('-')]
+
+        if len(paths) < 2:
+            return 1, b'', b'cp: missing operand\n'
+
+        source = paths[0]
+        dest = paths[1]
+
+        # Get source inode
+        source_inode = self.vfs.stat(source, process.cwd)
+        if not source_inode:
+            return 1, b'', f'cp: {source}: No such file or directory\n'.encode()
+
+        # Check read permission on source
+        if not self.permissions.can_read(process.uid, source_inode.mode, source_inode.uid, source_inode.gid):
+            return 1, b'', f'cp: {source}: Permission denied\n'.encode()
+
+        # Handle directory copy
+        if source_inode.is_dir():
+            if not recursive:
+                return 1, b'', f'cp: {source}: Is a directory (use -r for recursive copy)\n'.encode()
+            else:
+                return 1, b'', b'cp: recursive copy not yet implemented\n'
+
+        # Copy file content
+        content = self.vfs.read_file(source, process.cwd)
+        if content is None:
+            return 1, b'', f'cp: {source}: Cannot read file\n'.encode()
+
+        # Check if destination exists
+        dest_inode = self.vfs.stat(dest, process.cwd)
+        if dest_inode:
+            if dest_inode.is_dir():
+                # Copy into directory
+                source_name = source.rstrip('/').split('/')[-1]
+                dest = f'{dest}/{source_name}'
+
+        # Create destination file with source permissions
+        result = self.vfs.create_file(dest, source_inode.mode & 0o777, process.uid, process.gid, content, process.cwd)
+        if result is None:
+            return 1, b'', f'cp: {dest}: Cannot create file\n'.encode()
+
+        return 0, b'', b''
+
+    def cmd_mv(self, command, current_pid: int, input_data: bytes) -> Tuple[int, bytes, bytes]:
+        """Move/rename files"""
+        process = self.processes.get_process(current_pid)
+        if not process:
+            return 1, b'', b'Process not found\n'
+
+        if len(command.args) < 2:
+            return 1, b'', b'mv: missing operand\n'
+
+        source = command.args[0]
+        dest = command.args[1]
+
+        # Get source inode
+        source_inode = self.vfs.stat(source, process.cwd)
+        if not source_inode:
+            return 1, b'', f'mv: {source}: No such file or directory\n'.encode()
+
+        # Check if destination is a directory
+        dest_inode = self.vfs.stat(dest, process.cwd)
+        if dest_inode and dest_inode.is_dir():
+            # Move into directory
+            source_name = source.rstrip('/').split('/')[-1]
+            dest = f'{dest}/{source_name}'
+
+        # For simplicity, implement mv as copy + delete
+        if source_inode.is_file():
+            content = self.vfs.read_file(source, process.cwd)
+            if content is None:
+                return 1, b'', f'mv: {source}: Cannot read file\n'.encode()
+
+            # Create destination
+            result = self.vfs.create_file(dest, source_inode.mode & 0o777, source_inode.uid, source_inode.gid, content, process.cwd)
+            if result is None:
+                return 1, b'', f'mv: {dest}: Cannot create file\n'.encode()
+
+            # Delete source
+            if not self.vfs.unlink(source, process.cwd):
+                return 1, b'', f'mv: {source}: Cannot remove source\n'.encode()
+        elif source_inode.is_dir():
+            # Simple directory move - just update parent directory entry
+            # This is simplified - real mv handles cross-filesystem moves differently
+            return 1, b'', b'mv: directory move not yet fully implemented\n'
+        else:
+            return 1, b'', f'mv: {source}: Not a regular file or directory\n'.encode()
 
         return 0, b'', b''
