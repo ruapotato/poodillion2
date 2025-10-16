@@ -83,7 +83,7 @@ def interactive_shell(system: UnixSystem):
 
     print()
 
-    # Set up input callback for pooshell
+    # Set up I/O callbacks for pooshell
     def input_callback(prompt):
         """Provide input to PooScript"""
         try:
@@ -91,18 +91,27 @@ def interactive_shell(system: UnixSystem):
         except (EOFError, KeyboardInterrupt):
             return 'exit'
 
-    # Set the input callback on the shell
+    def output_callback(text):
+        """Flush output immediately to real stdout"""
+        print(text, end='')
+        sys.stdout.flush()
+
+    def error_callback(text):
+        """Flush errors immediately to real stderr"""
+        print(text, end='', file=sys.stderr)
+        sys.stderr.flush()
+
+    # Set the callbacks on the shell
     system.shell.executor.input_callback = input_callback
+    system.shell.executor.output_callback = output_callback
+    system.shell.executor.error_callback = error_callback
 
     # Execute pooshell interactively
     try:
         exit_code, stdout, stderr = system.shell.execute('/bin/pooshell', system.shell_pid, b'')
 
-        if stdout:
-            print(stdout.decode('utf-8', errors='ignore'), end='')
-
-        if stderr:
-            print(stderr.decode('utf-8', errors='ignore'), end='', file=sys.stderr)
+        # Don't print buffered output - callbacks already handled real-time output
+        # The stdout/stderr buffers still accumulate but we've already printed everything via callbacks
 
     except KeyboardInterrupt:
         print('\n^C')

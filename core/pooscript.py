@@ -395,22 +395,38 @@ class PooScriptInterpreter:
             'reversed': reversed,
         }
 
-        # Input callback for interactive input
+        # Callbacks for interactive I/O
         self.input_callback = None
+        self.output_callback = None
+        self.error_callback = None
 
     def _builtin_print(self, *args, **kwargs):
         """Built-in print function - writes to stdout buffer"""
         sep = kwargs.get('sep', ' ')
         end = kwargs.get('end', '\n')
         text = sep.join(str(arg) for arg in args)
-        self.stdout.write(text + end)
+        output = text + end
+
+        # Write to buffer
+        self.stdout.write(output)
+
+        # If we have an output callback, flush immediately
+        if self.output_callback:
+            self.output_callback(output)
 
     def _builtin_error(self, *args, **kwargs):
         """Built-in error function - writes to stderr buffer"""
         sep = kwargs.get('sep', ' ')
         end = kwargs.get('end', '\n')
         text = sep.join(str(arg) for arg in args)
-        self.stderr.write(text + end)
+        output = text + end
+
+        # Write to buffer
+        self.stderr.write(output)
+
+        # If we have an error callback, flush immediately
+        if self.error_callback:
+            self.error_callback(output)
 
     def _builtin_exit(self, code=0):
         """Built-in exit function - raises special exception"""
@@ -459,8 +475,9 @@ class PooScriptInterpreter:
         self.stdout = StringIO()
         self.stderr = StringIO()
 
-        # Setup input callback
+        # Setup callbacks
         self.input_callback = input_callback
+        # Output callbacks will be set by the executor
 
         # Setup execution environment
         vfs_interface = VFSInterface(vfs, process.cwd, process.euid, process.egid)
@@ -601,7 +618,8 @@ def is_pooscript(content: bytes) -> bool:
 
 def execute_pooscript(content: bytes, args: List[str], stdin: bytes,
                       env: Dict[str, str], vfs, process,
-                      process_manager=None, shell_executor=None, input_callback=None) -> Tuple[int, bytes, bytes]:
+                      process_manager=None, shell_executor=None, input_callback=None,
+                      output_callback=None, error_callback=None) -> Tuple[int, bytes, bytes]:
     """Execute a PooScript binary"""
     # Remove shebang
     lines = content.split(b'\n', 1)
@@ -615,5 +633,10 @@ def execute_pooscript(content: bytes, args: List[str], stdin: bytes,
 
     # Execute
     interpreter = PooScriptInterpreter()
+
+    # Set output callbacks for real-time flushing
+    interpreter.output_callback = output_callback
+    interpreter.error_callback = error_callback
+
     return interpreter.execute(script, args, stdin_str, env, vfs, process,
                               process_manager, shell_executor, input_callback)
