@@ -102,7 +102,7 @@ class Inode:
 class VFS:
     """Virtual Filesystem"""
 
-    def __init__(self):
+    def __init__(self, system: Optional['UnixSystem'] = None):
         self.inodes: Dict[int, Inode] = {}
         self.next_ino = 2  # Start at 2 (1 is reserved for root in real systems)
 
@@ -113,6 +113,9 @@ class VFS:
         self.input_callback = None  # For reading from stdin/tty
         self.output_callback = None  # For writing to stdout/tty
         self.error_callback = None  # For writing to stderr
+
+        # Reference to system for network device handlers
+        self.system = system
 
         # Create root directory
         now = time.time()
@@ -216,6 +219,152 @@ class VFS:
             return len(data)
 
         self.device_handlers['kmsg'] = (kmsg_read, kmsg_write)
+
+        # Network devices (lazy evaluation - requires system reference)
+        def packet_read(size):
+            """Read packet from network queue"""
+            if self.system and hasattr(self.system, 'packet_queue'):
+                packet_bytes = self.system.packet_queue.receive_packet()
+                if packet_bytes:
+                    return packet_bytes[:size] if size > 0 else packet_bytes
+            return b''
+
+        def packet_write(data):
+            """Send packet through network"""
+            if self.system and hasattr(self.system, 'packet_queue'):
+                self.system.packet_queue.send_packet(data)
+                return len(data)
+            return 0
+
+        self.device_handlers['packet'] = (packet_read, packet_write)
+
+        # /dev/net/arp - ARP table (placeholder for now)
+        def arp_read(size):
+            """Read ARP table"""
+            # Will be implemented when we add /proc/net generators
+            return b''
+
+        def arp_write(data):
+            """Manipulate ARP table"""
+            # TODO: Parse ARP entry and update table
+            return len(data)
+
+        self.device_handlers['arp'] = (arp_read, arp_write)
+
+        # /dev/net/route - Routing table (placeholder for now)
+        def route_read(size):
+            """Read routing table"""
+            # Will be implemented when we add /proc/net generators
+            return b''
+
+        def route_write(data):
+            """Add/remove routes"""
+            # TODO: Parse route entry and update routing table
+            return len(data)
+
+        self.device_handlers['route'] = (route_read, route_write)
+
+        # /dev/net/tun - TUN/TAP device (placeholder)
+        def tun_read(size):
+            return b''
+
+        def tun_write(data):
+            return len(data)
+
+        self.device_handlers['tun'] = (tun_read, tun_write)
+
+        # /proc/net/ generators - dynamic network state
+        def proc_net_dev_read(size):
+            """Generate /proc/net/dev - network interface statistics"""
+            if not self.system:
+                return b''
+
+            lines = []
+            lines.append("Inter-|   Receive                                                |  Transmit")
+            lines.append(" face |bytes    packets errs drop fifo frame compressed multicast|bytes    packets errs drop fifo colls carrier compressed")
+
+            for iface, ip in self.system.interfaces.items():
+                # Dummy statistics for now
+                rx_bytes, rx_packets = 123456, 234
+                tx_bytes, tx_packets = 234567, 345
+                lines.append(f"  {iface:5s}:{rx_bytes:8d} {rx_packets:7d}    0    0    0     0          0         0 {tx_bytes:8d} {tx_packets:7d}    0    0    0     0       0          0")
+
+            return '\n'.join(lines).encode() + b'\n'
+
+        def proc_net_arp_read(size):
+            """Generate /proc/net/arp - ARP cache"""
+            if not self.system or not self.system.network:
+                return b''
+
+            lines = []
+            lines.append("IP address       HW type     Flags       HW address            Mask     Device")
+
+            # Generate ARP entries for systems we can reach
+            for iface, ip in self.system.interfaces.items():
+                if iface == 'lo':
+                    continue
+
+                # Find neighbors on this interface's network
+                subnet_prefix = '.'.join(ip.split('.')[:3])
+
+                if self.system.network:
+                    for other_ip, other_system in self.system.network.systems.items():
+                        if other_ip.startswith(subnet_prefix) and other_ip != ip:
+                            # Generate MAC address (fake, but deterministic)
+                            octets = [int(x) for x in other_ip.split('.')]
+                            mac = f"08:00:27:{octets[1]:02x}:{octets[2]:02x}:{octets[3]:02x}"
+                            lines.append(f"{other_ip:16s} 0x1         0x2         {mac:18s}     *        {iface}")
+
+            return '\n'.join(lines).encode() + b'\n'
+
+        def proc_net_route_read(size):
+            """Generate /proc/net/route - kernel routing table"""
+            if not self.system:
+                return b''
+
+            lines = []
+            lines.append("Iface\tDestination\tGateway \tFlags\tRefCnt\tUse\tMetric\tMask\t\tMTU\tWindow\tIRTT")
+
+            # Add routes for each interface
+            for iface, ip in self.system.interfaces.items():
+                if iface == 'lo':
+                    # Loopback route
+                    lines.append(f"{iface}\t00000000\t00000000\t0001\t0\t0\t0\t00000000\t0\t0\t0")
+                else:
+                    # Network route (network/24 via this interface)
+                    octets = [int(x) for x in ip.split('.')]
+                    dest_hex = f"{octets[3]:02X}{octets[2]:02X}{octets[1]:02X}{octets[0]:02X}"
+                    mask_hex = "00FFFFFF"  # 255.255.255.0
+                    lines.append(f"{iface}\t{dest_hex}\t00000000\t0001\t0\t0\t0\t{mask_hex}\t0\t0\t0")
+
+                    # Default gateway (if set)
+                    if self.system.default_gateway:
+                        gw_octets = [int(x) for x in self.system.default_gateway.split('.')]
+                        gw_hex = f"{gw_octets[3]:02X}{gw_octets[2]:02X}{gw_octets[1]:02X}{gw_octets[0]:02X}"
+                        lines.append(f"{iface}\t00000000\t{gw_hex}\t0003\t0\t0\t0\t00000000\t0\t0\t0")
+
+            return '\n'.join(lines).encode() + b'\n'
+
+        def proc_net_tcp_read(size):
+            """Generate /proc/net/tcp - active TCP connections"""
+            lines = []
+            lines.append("  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode")
+            # TODO: Track actual connections
+            return '\n'.join(lines).encode() + b'\n'
+
+        def proc_net_udp_read(size):
+            """Generate /proc/net/udp - active UDP connections"""
+            lines = []
+            lines.append("  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode")
+            # TODO: Track actual connections
+            return '\n'.join(lines).encode() + b'\n'
+
+        # Register /proc/net handlers (read-only)
+        self.device_handlers['proc_net_dev'] = (proc_net_dev_read, lambda data: 0)
+        self.device_handlers['proc_net_arp'] = (proc_net_arp_read, lambda data: 0)
+        self.device_handlers['proc_net_route'] = (proc_net_route_read, lambda data: 0)
+        self.device_handlers['proc_net_tcp'] = (proc_net_tcp_read, lambda data: 0)
+        self.device_handlers['proc_net_udp'] = (proc_net_udp_read, lambda data: 0)
 
     def _allocate_inode(self) -> int:
         """Allocate a new inode number"""

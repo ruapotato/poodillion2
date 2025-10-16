@@ -8,6 +8,7 @@ from core.permissions import PermissionSystem
 from core.process import ProcessManager
 from core.shell import Shell
 from core.network import VirtualNetwork, NetworkCommands
+from core.packet_queue import PacketQueue
 from core.script_installer import install_scripts
 from commands.fs import FilesystemCommands
 from typing import Optional, Tuple
@@ -51,7 +52,11 @@ class UnixSystem:
         self.permissions = PermissionSystem()
         self.processes = ProcessManager()
         self.network: Optional[VirtualNetwork] = None
+        self.packet_queue = PacketQueue(self, self.network)
         self.shell = Shell(self.vfs, self.permissions, self.processes, self.network, self.ip, system=self)
+
+        # Wire VFS to system (for network device handlers)
+        self.vfs.system = self
 
         # Network configuration
         self.firewall_rules = []     # Firewall rules managed by iptables
@@ -128,6 +133,13 @@ class UnixSystem:
         self.vfs.mkdir('/dev/pts', 0o755, 0, 0)
         self.vfs.create_device('/dev/pts/0', True, 0, 0, device_name='tty')
 
+        # Network devices
+        self.vfs.mkdir('/dev/net', 0o755, 0, 0)
+        self.vfs.create_device('/dev/net/tun', True, 0, 0, device_name='tun')
+        self.vfs.create_device('/dev/net/packet', True, 0, 0, device_name='packet')
+        self.vfs.create_device('/dev/net/arp', True, 0, 0, device_name='arp')
+        self.vfs.create_device('/dev/net/route', True, 0, 0, device_name='route')
+
         # Create /proc/sys/net for network configuration
         self.vfs.mkdir('/proc/sys', 0o555, 0, 0)
         self.vfs.mkdir('/proc/sys/net', 0o555, 0, 0)
@@ -135,6 +147,14 @@ class UnixSystem:
 
         # IP forwarding control (0 = disabled, 1 = enabled)
         self.vfs.create_file('/proc/sys/net/ipv4/ip_forward', 0o644, 0, 0, b'0\n', 1)
+
+        # Create /proc/net for network state (as device files for dynamic content)
+        self.vfs.mkdir('/proc/net', 0o555, 0, 0)
+        self.vfs.create_device('/proc/net/dev', True, 0, 0, device_name='proc_net_dev')
+        self.vfs.create_device('/proc/net/arp', True, 0, 0, device_name='proc_net_arp')
+        self.vfs.create_device('/proc/net/route', True, 0, 0, device_name='proc_net_route')
+        self.vfs.create_device('/proc/net/tcp', True, 0, 0, device_name='proc_net_tcp')
+        self.vfs.create_device('/proc/net/udp', True, 0, 0, device_name='proc_net_udp')
 
         # Install PooScript commands from scripts/ directory
         print("Installing PooScript commands...")
@@ -200,6 +220,9 @@ class UnixSystem:
     def add_network(self, network: VirtualNetwork):
         """Attach system to a virtual network"""
         self.network = network
+
+        # Update packet queue's network reference
+        self.packet_queue.network = network
 
         # Register system for ALL its IP addresses (not just primary)
         # This allows routing to work with multi-interface systems
