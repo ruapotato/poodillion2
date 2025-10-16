@@ -190,6 +190,7 @@ class ShellExecutor:
         self.processes = processes
         self.builtins: Dict[str, Callable] = {}
         self.commands: Dict[str, Callable] = {}
+        self.path_dirs = ['/bin', '/usr/bin', '/sbin', '/usr/sbin']
 
     def register_builtin(self, name: str, func: Callable):
         """Register a shell builtin command"""
@@ -198,6 +199,18 @@ class ShellExecutor:
     def register_command(self, name: str, func: Callable):
         """Register an executable command"""
         self.commands[name] = func
+
+    def find_binary(self, name: str, cwd: int) -> Optional[str]:
+        """
+        Check if a binary exists in PATH
+        Returns binary path if found, None otherwise
+        """
+        for path_dir in self.path_dirs:
+            binary_path = f'{path_dir}/{name}'
+            inode = self.vfs.stat(binary_path, cwd)
+            if inode:
+                return binary_path
+        return None
 
     def execute_pipeline(self, pipeline: Pipeline, current_pid: int, input_data: bytes = b'') -> Tuple[int, bytes, bytes]:
         """
@@ -243,11 +256,25 @@ class ShellExecutor:
                 return 1, b'', f'Cannot open {command.stdin_redirect}\n'.encode()
             input_data = file_content
 
-        # Check if it's a builtin
+        # Check if it's a builtin (builtins don't need filesystem binaries)
         if command.executable in self.builtins:
             func = self.builtins[command.executable]
             exit_code, stdout, stderr = func(command, current_pid, input_data)
         elif command.executable in self.commands:
+            # For regular commands, check if binary exists in filesystem
+            binary_path = self.find_binary(command.executable, process.cwd)
+            if not binary_path:
+                return 127, b'', f'{command.executable}: command not found\n'.encode()
+
+            # Check execute permissions
+            binary_inode = self.vfs.stat(binary_path, process.cwd)
+            if not binary_inode:
+                return 127, b'', f'{command.executable}: command not found\n'.encode()
+
+            if not self.permissions.can_execute(process.uid, binary_inode.mode,
+                                               binary_inode.uid, binary_inode.gid):
+                return 126, b'', f'{command.executable}: Permission denied\n'.encode()
+
             func = self.commands[command.executable]
             exit_code, stdout, stderr = func(command, current_pid, input_data)
         else:

@@ -76,7 +76,7 @@ class UnixSystem:
 
         # Populate /bin with "executable" files (just placeholders)
         binaries = ['ls', 'cat', 'grep', 'ps', 'kill', 'echo', 'mkdir', 'rm',
-                    'touch', 'sh', 'bash', 'cp', 'mv', 'chmod', 'chown', 'tar',
+                    'touch', 'sh', 'bash', 'cp', 'mv', 'chmod', 'chown', 'ln', 'tar',
                     'gzip', 'gunzip', 'date', 'hostname', 'netstat', 'mount']
 
         for binary in binaries:
@@ -122,6 +122,10 @@ class UnixSystem:
         """
         self.vfs.create_file('/etc/motd', 0o644, 0, 0, motd, 1)
 
+        # Create standard Unix symlinks for realism
+        self.vfs.symlink('/bin/bash', '/bin/sh', 0, 0, 1)  # sh -> bash
+        self.vfs.symlink('/usr/bin/python3', '/usr/bin/python', 0, 0, 1)  # python -> python3
+
     def _register_commands(self):
         """Register all available commands"""
         # Filesystem commands
@@ -136,6 +140,9 @@ class UnixSystem:
         self.shell.register_command('echo', fs_cmds.cmd_echo)
         self.shell.register_command('grep', fs_cmds.cmd_grep)
         self.shell.register_command('find', fs_cmds.cmd_find)
+        self.shell.register_command('chmod', fs_cmds.cmd_chmod)
+        self.shell.register_command('chown', fs_cmds.cmd_chown)
+        self.shell.register_command('ln', fs_cmds.cmd_ln)
 
         # Process commands
         proc_cmds = ProcessCommands(self.vfs, self.permissions, self.processes)

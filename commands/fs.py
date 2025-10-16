@@ -305,3 +305,156 @@ class FilesystemCommands:
                     return f'{parent_path}/{name}'
 
         return '???'
+
+    def cmd_chmod(self, command, current_pid: int, input_data: bytes) -> Tuple[int, bytes, bytes]:
+        """Change file permissions"""
+        process = self.processes.get_process(current_pid)
+        if not process:
+            return 1, b'', b'Process not found\n'
+
+        if len(command.args) < 2:
+            return 1, b'', b'chmod: missing operand\n'
+
+        mode_str = command.args[0]
+        paths = command.args[1:]
+
+        # Parse mode (only support octal for now, e.g., 755)
+        try:
+            if mode_str.startswith('+') or mode_str.startswith('-'):
+                # Symbolic mode (simplified: +x, -x, +w, -w, +r, -r)
+                for path in paths:
+                    inode = self.vfs.stat(path, process.cwd)
+                    if not inode:
+                        return 1, b'', f'chmod: {path}: No such file or directory\n'.encode()
+
+                    # Only root or owner can chmod
+                    if process.uid != 0 and process.uid != inode.uid:
+                        return 1, b'', f'chmod: {path}: Permission denied\n'.encode()
+
+                    current_perms = inode.mode & 0o777
+                    if mode_str == '+x':
+                        new_perms = current_perms | 0o111  # Add execute for all
+                    elif mode_str == '-x':
+                        new_perms = current_perms & ~0o111  # Remove execute for all
+                    elif mode_str == '+w':
+                        new_perms = current_perms | 0o222  # Add write for all
+                    elif mode_str == '-w':
+                        new_perms = current_perms & ~0o222  # Remove write for all
+                    elif mode_str == '+r':
+                        new_perms = current_perms | 0o444  # Add read for all
+                    elif mode_str == '-r':
+                        new_perms = current_perms & ~0o444  # Remove read for all
+                    else:
+                        return 1, b'', f'chmod: invalid mode: {mode_str}\n'.encode()
+
+                    inode.mode = (inode.mode & ~0o777) | new_perms
+                    inode.ctime = time.time()
+            else:
+                # Octal mode (e.g., 755, 644)
+                new_perms = int(mode_str, 8)
+                if new_perms > 0o777:
+                    return 1, b'', f'chmod: invalid mode: {mode_str}\n'.encode()
+
+                for path in paths:
+                    inode = self.vfs.stat(path, process.cwd)
+                    if not inode:
+                        return 1, b'', f'chmod: {path}: No such file or directory\n'.encode()
+
+                    # Only root or owner can chmod
+                    if process.uid != 0 and process.uid != inode.uid:
+                        return 1, b'', f'chmod: {path}: Permission denied\n'.encode()
+
+                    # Preserve file type, update permissions
+                    inode.mode = (inode.mode & ~0o777) | new_perms
+                    inode.ctime = time.time()
+
+        except ValueError:
+            return 1, b'', f'chmod: invalid mode: {mode_str}\n'.encode()
+
+        return 0, b'', b''
+
+    def cmd_chown(self, command, current_pid: int, input_data: bytes) -> Tuple[int, bytes, bytes]:
+        """Change file ownership"""
+        process = self.processes.get_process(current_pid)
+        if not process:
+            return 1, b'', b'Process not found\n'
+
+        # Only root can chown
+        if process.uid != 0:
+            return 1, b'', b'chown: Operation not permitted\n'
+
+        if len(command.args) < 2:
+            return 1, b'', b'chown: missing operand\n'
+
+        owner_spec = command.args[0]
+        paths = command.args[1:]
+
+        # Parse owner:group or just owner
+        if ':' in owner_spec:
+            owner_str, group_str = owner_spec.split(':', 1)
+        else:
+            owner_str = owner_spec
+            group_str = None
+
+        # Resolve username/UID
+        if owner_str.isdigit():
+            new_uid = int(owner_str)
+        else:
+            user = self.permissions.get_user_by_name(owner_str)
+            if not user:
+                return 1, b'', f'chown: invalid user: {owner_str}\n'.encode()
+            new_uid = user.uid
+
+        # Resolve group if specified
+        new_gid = None
+        if group_str:
+            if group_str.isdigit():
+                new_gid = int(group_str)
+            else:
+                group = self.permissions.get_group_by_name(group_str)
+                if not group:
+                    return 1, b'', f'chown: invalid group: {group_str}\n'.encode()
+                new_gid = group.gid
+
+        # Change ownership
+        for path in paths:
+            inode = self.vfs.stat(path, process.cwd)
+            if not inode:
+                return 1, b'', f'chown: {path}: No such file or directory\n'.encode()
+
+            inode.uid = new_uid
+            if new_gid is not None:
+                inode.gid = new_gid
+            inode.ctime = time.time()
+
+        return 0, b'', b''
+
+    def cmd_ln(self, command, current_pid: int, input_data: bytes) -> Tuple[int, bytes, bytes]:
+        """Create links"""
+        process = self.processes.get_process(current_pid)
+        if not process:
+            return 1, b'', b'Process not found\n'
+
+        if len(command.args) < 2:
+            return 1, b'', b'ln: missing operand\n'
+
+        # Check for -s flag (symbolic link)
+        symbolic = '-s' in command.args
+        args = [arg for arg in command.args if not arg.startswith('-')]
+
+        if len(args) < 2:
+            return 1, b'', b'ln: missing operand\n'
+
+        target = args[0]
+        linkpath = args[1]
+
+        if symbolic:
+            # Create symbolic link
+            success = self.vfs.symlink(target, linkpath, process.uid, process.gid, process.cwd)
+            if not success:
+                return 1, b'', f'ln: failed to create symbolic link {linkpath}\n'.encode()
+        else:
+            # Hard links not fully implemented yet
+            return 1, b'', b'ln: hard links not yet supported\n'
+
+        return 0, b'', b''
