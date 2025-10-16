@@ -169,42 +169,57 @@ def interactive_shell(system, network, username='root', password='root'):
     system.vfs.output_callback = output_callback
     system.vfs.error_callback = error_callback
 
-    # Execute shell and check for SSH requests
-    try:
-        exit_code, stdout, stderr = system.shell.execute('/bin/pooshell', system.shell_pid, b'')
+    # Main shell loop - keeps running until normal exit
+    # Exit code 255 = SSH request, restart shell after SSH session ends
+    while True:
+        try:
+            exit_code, stdout, stderr = system.shell.execute('/bin/pooshell', system.shell_pid, b'')
 
-        # Check if SSH was requested
-        ssh_request = system.vfs.read_file('/tmp/.ssh_request', 1)
-        if ssh_request:
-            request = ssh_request.decode('utf-8', errors='ignore').strip()
-            if '|' in request:
-                target_user, target_host = request.split('|', 1)
+            # Check exit code - 255 means SSH request
+            if exit_code == 255:
+                # Read SSH request
+                ssh_request = system.vfs.read_file('/tmp/.ssh_request', 1)
+                if ssh_request:
+                    request = ssh_request.decode('utf-8', errors='ignore').strip()
+                    if '|' in request:
+                        target_user, target_host = request.split('|', 1)
 
-                # Clear the request
-                system.vfs.write_file('/tmp/.ssh_request', b'', 1)
+                        # Clear the request
+                        system.vfs.write_file('/tmp/.ssh_request', b'', 1)
 
-                # Find target system in network
-                target_system = network.systems.get(target_host)
-                if target_system:
-                    # Recursively connect to target system
-                    ssh_stack.append(system)
-                    success = interactive_shell(target_system, network, target_user, 'root')
+                        # Find target system in network
+                        target_system = network.systems.get(target_host)
+                        if target_system:
+                            # Check if target is alive
+                            if not target_system.is_alive():
+                                print(f'\nssh: connect to host {target_host} port 22: No route to host (system is down)')
+                                # Continue shell on current system
+                                continue
 
-                    # After returning from SSH, continue current shell
-                    if success:
-                        print(f'\nConnection to {target_host} closed.')
-                        print(f'Back on {system.hostname} ({system.ip})')
-                        # Continue shell on current system
-                        return interactive_shell(system, network, username, password)
-                else:
-                    print(f'\nssh: Could not resolve hostname {target_host}')
-                    # Continue shell on current system
-                    return interactive_shell(system, network, username, password)
+                            # Recursively connect to target system
+                            success = interactive_shell(target_system, network, target_user, 'root')
 
-    except KeyboardInterrupt:
-        print('\n^C')
-    except Exception as e:
-        print(f'Error: {e}', file=sys.stderr)
+                            # After returning from SSH, continue current shell
+                            print(f'\nConnection to {target_host} closed.')
+                            print(f'Back on {system.hostname} ({system.ip})')
+                            # Loop will restart pooshell on current system
+                            continue
+                        else:
+                            print(f'\nssh: Could not resolve hostname {target_host}')
+                            # Continue shell on current system
+                            continue
+                # If no valid SSH request, treat as normal exit
+                break
+            else:
+                # Normal exit (exit code 0) or error - stop shell loop
+                break
+
+        except KeyboardInterrupt:
+            print('\n^C')
+            break
+        except Exception as e:
+            print(f'Error: {e}', file=sys.stderr)
+            break
 
     return True
 

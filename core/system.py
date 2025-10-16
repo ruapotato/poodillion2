@@ -64,6 +64,10 @@ class UnixSystem:
         self.ip_forward = False      # IP forwarding enabled (acts as router)
         self.default_gateway = None  # Default gateway for outbound traffic
 
+        # System state
+        self.running = False         # Is system currently running/alive
+        self.crashed = False         # Has system crashed
+
         # Current user shell process
         self.shell_pid: Optional[int] = None
 
@@ -199,6 +203,10 @@ class UnixSystem:
         Boot the system by running /sbin/init
         Returns True if boot successful
         """
+        # Mark system as running
+        self.running = True
+        self.crashed = False
+
         # Check if init exists
         init_binary = self.vfs.stat('/sbin/init', 1)
         if not init_binary:
@@ -216,6 +224,21 @@ class UnixSystem:
             return exit_code == 0
 
         return False
+
+    def shutdown(self):
+        """Gracefully shutdown the system"""
+        self.running = False
+        print(f"System {self.hostname} shutting down...")
+
+    def crash(self):
+        """Simulate a system crash (ungraceful shutdown)"""
+        self.running = False
+        self.crashed = True
+        print(f"KERNEL PANIC: System {self.hostname} has crashed!")
+
+    def is_alive(self) -> bool:
+        """Check if system is running and can process packets"""
+        return self.running and not self.crashed
 
     def add_network(self, network: VirtualNetwork):
         """Attach system to a virtual network"""

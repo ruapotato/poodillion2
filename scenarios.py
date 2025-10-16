@@ -46,6 +46,11 @@ def create_scenario_zero():
         b'  - You can SSH from any system to any other system\n'
         b'  - Try: ssh 192.168.1.10\n'
         b'  - Try: ssh 192.168.1.1\n\n'
+        b'ADVANCED:\n'
+        b'  - Multi-hop SSH: ssh to A, then ssh to B, then ssh to C\n'
+        b'  - Type "exit" repeatedly to return through the chain\n'
+        b'  - Try "shutdown" to take a system offline\n'
+        b'  - After shutdown, ping/ssh will fail until system reboots\n\n'
         b'Have fun exploring!\n',
         1
     )

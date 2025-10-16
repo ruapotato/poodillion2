@@ -244,6 +244,18 @@ class SystemInterface:
         """Set default gateway"""
         self._system.default_gateway = gateway
 
+    def shutdown(self) -> None:
+        """Gracefully shutdown the system"""
+        self._system.shutdown()
+
+    def crash(self) -> None:
+        """Simulate a system crash"""
+        self._system.crash()
+
+    def is_alive(self) -> bool:
+        """Check if system is running"""
+        return self._system.is_alive()
+
 
 class ProcessInterface:
     """Safe process access for scripts"""

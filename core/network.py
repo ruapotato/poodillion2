@@ -83,10 +83,14 @@ class VirtualNetwork:
         """
         Find network path from source to destination using BFS
         Returns path as list of IPs, or None if no route exists
-        Respects ip_forward flag on intermediate systems
+        Respects ip_forward flag AND system alive state on intermediate systems
         """
         # Direct connection?
         if from_ip in self.connections and to_ip in self.connections.get(from_ip, set()):
+            # Check if destination system is alive
+            dest_system = self.systems.get(to_ip)
+            if dest_system and not dest_system.is_alive():
+                return None  # Destination is down
             return [from_ip, to_ip]
 
         # BFS to find path through routers
@@ -100,6 +104,11 @@ class VirtualNetwork:
             # Get the system at this IP
             current_system = self.systems.get(current_ip)
             if current_system:
+                # Check if this intermediate system is alive
+                if len(path) > 1 and not current_system.is_alive():
+                    # Intermediate router/system is down, can't route through it
+                    continue
+
                 # Mark this system as visited
                 system_id = id(current_system)
                 if system_id in visited_systems:
@@ -111,6 +120,12 @@ class VirtualNetwork:
                 if next_ip in visited_ips:
                     continue
 
+                # Check if next hop system is alive
+                next_system = self.systems.get(next_ip)
+                if next_system and not next_system.is_alive():
+                    # Next hop is down, skip it
+                    continue
+
                 visited_ips.add(next_ip)
                 new_path = path + [next_ip]
 
@@ -119,8 +134,8 @@ class VirtualNetwork:
                     return new_path
 
                 # Can this system forward packets to other networks?
-                next_system = self.systems.get(next_ip)
-                if next_system and getattr(next_system, 'ip_forward', False):
+                # Only if it's alive AND has ip_forward enabled
+                if next_system and next_system.is_alive() and getattr(next_system, 'ip_forward', False):
                     # This is a router - continue searching from ALL its interfaces
                     # Check routes from ALL interfaces of this system
                     for interface, interface_ip in next_system.interfaces.items():
