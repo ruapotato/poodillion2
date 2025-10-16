@@ -84,12 +84,21 @@ def create_december_1990_world():
     cybermart.add_network(network)
 
     # ========================================
+    # PACKAGE REPOSITORY - Auto-Update Attack Vector!
+    # ========================================
+
+    # Package repository server
+    repo_server = UnixSystem('packages.repo.net', '192.168.6.10')
+    repo_server.description = "Package Repository - Source of all updates"
+    repo_server.add_network(network)
+
+    # ========================================
     # NETWORK ROUTING - Connect all systems
     # ========================================
 
     # Allow attacker to reach all systems
     ips = ['192.168.1.10', '192.168.1.11', '192.168.2.50', '192.168.3.100',
-           '192.168.4.66', '192.168.5.100', '192.168.99.1']
+           '192.168.4.66', '192.168.5.100', '192.168.6.10', '192.168.99.1']
 
     for ip in ips:
         network.add_route('192.168.13.37', ip)
@@ -113,6 +122,7 @@ def create_december_1990_world():
     populate_nexus(nexus)
     populate_research(research)
     populate_cybermart(cybermart)
+    populate_repo_server(repo_server)
 
     # All systems
     all_systems = [
@@ -123,7 +133,8 @@ def create_december_1990_world():
         university,
         nexus,
         research,
-        cybermart
+        cybermart,
+        repo_server
     ]
 
     return attacker, network, all_systems
@@ -909,4 +920,123 @@ For support contact: admin@cybermart.com
 
     # Add admin user to the system
     system.add_user('admin', 'cyber@mart90', 1000, '/home/admin')
+
+
+def populate_repo_server(system):
+    """Populate the package repository server - THE ATTACK VECTOR!"""
+    vfs = system.vfs
+
+    # Create repository directory structure
+    vfs.mkdir('/repo', 0o755, 0, 0, 1)
+    vfs.mkdir('/repo/packages', 0o777, 0, 0, 1)  # WORLD-WRITABLE! Vulnerability!
+
+    # Create README explaining the "misconfiguration"
+    vfs.create_file('/repo/README', 0o644, 0, 0, """POODILLION PACKAGE REPOSITORY
+
+Server: packages.repo.net (192.168.6.10)
+Repository root: /repo/
+
+STRUCTURE:
+  /repo/PACKAGES.txt           - Package index
+  /repo/packages/<name>/<ver>/ - Package files
+
+UPDATING PACKAGES:
+  1. Create package with pooget-build
+  2. Upload to /repo/packages/<name>/<version>/
+  3. Update PACKAGES.txt index
+  4. Systems will auto-update within minutes!
+
+ADMIN NOTE:
+  TODO: Fix permissions on /repo/packages/ directory
+  Currently world-writable - SECURITY RISK!
+  Anyone can upload packages!
+
+For questions: repo-admin@packages.repo.net
+""".encode('utf-8'), 1)
+
+    # Create the PACKAGES.txt index (will be served via HTTP)
+    vfs.create_file('/repo/PACKAGES.txt', 0o644, 0, 0, """# Poodillion Package Repository
+# Format: name|version|category|description|checksum
+#
+# Last updated: December 24, 1990
+# Repository: packages.repo.net
+
+nethack|3.0|games|Dungeon exploration game|check1234
+rogue|5.3|games|Classic roguelike dungeon crawler|check5678
+adventure|1.0|games|Colossal Cave Adventure|check9012
+worm|1.1|games|Snake game for terminals|check3456
+
+utils-extra|1.0|utils|Additional text utilities|check7890
+compression|1.2|utils|Compression tools|check8901
+fileutils|2.0|utils|Advanced file utilities|check2345
+
+nettools-advanced|1.5|net|Advanced networking tools|check3456
+ftp-client|0.9|net|FTP client for file transfers|check4567
+irc-client|1.0|net|Internet Relay Chat client|check5678
+finger-client|1.0|net|Finger protocol client|check6789
+
+hacktools-basic|1.0|hacking|Basic hacking utilities|check7890
+exploit-framework|0.5|hacking|Simple exploit framework|check8901
+password-tools|1.1|hacking|Password cracking utilities|check9012
+""".encode('utf-8'), 1)
+
+    # Create sample package directories
+    vfs.mkdir('/repo/packages/nethack', 0o777, 0, 0, 1)
+    vfs.mkdir('/repo/packages/nethack/3.0', 0o777, 0, 0, 1)
+
+    # Create simple nethack package
+    vfs.create_file('/repo/packages/nethack/3.0/nethack.poo-pkg', 0o644, 0, 0, """#!/usr/bin/pooscript
+# NetHack - Simple dungeon crawler for Poodillion
+print("NetHack 3.0 - Dungeon Exploration Game")
+print("Exploring the depths...")
+print("(This is a demo version)")
+exit(0)
+""".encode('utf-8'), 1)
+
+    # Create HTTP server config (served by httpd daemon)
+    vfs.mkdir('/www', 0o755, 0, 0, 1)
+
+    # Symlink /www/repo to /repo so HTTP server can serve it
+    vfs.symlink('/repo', '/www/repo', 0, 0, 1)
+
+    # Create admin note about the vulnerability
+    vfs.create_file('/home/admin/SECURITY_TODO.txt', 0o644, 0, 0, """SECURITY ISSUES TO FIX
+
+CRITICAL:
+  [X] /repo/packages/ directory is WORLD-WRITABLE!
+      Anyone can upload malicious packages!
+      Fix: chmod 755 /repo/packages/
+      Status: TODO (low priority?)
+
+HIGH:
+  [ ] No package signature verification
+  [ ] No checksum validation on uploads
+  [ ] No access control on repository
+
+MEDIUM:
+  [ ] HTTP instead of HTTPS
+  [ ] No rate limiting on downloads
+  [ ] No logging of who uploads what
+
+The boss says it's "fine for now" since it's an internal network.
+But I'm worried someone might upload a backdoored package...
+
+- Admin, Dec 24, 1990
+""".encode('utf-8'), 1)
+
+    # Create mission file for players to find
+    vfs.create_file('/repo/MISSION_HINT.txt', 0o644, 0, 0, """If you're reading this, you're probably looking for a way in.
+
+The /repo/packages/ directory has... interesting permissions.
+Systems across the network auto-update every few minutes.
+What could go wrong? :)
+
+Hint: pooget-build is your friend.
+""".encode('utf-8'), 1)
+
+    # Setup HTTP daemon to serve the repository
+    # This will be handled by the HTTP server infrastructure
+
+    print(f"  Repository server: {system.hostname} ({system.ip})")
+    print(f"    WARNING: /repo/packages/ is world-writable!")
 
