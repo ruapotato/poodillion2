@@ -1,82 +1,64 @@
 #!/usr/bin/env python3
 """
 Poodillion 2 - Virtual Unix Hacking Game
-Main entry point with scenario selection
+December 1990 - The Early Internet
+
+Auto-starts into an immersive hacking world.
+Find missions by reading files in /missions/
 """
 
 import sys
 import readline
-from scenarios import SCENARIOS, list_scenarios
+from world_1990 import create_december_1990_world
 
 
-def print_banner():
-    """Print game banner"""
+def print_intro():
+    """Print atmospheric introduction"""
     print("""
 ╔═══════════════════════════════════════════════════════════════╗
 ║                                                               ║
-║   ██████╗  ██████╗  ██████╗ ██████╗ ██╗██╗     ██╗ ██████╗  ║
-║   ██╔══██╗██╔═══██╗██╔═══██╗██╔══██╗██║██║     ██║██╔═══██╗ ║
-║   ██████╔╝██║   ██║██║   ██║██║  ██║██║██║     ██║██║   ██║ ║
-║   ██╔═══╝ ██║   ██║██║   ██║██║  ██║██║██║     ██║██║   ██║ ║
-║   ██║     ╚██████╔╝╚██████╔╝██████╔╝██║███████╗██║╚██████╔╝ ║
-║   ╚═╝      ╚═════╝  ╚═════╝ ╚═════╝ ╚═╝╚══════╝╚═╝ ╚═════╝  ║
+║                    CONNECTING TO HOST...                      ║
 ║                                                               ║
-║              Virtual Unix Hacking Environment                ║
-║                    Version 2.0 - PooScript                   ║
+║                  [████████████████████]                       ║
+║                                                               ║
+║                    Connection Established                     ║
 ║                                                               ║
 ╚═══════════════════════════════════════════════════════════════╝
+
+╔═══════════════════════════════════════════════════════════════╗
+║                                                               ║
+║                      December 24, 1990                        ║
+║                        03:47:22 GMT                           ║
+║                                                               ║
+║   You've accessed a private network through a mysterious     ║
+║   invitation. The terminal flickers. Messages scroll by.     ║
+║   Something strange is happening on the net tonight...       ║
+║                                                               ║
+║   Your terminal: kali-box (192.168.13.37)                    ║
+║   Location: Unknown                                           ║
+║   Access Level: Guest                                         ║
+║                                                               ║
+╚═══════════════════════════════════════════════════════════════╝
+
+[SYSTEM] Welcome to the network, traveler.
+[SYSTEM] Type 'cat /missions/README' to see available missions.
+[SYSTEM] Type 'help' or 'ls /bin' to see available commands.
+[SYSTEM] The web browser is 'lynx' - try: lynx bbs.cyberspace.net
+
+Good luck. You'll need it.
+
 """)
-
-
-def print_scenario_menu():
-    """Print scenario selection menu"""
-    print("\n=== SELECT YOUR MISSION ===\n")
-
-    scenarios = list_scenarios()
-
-    for scenario in scenarios:
-        diff_color = {
-            'Tutorial': '📘',
-            'Easy': '🟢',
-            'Medium': '🟡',
-            'Hard': '🔴',
-        }.get(scenario['difficulty'], '⚪')
-
-        print(f"[{scenario['key']}] {diff_color} {scenario['title']}")
-        print(f"    {scenario['description']}")
-        print(f"    Difficulty: {scenario['difficulty']}")
-        print()
-
-    print("[Q] Quit")
-    print()
 
 
 def interactive_shell(system, network, username='root', password='root'):
     """
     Run interactive shell on a system with SSH support
-
-    Args:
-        system: The UnixSystem to connect to
-        network: The VirtualNetwork containing all systems
-        username: Username to login as
-        password: Password for authentication
     """
-    print(f'\n=== {system.hostname} ({system.ip}) ===')
-    print(f'Logging in as {username}...')
-
-    # Auto-login
+    # Auto-login (silent)
     login_result = system.login(username, password)
-    print(f'[DEBUG] Login result: {login_result}, shell_pid: {system.shell_pid}')
     if not login_result:
-        print('Login failed!')
+        print('Connection failed!')
         return False
-
-    # Show MOTD
-    motd = system.vfs.read_file('/etc/motd', 1)
-    if motd:
-        print(motd.decode('utf-8', errors='ignore'))
-
-    print()
 
     # Set up tab completion
     def completer(text, state):
@@ -141,9 +123,6 @@ def interactive_shell(system, network, username='root', password='root'):
     readline.parse_and_bind('tab: complete')
     readline.set_completer_delims(' \t\n;')
 
-    # SSH context tracking
-    ssh_stack = []
-
     # Set up I/O callbacks
     def input_callback(prompt):
         """Provide input to PooScript"""
@@ -171,57 +150,41 @@ def interactive_shell(system, network, username='root', password='root'):
     system.vfs.output_callback = output_callback
     system.vfs.error_callback = error_callback
 
-    # Main shell loop - keeps running until normal exit
-    # Exit code 255 = SSH request, restart shell after SSH session ends
+    # Main shell loop
     while True:
         try:
-            print(f'[DEBUG] About to execute pooshell on {system.hostname}')
             exit_code, stdout, stderr = system.shell.execute('/bin/pooshell', system.shell_pid, b'')
-            print(f'[DEBUG] Pooshell exited with code: {exit_code}')
 
-            # Check if system was shut down during this session
+            # Check if system was shut down
             if not system.is_alive():
                 print(f'\n[Connection lost: {system.hostname} has shut down]')
                 print(f'Connection to {system.ip} closed.')
                 return False
 
-            # Check exit code - 255 means SSH request
+            # Check for SSH request
             if exit_code == 255:
-                # Read SSH request
                 ssh_request = system.vfs.read_file('/tmp/.ssh_request', 1)
                 if ssh_request:
                     request = ssh_request.decode('utf-8', errors='ignore').strip()
                     if '|' in request:
                         target_user, target_host = request.split('|', 1)
-
-                        # Clear the request
                         system.vfs.write_file('/tmp/.ssh_request', b'', 1)
 
-                        # Find target system in network
                         target_system = network.systems.get(target_host)
                         if target_system:
-                            # Check if target is alive
                             if not target_system.is_alive():
-                                print(f'\nssh: connect to host {target_host} port 22: No route to host (system is down)')
-                                # Continue shell on current system
+                                print(f'\nssh: connect to host {target_host} port 22: No route to host')
                                 continue
 
-                            # Recursively connect to target system
                             success = interactive_shell(target_system, network, target_user, 'root')
-
-                            # After returning from SSH, continue current shell
                             print(f'\nConnection to {target_host} closed.')
                             print(f'Back on {system.hostname} ({system.ip})')
-                            # Loop will restart pooshell on current system
                             continue
                         else:
                             print(f'\nssh: Could not resolve hostname {target_host}')
-                            # Continue shell on current system
                             continue
-                # If no valid SSH request, treat as normal exit
                 break
             else:
-                # Normal exit (exit code 0) or error - stop shell loop
                 break
 
         except KeyboardInterrupt:
@@ -234,79 +197,31 @@ def interactive_shell(system, network, username='root', password='root'):
     return True
 
 
-def play_scenario(scenario_key):
-    """Play a specific scenario"""
-    if scenario_key not in SCENARIOS:
-        print(f"Error: Unknown scenario '{scenario_key}'")
-        return
+def main():
+    """Main entry point - auto-start the world"""
+    print_intro()
 
-    print(f"\n{'='*60}")
-    print("LOADING SCENARIO...")
-    print(f"{'='*60}\n")
+    # Create the December 1990 world
+    print("[SYSTEM] Initializing network...\n")
+    attacker, network, systems = create_december_1990_world()
 
-    # Create scenario
-    create_scenario = SCENARIOS[scenario_key]
-    attacker, network, metadata = create_scenario()
-
-    # Print mission briefing
-    print(f"\n{'='*60}")
-    print(f"MISSION: {metadata['title']}")
-    print(f"{'='*60}")
-    print(f"\n{metadata['description']}")
-    print(f"\nObjective: {metadata['objective']}")
-    print(f"Difficulty: {metadata['difficulty']}")
-    print(f"\nSystems on network: {len(metadata['systems'])}")
-
-    for sys in metadata['systems']:
-        print(f"  - {sys.hostname} ({sys.ip})")
-
-    print(f"\n{'='*60}")
-
-    # Boot ALL systems in the network
-    print('\n=== Booting Network Systems ===\n')
-    for system in metadata['systems']:
-        print(f"Booting {system.hostname} ({system.ip})...")
+    # Boot all systems
+    print("[SYSTEM] Bringing systems online...\n")
+    for system in systems:
         system.boot()
 
-    print("\n✓ All systems online")
-    print("✓ Network fully emulated")
-    print("\nYou are now connected to your attacking machine.")
-    print("Use 'ssh <ip>' to connect to other systems.")
-    print("Good luck!\n")
+    print("[SYSTEM] All systems operational.\n")
+    print("="*60)
+    print()
 
-    # Start interactive shell on attacker system
+    # Start the game
     interactive_shell(attacker, network)
 
-    # Post-game
-    print("\n\nThanks for playing!")
-    print("Did you complete the objective? Try a harder scenario!\n")
-
-
-def main():
-    """Main entry point"""
-    print_banner()
-
-    while True:
-        print_scenario_menu()
-
-        try:
-            choice = input("Select a scenario (0-3, Q to quit): ").strip().upper()
-        except (EOFError, KeyboardInterrupt):
-            print("\n\nExiting...")
-            sys.exit(0)
-
-        if choice == 'Q':
-            print("\nExiting...")
-            sys.exit(0)
-
-        if choice in SCENARIOS:
-            play_scenario(choice)
-            # After scenario ends, return to menu
-            print("\n" + "="*60)
-            input("Press Enter to return to main menu...")
-        else:
-            print(f"\nInvalid choice: {choice}")
-            print("Please select 0, 1, 2, 3, or Q")
+    # Farewell
+    print("\n\n╔═══════════════════════════════════════════════════════════════╗")
+    print("║              Connection terminated.                           ║")
+    print("║              See you in the network, traveler.                ║")
+    print("╚═══════════════════════════════════════════════════════════════╝\n")
 
 
 if __name__ == '__main__':
