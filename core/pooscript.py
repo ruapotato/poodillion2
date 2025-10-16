@@ -257,6 +257,117 @@ class SystemInterface:
         return self._system.is_alive()
 
 
+class KernelInterface:
+    """Low-level kernel syscall interface for scripts"""
+
+    def __init__(self, kernel, pid: int):
+        """
+        Initialize kernel interface
+
+        Args:
+            kernel: Kernel instance (from core.kernel)
+            pid: Process ID making syscalls
+        """
+        self._kernel = kernel
+        self._pid = pid
+
+    # File operations
+    def open(self, path: str, flags: int = 0, mode: int = 0o644) -> int:
+        """Open file and return file descriptor"""
+        return self._kernel.sys_open(self._pid, path, flags, mode)
+
+    def read(self, fd: int, count: int) -> bytes:
+        """Read from file descriptor"""
+        result = self._kernel.sys_read(self._pid, fd, count)
+        return result if result is not None else b''
+
+    def write(self, fd: int, data: bytes) -> int:
+        """Write to file descriptor"""
+        return self._kernel.sys_write(self._pid, fd, data)
+
+    def close(self, fd: int) -> int:
+        """Close file descriptor"""
+        return self._kernel.sys_close(self._pid, fd)
+
+    def stat(self, path: str) -> dict:
+        """Get file status"""
+        result = self._kernel.sys_stat(self._pid, path)
+        if result is None:
+            raise RuntimeError(f"stat: {path}: No such file or directory")
+        return result
+
+    # Directory operations
+    def mkdir(self, path: str, mode: int = 0o755) -> int:
+        """Create directory"""
+        return self._kernel.sys_mkdir(self._pid, path, mode)
+
+    def unlink(self, path: str) -> int:
+        """Remove file or directory"""
+        return self._kernel.sys_unlink(self._pid, path)
+
+    def readdir(self, path: str) -> list:
+        """Read directory contents"""
+        result = self._kernel.sys_readdir(self._pid, path)
+        if result is None:
+            raise RuntimeError(f"readdir: {path}: No such file or directory")
+        return result
+
+    def chdir(self, path: str) -> int:
+        """Change working directory"""
+        return self._kernel.sys_chdir(self._pid, path)
+
+    def getcwd(self) -> int:
+        """Get current working directory inode"""
+        result = self._kernel.sys_getcwd(self._pid)
+        return result if result is not None else 1
+
+    # Process operations
+    def fork(self) -> int:
+        """Fork process"""
+        return self._kernel.sys_fork(self._pid)
+
+    def exec(self, path: str, args: list, env: dict) -> int:
+        """Execute program"""
+        return self._kernel.sys_exec(self._pid, path, args, env)
+
+    def exit(self, code: int = 0) -> None:
+        """Exit process"""
+        self._kernel.sys_exit(self._pid, code)
+        raise SystemExit(code)
+
+    def wait(self, child_pid: int) -> tuple:
+        """Wait for child process"""
+        return self._kernel.sys_wait(self._pid, child_pid)
+
+    def kill(self, target_pid: int, signal: int = 15) -> int:
+        """Send signal to process"""
+        return self._kernel.sys_kill(self._pid, target_pid, signal)
+
+    def getpid(self) -> int:
+        """Get process ID"""
+        return self._pid
+
+    def getppid(self) -> int:
+        """Get parent process ID"""
+        return self._kernel.sys_getppid(self._pid)
+
+    def getuid(self) -> int:
+        """Get real user ID"""
+        return self._kernel.sys_getuid(self._pid)
+
+    def getgid(self) -> int:
+        """Get real group ID"""
+        return self._kernel.sys_getgid(self._pid)
+
+    # Constants for open() flags
+    O_RDONLY = 0
+    O_WRONLY = 1
+    O_RDWR = 2
+    O_CREAT = 0x100
+    O_APPEND = 0x200
+    O_TRUNC = 0x400
+
+
 class ProcessInterface:
     """Safe process access for scripts"""
 
@@ -544,7 +655,7 @@ class PooScriptInterpreter:
 
     def execute(self, script: str, args: List[str], stdin: str, env: Dict[str, str],
                 vfs, process, process_manager=None, shell_executor=None,
-                input_callback=None, network=None, local_ip=None) -> Tuple[int, bytes, bytes]:
+                input_callback=None, network=None, local_ip=None, kernel=None) -> Tuple[int, bytes, bytes]:
         """
         Execute a VirtualScript
 
@@ -559,6 +670,7 @@ class PooScriptInterpreter:
             shell_executor: ShellExecutor instance (optional)
             network: Virtual network instance (optional)
             local_ip: Local IP address (optional)
+            kernel: Kernel instance for syscalls (optional)
 
         Returns:
             (exit_code, stdout, stderr) as bytes
@@ -585,6 +697,11 @@ class PooScriptInterpreter:
             system_interface = SystemInterface(shell_executor.system)
 
         process_interface = ProcessInterface(process, process_manager, shell_executor, network_interface, system_interface)
+
+        # Setup kernel interface if available
+        kernel_interface = None
+        if kernel:
+            kernel_interface = KernelInterface(kernel, process.pid)
 
         # String utilities for shell scripting
         def split_args(text: str) -> List[str]:
@@ -675,6 +792,7 @@ class PooScriptInterpreter:
             'vfs': vfs_interface,
             'env': env,
             'process': process_interface,
+            'kernel': kernel_interface,  # Low-level syscall interface
         }
 
         try:
@@ -728,7 +846,7 @@ def is_pooscript(content: bytes) -> bool:
 def execute_pooscript(content: bytes, args: List[str], stdin: bytes,
                       env: Dict[str, str], vfs, process,
                       process_manager=None, shell_executor=None, input_callback=None,
-                      output_callback=None, error_callback=None, network=None, local_ip=None) -> Tuple[int, bytes, bytes]:
+                      output_callback=None, error_callback=None, network=None, local_ip=None, kernel=None) -> Tuple[int, bytes, bytes]:
     """Execute a PooScript binary"""
     # Remove shebang
     lines = content.split(b'\n', 1)
@@ -748,4 +866,4 @@ def execute_pooscript(content: bytes, args: List[str], stdin: bytes,
     interpreter.error_callback = error_callback
 
     return interpreter.execute(script, args, stdin_str, env, vfs, process,
-                              process_manager, shell_executor, input_callback, network, local_ip)
+                              process_manager, shell_executor, input_callback, network, local_ip, kernel)

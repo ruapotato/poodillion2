@@ -322,7 +322,8 @@ class ShellExecutor:
                     self.output_callback, # Pass output callback for real-time output
                     self.error_callback,  # Pass error callback for real-time errors
                     self.network,         # Pass network for networking commands
-                    self.local_ip         # Pass local IP address
+                    self.local_ip,        # Pass local IP address
+                    self.system.kernel if self.system else None  # NEW: Pass kernel for syscalls
                 )
             elif command.executable in self.commands:
                 # Execute as Python command handler

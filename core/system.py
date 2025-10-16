@@ -12,6 +12,7 @@ from core.packet_queue import PacketQueue
 from core.network_physical import NetworkInterface
 from core.daemon import DaemonManager
 from core.script_installer import install_scripts
+from core.kernel import Kernel  # NEW: Kernel layer
 from commands.fs import FilesystemCommands
 from typing import Optional, Tuple, Dict
 
@@ -65,6 +66,10 @@ class UnixSystem:
         self.daemon_manager = DaemonManager()  # Background daemon support
         self.network: Optional[VirtualNetwork] = None
         self.packet_queue = PacketQueue(self, self.network)
+
+        # NEW: Initialize kernel (Python becomes the kernel layer)
+        self.kernel = Kernel(self.vfs, self.processes, self.permissions, self.network)
+
         self.shell = Shell(self.vfs, self.permissions, self.processes, self.network, self.ip, system=self)
 
         # Wire VFS to system (for network device handlers)
