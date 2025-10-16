@@ -79,5 +79,5 @@ def install_scripts(vfs):
         vfs.symlink('/bin/pooshell', '/bin/sh', 0, 0, 1)
         print(f"  Created symlink: /bin/sh -> /bin/pooshell")
 
-    print(f"  Total VirtualScript commands installed: {installed_count}")
+    print(f"  Total PooScript commands installed: {installed_count}")
     return installed_count

@@ -161,15 +161,18 @@ def create_december_1990_world():
     # BOOT ALL SYSTEMS
     # ========================================
 
-    attacker.boot()
-    bbs_main.boot()
-    bbs_underground.boot()
-    bbs_corp.boot()
-    university.boot()
-    nexus.boot()
-    research.boot()
-    cybermart.boot()
-    repo_server.boot()
+    # Boot attacker system with full boot messages
+    attacker.boot(verbose=True)
+
+    # Boot all remote systems silently (in background)
+    bbs_main.boot(verbose=False)
+    bbs_underground.boot(verbose=False)
+    bbs_corp.boot(verbose=False)
+    university.boot(verbose=False)
+    nexus.boot(verbose=False)
+    research.boot(verbose=False)
+    cybermart.boot(verbose=False)
+    repo_server.boot(verbose=False)
 
     # All systems
     all_systems = [

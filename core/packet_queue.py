@@ -92,6 +92,38 @@ class PacketQueue:
             # Create packet object to track hops
             packet = Packet(packet_bytes, interface='eth0')
 
+            # Handle localhost case (path contains only source IP)
+            if len(path) == 1 and path[0] == src_ip == dest_ip:
+                # Localhost packet
+                packet.add_hop(src_ip)
+
+                # For ICMP Echo Request, generate reply immediately
+                # Don't deliver the request itself to inbound queue
+                header = parse_ip_packet(packet_bytes)
+                if header['protocol'] == 1:  # ICMP
+                    icmp = parse_icmp_packet(header['data'])
+                    if icmp and icmp['type'] == 8:  # Echo Request
+                        # Capture the outbound request
+                        self._capture_packet(packet, 'send')
+
+                        # Build and deliver Echo Reply
+                        reply_packet = build_icmp_echo_reply(
+                            src_ip, src_ip,  # Both src and dst are ourselves
+                            icmp['id'], icmp['sequence'],
+                            icmp['data']
+                        )
+                        # Deliver reply to inbound queue
+                        reply = Packet(reply_packet, interface='lo')
+                        reply.add_hop(src_ip)
+                        self.inbound.append(reply)
+                        self._capture_packet(reply, 'recv')
+                        return True
+
+                # For other localhost packets, deliver normally
+                self.inbound.append(packet)
+                self._capture_packet(packet, 'recv')
+                return True
+
             # Forward packet through each hop in the path
             current_bytes = packet_bytes
             for i in range(len(path) - 1):

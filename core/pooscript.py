@@ -758,7 +758,7 @@ class PooScriptInterpreter:
                 vfs, process, process_manager=None, shell_executor=None,
                 input_callback=None, network=None, local_ip=None, kernel=None) -> Tuple[int, bytes, bytes]:
         """
-        Execute a VirtualScript
+        Execute a PooScript
 
         Args:
             script: The script code

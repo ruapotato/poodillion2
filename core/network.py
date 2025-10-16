@@ -85,6 +85,13 @@ class VirtualNetwork:
         Returns path as list of IPs, or None if no route exists
         Respects ip_forward flag AND system alive state on intermediate systems
         """
+        # Localhost/loopback - pinging yourself always works if system is alive
+        if from_ip == to_ip:
+            src_system = self.systems.get(from_ip)
+            if src_system and src_system.is_alive():
+                return [from_ip]
+            return None
+
         # Direct connection?
         if from_ip in self.connections and to_ip in self.connections.get(from_ip, set()):
             # Check if destination system is alive

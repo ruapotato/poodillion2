@@ -307,9 +307,13 @@ class UnixSystem:
         # All other commands are now PooScript binaries in /bin, /usr/bin, etc.
         # They are executed by the shell finding them in $PATH
 
-    def boot(self) -> bool:
+    def boot(self, verbose: bool = True) -> bool:
         """
         Boot the system by running /sbin/init
+
+        Args:
+            verbose: If True, print boot messages. If False, boot silently.
+
         Returns True if boot successful
         """
         # Mark system as running
@@ -319,28 +323,31 @@ class UnixSystem:
         # Check if init exists
         init_binary = self.vfs.stat('/sbin/init', 1)
         if not init_binary:
-            print("Warning: /sbin/init not found, skipping boot sequence")
+            if verbose:
+                print("Warning: /sbin/init not found, skipping boot sequence")
             return False
 
         # Execute init as PID 1 (well, through our init process)
         init_proc = self.processes.get_process(1)
         if init_proc:
             exit_code, stdout, stderr = self.shell.execute('/sbin/init', 1)
-            if stdout:
-                print(stdout.decode('utf-8', errors='ignore'), end='')
-            if stderr:
-                print(stderr.decode('utf-8', errors='ignore'), end='')
+            if verbose:
+                if stdout:
+                    print(stdout.decode('utf-8', errors='ignore'), end='')
+                if stderr:
+                    print(stderr.decode('utf-8', errors='ignore'), end='')
 
             # After init completes, start network daemon if it exists
             if self.vfs.stat('/sbin/netd', 1):
                 # Spawn netd as a TRUE background daemon
                 netd_pid = self.daemon_manager.spawn_daemon('netd', '/sbin/netd', self)
-                if netd_pid:
+                if verbose and netd_pid:
                     print(f"[  OK  ] Network daemon started as background process (PID {netd_pid})")
+                if netd_pid:
                     # Give netd a moment to initialize
                     import time
                     time.sleep(0.2)
-                else:
+                elif verbose:
                     print("[WARN ] Failed to start network daemon")
 
             return exit_code == 0
@@ -390,9 +397,9 @@ class UnixSystem:
         self.shell.executor.network = shell_network
         self.shell.executor.local_ip = self.ip
 
-        # Network commands (ifconfig, netstat, nmap, ssh) can be added as VirtualScripts later
+        # Network commands (ifconfig, netstat, nmap, ssh) can be added as PooScripts later
         # For now, they would need special handling for network access
-        # TODO: Create VirtualScript versions or expose network API to scripts
+        # TODO: Create PooScript versions or expose network API to scripts
 
     def login(self, username: str, password: str) -> bool:
         """
@@ -429,7 +436,7 @@ class UnixSystem:
 
     def execute_command(self, command: str) -> Tuple[int, str, str]:
         """
-        Execute a command in the current shell (via VirtualScript /bin/sh)
+        Execute a command in the current shell (via PooScript /bin/sh)
         Returns (exit_code, stdout, stderr) as strings
         """
         if self.shell_pid is None:
