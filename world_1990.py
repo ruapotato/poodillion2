@@ -4,8 +4,41 @@ Creates an immersive early internet experience with BBS systems,
 mysterious networks, and period-appropriate technology.
 """
 
+import os
 from core.system import UnixSystem
 from core.network import VirtualNetwork
+
+
+def load_scripts_from_directory(vfs, real_path, vfs_path, mode=0o755):
+    """
+    Load all scripts from a real filesystem directory into the VFS
+
+    Args:
+        vfs: Virtual filesystem to load into
+        real_path: Path to real directory (e.g., 'scripts/bin')
+        vfs_path: VFS path to load into (e.g., '/bin')
+        mode: Permission mode for the files
+    """
+    # Get the directory where this script is located
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    full_real_path = os.path.join(script_dir, real_path)
+
+    # Ensure target directory exists in VFS
+    if not vfs.exists(vfs_path):
+        vfs.mkdir(vfs_path, 0o755, 0, 0, 1)
+
+    # Load all files from the directory
+    if os.path.exists(full_real_path):
+        for filename in os.listdir(full_real_path):
+            file_path = os.path.join(full_real_path, filename)
+
+            # Skip directories and hidden files
+            if os.path.isfile(file_path) and not filename.startswith('.'):
+                with open(file_path, 'rb') as f:
+                    content = f.read()
+
+                vfs_file_path = f"{vfs_path}/{filename}"
+                vfs.create_file(vfs_file_path, mode, 0, 0, content, 1)
 
 
 def create_december_1990_world():
@@ -143,6 +176,12 @@ def create_december_1990_world():
 def populate_attacker_system(system):
     """Populate the attacker's starting system"""
     vfs = system.vfs
+
+    # Load all system scripts
+    load_scripts_from_directory(vfs, 'scripts/bin', '/bin', 0o755)
+    load_scripts_from_directory(vfs, 'scripts/usr_bin', '/usr/bin', 0o755)
+    load_scripts_from_directory(vfs, 'scripts/sbin', '/sbin', 0o755)
+    load_scripts_from_directory(vfs, 'scripts/usr_sbin', '/usr/sbin', 0o755)
 
     # Create mission files
     vfs.create_file('/missions/README', 0o644, 0, 0, """
@@ -472,6 +511,10 @@ def populate_bbs_main(system):
     """Populate the main CyberSpace BBS"""
     vfs = system.vfs
 
+    # Load system scripts
+    load_scripts_from_directory(vfs, 'scripts/bin', '/bin', 0o755)
+    load_scripts_from_directory(vfs, 'scripts/usr_bin', '/usr/bin', 0o755)
+
     # Start httpd web server
     system.spawn_service('httpd', ['service', 'httpd', 'web'], uid=0)
 
@@ -483,6 +526,10 @@ def populate_bbs_main(system):
 def populate_bbs_underground(system):
     """Populate the Underground BBS"""
     vfs = system.vfs
+
+    # Load system scripts
+    load_scripts_from_directory(vfs, 'scripts/bin', '/bin', 0o755)
+    load_scripts_from_directory(vfs, 'scripts/usr_bin', '/usr/bin', 0o755)
 
     # Start httpd web server
     system.spawn_service('httpd', ['service', 'httpd', 'web'], uid=0)
@@ -511,6 +558,10 @@ Access code for next level: 31337h4x0r
 def populate_bbs_corp(system):
     """Populate the MegaCorp BBS"""
     vfs = system.vfs
+
+    # Load system scripts
+    load_scripts_from_directory(vfs, 'scripts/bin', '/bin', 0o755)
+    load_scripts_from_directory(vfs, 'scripts/usr_bin', '/usr/bin', 0o755)
 
     # Start httpd web server
     system.spawn_service('httpd', ['service', 'httpd', 'web'], uid=0)
@@ -554,6 +605,10 @@ Last update: December 23, 1990 - 23:47:22
 def populate_university(system):
     """Populate the university VAX system"""
     vfs = system.vfs
+
+    # Load system scripts
+    load_scripts_from_directory(vfs, 'scripts/bin', '/bin', 0o755)
+    load_scripts_from_directory(vfs, 'scripts/usr_bin', '/usr/bin', 0o755)
 
     # Start httpd web server
     system.spawn_service('httpd', ['service', 'httpd', 'web'], uid=0)
@@ -623,6 +678,10 @@ def populate_nexus(system):
     """Populate the mysterious Nexus system"""
     vfs = system.vfs
 
+    # Load system scripts
+    load_scripts_from_directory(vfs, 'scripts/bin', '/bin', 0o755)
+    load_scripts_from_directory(vfs, 'scripts/usr_bin', '/usr/bin', 0o755)
+
     # Start httpd web server
     system.spawn_service('httpd', ['service', 'httpd', 'web'], uid=0)
 
@@ -689,6 +748,10 @@ P.S. They think they can shut me down. They can't.
 def populate_research(system):
     """Populate the government research facility"""
     vfs = system.vfs
+
+    # Load system scripts
+    load_scripts_from_directory(vfs, 'scripts/bin', '/bin', 0o755)
+    load_scripts_from_directory(vfs, 'scripts/usr_bin', '/usr/bin', 0o755)
 
     # Start httpd web server
     system.spawn_service('httpd', ['service', 'httpd', 'web'], uid=0)
@@ -775,6 +838,10 @@ __all__ = ['create_december_1990_world']
 def populate_cybermart(system):
     """Populate the CyberMart shopping server"""
     vfs = system.vfs
+
+    # Load system scripts
+    load_scripts_from_directory(vfs, 'scripts/bin', '/bin', 0o755)
+    load_scripts_from_directory(vfs, 'scripts/usr_bin', '/usr/bin', 0o755)
 
     # Start httpd web server
     system.spawn_service('httpd', ['service', 'httpd', 'web'], uid=0)
@@ -925,6 +992,12 @@ For support contact: admin@cybermart.com
 def populate_repo_server(system):
     """Populate the package repository server - THE ATTACK VECTOR!"""
     vfs = system.vfs
+
+    # Load system scripts
+    load_scripts_from_directory(vfs, 'scripts/bin', '/bin', 0o755)
+    load_scripts_from_directory(vfs, 'scripts/usr_bin', '/usr/bin', 0o755)
+    load_scripts_from_directory(vfs, 'scripts/sbin', '/sbin', 0o755)
+    load_scripts_from_directory(vfs, 'scripts/usr_sbin', '/usr/sbin', 0o755)
 
     # Create repository directory structure
     vfs.mkdir('/repo', 0o755, 0, 0, 1)
