@@ -461,6 +461,9 @@ def populate_bbs_main(system):
     """Populate the main CyberSpace BBS"""
     vfs = system.vfs
 
+    # Start httpd web server
+    system.spawn_service('httpd', ['service', 'httpd', 'web'], uid=0)
+
     # Will be populated with BBS content via website files
     # The lynx browser will display these
     pass
@@ -469,6 +472,9 @@ def populate_bbs_main(system):
 def populate_bbs_underground(system):
     """Populate the Underground BBS"""
     vfs = system.vfs
+
+    # Start httpd web server
+    system.spawn_service('httpd', ['service', 'httpd', 'web'], uid=0)
 
     # Create hidden directory
     vfs.mkdir('/hidden', 0o700, 0, 0, 1)
@@ -494,6 +500,9 @@ Access code for next level: 31337h4x0r
 def populate_bbs_corp(system):
     """Populate the MegaCorp BBS"""
     vfs = system.vfs
+
+    # Start httpd web server
+    system.spawn_service('httpd', ['service', 'httpd', 'web'], uid=0)
 
     vfs.mkdir('/corp', 0o755, 0, 0, 1)
     vfs.mkdir('/corp/projects', 0o700, 0, 0, 1)
@@ -534,6 +543,9 @@ Last update: December 23, 1990 - 23:47:22
 def populate_university(system):
     """Populate the university VAX system"""
     vfs = system.vfs
+
+    # Start httpd web server
+    system.spawn_service('httpd', ['service', 'httpd', 'web'], uid=0)
 
     # Create home directories
     vfs.mkdir('/home', 0o755, 0, 0, 1)
@@ -600,6 +612,9 @@ def populate_nexus(system):
     """Populate the mysterious Nexus system"""
     vfs = system.vfs
 
+    # Start httpd web server
+    system.spawn_service('httpd', ['service', 'httpd', 'web'], uid=0)
+
     vfs.create_file('/root/WELCOME', 0o644, 0, 0, """
 ╔═══════════════════════════════════════════════════════════════╗
 ║                                                               ║
@@ -663,6 +678,9 @@ P.S. They think they can shut me down. They can't.
 def populate_research(system):
     """Populate the government research facility"""
     vfs = system.vfs
+
+    # Start httpd web server
+    system.spawn_service('httpd', ['service', 'httpd', 'web'], uid=0)
 
     vfs.mkdir('/classified', 0o700, 0, 0, 1)
 
@@ -746,6 +764,9 @@ __all__ = ['create_december_1990_world']
 def populate_cybermart(system):
     """Populate the CyberMart shopping server"""
     vfs = system.vfs
+
+    # Start httpd web server
+    system.spawn_service('httpd', ['service', 'httpd', 'web'], uid=0)
 
     # Create shop directories
     vfs.mkdir('/shop', 0o755, 0, 0, 1)
