@@ -157,6 +157,20 @@ def create_december_1990_world():
     populate_cybermart(cybermart)
     populate_repo_server(repo_server)
 
+    # ========================================
+    # BOOT ALL SYSTEMS
+    # ========================================
+
+    attacker.boot()
+    bbs_main.boot()
+    bbs_underground.boot()
+    bbs_corp.boot()
+    university.boot()
+    nexus.boot()
+    research.boot()
+    cybermart.boot()
+    repo_server.boot()
+
     # All systems
     all_systems = [
         attacker,
@@ -515,12 +529,11 @@ def populate_bbs_main(system):
     load_scripts_from_directory(vfs, 'scripts/bin', '/bin', 0o755)
     load_scripts_from_directory(vfs, 'scripts/usr_bin', '/usr/bin', 0o755)
 
+    # Load www files for web server
+    load_scripts_from_directory(vfs, 'scripts/www', '/www', 0o644)
+
     # Start httpd web server
     system.spawn_service('httpd', ['service', 'httpd', 'web'], uid=0)
-
-    # Will be populated with BBS content via website files
-    # The lynx browser will display these
-    pass
 
 
 def populate_bbs_underground(system):
@@ -530,6 +543,9 @@ def populate_bbs_underground(system):
     # Load system scripts
     load_scripts_from_directory(vfs, 'scripts/bin', '/bin', 0o755)
     load_scripts_from_directory(vfs, 'scripts/usr_bin', '/usr/bin', 0o755)
+
+    # Load www files for web server
+    load_scripts_from_directory(vfs, 'scripts/www', '/www', 0o644)
 
     # Start httpd web server
     system.spawn_service('httpd', ['service', 'httpd', 'web'], uid=0)
@@ -562,6 +578,9 @@ def populate_bbs_corp(system):
     # Load system scripts
     load_scripts_from_directory(vfs, 'scripts/bin', '/bin', 0o755)
     load_scripts_from_directory(vfs, 'scripts/usr_bin', '/usr/bin', 0o755)
+
+    # Load www files for web server
+    load_scripts_from_directory(vfs, 'scripts/www', '/www', 0o644)
 
     # Start httpd web server
     system.spawn_service('httpd', ['service', 'httpd', 'web'], uid=0)
@@ -609,6 +628,9 @@ def populate_university(system):
     # Load system scripts
     load_scripts_from_directory(vfs, 'scripts/bin', '/bin', 0o755)
     load_scripts_from_directory(vfs, 'scripts/usr_bin', '/usr/bin', 0o755)
+
+    # Load www files for web server
+    load_scripts_from_directory(vfs, 'scripts/www', '/www', 0o644)
 
     # Start httpd web server
     system.spawn_service('httpd', ['service', 'httpd', 'web'], uid=0)
@@ -682,6 +704,9 @@ def populate_nexus(system):
     load_scripts_from_directory(vfs, 'scripts/bin', '/bin', 0o755)
     load_scripts_from_directory(vfs, 'scripts/usr_bin', '/usr/bin', 0o755)
 
+    # Load www files for web server
+    load_scripts_from_directory(vfs, 'scripts/www', '/www', 0o644)
+
     # Start httpd web server
     system.spawn_service('httpd', ['service', 'httpd', 'web'], uid=0)
 
@@ -752,6 +777,9 @@ def populate_research(system):
     # Load system scripts
     load_scripts_from_directory(vfs, 'scripts/bin', '/bin', 0o755)
     load_scripts_from_directory(vfs, 'scripts/usr_bin', '/usr/bin', 0o755)
+
+    # Load www files for web server
+    load_scripts_from_directory(vfs, 'scripts/www', '/www', 0o644)
 
     # Start httpd web server
     system.spawn_service('httpd', ['service', 'httpd', 'web'], uid=0)
@@ -842,6 +870,9 @@ def populate_cybermart(system):
     # Load system scripts
     load_scripts_from_directory(vfs, 'scripts/bin', '/bin', 0o755)
     load_scripts_from_directory(vfs, 'scripts/usr_bin', '/usr/bin', 0o755)
+
+    # Load www files for web server
+    load_scripts_from_directory(vfs, 'scripts/www', '/www', 0o644)
 
     # Start httpd web server
     system.spawn_service('httpd', ['service', 'httpd', 'web'], uid=0)

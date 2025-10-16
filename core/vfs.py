@@ -691,6 +691,10 @@ class VFS:
             return None
         return self.inodes.get(ino)
 
+    def exists(self, path: str, current_dir_ino: int = 1) -> bool:
+        """Check if a path exists"""
+        return self._resolve_path(path, current_dir_ino) is not None
+
     def unlink(self, path: str, current_dir_ino: int = 1) -> bool:
         """Remove a file or empty directory"""
         parent_path = '/'.join(path.rstrip('/').split('/')[:-1]) or '/'

@@ -276,11 +276,29 @@ class NetworkInterface:
             # Try both locations
             for www_root in ['/www', '/var/www']:
                 file_path = www_root + path
-                content = target_system.vfs.read_file(file_path, 1)  # Read as root
-                if content is not None:
-                    return content.decode('utf-8', errors='ignore')
 
-            # File not found
+                # If path ends with /, try default files
+                paths_to_try = [file_path]
+                if path.endswith('/'):
+                    paths_to_try.extend([
+                        file_path + 'index.html',
+                        file_path + 'default.html',
+                        file_path + 'default.bbs',
+                        file_path + 'index.bbs',
+                        file_path[:-1] + '.html',
+                        file_path[:-1] + '.bbs',
+                    ])
+
+                for try_path in paths_to_try:
+                    try:
+                        content = target_system.vfs.read_file(try_path, 1)  # Read as root
+                        if content is not None:
+                            return content.decode('utf-8', errors='ignore')
+                    except (RuntimeError, FileNotFoundError):
+                        # File doesn't exist, try next
+                        continue
+
+            # File not found in any location
             return ""
 
         except Exception as e:

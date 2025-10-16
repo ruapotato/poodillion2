@@ -182,13 +182,22 @@ class VirtualNetwork:
         if from_ip not in self.connections:
             return []
 
-        # Simple subnet check (just check same /24)
-        subnet_prefix = '.'.join(from_ip.split('.')[:3])
+        # Parse subnet parameter (e.g., "192.168.1.0/24")
+        if '/' in subnet:
+            subnet_base = subnet.split('/')[0]
+            # Get /24 prefix (first 3 octets)
+            subnet_prefix = '.'.join(subnet_base.split('.')[:3])
+        else:
+            # If no CIDR notation, assume it's a single IP
+            subnet_prefix = '.'.join(subnet.split('.')[:3])
+
         reachable = []
 
         for ip in self.systems.keys():
             if ip.startswith(subnet_prefix) and ip != from_ip:
-                reachable.append(ip)
+                # Check if we can actually reach this IP
+                if self.can_connect(from_ip, ip, 0):
+                    reachable.append(ip)
 
         return reachable
 
