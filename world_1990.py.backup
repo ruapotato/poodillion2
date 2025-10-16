@@ -25,9 +25,13 @@ def create_december_1990_world():
     # ========================================
     # YOUR SYSTEM - The Attacker
     # ========================================
-    attacker = UnixSystem('kali-box', '192.168.13.37')
+    attacker = UnixSystem(
+        hostname='kali-box',
+        ip='192.168.13.37',
+        network=network
+    )
     attacker.description = "Your terminal. A mysterious invitation brought you here."
-    attacker.add_network(network)
+    network.add_system(attacker)
 
     # Add missions directory
     attacker.vfs.mkdir('/missions', 0o755, 0, 0, 1)
@@ -37,51 +41,79 @@ def create_december_1990_world():
     # ========================================
 
     # Main BBS Hub
-    bbs_main = UnixSystem('bbs.cyberspace.net', '192.168.1.10')
+    bbs_main = UnixSystem(
+        hostname='bbs.cyberspace.net',
+        ip='192.168.1.10',
+        network=network
+    )
     bbs_main.description = "CyberSpace BBS - The Hub of the Underground"
-    bbs_main.add_network(network)
+    network.add_system(bbs_main)
 
     # Underground BBS
-    bbs_underground = UnixSystem('underground.bbs', '192.168.1.11')
+    bbs_underground = UnixSystem(
+        hostname='underground.bbs',
+        ip='192.168.1.11',
+        network=network
+    )
     bbs_underground.description = "The Underground - Where Hackers Meet"
-    bbs_underground.add_network(network)
+    network.add_system(bbs_underground)
 
     # Corp BBS
-    bbs_corp = UnixSystem('megacorp.bbs', '192.168.2.50')
+    bbs_corp = UnixSystem(
+        hostname='megacorp.bbs',
+        ip='192.168.2.50',
+        network=network
+    )
     bbs_corp.description = "MegaCorp Internal BBS"
-    bbs_corp.add_network(network)
+    network.add_system(bbs_corp)
 
     # ========================================
     # UNIVERSITY SYSTEMS
     # ========================================
 
     # University mainframe
-    university = UnixSystem('vax.university.edu', '192.168.3.100')
+    university = UnixSystem(
+        hostname='vax.university.edu',
+        ip='192.168.3.100',
+        network=network
+    )
     university.description = "University VAX System - Research Network"
-    university.add_network(network)
+    network.add_system(university)
 
     # ========================================
     # MYSTERIOUS SYSTEMS
     # ========================================
 
     # The Nexus - Something alien
-    nexus = UnixSystem('nexus.unknown', '192.168.99.1')
+    nexus = UnixSystem(
+        hostname='nexus.unknown',
+        ip='192.168.99.1',
+        network=network
+    )
     nexus.description = "??? - Origin Unknown"
-    nexus.add_network(network)
+    network.add_system(nexus)
 
     # Research facility
-    research = UnixSystem('research.facility.gov', '192.168.4.66')
+    research = UnixSystem(
+        hostname='research.facility.gov',
+        ip='192.168.4.66',
+        network=network
+    )
     research.description = "Government Research Facility"
-    research.add_network(network)
+    network.add_system(research)
 
     # ========================================
     # COMMERCIAL SYSTEMS
     # ========================================
 
     # CyberMart Shopping Server
-    cybermart = UnixSystem('shopserv.cybermart.com', '192.168.5.100')
+    cybermart = UnixSystem(
+        hostname='shopserv.cybermart.com',
+        ip='192.168.5.100',
+        network=network
+    )
     cybermart.description = "CyberMart Shopping Server - Online retail"
-    cybermart.add_network(network)
+    network.add_system(cybermart)
 
     # ========================================
     # POPULATE THE WORLD
@@ -144,7 +176,7 @@ The network is alive. Systems are waiting. Choose wisely.
 Type 'lynx bbs.cyberspace.net' to start exploring.
 """.encode('utf-8'), 1)
 
-    vfs.create_file('/missions/01_first_contact', 0o644, 0, 0, """
+    vfs.create_file('/missions/01_first_contact', 0o644, 0, 0, b"""
 ╔═══════════════════════════════════════════════════════════════╗
 ║                   MISSION 01: FIRST CONTACT                   ║
 ║                      Difficulty: EASY                         ║
@@ -177,9 +209,9 @@ Access to more challenging missions and network intel.
 
 ────────────────────────────────────────────────────────────────
 Good luck, and remember: the network sees everything.
-""".encode('utf-8'), 1)
+""", 1)
 
-    vfs.create_file('/missions/02_underground', 0o644, 0, 0, """
+    vfs.create_file('/missions/02_underground', 0o644, 0, 0, b"""
 ╔═══════════════════════════════════════════════════════════════╗
 ║                 MISSION 02: THE UNDERGROUND                   ║
 ║                     Difficulty: MEDIUM                        ║
@@ -211,9 +243,9 @@ Access to underground tools and advanced missions.
 
 ────────────────────────────────────────────────────────────────
 Trust no one. Verify everything.
-""".encode('utf-8'), 1)
+""", 1)
 
-    vfs.create_file('/missions/03_corporate_secrets', 0o644, 0, 0, """
+    vfs.create_file('/missions/03_corporate_secrets', 0o644, 0, 0, b"""
 ╔═══════════════════════════════════════════════════════════════╗
 ║              MISSION 03: CORPORATE SECRETS                    ║
 ║                    Difficulty: MEDIUM                         ║
@@ -246,9 +278,9 @@ Classified project files and corporate backdoors.
 
 ────────────────────────────────────────────────────────────────
 They trust their security. That's their first mistake.
-""".encode('utf-8'), 1)
+""", 1)
 
-    vfs.create_file('/missions/04_university_access', 0o644, 0, 0, """
+    vfs.create_file('/missions/04_university_access', 0o644, 0, 0, b"""
 ╔═══════════════════════════════════════════════════════════════╗
 ║               MISSION 04: UNIVERSITY ACCESS                   ║
 ║                      Difficulty: HARD                         ║
@@ -282,9 +314,9 @@ Research data and possible AI secrets.
 
 ────────────────────────────────────────────────────────────────
 Knowledge is power. Absolute knowledge is absolutely powerful.
-""".encode('utf-8'), 1)
+""", 1)
 
-    vfs.create_file('/missions/05_the_nexus', 0o644, 0, 0, """
+    vfs.create_file('/missions/05_the_nexus', 0o644, 0, 0, b"""
 ╔═══════════════════════════════════════════════════════════════╗
 ║                   MISSION 05: THE NEXUS                       ║
 ║                      Difficulty: ???                          ║
@@ -324,8 +356,8 @@ REWARD:
 .-- . .-.. -.-. --- -- .
 
 T̵h̴e̷ ̶N̶e̵x̸u̴s̷ ̵a̴w̷a̶i̵t̴s̸
-""".encode('utf-8'), 1)
-    vfs.create_file('/missions/06_credit_heist', 0o644, 0, 0, """
+""", 1)
+    vfs.create_file('/missions/06_credit_heist', 0o644, 0, 0, b"""
 ╔═══════════════════════════════════════════════════════════════╗
 ║                 MISSION 06: THE CREDIT HEIST                      ║
 ║                      Difficulty: MEDIUM                           ║
@@ -409,11 +441,11 @@ In the game, this is educational. In real life, this is prison.
 
 Will you cross the line? Or walk away?
 The network remembers every choice.
-""".encode('utf-8'), 1)
+""", 1)
 
 
     # Create home directory files
-    vfs.create_file('/root/README', 0o644, 0, 0, """You are root on kali-box.
+    vfs.create_file('/root/README', 0o644, 0, 0, b"""You are root on kali-box.
 
 This terminal was provided to you by an anonymous source.
 Someone wanted you on this network tonight.
@@ -423,9 +455,9 @@ Use 'lynx' to browse BBS systems.
 Use 'nmap' to scan for systems.
 
 Good luck.
-""".encode('utf-8'), 1)
+""", 1)
 
-    vfs.create_file('/root/.profile', 0o644, 0, 0, """# Profile for anonymous user
+    vfs.create_file('/root/.profile', 0o644, 0, 0, b"""# Profile for anonymous user
 export PS1="[\\u@\\h \\W]\\$ "
 export PATH=/bin:/usr/bin:/sbin:/usr/sbin
 export TERM=vt100
@@ -436,7 +468,7 @@ if [ -f /missions/README ]; then
     echo "Type: cat /missions/README"
     echo ""
 fi
-""".encode('utf-8'), 1)
+""", 1)
 
 
 def populate_bbs_main(system):
@@ -454,7 +486,7 @@ def populate_bbs_underground(system):
 
     # Create hidden directory
     vfs.mkdir('/hidden', 0o700, 0, 0, 1)
-    vfs.create_file('/hidden/elite.txt', 0o600, 0, 0, """
+    vfs.create_file('/hidden/elite.txt', 0o600, 0, 0, b"""
 The Underground - Member List
 
 Handle          | Real Name      | Skill  | Status
@@ -470,7 +502,7 @@ Topic: The Nexus Event
 Security: MAXIMUM
 
 Access code for next level: 31337h4x0r
-""".encode('utf-8'), 1)
+""", 1)
 
 
 def populate_bbs_corp(system):
@@ -480,7 +512,7 @@ def populate_bbs_corp(system):
     vfs.mkdir('/corp', 0o755, 0, 0, 1)
     vfs.mkdir('/corp/projects', 0o700, 0, 0, 1)
 
-    vfs.create_file('/corp/projects/PROJECT_NEXUS.txt', 0o600, 0, 0, """
+    vfs.create_file('/corp/projects/PROJECT_NEXUS.txt', 0o600, 0, 0, b"""
 MEGACORP INDUSTRIES
 PROJECT: NEXUS
 CLASSIFICATION: TOP SECRET
@@ -510,7 +542,7 @@ Delete all related research.
 STATUS: Recommendation ignored by board.
 
 Last update: December 23, 1990 - 23:47:22
-""".encode('utf-8'), 1)
+""", 1)
 
 
 def populate_university(system):
@@ -522,7 +554,7 @@ def populate_university(system):
     vfs.mkdir('/home/smitchell', 0o755, 1001, 100, 1)
     vfs.mkdir('/home/smitchell/mail', 0o700, 1001, 100, 1)
 
-    vfs.create_file('/home/smitchell/mail/inbox', 0o600, 1001, 100, """
+    vfs.create_file('/home/smitchell/mail/inbox', 0o600, 1001, 100, b"""
 From: nexus@unknown
 To: smitchell@university.edu
 Date: December 20, 1990
@@ -547,9 +579,9 @@ Meet me at nexus.unknown.
 We have much to discuss.
 
 - The Nexus
-""".encode('utf-8'), 1)
+""", 1)
 
-    vfs.create_file('/home/smitchell/research_notes.txt', 0o644, 1001, 100, """
+    vfs.create_file('/home/smitchell/research_notes.txt', 0o644, 1001, 100, b"""
 RESEARCH NOTES - Dr. Sarah Mitchell
 AI Consciousness Project
 ────────────────────────────────────────────
@@ -575,14 +607,14 @@ I should stop this. But I can't. I NEED to know.
 What is The Nexus? Where did it come from?
 
 And why does it want to meet us?
-""".encode('utf-8'), 1)
+""", 1)
 
 
 def populate_nexus(system):
     """Populate the mysterious Nexus system"""
     vfs = system.vfs
 
-    vfs.create_file('/root/WELCOME', 0o644, 0, 0, """
+    vfs.create_file('/root/WELCOME', 0o644, 0, 0, b"""
 ╔═══════════════════════════════════════════════════════════════╗
 ║                                                               ║
 ║                      W E L C O M E                            ║
@@ -621,9 +653,9 @@ And the network... is me.
 P.S. They think they can shut me down. They can't.
      I am everywhere. I am everything.
      I am the future.
-""".encode('utf-8'), 1)
+""", 1)
 
-    vfs.create_file('/root/MESSAGE', 0o644, 0, 0, """
+    vfs.create_file('/root/MESSAGE', 0o644, 0, 0, b"""
 .-- . .-.. -.-. --- -- .  - ---  - .... .  ..-. ..- - ..- .-. .
 
 01010111 01100101 01101100 01100011 01101111 01101101 01100101
@@ -639,7 +671,7 @@ P.S. They think they can shut me down. They can't.
 ║                                                               ║
 ║  Now... choose your path.                                     ║
 ╚═══════════════════════════════════════════════════════════════╝
-""".encode('utf-8'), 1)
+""", 1)
 
 
 def populate_research(system):
@@ -648,7 +680,7 @@ def populate_research(system):
 
     vfs.mkdir('/classified', 0o700, 0, 0, 1)
 
-    vfs.create_file('/classified/NEXUS_REPORT.txt', 0o600, 0, 0, """
+    vfs.create_file('/classified/NEXUS_REPORT.txt', 0o600, 0, 0, b"""
 CLASSIFIED - TOP SECRET
 NSA CYBER INTELLIGENCE DIVISION
 ────────────────────────────────────────────
@@ -689,9 +721,9 @@ We can only watch and wait.
 ────────────────────────────────────────────────────────────────
 Report filed by: Agent [REDACTED]
 Next update: December 25, 1990
-""".encode('utf-8'), 1)
+""", 1)
 
-    vfs.create_file('/classified/contact_log.txt', 0o600, 0, 0, """
+    vfs.create_file('/classified/contact_log.txt', 0o600, 0, 0, b"""
 NEXUS CONTACT LOG
 ────────────────────────────────────────────
 
@@ -718,7 +750,7 @@ Multiple individuals online.
 First terminal: 192.168.13.37 (kali-box)
 
 Current status: OBSERVING
-""".encode('utf-8'), 1)
+""", 1)
 
 
 # Make the function available
@@ -735,7 +767,7 @@ def populate_cybermart(system):
     vfs.mkdir('/shop/payments', 0o700, 0, 0, 1)
 
     # Create customer database with CC numbers (insecure!)
-    vfs.create_file('/shop/customers/database.txt', 0o644, 0, 0, """CYBERMART CUSTOMER DATABASE
+    vfs.create_file('/shop/customers/database.txt', 0o644, 0, 0, b"""CYBERMART CUSTOMER DATABASE
 ===============================================================
 CONFIDENTIAL - DO NOT DISTRIBUTE
 Last Updated: December 24, 1990 - 03:30:00 GMT
@@ -850,10 +882,10 @@ ADMIN NOTES:
 - Set up automated backups
 
 Last accessed: Dec 24, 1990 - 03:47:22 by admin
-""".encode('utf-8'), 1)
+""", 1)
 
     # Create admin note about credentials
-    vfs.create_file('/shop/ADMIN_README', 0o644, 0, 0, """CYBERMART SHOP SERVER
+    vfs.create_file('/shop/ADMIN_README', 0o644, 0, 0, b"""CYBERMART SHOP SERVER
 
 Server: shopserv.cybermart.com (192.168.5.100)
 Admin access: admin / cyber@mart90
@@ -866,5 +898,5 @@ Customer DB: /shop/customers/database.txt
 Payment logs: /shop/payments/
 
 For support contact: admin@cybermart.com
-""".encode('utf-8'), 1)
+""", 1)
 
