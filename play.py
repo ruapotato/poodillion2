@@ -179,6 +179,12 @@ def interactive_shell(system, network, username='root', password='root'):
             exit_code, stdout, stderr = system.shell.execute('/bin/pooshell', system.shell_pid, b'')
             print(f'[DEBUG] Pooshell exited with code: {exit_code}')
 
+            # Check if system was shut down during this session
+            if not system.is_alive():
+                print(f'\n[Connection lost: {system.hostname} has shut down]')
+                print(f'Connection to {system.ip} closed.')
+                return False
+
             # Check exit code - 255 means SSH request
             if exit_code == 255:
                 # Read SSH request
