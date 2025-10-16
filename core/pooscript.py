@@ -1,6 +1,9 @@
 """
-VirtualScript - Safe Python-like scripting language for game binaries
+PooScript - Safe Python-like scripting language for Poodillion game binaries
 Allows players to create and modify executable scripts in the virtual filesystem
+
+PooScript is the heart of Poodillion - it's what makes every command, even the
+shell itself, into a modifiable, exploitable, and hackable program!
 """
 
 import ast
@@ -334,9 +337,9 @@ class ProcessInterface:
         return inode_to_path(self.cwd)
 
 
-class VirtualScriptInterpreter:
+class PooScriptInterpreter:
     """
-    Safe Python subset interpreter for VirtualScript
+    Safe Python subset interpreter for PooScript
     Supports: variables, if/elif/else, for loops, while loops, basic operations
     Restricted: no imports, no exec, no eval, no file I/O outside VFS
     """
@@ -541,7 +544,7 @@ class VirtualScriptInterpreter:
             self._validate_ast(tree)
 
             # Compile and execute
-            code = compile(tree, '<virtualscript>', 'exec')
+            code = compile(tree, '<pooscript>', 'exec')
             exec(code, namespace)
 
             # Normal exit
@@ -568,8 +571,8 @@ class VirtualScriptInterpreter:
         return exit_code, stdout_data, stderr_data
 
 
-def is_virtualscript(content: bytes) -> bool:
-    """Check if file content is a VirtualScript (starts with shebang)"""
+def is_pooscript(content: bytes) -> bool:
+    """Check if file content is a PooScript (starts with shebang)"""
     if not content:
         return False
 
@@ -578,13 +581,13 @@ def is_virtualscript(content: bytes) -> bool:
         return False
 
     first_line = lines[0].strip()
-    return first_line in (b'#!/usr/bin/virtualscript', b'#!/bin/virtualscript')
+    return first_line in (b'#!/usr/bin/pooscript', b'#!/bin/pooscript')
 
 
-def execute_virtualscript(content: bytes, args: List[str], stdin: bytes,
-                          env: Dict[str, str], vfs, process,
-                          process_manager=None, shell_executor=None) -> Tuple[int, bytes, bytes]:
-    """Execute a VirtualScript binary"""
+def execute_pooscript(content: bytes, args: List[str], stdin: bytes,
+                      env: Dict[str, str], vfs, process,
+                      process_manager=None, shell_executor=None) -> Tuple[int, bytes, bytes]:
+    """Execute a PooScript binary"""
     # Remove shebang
     lines = content.split(b'\n', 1)
     if len(lines) > 1:
@@ -596,6 +599,6 @@ def execute_virtualscript(content: bytes, args: List[str], stdin: bytes,
     stdin_str = stdin.decode('utf-8', errors='ignore')
 
     # Execute
-    interpreter = VirtualScriptInterpreter()
+    interpreter = PooScriptInterpreter()
     return interpreter.execute(script, args, stdin_str, env, vfs, process,
                               process_manager, shell_executor)

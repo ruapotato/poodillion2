@@ -73,8 +73,8 @@ class UnixSystem:
         self.vfs.create_device('/dev/random', True, 0, 0)
         self.vfs.create_device('/dev/tty', True, 0, 0)
 
-        # Install VirtualScript commands from scripts/ directory
-        print("Installing VirtualScript commands...")
+        # Install PooScript commands from scripts/ directory
+        print("Installing PooScript commands...")
         install_scripts(self.vfs)
 
         # Create log files
@@ -99,7 +99,7 @@ class UnixSystem:
         self.vfs.create_file('/etc/motd', 0o644, 0, 0, motd, 1)
 
         # Create standard Unix symlinks for realism
-        self.vfs.symlink('/bin/bash', '/bin/sh', 0, 0, 1)  # sh -> bash
+        # Note: /bin/sh will point to pooshell after scripts are installed
         self.vfs.symlink('/usr/bin/python3', '/usr/bin/python', 0, 0, 1)  # python -> python3
 
     def _register_commands(self):
@@ -108,8 +108,31 @@ class UnixSystem:
         fs_cmds = FilesystemCommands(self.vfs, self.permissions, self.processes)
         self.shell.register_builtin('cd', fs_cmds.cmd_cd)
 
-        # All other commands are now VirtualScript binaries in /bin, /usr/bin, etc.
+        # All other commands are now PooScript binaries in /bin, /usr/bin, etc.
         # They are executed by the shell finding them in $PATH
+
+    def boot(self) -> bool:
+        """
+        Boot the system by running /sbin/init
+        Returns True if boot successful
+        """
+        # Check if init exists
+        init_binary = self.vfs.stat('/sbin/init', 1)
+        if not init_binary:
+            print("Warning: /sbin/init not found, skipping boot sequence")
+            return False
+
+        # Execute init as PID 1 (well, through our init process)
+        init_proc = self.processes.get_process(1)
+        if init_proc:
+            exit_code, stdout, stderr = self.shell.execute('/sbin/init', 1)
+            if stdout:
+                print(stdout.decode('utf-8', errors='ignore'), end='')
+            if stderr:
+                print(stderr.decode('utf-8', errors='ignore'), end='')
+            return exit_code == 0
+
+        return False
 
     def add_network(self, network: VirtualNetwork):
         """Attach system to a virtual network"""
@@ -161,12 +184,12 @@ class UnixSystem:
         if self.shell_pid is None:
             return 1, '', 'Not logged in'
 
-        # Check if /bin/sh exists as a VirtualScript
-        sh_binary = self.vfs.stat('/bin/sh', 1)
+        # Check if /bin/pooshell exists as a PooScript
+        sh_binary = self.vfs.stat('/bin/pooshell', 1)
         if sh_binary:
-            # Execute via VirtualScript shell
+            # Execute via PooScript shell
             # The shell script will handle built-ins and execute external commands
-            exit_code, stdout, stderr = self.shell.execute(f'/bin/sh -c \'{command}\'', self.shell_pid)
+            exit_code, stdout, stderr = self.shell.execute(f'/bin/pooshell -c \'{command}\'', self.shell_pid)
         else:
             # Fallback to Python shell
             exit_code, stdout, stderr = self.shell.execute(command, self.shell_pid)

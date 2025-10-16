@@ -1,5 +1,5 @@
 """
-Script Installer - Install VirtualScript commands into VFS
+Script Installer - Install PooScript commands into VFS
 Reads scripts from scripts/ directory and installs them into the virtual filesystem
 """
 
@@ -8,7 +8,7 @@ import os
 
 def install_scripts(vfs):
     """
-    Install all VirtualScript files from scripts/ into the VFS
+    Install all PooScript files from scripts/ into the VFS
 
     Args:
         vfs: VFS instance to install scripts into
@@ -56,6 +56,11 @@ def install_scripts(vfs):
 
             except Exception as e:
                 print(f"  Warning: Failed to install {filename}: {e}")
+
+    # Create /bin/sh symlink to pooshell
+    if vfs.stat('/bin/pooshell', 1):
+        vfs.symlink('/bin/pooshell', '/bin/sh', 0, 0, 1)
+        print(f"  Created symlink: /bin/sh -> /bin/pooshell")
 
     print(f"  Total VirtualScript commands installed: {installed_count}")
     return installed_count

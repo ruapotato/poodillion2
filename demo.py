@@ -135,12 +135,15 @@ Game mechanics:
 
 def demo_basic():
     """Demo basic system functionality"""
-    print('=== DEMO: Basic Unix System ===\n')
+    print('=== Poodillion 2: Basic Demo ===\n')
 
     system = UnixSystem('demo-host')
 
+    # Boot the system
+    system.boot()
+
     # Login
-    print('Logging in as root...')
+    print('\nLogging in as root...')
     system.login('root', 'root')
 
     # Run some commands
@@ -168,11 +171,15 @@ def demo_basic():
 
 def demo_scenario():
     """Demo hacking scenario"""
-    print('=== DEMO: Hacking Scenario ===\n')
+    print('=== Poodillion 2: Virtual Hacking Scenario ===\n')
 
     attacker, target, network = create_scenario()
 
-    print('You are on the attacker machine.')
+    # Boot the attacker system
+    print('\n=== Booting Attacker System ===\n')
+    attacker.boot()
+
+    print('\nYou are on the attacker machine.')
     print('Target system is at 192.168.1.50')
     print('Goal: Compromise the target!\n')
 

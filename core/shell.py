@@ -8,7 +8,7 @@ import re
 from typing import Dict, List, Optional, Tuple, Any, Callable
 from dataclasses import dataclass
 from io import BytesIO
-from core.virtualscript import is_virtualscript, execute_virtualscript
+from core.pooscript import is_pooscript, execute_pooscript
 
 
 @dataclass
@@ -296,11 +296,11 @@ class ShellExecutor:
             if self.permissions.is_sgid(binary_inode.mode):
                 process.egid = binary_inode.gid
 
-            # Check if binary is a VirtualScript
+            # Check if binary is a PooScript
             binary_content = self.vfs.read_file(binary_path, process.cwd)
-            if binary_content and is_virtualscript(binary_content):
-                # Execute as VirtualScript with full system access
-                exit_code, stdout, stderr = execute_virtualscript(
+            if binary_content and is_pooscript(binary_content):
+                # Execute as PooScript with full system access
+                exit_code, stdout, stderr = execute_pooscript(
                     binary_content,
                     command.args,
                     input_data,
