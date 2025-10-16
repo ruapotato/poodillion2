@@ -238,6 +238,51 @@ class VFS:
 
         self.device_handlers['packet'] = (packet_read, packet_write)
 
+        # /dev/net/eth0_raw, eth1_raw, etc - Raw interface access
+        # These are registered dynamically when interfaces are created
+        # Handler template function:
+        def make_interface_handlers(iface_name: str):
+            """Create read/write handlers for a specific interface"""
+            def iface_read(size):
+                if self.system and hasattr(self.system, 'net_interfaces'):
+                    iface = self.system.net_interfaces.get(iface_name)
+                    if iface:
+                        packet = iface.recv_raw()
+                        if packet:
+                            return packet[:size] if size > 0 else packet
+                return b''
+
+            def iface_write(data):
+                if self.system and hasattr(self.system, 'net_interfaces'):
+                    iface = self.system.net_interfaces.get(iface_name)
+                    if iface:
+                        iface.send_raw(data)
+                        return len(data)
+                return 0
+
+            return (iface_read, iface_write)
+
+        # Store the factory function for later use
+        self._make_interface_handlers = make_interface_handlers
+
+        # /dev/net/local - Packets destined for local system (from PooScript network daemon)
+        def local_read(size):
+            """Read packet destined for localhost"""
+            if self.system and hasattr(self.system, 'local_packet_queue'):
+                if self.system.local_packet_queue:
+                    packet = self.system.local_packet_queue.pop(0)
+                    return packet[:size] if size > 0 else packet
+            return b''
+
+        def local_write(data):
+            """Send packet to local stack"""
+            if self.system and hasattr(self.system, 'local_packet_queue'):
+                self.system.local_packet_queue.append(data)
+                return len(data)
+            return 0
+
+        self.device_handlers['local'] = (local_read, local_write)
+
         # /dev/net/arp - ARP table (placeholder for now)
         def arp_read(size):
             """Read ARP table"""

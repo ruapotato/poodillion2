@@ -9,9 +9,10 @@ from core.process import ProcessManager
 from core.shell import Shell
 from core.network import VirtualNetwork, NetworkCommands
 from core.packet_queue import PacketQueue
+from core.network_physical import NetworkInterface
 from core.script_installer import install_scripts
 from commands.fs import FilesystemCommands
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Dict
 
 
 class UnixSystem:
@@ -46,6 +47,15 @@ class UnixSystem:
 
         # Primary IP (first non-loopback interface)
         self.ip = self._get_primary_ip()
+
+        # Physical network interfaces (NetworkInterface objects)
+        # Maps interface name to NetworkInterface (e.g., {'eth0': NetworkInterface(...), 'eth1': ...})
+        self.net_interfaces: Dict[str, NetworkInterface] = {}
+        self._init_network_interfaces()
+
+        # Local packet queue for packets delivered to localhost
+        # PooScript netd writes packets here when they're destined for this system
+        self.local_packet_queue: list = []
 
         # Initialize core systems
         self.vfs = VFS()
@@ -84,6 +94,28 @@ class UnixSystem:
                 return ip
         return '127.0.0.1'
 
+    def _init_network_interfaces(self):
+        """Create physical NetworkInterface objects for each interface"""
+        for iface_name, ip in self.interfaces.items():
+            if iface_name == 'lo':
+                continue  # Skip loopback - it's not a real network interface
+
+            # Generate MAC address from IP (deterministic but unique)
+            octets = [int(x) for x in ip.split('.')]
+            mac = f"08:00:27:{octets[1]:02x}:{octets[2]:02x}:{octets[3]:02x}"
+
+            # Create NetworkInterface object
+            net_iface = NetworkInterface(
+                name=iface_name,
+                mac=mac,
+                rx_buffer=[],
+                tx_buffer=[],
+                segment=None,
+                up=True
+            )
+
+            self.net_interfaces[iface_name] = net_iface
+
     def _init_filesystem(self):
         """Create basic Unix filesystem structure"""
         # Create standard directories
@@ -111,6 +143,30 @@ class UnixSystem:
 
         self.vfs.create_file('/etc/issue', 0o644, 0, 0,
                             b'Linux 2.0.38 \\n \\l\n', 1)
+
+        # Create network configuration directory
+        self.vfs.mkdir('/etc/network', 0o755, 0, 0)
+
+        # Create /etc/network/interfaces file
+        # This lists all configured interfaces
+        interfaces_content = "# Network interface configuration\n"
+        interfaces_content += "# Format: interface ip/netmask\n\n"
+        for iface, ip in self.interfaces.items():
+            if iface != 'lo':
+                interfaces_content += f"{iface} {ip}/24\n"
+
+        self.vfs.create_file('/etc/network/interfaces', 0o644, 0, 0,
+                            interfaces_content.encode(), 1)
+
+        # Create /etc/network/routes file
+        # This will be populated later when routing is configured
+        # Format: destination gateway netmask interface
+        routes_content = "# Routing table\n"
+        routes_content += "# Format: destination gateway netmask interface\n"
+        routes_content += "# Example: 192.168.2.0 192.168.1.1 255.255.255.0 eth0\n\n"
+
+        self.vfs.create_file('/etc/network/routes', 0o644, 0, 0,
+                            routes_content.encode(), 1)
 
         # Create functional device files
         self.vfs.create_device('/dev/null', True, 0, 0, device_name='null')
@@ -143,6 +199,21 @@ class UnixSystem:
         self.vfs.create_device('/dev/net/packet', True, 0, 0, device_name='packet')
         self.vfs.create_device('/dev/net/arp', True, 0, 0, device_name='arp')
         self.vfs.create_device('/dev/net/route', True, 0, 0, device_name='route')
+
+        # Create raw interface devices for PooScript network access
+        # /dev/net/eth0_raw, /dev/net/eth1_raw, etc.
+        for iface_name in self.net_interfaces.keys():
+            device_path = f'/dev/net/{iface_name}_raw'
+            device_name = f'{iface_name}_raw'
+
+            # Register handler for this interface
+            self.vfs.device_handlers[device_name] = self.vfs._make_interface_handlers(iface_name)
+
+            # Create device file
+            self.vfs.create_device(device_path, True, 0, 0, device_name=device_name)
+
+        # Create /dev/net/local for localhost packet delivery
+        self.vfs.create_device('/dev/net/local', True, 0, 0, device_name='local')
 
         # Create /proc/sys/net for network configuration
         self.vfs.mkdir('/proc/sys', 0o555, 0, 0)
@@ -221,6 +292,17 @@ class UnixSystem:
                 print(stdout.decode('utf-8', errors='ignore'), end='')
             if stderr:
                 print(stderr.decode('utf-8', errors='ignore'), end='')
+
+            # After init completes, start network daemon if it exists
+            if self.vfs.stat('/sbin/netd', 1):
+                # Spawn netd as a background daemon
+                # Note: This would ideally run continuously, but for now we mark it as a service
+                netd_pid = self.spawn_service('netd', ['network', 'daemon'], uid=0)
+                if netd_pid:
+                    print(f"[  OK  ] Network daemon started (PID {netd_pid})")
+                else:
+                    print("[WARN ] Failed to start network daemon")
+
             return exit_code == 0
 
         return False
