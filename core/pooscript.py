@@ -215,10 +215,40 @@ class NetworkInterface:
         return None
 
 
+class SystemInterface:
+    """Safe system access for scripts (firewall, routing, etc)"""
+
+    def __init__(self, system):
+        self._system = system
+        self.hostname = system.hostname
+        self.local_ip = system.ip
+        self.interfaces = system.interfaces
+        self.firewall_rules = system.firewall_rules
+        self.routing_table = system.routing_table
+        self.default_gateway = getattr(system, 'default_gateway', None)
+        self.ip_forward = system.ip_forward
+
+    def add_firewall_rule(self, rule: dict) -> None:
+        """Add a firewall rule"""
+        self._system.firewall_rules.append(rule)
+
+    def clear_firewall_rules(self) -> None:
+        """Clear all firewall rules"""
+        self._system.firewall_rules.clear()
+
+    def add_route(self, route: dict) -> None:
+        """Add a routing table entry"""
+        self._system.routing_table.append(route)
+
+    def set_default_gateway(self, gateway: str) -> None:
+        """Set default gateway"""
+        self._system.default_gateway = gateway
+
+
 class ProcessInterface:
     """Safe process access for scripts"""
 
-    def __init__(self, process, process_manager, shell_executor, network_interface=None):
+    def __init__(self, process, process_manager, shell_executor, network_interface=None, system_interface=None):
         self.uid = process.uid
         self.gid = process.gid
         self.euid = process.euid
@@ -229,6 +259,7 @@ class ProcessInterface:
         self._process_manager = process_manager
         self._shell_executor = shell_executor
         self._network_interface = network_interface
+        self._system_interface = system_interface
 
     def spawn(self, command: str, args: List[str], env: Dict[str, str]) -> int:
         """
@@ -378,6 +409,10 @@ class ProcessInterface:
     def get_network(self) -> Optional['NetworkInterface']:
         """Get network interface"""
         return self._network_interface
+
+    def get_system(self) -> Optional['SystemInterface']:
+        """Get system interface for configuration"""
+        return self._system_interface
 
 
 class PooScriptInterpreter:
@@ -532,7 +567,12 @@ class PooScriptInterpreter:
         if network and local_ip:
             network_interface = NetworkInterface(network, local_ip)
 
-        process_interface = ProcessInterface(process, process_manager, shell_executor, network_interface)
+        # Setup system interface if available
+        system_interface = None
+        if shell_executor and hasattr(shell_executor, 'system'):
+            system_interface = SystemInterface(shell_executor.system)
+
+        process_interface = ProcessInterface(process, process_manager, shell_executor, network_interface, system_interface)
 
         # String utilities for shell scripting
         def split_args(text: str) -> List[str]:

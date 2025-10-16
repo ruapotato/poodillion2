@@ -179,7 +179,7 @@ class ShellParser:
 class ShellExecutor:
     """Execute parsed commands"""
 
-    def __init__(self, vfs, permissions, processes, network=None, local_ip=None):
+    def __init__(self, vfs, permissions, processes, network=None, local_ip=None, system=None):
         """
         Args:
             vfs: VFS instance
@@ -187,12 +187,14 @@ class ShellExecutor:
             processes: ProcessManager instance
             network: VirtualNetwork instance (optional)
             local_ip: Local IP address (optional)
+            system: UnixSystem instance (optional, for system configuration)
         """
         self.vfs = vfs
         self.permissions = permissions
         self.processes = processes
         self.network = network
         self.local_ip = local_ip
+        self.system = system  # Store system reference
         self.builtins: Dict[str, Callable] = {}
         self.commands: Dict[str, Callable] = {}
         self.path_dirs = ['/bin', '/usr/bin', '/sbin', '/usr/sbin', '/usr/local/bin']
@@ -366,14 +368,15 @@ class ShellExecutor:
 class Shell:
     """Complete shell implementation"""
 
-    def __init__(self, vfs, permissions, processes, network=None, local_ip=None):
+    def __init__(self, vfs, permissions, processes, network=None, local_ip=None, system=None):
         self.parser = ShellParser()
-        self.executor = ShellExecutor(vfs, permissions, processes, network, local_ip)
+        self.executor = ShellExecutor(vfs, permissions, processes, network, local_ip, system)
         self.vfs = vfs
         self.permissions = permissions
         self.processes = processes
         self.network = network
         self.local_ip = local_ip
+        self.system = system
 
         # Set default variables
         self.parser.set_variable('PATH', '/bin:/usr/bin:/sbin:/usr/sbin:/usr/local/bin')

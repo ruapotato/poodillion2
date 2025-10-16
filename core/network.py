@@ -63,18 +63,98 @@ class VirtualNetwork:
             self.connections[from_ip].add(to_ip)
 
     def can_connect(self, from_ip: str, to_ip: str, port: int = 22) -> bool:
-        """Check if from_ip can connect to to_ip on given port"""
-        # Check if route exists
-        if from_ip not in self.connections or to_ip not in self.connections[from_ip]:
+        """
+        Check if from_ip can connect to to_ip on given port
+        Supports multi-hop routing through intermediate systems with ip_forward enabled
+        """
+        # Localhost/loopback always works
+        if to_ip == '127.0.0.1' or to_ip == from_ip:
+            return True
+
+        # Try to find a route (direct or through routers)
+        path = self._find_route_path(from_ip, to_ip)
+        if not path:
             return False
 
-        # Check firewall rules
-        if to_ip in self.firewalls:
-            for rule in self.firewalls[to_ip]:
+        # Check firewall rules on target system
+        return self._check_firewall(to_ip, port, from_ip)
+
+    def _find_route_path(self, from_ip: str, to_ip: str) -> Optional[List[str]]:
+        """
+        Find network path from source to destination using BFS
+        Returns path as list of IPs, or None if no route exists
+        Respects ip_forward flag on intermediate systems
+        """
+        # Direct connection?
+        if from_ip in self.connections and to_ip in self.connections.get(from_ip, set()):
+            return [from_ip, to_ip]
+
+        # BFS to find path through routers
+        visited_systems = set()  # Track systems, not just IPs
+        visited_ips = set([from_ip])
+        queue = [(from_ip, [from_ip])]
+
+        while queue:
+            current_ip, path = queue.pop(0)
+
+            # Get the system at this IP
+            current_system = self.systems.get(current_ip)
+            if current_system:
+                # Mark this system as visited
+                system_id = id(current_system)
+                if system_id in visited_systems:
+                    continue
+                visited_systems.add(system_id)
+
+            # Check all directly reachable IPs from current position
+            for next_ip in self.connections.get(current_ip, set()):
+                if next_ip in visited_ips:
+                    continue
+
+                visited_ips.add(next_ip)
+                new_path = path + [next_ip]
+
+                # Found destination!
+                if next_ip == to_ip:
+                    return new_path
+
+                # Can this system forward packets to other networks?
+                next_system = self.systems.get(next_ip)
+                if next_system and getattr(next_system, 'ip_forward', False):
+                    # This is a router - continue searching from ALL its interfaces
+                    # Check routes from ALL interfaces of this system
+                    for interface, interface_ip in next_system.interfaces.items():
+                        if interface != 'lo' and interface_ip != '127.0.0.1':
+                            if interface_ip not in visited_ips:
+                                # Add routes from this interface to the queue
+                                for dest in self.connections.get(interface_ip, set()):
+                                    if dest not in visited_ips:
+                                        queue.append((interface_ip, new_path))
+
+        return None  # No route found
+
+    def _check_firewall(self, target_ip: str, port: int, source_ip: str) -> bool:
+        """Check if firewall on target allows connection from source"""
+        target_system = self.systems.get(target_ip)
+        if target_system and hasattr(target_system, 'firewall_rules'):
+            # Check system's iptables rules
+            for rule in target_system.firewall_rules:
+                if rule.get('action') == 'DROP' and rule.get('port') == port:
+                    # Check if source is blocked
+                    source_rule = rule.get('source', 'any')
+                    if source_rule == 'any':
+                        return False  # Blocks all sources
+                    # Check if source IP matches the rule
+                    if source_ip.startswith(source_rule.replace('/8', '').replace('/16', '').replace('/24', '')):
+                        return False
+
+        # Legacy firewall rules (for backward compatibility)
+        if target_ip in self.firewalls:
+            for rule in self.firewalls[target_ip]:
                 if rule.get('action') == 'DENY' and rule.get('port') == port:
                     return False
 
-        return True
+        return True  # No blocking rules found
 
     def add_firewall_rule(self, ip: str, action: str, port: int):
         """Add firewall rule"""

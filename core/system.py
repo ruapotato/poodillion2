@@ -19,16 +19,45 @@ class UnixSystem:
     Manages VFS, users, processes, and provides shell interface
     """
 
-    def __init__(self, hostname: str = 'localhost', ip: str = '127.0.0.1'):
+    def __init__(self, hostname: str = 'localhost', ip_or_interfaces = None):
+        """
+        Initialize Unix system
+
+        Args:
+            hostname: System hostname
+            ip_or_interfaces: Either:
+                - String: Single IP address (legacy, creates eth0 with this IP)
+                - Dict: interface_name -> ip_address (e.g., {'eth0': '192.168.1.1', 'eth1': '10.0.0.1'})
+                - None: No network (loopback only)
+        """
         self.hostname = hostname
-        self.ip = ip
+
+        # Network interfaces: {'eth0': '192.168.1.1', 'eth1': '10.0.0.1'}
+        if isinstance(ip_or_interfaces, str):
+            # Legacy: single IP address, create eth0
+            self.interfaces = {'lo': '127.0.0.1', 'eth0': ip_or_interfaces}
+        elif isinstance(ip_or_interfaces, dict):
+            # New: multiple interfaces
+            self.interfaces = {'lo': '127.0.0.1', **ip_or_interfaces}
+        else:
+            # No network (loopback only)
+            self.interfaces = {'lo': '127.0.0.1'}
+
+        # Primary IP (first non-loopback interface)
+        self.ip = self._get_primary_ip()
 
         # Initialize core systems
         self.vfs = VFS()
         self.permissions = PermissionSystem()
         self.processes = ProcessManager()
         self.network: Optional[VirtualNetwork] = None
-        self.shell = Shell(self.vfs, self.permissions, self.processes, self.network, self.ip)
+        self.shell = Shell(self.vfs, self.permissions, self.processes, self.network, self.ip, system=self)
+
+        # Network configuration
+        self.firewall_rules = []     # Firewall rules managed by iptables
+        self.routing_table = []      # Routing table entries
+        self.ip_forward = False      # IP forwarding enabled (acts as router)
+        self.default_gateway = None  # Default gateway for outbound traffic
 
         # Current user shell process
         self.shell_pid: Optional[int] = None
@@ -38,6 +67,13 @@ class UnixSystem:
 
         # Register commands
         self._register_commands()
+
+    def _get_primary_ip(self) -> str:
+        """Get primary IP address (first non-loopback interface)"""
+        for iface, ip in self.interfaces.items():
+            if iface != 'lo' and ip != '127.0.0.1':
+                return ip
+        return '127.0.0.1'
 
     def _init_filesystem(self):
         """Create basic Unix filesystem structure"""
@@ -91,6 +127,14 @@ class UnixSystem:
         # Pseudo-TTY master/slave
         self.vfs.mkdir('/dev/pts', 0o755, 0, 0)
         self.vfs.create_device('/dev/pts/0', True, 0, 0, device_name='tty')
+
+        # Create /proc/sys/net for network configuration
+        self.vfs.mkdir('/proc/sys', 0o555, 0, 0)
+        self.vfs.mkdir('/proc/sys/net', 0o555, 0, 0)
+        self.vfs.mkdir('/proc/sys/net/ipv4', 0o555, 0, 0)
+
+        # IP forwarding control (0 = disabled, 1 = enabled)
+        self.vfs.create_file('/proc/sys/net/ipv4/ip_forward', 0o644, 0, 0, b'0\n', 1)
 
         # Install PooScript commands from scripts/ directory
         print("Installing PooScript commands...")
@@ -156,7 +200,12 @@ class UnixSystem:
     def add_network(self, network: VirtualNetwork):
         """Attach system to a virtual network"""
         self.network = network
-        network.register_system(self.ip, self)
+
+        # Register system for ALL its IP addresses (not just primary)
+        # This allows routing to work with multi-interface systems
+        for interface, ip in self.interfaces.items():
+            if interface != 'lo' and ip != '127.0.0.1':
+                network.register_system(ip, self)
 
         # Update shell's network reference
         self.shell.network = network
