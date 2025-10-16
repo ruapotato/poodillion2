@@ -109,6 +109,70 @@ class VFSInterface:
         inode.uid = uid
         inode.gid = gid
 
+    def listdetail(self, path: str) -> List[Dict[str, Any]]:
+        """List directory with full details"""
+        entries = self.vfs.list_dir(path, self.cwd)
+        if entries is None:
+            raise RuntimeError(f"Cannot list directory: {path}")
+
+        result = []
+        for name, ino in entries:
+            if name in ('.', '..'):
+                continue
+            inode = self.vfs.inodes.get(ino)
+            if inode:
+                result.append({
+                    'name': name,
+                    'ino': ino,
+                    'size': inode.size,
+                    'mode': inode.mode,
+                    'uid': inode.uid,
+                    'gid': inode.gid,
+                    'is_file': inode.is_file(),
+                    'is_dir': inode.is_dir(),
+                    'is_symlink': inode.is_symlink(),
+                    'nlink': inode.nlink,
+                    'mtime': inode.mtime,
+                    'atime': inode.atime,
+                    'ctime': inode.ctime,
+                })
+        return result
+
+    def getcwd(self) -> str:
+        """Get current working directory as path"""
+        return self._inode_to_path(self.cwd)
+
+    def _inode_to_path(self, ino: int, visited=None) -> str:
+        """Convert inode to path"""
+        if ino == 1:
+            return '/'
+
+        if visited is None:
+            visited = set()
+
+        if ino in visited:
+            return '???'
+
+        visited.add(ino)
+
+        # Search all directories for this inode
+        for parent_ino, parent_inode in self.vfs.inodes.items():
+            if not parent_inode.is_dir():
+                continue
+
+            entries = parent_inode.content
+            if not isinstance(entries, dict):
+                continue
+
+            for name, child_ino in entries.items():
+                if child_ino == ino and name not in ('.', '..'):
+                    parent_path = self._inode_to_path(parent_ino, visited)
+                    if parent_path == '/':
+                        return f'/{name}'
+                    return f'{parent_path}/{name}'
+
+        return '???'
+
 
 class ProcessInterface:
     """Safe process access for scripts"""
@@ -237,6 +301,10 @@ class VirtualScriptInterpreter:
             ast.Call, ast.Attribute, ast.keyword,  # keyword for keyword arguments
             ast.IfExp,  # Ternary operator (a if cond else b)
             ast.JoinedStr, ast.FormattedValue,  # f-strings
+            ast.ListComp, ast.DictComp, ast.SetComp, ast.GeneratorExp,  # Comprehensions
+            ast.comprehension,  # comprehension node for list/dict/set comprehensions
+            ast.Lambda,  # Lambda functions
+            ast.arguments, ast.arg,  # Function arguments
             # Operators
             ast.Add, ast.Sub, ast.Mult, ast.Div, ast.FloorDiv, ast.Mod, ast.Pow,
             ast.LShift, ast.RShift, ast.BitOr, ast.BitXor, ast.BitAnd,
@@ -348,6 +416,47 @@ class VirtualScriptInterpreter:
             parts = path.rstrip('/').split('/')[:-1]
             return '/'.join(parts) or '/'
 
+        def format_time(timestamp: float, fmt: str = '%b %d %H:%M') -> str:
+            """Format Unix timestamp"""
+            import time as time_mod
+            return time_mod.strftime(fmt, time_mod.localtime(timestamp))
+
+        def format_mode(mode: int) -> str:
+            """Format file mode as permission string (rwxrwxrwx)"""
+            perms = ''
+            perms += 'r' if mode & 0o400 else '-'
+            perms += 'w' if mode & 0o200 else '-'
+            perms += 'x' if mode & 0o100 else '-'
+            perms += 'r' if mode & 0o040 else '-'
+            perms += 'w' if mode & 0o020 else '-'
+            perms += 'x' if mode & 0o010 else '-'
+            perms += 'r' if mode & 0o004 else '-'
+            perms += 'w' if mode & 0o002 else '-'
+            perms += 'x' if mode & 0o001 else '-'
+            return perms
+
+        def get_filetype_char(mode: int) -> str:
+            """Get file type character"""
+            if mode & 0o040000:  # Directory
+                return 'd'
+            elif mode & 0o120000:  # Symlink
+                return 'l'
+            elif mode & 0o060000:  # Block device
+                return 'b'
+            elif mode & 0o020000:  # Character device
+                return 'c'
+            elif mode & 0o010000:  # FIFO
+                return 'p'
+            elif mode & 0o140000:  # Socket
+                return 's'
+            else:  # Regular file
+                return '-'
+
+        def time() -> float:
+            """Get current Unix timestamp"""
+            import time as time_mod
+            return time_mod.time()
+
         # Create namespace for script execution
         namespace = {
             # Built-in functions
@@ -357,6 +466,10 @@ class VirtualScriptInterpreter:
             'join_path': join_path,
             'basename': basename,
             'dirname': dirname,
+            'format_time': format_time,
+            'format_mode': format_mode,
+            'get_filetype_char': get_filetype_char,
+            'time': time,
             # Built-in objects
             'args': args,
             'stdin': stdin,

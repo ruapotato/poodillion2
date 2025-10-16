@@ -8,9 +8,8 @@ from core.permissions import PermissionSystem
 from core.process import ProcessManager
 from core.shell import Shell
 from core.network import VirtualNetwork, NetworkCommands
+from core.script_installer import install_scripts
 from commands.fs import FilesystemCommands
-from commands.proc import ProcessCommands
-from commands.system import SystemCommands
 from typing import Optional, Tuple
 
 
@@ -74,32 +73,9 @@ class UnixSystem:
         self.vfs.create_device('/dev/random', True, 0, 0)
         self.vfs.create_device('/dev/tty', True, 0, 0)
 
-        # Populate /bin with "executable" files (just placeholders)
-        binaries = ['ls', 'cat', 'grep', 'ps', 'kill', 'echo', 'mkdir', 'rm',
-                    'touch', 'pwd', 'sh', 'bash', 'cp', 'mv', 'chmod', 'chown', 'ln', 'tar',
-                    'gzip', 'gunzip', 'date', 'hostname', 'netstat', 'mount']
-
-        for binary in binaries:
-            self.vfs.create_file(f'/bin/{binary}', 0o755, 0, 0,
-                                b'#!/bin/sh\n# Binary placeholder\n', 1)
-
-        # Populate /usr/bin
-        usr_binaries = ['find', 'which', 'whoami', 'id', 'env', 'less', 'more',
-                       'head', 'tail', 'wc', 'sort', 'uniq', 'diff', 'patch',
-                       'make', 'gcc', 'perl', 'python', 'awk', 'sed', 'vi',
-                       'nmap', 'telnet', 'ftp', 'wget', 'curl', 'ssh', 'uptime']
-
-        for binary in usr_binaries:
-            self.vfs.create_file(f'/usr/bin/{binary}', 0o755, 0, 0,
-                                b'#!/bin/sh\n# Binary placeholder\n', 1)
-
-        # Populate /sbin
-        sbin_binaries = ['ifconfig', 'route', 'iptables', 'init', 'shutdown',
-                        'reboot', 'fdisk', 'fsck', 'mkfs']
-
-        for binary in sbin_binaries:
-            self.vfs.create_file(f'/sbin/{binary}', 0o755, 0, 0,
-                                b'#!/bin/sh\n# Binary placeholder\n', 1)
+        # Install VirtualScript commands from scripts/ directory
+        print("Installing VirtualScript commands...")
+        install_scripts(self.vfs)
 
         # Create log files
         self.vfs.create_file('/var/log/messages', 0o644, 0, 0,
@@ -127,58 +103,22 @@ class UnixSystem:
         self.vfs.symlink('/usr/bin/python3', '/usr/bin/python', 0, 0, 1)  # python -> python3
 
     def _register_commands(self):
-        """Register all available commands"""
-        # Filesystem commands
+        """Register shell builtins (commands that must modify shell state)"""
+        # cd is a true builtin - it needs to modify the shell process's cwd
         fs_cmds = FilesystemCommands(self.vfs, self.permissions, self.processes)
         self.shell.register_builtin('cd', fs_cmds.cmd_cd)
-        self.shell.register_command('pwd', fs_cmds.cmd_pwd)
-        self.shell.register_command('ls', fs_cmds.cmd_ls)
-        self.shell.register_command('cat', fs_cmds.cmd_cat)
-        self.shell.register_command('mkdir', fs_cmds.cmd_mkdir)
-        self.shell.register_command('touch', fs_cmds.cmd_touch)
-        self.shell.register_command('rm', fs_cmds.cmd_rm)
-        self.shell.register_command('echo', fs_cmds.cmd_echo)
-        self.shell.register_command('grep', fs_cmds.cmd_grep)
-        self.shell.register_command('find', fs_cmds.cmd_find)
-        self.shell.register_command('chmod', fs_cmds.cmd_chmod)
-        self.shell.register_command('chown', fs_cmds.cmd_chown)
-        self.shell.register_command('ln', fs_cmds.cmd_ln)
-        self.shell.register_command('cp', fs_cmds.cmd_cp)
-        self.shell.register_command('mv', fs_cmds.cmd_mv)
 
-        # Process commands
-        proc_cmds = ProcessCommands(self.vfs, self.permissions, self.processes)
-        self.shell.register_command('ps', proc_cmds.cmd_ps)
-        self.shell.register_command('kill', proc_cmds.cmd_kill)
-        self.shell.register_command('killall', proc_cmds.cmd_killall)
-        self.shell.register_command('exploit', proc_cmds.cmd_exploit)
-        self.shell.register_command('pstree', proc_cmds.cmd_pstree)
-
-        # System commands
-        sys_cmds = SystemCommands(self.vfs, self.permissions, self.processes, self.hostname)
-        self.shell.register_command('whoami', sys_cmds.cmd_whoami)
-        self.shell.register_command('hostname', sys_cmds.cmd_hostname)
-        self.shell.register_command('uname', sys_cmds.cmd_uname)
-        self.shell.register_command('which', sys_cmds.cmd_which)
-        self.shell.register_command('date', sys_cmds.cmd_date)
-        self.shell.register_command('uptime', sys_cmds.cmd_uptime)
-        self.shell.register_command('id', sys_cmds.cmd_id)
-        self.shell.register_command('env', sys_cmds.cmd_env)
-        self.shell.register_command('clear', sys_cmds.cmd_clear)
-        self.shell.register_command('history', sys_cmds.cmd_history)
-        self.shell.register_command('man', sys_cmds.cmd_man)
+        # All other commands are now VirtualScript binaries in /bin, /usr/bin, etc.
+        # They are executed by the shell finding them in $PATH
 
     def add_network(self, network: VirtualNetwork):
         """Attach system to a virtual network"""
         self.network = network
         network.register_system(self.ip, self)
 
-        # Register network commands
-        net_cmds = NetworkCommands(self.vfs, self.permissions, self.processes, network)
-        self.shell.register_command('ifconfig', net_cmds.cmd_ifconfig)
-        self.shell.register_command('netstat', net_cmds.cmd_netstat)
-        self.shell.register_command('nmap', net_cmds.cmd_nmap)
-        self.shell.register_command('ssh', net_cmds.cmd_ssh)
+        # Network commands (ifconfig, netstat, nmap, ssh) can be added as VirtualScripts later
+        # For now, they would need special handling for network access
+        # TODO: Create VirtualScript versions or expose network API to scripts
 
     def login(self, username: str, password: str) -> bool:
         """
