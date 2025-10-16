@@ -36,6 +36,7 @@ def print_scenario_menu():
 
     for scenario in scenarios:
         diff_color = {
+            'Tutorial': '📘',
             'Easy': '🟢',
             'Medium': '🟡',
             'Hard': '🔴',
@@ -50,15 +51,23 @@ def print_scenario_menu():
     print()
 
 
-def interactive_shell(system):
-    """Run interactive shell on a system"""
-    print(f'\n=== {system.hostname} ===')
-    print('Logging in as root...')
+def interactive_shell(system, network, username='root', password='root'):
+    """
+    Run interactive shell on a system with SSH support
 
-    # Auto-login as root
-    if not system.login('root', 'root'):
+    Args:
+        system: The UnixSystem to connect to
+        network: The VirtualNetwork containing all systems
+        username: Username to login as
+        password: Password for authentication
+    """
+    print(f'\n=== {system.hostname} ({system.ip}) ===')
+    print(f'Logging in as {username}...')
+
+    # Auto-login
+    if not system.login(username, password):
         print('Login failed!')
-        return
+        return False
 
     # Show MOTD
     motd = system.vfs.read_file('/etc/motd', 1)
@@ -130,6 +139,9 @@ def interactive_shell(system):
     readline.parse_and_bind('tab: complete')
     readline.set_completer_delims(' \t\n;')
 
+    # SSH context tracking
+    ssh_stack = []
+
     # Set up I/O callbacks
     def input_callback(prompt):
         """Provide input to PooScript"""
@@ -157,13 +169,44 @@ def interactive_shell(system):
     system.vfs.output_callback = output_callback
     system.vfs.error_callback = error_callback
 
-    # Execute shell
+    # Execute shell and check for SSH requests
     try:
         exit_code, stdout, stderr = system.shell.execute('/bin/pooshell', system.shell_pid, b'')
+
+        # Check if SSH was requested
+        ssh_request = system.vfs.read_file('/tmp/.ssh_request', 1)
+        if ssh_request:
+            request = ssh_request.decode('utf-8', errors='ignore').strip()
+            if '|' in request:
+                target_user, target_host = request.split('|', 1)
+
+                # Clear the request
+                system.vfs.write_file('/tmp/.ssh_request', b'', 1)
+
+                # Find target system in network
+                target_system = network.systems.get(target_host)
+                if target_system:
+                    # Recursively connect to target system
+                    ssh_stack.append(system)
+                    success = interactive_shell(target_system, network, target_user, 'root')
+
+                    # After returning from SSH, continue current shell
+                    if success:
+                        print(f'\nConnection to {target_host} closed.')
+                        print(f'Back on {system.hostname} ({system.ip})')
+                        # Continue shell on current system
+                        return interactive_shell(system, network, username, password)
+                else:
+                    print(f'\nssh: Could not resolve hostname {target_host}')
+                    # Continue shell on current system
+                    return interactive_shell(system, network, username, password)
+
     except KeyboardInterrupt:
         print('\n^C')
     except Exception as e:
         print(f'Error: {e}', file=sys.stderr)
+
+    return True
 
 
 def play_scenario(scenario_key):
@@ -194,15 +237,20 @@ def play_scenario(scenario_key):
 
     print(f"\n{'='*60}")
 
-    # Boot attacker system
-    print('\n=== Booting Your System ===\n')
-    attacker.boot()
+    # Boot ALL systems in the network
+    print('\n=== Booting Network Systems ===\n')
+    for system in metadata['systems']:
+        print(f"Booting {system.hostname} ({system.ip})...")
+        system.boot()
 
+    print("\n✓ All systems online")
+    print("✓ Network fully emulated")
     print("\nYou are now connected to your attacking machine.")
+    print("Use 'ssh <ip>' to connect to other systems.")
     print("Good luck!\n")
 
-    # Start interactive shell
-    interactive_shell(attacker)
+    # Start interactive shell on attacker system
+    interactive_shell(attacker, network)
 
     # Post-game
     print("\n\nThanks for playing!")
@@ -217,7 +265,7 @@ def main():
         print_scenario_menu()
 
         try:
-            choice = input("Select a scenario (1-3, Q to quit): ").strip().upper()
+            choice = input("Select a scenario (0-3, Q to quit): ").strip().upper()
         except (EOFError, KeyboardInterrupt):
             print("\n\nExiting...")
             sys.exit(0)
@@ -233,7 +281,7 @@ def main():
             input("Press Enter to return to main menu...")
         else:
             print(f"\nInvalid choice: {choice}")
-            print("Please select 1, 2, 3, or Q")
+            print("Please select 0, 1, 2, 3, or Q")
 
 
 if __name__ == '__main__':

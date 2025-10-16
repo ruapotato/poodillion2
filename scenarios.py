@@ -8,6 +8,167 @@ from core.system import UnixSystem
 from core.network import VirtualNetwork
 
 
+def create_scenario_zero():
+    """
+    Scenario Zero: SSH Training Network
+    - Simple flat network with multiple systems
+    - All systems have root/root credentials
+    - Learn to SSH between systems
+    - Practice basic Unix commands across multiple hosts
+    """
+    network = VirtualNetwork()
+
+    # Attacker system (your machine)
+    attacker = UnixSystem('training-box', '192.168.1.100')
+    attacker.add_network(network)
+
+    # Create training notes
+    attacker.vfs.create_file(
+        '/root/README.txt',
+        0o644, 0, 0,
+        b'=== SSH TRAINING SCENARIO ===\n\n'
+        b'Welcome to Poodillion 2!\n\n'
+        b'This scenario teaches you how to SSH between systems.\n'
+        b'All systems on this network:\n'
+        b'  - training-box (192.168.1.100) <- YOU ARE HERE\n'
+        b'  - router (192.168.1.1)\n'
+        b'  - server-alpha (192.168.1.10)\n'
+        b'  - server-beta (192.168.1.20)\n'
+        b'  - server-gamma (192.168.1.30)\n\n'
+        b'All systems have login: root/root\n\n'
+        b'MISSION:\n'
+        b'1. Use "ping" to verify connectivity\n'
+        b'2. Use "ssh <ip>" to connect to each server\n'
+        b'3. Find the flag file on server-gamma\n'
+        b'4. Practice navigating between systems\n\n'
+        b'TIPS:\n'
+        b'  - Type "exit" to close SSH connection and return\n'
+        b'  - You can SSH from any system to any other system\n'
+        b'  - Try: ssh 192.168.1.10\n'
+        b'  - Try: ssh 192.168.1.1\n\n'
+        b'Have fun exploring!\n',
+        1
+    )
+
+    # Router with routing between networks
+    router = UnixSystem('router', '192.168.1.1')
+    router.add_network(network)
+    router.vfs.create_file(
+        '/root/router-info.txt',
+        0o644, 0, 0,
+        b'This is the network router.\n'
+        b'All traffic flows through here.\n\n'
+        b'Connected systems:\n'
+        b'  192.168.1.10 - server-alpha\n'
+        b'  192.168.1.20 - server-beta\n'
+        b'  192.168.1.30 - server-gamma\n'
+        b'  192.168.1.100 - training-box\n',
+        1
+    )
+
+    # Server Alpha
+    server_alpha = UnixSystem('server-alpha', '192.168.1.10')
+    server_alpha.add_network(network)
+    server_alpha.vfs.create_file(
+        '/root/welcome.txt',
+        0o644, 0, 0,
+        b'Welcome to Server Alpha!\n\n'
+        b'You have successfully SSH\'d into your first remote system.\n\n'
+        b'Try these commands:\n'
+        b'  - ls -la /root\n'
+        b'  - ps -f\n'
+        b'  - cat /etc/hostname\n'
+        b'  - ifconfig\n\n'
+        b'When you\'re done, type "exit" to return to your previous system.\n',
+        1
+    )
+    server_alpha.vfs.create_file(
+        '/var/log/access.log',
+        0o644, 0, 0,
+        b'[LOG] Server Alpha - Web service logs\n'
+        b'[2025-01-15 10:23:45] GET /index.html - 200 OK\n'
+        b'[2025-01-15 10:24:12] GET /admin.php - 403 Forbidden\n',
+        1
+    )
+
+    # Server Beta
+    server_beta = UnixSystem('server-beta', '192.168.1.20')
+    server_beta.add_network(network)
+    server_beta.vfs.create_file(
+        '/root/data.txt',
+        0o644, 0, 0,
+        b'Server Beta - Database Server\n\n'
+        b'This server hosts the main database.\n\n'
+        b'Database Info:\n'
+        b'  Host: localhost\n'
+        b'  Port: 3306\n'
+        b'  Name: training_db\n\n'
+        b'HINT: The flag is not here. Try server-gamma (192.168.1.30)\n',
+        1
+    )
+    server_beta.spawn_service('mysqld', ['service', 'database'], uid=27)
+
+    # Server Gamma - has the flag
+    server_gamma = UnixSystem('server-gamma', '192.168.1.30')
+    server_gamma.add_network(network)
+    server_gamma.vfs.create_file(
+        '/root/flag.txt',
+        0o644, 0, 0,
+        b'*************************************\n'
+        b'*                                   *\n'
+        b'*  CONGRATULATIONS!                 *\n'
+        b'*                                   *\n'
+        b'*  You have completed SSH training  *\n'
+        b'*                                   *\n'
+        b'*  FLAG{you_are_now_an_ssh_master}  *\n'
+        b'*                                   *\n'
+        b'*************************************\n\n'
+        b'You have learned how to:\n'
+        b'  [x] Navigate a virtual network\n'
+        b'  [x] Use SSH to connect to remote systems\n'
+        b'  [x] Execute commands on multiple hosts\n'
+        b'  [x] Exit SSH sessions and return\n\n'
+        b'Ready for real hacking scenarios? Try Scenario 1!\n',
+        1
+    )
+    server_gamma.vfs.create_file(
+        '/var/www/secret.txt',
+        0o644, 33, 33,
+        b'SECRET: The admin password is "admin123"\n',
+        1
+    )
+    server_gamma.spawn_service('apache2', ['service', 'webserver'], uid=33)
+
+    # Layer-2 Network Connectivity (full mesh for training)
+    systems = [
+        ('192.168.1.100', attacker),
+        ('192.168.1.1', router),
+        ('192.168.1.10', server_alpha),
+        ('192.168.1.20', server_beta),
+        ('192.168.1.30', server_gamma),
+    ]
+
+    # Create full mesh connectivity (everyone can reach everyone)
+    for ip1, _ in systems:
+        for ip2, _ in systems:
+            if ip1 != ip2:
+                network.add_route(ip1, ip2)
+
+    return attacker, network, {
+        'title': 'Scenario 0: SSH Training',
+        'description': 'Learn to navigate between systems using SSH',
+        'objective': 'SSH to all servers and find the flag on server-gamma',
+        'difficulty': 'Tutorial',
+        'systems': [attacker, router, server_alpha, server_beta, server_gamma],
+        'hints': [
+            'Start by reading /root/README.txt',
+            'Use: ssh 192.168.1.10',
+            'Type "exit" to close SSH connection',
+            'The flag is on 192.168.1.30',
+        ]
+    }
+
+
 def create_beginner_scenario():
     """
     Beginner: Simple Corporate Network
@@ -447,6 +608,7 @@ def create_advanced_scenario():
 
 # Scenario registry
 SCENARIOS = {
+    '0': create_scenario_zero,
     '1': create_beginner_scenario,
     '2': create_intermediate_scenario,
     '3': create_advanced_scenario,
@@ -454,6 +616,11 @@ SCENARIOS = {
 
 # Scenario metadata (for menu display without creating full scenarios)
 SCENARIO_INFO = {
+    '0': {
+        'title': 'Scenario 0: SSH Training',
+        'description': 'Learn to navigate between systems using SSH',
+        'difficulty': 'Tutorial',
+    },
     '1': {
         'title': 'Beginner: Simple Corporate Hack',
         'description': 'Compromise a web server behind a basic firewall',
