@@ -11,12 +11,41 @@ from core.network import VirtualNetwork
 
 
 def create_scenario():
-    """Create a basic hacking scenario"""
+    """Create a basic hacking scenario with router"""
     # Create network
     network = VirtualNetwork()
 
-    # Create target system
+    # Create attacker system (external network)
+    attacker = UnixSystem('kali-box', '10.0.0.100')
+    attacker.default_gateway = '10.0.0.1'
+    attacker.add_network(network)
+
+    # Add tools and notes to attacker
+    attacker.vfs.create_file(
+        '/root/notes.txt',
+        0o644, 0, 0,
+        b'Target: 192.168.1.50 (behind router)\n'
+        b'Gateway: 10.0.0.1 (routes to 192.168.1.1)\n'
+        b'Objective: Gain root access and exfiltrate data\n\n'
+        b'Try these commands:\n'
+        b'  ping 192.168.1.50       # Test multi-hop routing\n'
+        b'  cat /proc/net/arp       # View ARP cache\n'
+        b'  cat /proc/net/route     # View routing table\n'
+        b'  nmap 192.168.1.50       # Scan target ports\n',
+        1
+    )
+
+    # Create router/gateway with 2 interfaces
+    router = UnixSystem('gateway', {
+        'eth0': '10.0.0.1',       # External (internet-facing)
+        'eth1': '192.168.1.1'     # Internal (corporate LAN)
+    })
+    router.ip_forward = True  # Enable routing between networks
+    router.add_network(network)
+
+    # Create target system (internal network)
     target = UnixSystem('corporate-web', '192.168.1.50')
+    target.default_gateway = '192.168.1.1'
     target.add_network(network)
 
     # Add some users
@@ -48,21 +77,16 @@ def create_scenario():
     target.spawn_service('mysqld', ['service', 'database', 'vulnerable'], uid=27)
     target.spawn_service('sshd', ['service', 'ssh'], uid=0)
 
-    # Create attacker system
-    attacker = UnixSystem('kali-box', '192.168.1.100')
-    attacker.add_network(network)
+    # Layer-2 network connectivity
+    # Attacker <-> Router (external)
+    network.add_route('10.0.0.100', '10.0.0.1')
+    network.add_route('10.0.0.1', '10.0.0.100')
 
-    # Add tools to attacker
-    attacker.vfs.create_file(
-        '/root/notes.txt',
-        0o644, 0, 0,
-        b'Target: 192.168.1.50\nObjective: Gain root access and exfiltrate data\n',
-        1
-    )
+    # Router (internal) <-> Target
+    network.add_route('192.168.1.1', '192.168.1.50')
+    network.add_route('192.168.1.50', '192.168.1.1')
 
-    # Connect systems on network
-    network.add_route('192.168.1.100', '192.168.1.50')
-    network.add_route('192.168.1.50', '192.168.1.100')
+    # Multi-hop routing will work automatically because router has ip_forward=True
 
     return attacker, target, network
 

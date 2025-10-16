@@ -11,15 +11,16 @@ from core.network import VirtualNetwork
 def create_beginner_scenario():
     """
     Beginner: Simple Corporate Network
-    - Attacker on public internet
-    - Simple firewall
-    - One web server behind firewall
+    - Attacker on public internet (10.0.0.0/24)
+    - Router with IP forwarding between networks
+    - One web server behind router (192.168.1.0/24)
     """
     network = VirtualNetwork()
 
     # Attacker system (your machine)
     attacker = UnixSystem('kali-box', '10.0.0.100')
     attacker.add_network(network)
+    attacker.default_gateway = '10.0.0.1'  # Set default gateway
 
     # Create hacking tools and notes
     attacker.vfs.create_file(
@@ -27,12 +28,19 @@ def create_beginner_scenario():
         0o644, 0, 0,
         b'Target Network: 192.168.1.0/24\n'
         b'Objective: Compromise the web server and find the flag\n'
-        b'Gateway: 192.168.1.1\n',
+        b'Gateway: 10.0.0.1 (routes to 192.168.1.1)\n'
+        b'Target: 192.168.1.50\n\n'
+        b'Try: ping 192.168.1.50\n'
+        b'Try: nmap 192.168.1.50\n',
         1
     )
 
-    # Firewall/Router (gateway between internet and internal network)
-    firewall = UnixSystem('firewall', '192.168.1.1')
+    # Firewall/Router with 2 interfaces (gateway between internet and internal network)
+    firewall = UnixSystem('firewall', {
+        'eth0': '10.0.0.1',       # External (internet-facing)
+        'eth1': '192.168.1.1'     # Internal (corporate LAN)
+    })
+    firewall.ip_forward = True  # Enable routing between networks
     firewall.add_network(network)
     firewall.vfs.write_file('/etc/hostname', b'firewall\n', 1)
 
@@ -52,6 +60,7 @@ def create_beginner_scenario():
 
     # Web Server
     webserver = UnixSystem('web-01', '192.168.1.50')
+    webserver.default_gateway = '192.168.1.1'
     webserver.add_network(network)
 
     # Add users
@@ -100,63 +109,80 @@ def create_beginner_scenario():
     webserver.spawn_service('mysqld', ['service', 'database'], uid=27)
     webserver.spawn_service('sshd', ['service', 'ssh'], uid=0)
 
-    # Network routing
-    # Attacker can reach firewall
-    network.add_route('10.0.0.100', '192.168.1.1')
-    network.add_route('192.168.1.1', '10.0.0.100')
+    # Layer-2 Network Connectivity (who can directly communicate)
+    # Attacker <-> Router (external interface)
+    network.add_route('10.0.0.100', '10.0.0.1')
+    network.add_route('10.0.0.1', '10.0.0.100')
 
-    # Firewall can reach internal network
+    # Router (internal) <-> Web Server
     network.add_route('192.168.1.1', '192.168.1.50')
     network.add_route('192.168.1.50', '192.168.1.1')
 
-    # Attacker can reach web server through firewall (port 80/443 open)
-    network.add_route('10.0.0.100', '192.168.1.50')
-    network.add_route('192.168.1.50', '10.0.0.100')
+    # Multi-hop routing will automatically work because:
+    # - Attacker -> Router external (10.0.0.1)
+    # - Router forwards (ip_forward=True)
+    # - Router internal (192.168.1.1) -> Webserver
 
     # Firewall rules - allow web traffic, block SSH from outside
     network.add_firewall_rule('192.168.1.50', 'DENY', 22)  # Block SSH from outside
 
     return attacker, network, {
         'title': 'Beginner: Simple Corporate Hack',
-        'description': 'Compromise a web server behind a basic firewall',
+        'description': 'Compromise a web server behind a router/firewall',
         'objective': 'Find the flag in /root/flag.txt on the web server',
         'difficulty': 'Easy',
-        'systems': [attacker, firewall, webserver]
+        'systems': [attacker, firewall, webserver],
+        'hints': [
+            'Try: ping 192.168.1.50 (tests multi-hop routing)',
+            'Try: nmap 192.168.1.50',
+            'Try: cat /proc/net/arp (see ARP cache)',
+            'Try: cat /proc/net/route (see routing table)',
+        ]
     }
 
 
 def create_intermediate_scenario():
     """
     Intermediate: Corporate DMZ
-    - Attacker on internet
-    - Firewall with DMZ
-    - Web server in DMZ
-    - Database server in internal network
+    - Attacker on internet (10.0.0.0/24)
+    - Router with 3 interfaces (external, DMZ, internal)
+    - Web server in DMZ (192.168.100.0/24)
+    - Database server in internal network (192.168.10.0/24)
     - Jump host for internal access
     """
     network = VirtualNetwork()
 
     # Attacker
     attacker = UnixSystem('kali-box', '10.0.0.100')
+    attacker.default_gateway = '10.0.0.1'
     attacker.add_network(network)
 
     attacker.vfs.create_file(
         '/root/notes.txt',
         0o644, 0, 0,
         b'Target: Corporate Network\n'
+        b'External: 10.0.0.0/24\n'
         b'DMZ: 192.168.100.0/24\n'
         b'Internal: 192.168.10.0/24\n'
-        b'Objective: Access the internal database and exfiltrate data\n',
+        b'Objective: Access the internal database and exfiltrate data\n\n'
+        b'Gateway: 10.0.0.1\n'
+        b'Strategy: Compromise DMZ web server, then pivot to internal network\n',
         1
     )
 
-    # Firewall
-    firewall = UnixSystem('corp-firewall', '192.168.100.1')
+    # Firewall/Router with 3 interfaces
+    firewall = UnixSystem('corp-firewall', {
+        'eth0': '10.0.0.1',         # External (internet)
+        'eth1': '192.168.100.1',    # DMZ
+        'eth2': '192.168.10.1'      # Internal LAN
+    })
+    firewall.ip_forward = True  # Enable routing
     firewall.add_network(network)
     firewall.spawn_service('iptables', ['service', 'firewall'], uid=0)
 
     # DMZ Web Server
     webserver = UnixSystem('dmz-web-01', '192.168.100.10')
+    webserver.default_gateway = '192.168.100.1'
     webserver.add_network(network)
     webserver.add_user('webadmin', 'admin123', 1001, '/home/webadmin')
 
@@ -185,6 +211,7 @@ def create_intermediate_scenario():
 
     # Internal Jump Host
     jumphost = UnixSystem('jump-01', '192.168.10.20')
+    jumphost.default_gateway = '192.168.10.1'
     jumphost.add_network(network)
     jumphost.add_user('sysadmin', 'sysPass2024', 1001, '/home/sysadmin')
 
@@ -199,6 +226,7 @@ def create_intermediate_scenario():
 
     # Internal Database Server
     dbserver = UnixSystem('db-01', '192.168.10.50')
+    dbserver.default_gateway = '192.168.10.1'
     dbserver.add_network(network)
     dbserver.add_user('dba', 'dba_secure_2024', 1001, '/home/dba')
 
@@ -220,24 +248,29 @@ def create_intermediate_scenario():
     dbserver.spawn_service('mysqld', ['service', 'database'], uid=27)
     dbserver.spawn_service('sshd', ['service', 'ssh'], uid=0)
 
-    # Network routing
-    # Public to firewall
-    network.add_route('10.0.0.100', '192.168.100.1')
-    network.add_route('192.168.100.1', '10.0.0.100')
+    # Layer-2 Network Connectivity
+    # Attacker <-> Router (external)
+    network.add_route('10.0.0.100', '10.0.0.1')
+    network.add_route('10.0.0.1', '10.0.0.100')
 
-    # Public to DMZ (web server)
-    network.add_route('10.0.0.100', '192.168.100.10')
-    network.add_route('192.168.100.10', '10.0.0.100')
+    # Router (DMZ) <-> DMZ Web Server
+    network.add_route('192.168.100.1', '192.168.100.10')
+    network.add_route('192.168.100.10', '192.168.100.1')
 
-    # DMZ to internal
-    network.add_route('192.168.100.10', '192.168.10.20')
-    network.add_route('192.168.10.20', '192.168.100.10')
+    # Router (internal) <-> Jump Host
+    network.add_route('192.168.10.1', '192.168.10.20')
+    network.add_route('192.168.10.20', '192.168.10.1')
 
-    # Internal network connectivity
+    # Jump Host <-> Database Server (internal network)
     network.add_route('192.168.10.20', '192.168.10.50')
     network.add_route('192.168.10.50', '192.168.10.20')
 
-    # Firewall rules - no direct access from public to internal
+    # Multi-hop routing will work automatically:
+    # - Attacker -> Router external (10.0.0.1)
+    # - Router forwards to DMZ (192.168.100.1)
+    # - DMZ can access internal through router (192.168.10.1)
+
+    # Firewall rules - block direct external->internal access
     # (attacker must pivot through DMZ)
 
     return attacker, network, {
@@ -281,13 +314,18 @@ def create_advanced_scenario():
         1
     )
 
-    # HQ Network
-    hq_firewall = UnixSystem('hq-firewall', '192.168.1.1')
+    # HQ Network Router/Firewall with multi-interface
+    hq_firewall = UnixSystem('hq-firewall', {
+        'eth0': '10.0.0.1',       # External (internet)
+        'eth1': '192.168.1.1'     # Internal HQ network
+    })
+    hq_firewall.ip_forward = True
     hq_firewall.add_network(network)
     hq_firewall.spawn_service('iptables', ['service', 'firewall'], uid=0)
     hq_firewall.spawn_service('openvpn', ['service', 'vpn'], uid=0)
 
     hq_web = UnixSystem('hq-web', '192.168.1.50')
+    hq_web.default_gateway = '192.168.1.1'
     hq_web.add_network(network)
     hq_web.add_user('webdev', 'Dev123!', 1001, '/home/webdev')
     hq_web.spawn_service('apache2', ['service', 'webserver', 'vulnerable'], uid=33)
@@ -305,6 +343,7 @@ def create_advanced_scenario():
     )
 
     hq_mail = UnixSystem('mail-server', '192.168.1.100')
+    hq_mail.default_gateway = '192.168.1.1'
     hq_mail.add_network(network)
     hq_mail.add_user('postmaster', 'MailSecure2024', 1001, '/home/postmaster')
 
@@ -326,11 +365,16 @@ def create_advanced_scenario():
     hq_mail.spawn_service('sshd', ['service', 'ssh'], uid=0)
 
     # Branch Office Network (weaker security - entry point)
-    branch_firewall = UnixSystem('branch-firewall', '192.168.2.1')
+    branch_firewall = UnixSystem('branch-firewall', {
+        'eth0': '10.0.0.2',       # External (internet)
+        'eth1': '192.168.2.1'     # Branch LAN
+    })
+    branch_firewall.ip_forward = True
     branch_firewall.add_network(network)
     branch_firewall.spawn_service('iptables', ['service', 'firewall'], uid=0)
 
     branch_workstation = UnixSystem('branch-pc-05', '192.168.2.50')
+    branch_workstation.default_gateway = '192.168.2.1'
     branch_workstation.add_network(network)
     branch_workstation.add_user('employee', 'Summer2024', 1001, '/home/employee')
 
@@ -355,28 +399,38 @@ def create_advanced_scenario():
 
     # Partner Network (trusted but external)
     partner_server = UnixSystem('partner-api', '192.168.3.10')
+    partner_server.default_gateway = '10.0.0.3'  # Separate network segment
     partner_server.add_network(network)
     partner_server.add_user('apiuser', 'api_key_2024', 1001, '/home/apiuser')
     partner_server.spawn_service('nginx', ['service', 'webserver'], uid=33)
     partner_server.spawn_service('sshd', ['service', 'ssh'], uid=0)
 
-    # Network routing - complex topology
-    # Public access
-    network.add_route('10.0.0.100', '192.168.1.1')
-    network.add_route('10.0.0.100', '192.168.1.50')
-    network.add_route('10.0.0.100', '192.168.2.50')  # Branch office exposed
+    # Layer-2 Network Connectivity - complex multi-site topology
+    # Attacker <-> Internet
+    network.add_route('10.0.0.100', '10.0.0.1')
+    network.add_route('10.0.0.100', '10.0.0.2')
+    network.add_route('10.0.0.1', '10.0.0.100')
+    network.add_route('10.0.0.2', '10.0.0.100')
 
-    # HQ internal
+    # HQ Firewall (internal) <-> HQ Systems
+    network.add_route('192.168.1.1', '192.168.1.50')
+    network.add_route('192.168.1.50', '192.168.1.1')
+    network.add_route('192.168.1.1', '192.168.1.100')
+    network.add_route('192.168.1.100', '192.168.1.1')
+
+    # HQ internal connectivity (web <-> mail)
     network.add_route('192.168.1.50', '192.168.1.100')
     network.add_route('192.168.1.100', '192.168.1.50')
 
-    # VPN connections (requires credentials)
-    network.add_route('192.168.2.50', '192.168.1.100')
-    network.add_route('192.168.1.100', '192.168.2.50')
+    # Branch Firewall (internal) <-> Branch Workstation
+    network.add_route('192.168.2.1', '192.168.2.50')
+    network.add_route('192.168.2.50', '192.168.2.1')
 
-    # Partner trust relationship
-    network.add_route('192.168.3.10', '192.168.1.50')
-    network.add_route('192.168.1.50', '192.168.3.10')
+    # Partner connectivity (simulated via internet backbone)
+    network.add_route('10.0.0.1', '192.168.3.10')
+    network.add_route('192.168.3.10', '10.0.0.1')
+
+    # Multi-hop routing happens automatically via ip_forward=True
 
     # Firewall rules
     network.add_firewall_rule('192.168.1.100', 'DENY', 22)  # Mail server SSH blocked from outside
