@@ -192,6 +192,7 @@ class ShellExecutor:
         self.builtins: Dict[str, Callable] = {}
         self.commands: Dict[str, Callable] = {}
         self.path_dirs = ['/bin', '/usr/bin', '/sbin', '/usr/sbin', '/usr/local/bin']
+        self.input_callback = None  # For interactive shells
 
     def register_builtin(self, name: str, func: Callable):
         """Register a shell builtin command"""
@@ -308,7 +309,8 @@ class ShellExecutor:
                     self.vfs,
                     process,
                     self.processes,  # Pass process manager
-                    self              # Pass shell executor (self)
+                    self,            # Pass shell executor (self)
+                    self.input_callback  # Pass input callback for interactive shells
                 )
             elif command.executable in self.commands:
                 # Execute as Python command handler

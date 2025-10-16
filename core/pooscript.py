@@ -377,6 +377,7 @@ class PooScriptInterpreter:
             'print': self._builtin_print,
             'error': self._builtin_error,
             'exit': self._builtin_exit,
+            'input': self._builtin_input,
             'len': len,
             'str': str,
             'int': int,
@@ -393,6 +394,9 @@ class PooScriptInterpreter:
             'sorted': sorted,
             'reversed': reversed,
         }
+
+        # Input callback for interactive input
+        self.input_callback = None
 
     def _builtin_print(self, *args, **kwargs):
         """Built-in print function - writes to stdout buffer"""
@@ -411,6 +415,14 @@ class PooScriptInterpreter:
     def _builtin_exit(self, code=0):
         """Built-in exit function - raises special exception"""
         raise SystemExit(code)
+
+    def _builtin_input(self, prompt=''):
+        """Built-in input function - reads from interactive input"""
+        if self.input_callback:
+            return self.input_callback(prompt)
+        else:
+            # No callback, return empty string
+            return ''
 
     def _validate_ast(self, node):
         """Recursively validate AST to ensure only safe operations"""
@@ -446,6 +458,9 @@ class PooScriptInterpreter:
         # Setup I/O buffers
         self.stdout = StringIO()
         self.stderr = StringIO()
+
+        # Setup input callback
+        self.input_callback = input_callback
 
         # Setup execution environment
         vfs_interface = VFSInterface(vfs, process.cwd, process.euid, process.egid)
@@ -586,7 +601,7 @@ def is_pooscript(content: bytes) -> bool:
 
 def execute_pooscript(content: bytes, args: List[str], stdin: bytes,
                       env: Dict[str, str], vfs, process,
-                      process_manager=None, shell_executor=None) -> Tuple[int, bytes, bytes]:
+                      process_manager=None, shell_executor=None, input_callback=None) -> Tuple[int, bytes, bytes]:
     """Execute a PooScript binary"""
     # Remove shebang
     lines = content.split(b'\n', 1)
@@ -601,4 +616,4 @@ def execute_pooscript(content: bytes, args: List[str], stdin: bytes,
     # Execute
     interpreter = PooScriptInterpreter()
     return interpreter.execute(script, args, stdin_str, env, vfs, process,
-                              process_manager, shell_executor)
+                              process_manager, shell_executor, input_callback)

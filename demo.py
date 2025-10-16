@@ -67,7 +67,7 @@ def create_scenario():
 
 
 def interactive_shell(system: UnixSystem):
-    """Run interactive shell"""
+    """Run interactive pooshell"""
     print(f'\n=== {system.hostname} ===')
     print('Login as root')
 
@@ -81,56 +81,33 @@ def interactive_shell(system: UnixSystem):
     if motd:
         print(motd.decode('utf-8', errors='ignore'))
 
-    print('\nType "exit" to quit, "help" for available commands\n')
+    print()
 
-    while True:
+    # Set up input callback for pooshell
+    def input_callback(prompt):
+        """Provide input to PooScript"""
         try:
-            # Show prompt
-            prompt = system.get_prompt()
-            command = input(prompt).strip()
+            return input(prompt)
+        except (EOFError, KeyboardInterrupt):
+            return 'exit'
 
-            if not command:
-                continue
+    # Set the input callback on the shell
+    system.shell.executor.input_callback = input_callback
 
-            if command == 'exit':
-                break
+    # Execute pooshell interactively
+    try:
+        exit_code, stdout, stderr = system.shell.execute('/bin/pooshell', system.shell_pid, b'')
 
-            if command == 'help':
-                print("""
-Available commands:
-  Filesystem: ls, cd, pwd, cat, mkdir, touch, rm, echo, grep, find
-  Process:    ps, kill, killall, pstree, exploit
-  Network:    ifconfig, netstat, nmap, ssh
-  Other:      help, exit
+        if stdout:
+            print(stdout.decode('utf-8', errors='ignore'), end='')
 
-Special features:
-  - Pipe commands with |
-  - Redirect with >, >>, <
-  - Use $VAR for variables
+        if stderr:
+            print(stderr.decode('utf-8', errors='ignore'), end='', file=sys.stderr)
 
-Game mechanics:
-  - exploit <pid> - Attack a vulnerable process
-  - nmap <target> - Scan network or ports
-""")
-                continue
-
-            # Execute command
-            exit_code, stdout, stderr = system.execute_command(command)
-
-            if stdout:
-                print(stdout, end='')
-
-            if stderr:
-                print(stderr, end='', file=sys.stderr)
-
-        except KeyboardInterrupt:
-            print('\n^C')
-            continue
-        except EOFError:
-            print('\nexit')
-            break
-        except Exception as e:
-            print(f'Error: {e}', file=sys.stderr)
+    except KeyboardInterrupt:
+        print('\n^C')
+    except Exception as e:
+        print(f'Error: {e}', file=sys.stderr)
 
 
 def demo_basic():
