@@ -214,6 +214,89 @@ class NetworkInterface:
             return target_ip
         return None
 
+    def http_get(self, url: str) -> str:
+        """
+        HTTP GET request
+        Returns the response body as a string
+
+        Args:
+            url: Full URL (http://host/path) or just path if host implied
+
+        Returns:
+            Response body as string, or empty string on error
+        """
+        if not self.network:
+            return ""
+
+        # Parse URL
+        if url.startswith('http://'):
+            # Full URL: http://host/path
+            url = url[7:]  # Remove http://
+            if '/' in url:
+                host, path = url.split('/', 1)
+                path = '/' + path
+            else:
+                host = url
+                path = '/'
+        elif url.startswith('https://'):
+            # HTTPS not supported in 1990!
+            return ""
+        else:
+            # Just a path, no host specified
+            # This shouldn't happen in pooget but handle gracefully
+            return ""
+
+        # Resolve hostname to IP if needed
+        target_ip = host
+        if not self._is_ip_address(host):
+            # Try to resolve hostname via network
+            target_ip = self.network.resolve_hostname(host) if hasattr(self.network, 'resolve_hostname') else None
+            if not target_ip:
+                # Try looking it up in the systems
+                for ip, system in self.network.systems.items():
+                    if system.hostname == host:
+                        target_ip = ip
+                        break
+                if not target_ip or not self._is_ip_address(target_ip):
+                    return ""
+
+        # Check if we can reach the target
+        if not self.can_reach(target_ip, 80):
+            return ""
+
+        # Get target system
+        target_system = self.network.systems.get(target_ip)
+        if not target_system:
+            return ""
+
+        # Send HTTP GET request
+        # Look for the file in the target's VFS
+        try:
+            # HTTP servers typically serve from /www/ or /var/www/
+            # Try both locations
+            for www_root in ['/www', '/var/www']:
+                file_path = www_root + path
+                content = target_system.vfs.read_file(file_path, 1)  # Read as root
+                if content is not None:
+                    return content.decode('utf-8', errors='ignore')
+
+            # File not found
+            return ""
+
+        except Exception as e:
+            # Error reading file
+            return ""
+
+    def _is_ip_address(self, s: str) -> bool:
+        """Check if string is an IP address"""
+        parts = s.split('.')
+        if len(parts) != 4:
+            return False
+        try:
+            return all(0 <= int(p) <= 255 for p in parts)
+        except ValueError:
+            return False
+
 
 class SystemInterface:
     """Safe system access for scripts (firewall, routing, etc)"""
@@ -703,6 +786,26 @@ class PooScriptInterpreter:
         if kernel:
             kernel_interface = KernelInterface(kernel, process.pid)
 
+        # Setup shell interface for executing commands
+        class ShellInterface:
+            """Execute shell commands from PooScript"""
+            def __init__(self, proc_interface):
+                self._process = proc_interface
+
+            def execute(self, command: str) -> Tuple[int, str, str]:
+                """
+                Execute a shell command
+                Returns: (exit_code, stdout, stderr)
+                """
+                if not self._process:
+                    return 1, "", "No process interface available"
+                try:
+                    return self._process.execute(command)
+                except Exception as e:
+                    return 1, "", str(e)
+
+        shell_interface = ShellInterface(process_interface)
+
         # String utilities for shell scripting
         def split_args(text: str) -> List[str]:
             """Split command line into arguments (simple version)"""
@@ -786,6 +889,8 @@ class PooScriptInterpreter:
             'get_filetype_char': get_filetype_char,
             'time': time,
             'time_sleep': time_sleep,
+            # Alias for sleep
+            'sleep': time_sleep,
             # Built-in objects
             'args': args,
             'stdin': stdin,
@@ -793,6 +898,8 @@ class PooScriptInterpreter:
             'env': env,
             'process': process_interface,
             'kernel': kernel_interface,  # Low-level syscall interface
+            'net': network_interface,      # Network interface with http_get()
+            'shell': shell_interface,      # Shell command execution
         }
 
         try:
