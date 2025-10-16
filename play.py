@@ -65,7 +65,9 @@ def interactive_shell(system, network, username='root', password='root'):
     print(f'Logging in as {username}...')
 
     # Auto-login
-    if not system.login(username, password):
+    login_result = system.login(username, password)
+    print(f'[DEBUG] Login result: {login_result}, shell_pid: {system.shell_pid}')
+    if not login_result:
         print('Login failed!')
         return False
 
@@ -173,7 +175,9 @@ def interactive_shell(system, network, username='root', password='root'):
     # Exit code 255 = SSH request, restart shell after SSH session ends
     while True:
         try:
+            print(f'[DEBUG] About to execute pooshell on {system.hostname}')
             exit_code, stdout, stderr = system.shell.execute('/bin/pooshell', system.shell_pid, b'')
+            print(f'[DEBUG] Pooshell exited with code: {exit_code}')
 
             # Check exit code - 255 means SSH request
             if exit_code == 255:
