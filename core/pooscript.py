@@ -177,10 +177,48 @@ class VFSInterface:
         return '???'
 
 
+class NetworkInterface:
+    """Safe network access for scripts"""
+
+    def __init__(self, network, local_ip):
+        self.network = network
+        self.local_ip = local_ip
+
+    def get_local_ip(self) -> str:
+        """Get local IP address"""
+        return self.local_ip
+
+    def can_reach(self, target_ip: str, port: int = 0) -> bool:
+        """Check if we can reach a target IP"""
+        if not self.network:
+            return False
+        return self.network.can_connect(self.local_ip, target_ip, port)
+
+    def scan_network(self, subnet: str) -> List[str]:
+        """Scan network for hosts"""
+        if not self.network:
+            return []
+        return self.network.scan_network(self.local_ip, subnet)
+
+    def port_scan(self, target_ip: str) -> List[int]:
+        """Scan ports on target"""
+        if not self.network:
+            return []
+        return self.network.port_scan(self.local_ip, target_ip)
+
+    def get_route(self, target_ip: str) -> Optional[str]:
+        """Get route to target (returns gateway or None)"""
+        if not self.network:
+            return None
+        if self.can_reach(target_ip):
+            return target_ip
+        return None
+
+
 class ProcessInterface:
     """Safe process access for scripts"""
 
-    def __init__(self, process, process_manager, shell_executor):
+    def __init__(self, process, process_manager, shell_executor, network_interface=None):
         self.uid = process.uid
         self.gid = process.gid
         self.euid = process.euid
@@ -190,6 +228,7 @@ class ProcessInterface:
         self._process = process
         self._process_manager = process_manager
         self._shell_executor = shell_executor
+        self._network_interface = network_interface
 
     def spawn(self, command: str, args: List[str], env: Dict[str, str]) -> int:
         """
@@ -336,6 +375,10 @@ class ProcessInterface:
 
         return inode_to_path(self.cwd)
 
+    def get_network(self) -> Optional['NetworkInterface']:
+        """Get network interface"""
+        return self._network_interface
+
 
 class PooScriptInterpreter:
     """
@@ -454,7 +497,7 @@ class PooScriptInterpreter:
 
     def execute(self, script: str, args: List[str], stdin: str, env: Dict[str, str],
                 vfs, process, process_manager=None, shell_executor=None,
-                input_callback=None) -> Tuple[int, bytes, bytes]:
+                input_callback=None, network=None, local_ip=None) -> Tuple[int, bytes, bytes]:
         """
         Execute a VirtualScript
 
@@ -467,6 +510,8 @@ class PooScriptInterpreter:
             process: Process object
             process_manager: ProcessManager instance (optional)
             shell_executor: ShellExecutor instance (optional)
+            network: Virtual network instance (optional)
+            local_ip: Local IP address (optional)
 
         Returns:
             (exit_code, stdout, stderr) as bytes
@@ -481,7 +526,13 @@ class PooScriptInterpreter:
 
         # Setup execution environment
         vfs_interface = VFSInterface(vfs, process.cwd, process.euid, process.egid)
-        process_interface = ProcessInterface(process, process_manager, shell_executor)
+
+        # Setup network interface if available
+        network_interface = None
+        if network and local_ip:
+            network_interface = NetworkInterface(network, local_ip)
+
+        process_interface = ProcessInterface(process, process_manager, shell_executor, network_interface)
 
         # String utilities for shell scripting
         def split_args(text: str) -> List[str]:
@@ -547,6 +598,11 @@ class PooScriptInterpreter:
             import time as time_mod
             return time_mod.time()
 
+        def time_sleep(seconds: float) -> None:
+            """Sleep for specified seconds"""
+            import time as time_mod
+            time_mod.sleep(seconds)
+
         # Create namespace for script execution
         namespace = {
             # Built-in functions
@@ -560,6 +616,7 @@ class PooScriptInterpreter:
             'format_mode': format_mode,
             'get_filetype_char': get_filetype_char,
             'time': time,
+            'time_sleep': time_sleep,
             # Built-in objects
             'args': args,
             'stdin': stdin,
@@ -619,7 +676,7 @@ def is_pooscript(content: bytes) -> bool:
 def execute_pooscript(content: bytes, args: List[str], stdin: bytes,
                       env: Dict[str, str], vfs, process,
                       process_manager=None, shell_executor=None, input_callback=None,
-                      output_callback=None, error_callback=None) -> Tuple[int, bytes, bytes]:
+                      output_callback=None, error_callback=None, network=None, local_ip=None) -> Tuple[int, bytes, bytes]:
     """Execute a PooScript binary"""
     # Remove shebang
     lines = content.split(b'\n', 1)
@@ -639,4 +696,4 @@ def execute_pooscript(content: bytes, args: List[str], stdin: bytes,
     interpreter.error_callback = error_callback
 
     return interpreter.execute(script, args, stdin_str, env, vfs, process,
-                              process_manager, shell_executor, input_callback)
+                              process_manager, shell_executor, input_callback, network, local_ip)

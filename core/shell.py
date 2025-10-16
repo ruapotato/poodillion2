@@ -179,16 +179,20 @@ class ShellParser:
 class ShellExecutor:
     """Execute parsed commands"""
 
-    def __init__(self, vfs, permissions, processes):
+    def __init__(self, vfs, permissions, processes, network=None, local_ip=None):
         """
         Args:
             vfs: VFS instance
             permissions: PermissionSystem instance
             processes: ProcessManager instance
+            network: VirtualNetwork instance (optional)
+            local_ip: Local IP address (optional)
         """
         self.vfs = vfs
         self.permissions = permissions
         self.processes = processes
+        self.network = network
+        self.local_ip = local_ip
         self.builtins: Dict[str, Callable] = {}
         self.commands: Dict[str, Callable] = {}
         self.path_dirs = ['/bin', '/usr/bin', '/sbin', '/usr/sbin', '/usr/local/bin']
@@ -314,7 +318,9 @@ class ShellExecutor:
                     self,            # Pass shell executor (self)
                     self.input_callback,  # Pass input callback for interactive shells
                     self.output_callback, # Pass output callback for real-time output
-                    self.error_callback   # Pass error callback for real-time errors
+                    self.error_callback,  # Pass error callback for real-time errors
+                    self.network,         # Pass network for networking commands
+                    self.local_ip         # Pass local IP address
                 )
             elif command.executable in self.commands:
                 # Execute as Python command handler
@@ -360,12 +366,14 @@ class ShellExecutor:
 class Shell:
     """Complete shell implementation"""
 
-    def __init__(self, vfs, permissions, processes):
+    def __init__(self, vfs, permissions, processes, network=None, local_ip=None):
         self.parser = ShellParser()
-        self.executor = ShellExecutor(vfs, permissions, processes)
+        self.executor = ShellExecutor(vfs, permissions, processes, network, local_ip)
         self.vfs = vfs
         self.permissions = permissions
         self.processes = processes
+        self.network = network
+        self.local_ip = local_ip
 
         # Set default variables
         self.parser.set_variable('PATH', '/bin:/usr/bin:/sbin:/usr/sbin:/usr/local/bin')

@@ -27,8 +27,8 @@ class UnixSystem:
         self.vfs = VFS()
         self.permissions = PermissionSystem()
         self.processes = ProcessManager()
-        self.shell = Shell(self.vfs, self.permissions, self.processes)
         self.network: Optional[VirtualNetwork] = None
+        self.shell = Shell(self.vfs, self.permissions, self.processes, self.network, self.ip)
 
         # Current user shell process
         self.shell_pid: Optional[int] = None
@@ -67,11 +67,30 @@ class UnixSystem:
         self.vfs.create_file('/etc/issue', 0o644, 0, 0,
                             b'Linux 2.0.38 \\n \\l\n', 1)
 
-        # Create device files
-        self.vfs.create_device('/dev/null', True, 0, 0)
-        self.vfs.create_device('/dev/zero', True, 0, 0)
-        self.vfs.create_device('/dev/random', True, 0, 0)
-        self.vfs.create_device('/dev/tty', True, 0, 0)
+        # Create functional device files
+        self.vfs.create_device('/dev/null', True, 0, 0, device_name='null')
+        self.vfs.create_device('/dev/zero', True, 0, 0, device_name='zero')
+        self.vfs.create_device('/dev/random', True, 0, 0, device_name='random')
+        self.vfs.create_device('/dev/urandom', True, 0, 0, device_name='urandom')
+
+        # TTY devices
+        self.vfs.create_device('/dev/tty', True, 0, 0, device_name='tty')
+        self.vfs.create_device('/dev/tty0', True, 0, 0, device_name='tty0')
+        self.vfs.create_device('/dev/tty1', True, 0, 0, device_name='tty1')
+        self.vfs.create_device('/dev/console', True, 0, 0, device_name='console')
+
+        # Standard streams
+        self.vfs.create_device('/dev/stdin', True, 0, 0, device_name='stdin')
+        self.vfs.create_device('/dev/stdout', True, 0, 0, device_name='stdout')
+        self.vfs.create_device('/dev/stderr', True, 0, 0, device_name='stderr')
+
+        # Additional common devices
+        self.vfs.create_device('/dev/full', True, 0, 0, device_name='full')  # Always returns ENOSPC on write
+        self.vfs.create_device('/dev/kmsg', True, 0, 0, device_name='kmsg')  # Kernel messages
+
+        # Pseudo-TTY master/slave
+        self.vfs.mkdir('/dev/pts', 0o755, 0, 0)
+        self.vfs.create_device('/dev/pts/0', True, 0, 0, device_name='tty')
 
         # Install PooScript commands from scripts/ directory
         print("Installing PooScript commands...")
@@ -138,6 +157,11 @@ class UnixSystem:
         """Attach system to a virtual network"""
         self.network = network
         network.register_system(self.ip, self)
+
+        # Update shell's network reference
+        self.shell.network = network
+        self.shell.executor.network = network
+        self.shell.executor.local_ip = self.ip
 
         # Network commands (ifconfig, netstat, nmap, ssh) can be added as VirtualScripts later
         # For now, they would need special handling for network access

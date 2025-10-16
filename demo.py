@@ -5,6 +5,7 @@ Shows basic functionality and interactive shell
 """
 
 import sys
+import readline
 from core.system import UnixSystem
 from core.network import VirtualNetwork
 
@@ -83,6 +84,77 @@ def interactive_shell(system: UnixSystem):
 
     print()
 
+    # Set up tab completion using readline
+    def completer(text, state):
+        """Tab completion function for readline"""
+        if state == 0:
+            # First call - generate list of matches
+            line = readline.get_line_buffer()
+            begin_idx = readline.get_begidx()
+
+            # Get current process
+            process = system.processes.get_process(system.shell_pid)
+            if not process:
+                return None
+
+            # Determine what we're completing based on position in line
+            if begin_idx == 0:
+                # Completing command name (first word)
+                matches = []
+
+                # Search /bin directories for matching commands
+                for bin_dir in ['/bin', '/usr/bin', '/sbin', '/usr/sbin']:
+                    try:
+                        entries = system.vfs.list_dir(bin_dir, 1)
+                        if entries:
+                            for name, _ in entries:
+                                if name.startswith(text) and name not in ('.', '..'):
+                                    matches.append(name)
+                    except:
+                        pass
+
+                completer.matches = sorted(set(matches))
+            else:
+                # Completing file path argument
+                # Determine directory and filename parts
+                if '/' in text:
+                    last_slash = text.rfind('/')
+                    dir_part = text[:last_slash] or '/'
+                    file_part = text[last_slash + 1:]
+                else:
+                    dir_part = '.'
+                    file_part = text
+
+                matches = []
+                try:
+                    entries = system.vfs.list_dir(dir_part, process.cwd)
+                    if entries:
+                        for name, ino in entries:
+                            if name.startswith(file_part) and name not in ('.', '..'):
+                                if dir_part == '.':
+                                    matches.append(name)
+                                elif dir_part == '/':
+                                    matches.append('/' + name)
+                                else:
+                                    matches.append(dir_part + '/' + name)
+                except:
+                    pass
+
+                completer.matches = sorted(matches)
+
+        # Return next match
+        try:
+            return completer.matches[state]
+        except (IndexError, AttributeError):
+            return None
+
+    completer.matches = []
+
+    # Configure readline
+    readline.set_completer(completer)
+    readline.parse_and_bind('tab: complete')
+    readline.set_completer_delims(' \t\n;')
+
     # Set up I/O callbacks for pooshell
     def input_callback(prompt):
         """Provide input to PooScript"""
@@ -105,6 +177,11 @@ def interactive_shell(system: UnixSystem):
     system.shell.executor.input_callback = input_callback
     system.shell.executor.output_callback = output_callback
     system.shell.executor.error_callback = error_callback
+
+    # Set the callbacks on the VFS for device file I/O
+    system.vfs.input_callback = input_callback
+    system.vfs.output_callback = output_callback
+    system.vfs.error_callback = error_callback
 
     # Execute pooshell interactively
     try:

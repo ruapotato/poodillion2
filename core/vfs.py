@@ -106,6 +106,14 @@ class VFS:
         self.inodes: Dict[int, Inode] = {}
         self.next_ino = 2  # Start at 2 (1 is reserved for root in real systems)
 
+        # Device handlers: map device name to (read_handler, write_handler)
+        self.device_handlers: Dict[str, tuple] = {}
+
+        # I/O callbacks for device files that need to interact with the outside world
+        self.input_callback = None  # For reading from stdin/tty
+        self.output_callback = None  # For writing to stdout/tty
+        self.error_callback = None  # For writing to stderr
+
         # Create root directory
         now = time.time()
         root = Inode(
@@ -120,6 +128,94 @@ class VFS:
             content={'.': 1, '..': 1}  # Directory entries map name -> inode
         )
         self.inodes[1] = root
+
+        # Register built-in device handlers
+        self._register_device_handlers()
+
+    def _register_device_handlers(self):
+        """Register handlers for special device files"""
+        import random
+
+        # /dev/null - discards all writes, returns empty on reads
+        self.device_handlers['null'] = (
+            lambda size: b'',  # read returns nothing
+            lambda data: len(data)  # write discards everything, returns bytes written
+        )
+
+        # /dev/zero - returns infinite zeros
+        self.device_handlers['zero'] = (
+            lambda size: b'\x00' * size,
+            lambda data: len(data)
+        )
+
+        # /dev/random - returns random bytes
+        self.device_handlers['random'] = (
+            lambda size: bytes(random.getrandbits(8) for _ in range(size)),
+            lambda data: len(data)
+        )
+
+        # /dev/urandom - returns random bytes (same as random in our impl)
+        self.device_handlers['urandom'] = (
+            lambda size: bytes(random.getrandbits(8) for _ in range(size)),
+            lambda data: len(data)
+        )
+
+        # /dev/tty - terminal I/O (uses callbacks)
+        def tty_read(size):
+            if self.input_callback:
+                try:
+                    line = self.input_callback("")
+                    return (line + '\n').encode()[:size]
+                except:
+                    return b''
+            return b''
+
+        def tty_write(data):
+            if self.output_callback:
+                self.output_callback(data.decode('utf-8', errors='replace'))
+            return len(data)
+
+        self.device_handlers['tty'] = (tty_read, tty_write)
+        self.device_handlers['tty0'] = (tty_read, tty_write)
+        self.device_handlers['tty1'] = (tty_read, tty_write)
+        self.device_handlers['console'] = (tty_read, tty_write)
+
+        # /dev/stdin, /dev/stdout, /dev/stderr
+        self.device_handlers['stdin'] = (tty_read, lambda data: 0)  # stdin is read-only
+
+        def stdout_write(data):
+            if self.output_callback:
+                self.output_callback(data.decode('utf-8', errors='replace'))
+            return len(data)
+
+        def stderr_write(data):
+            if self.error_callback:
+                self.error_callback(data.decode('utf-8', errors='replace'))
+            return len(data)
+
+        self.device_handlers['stdout'] = (lambda size: b'', stdout_write)
+        self.device_handlers['stderr'] = (lambda size: b'', stderr_write)
+
+        # /dev/full - always full (write fails)
+        def full_write(data):
+            raise IOError("No space left on device")
+
+        self.device_handlers['full'] = (lambda size: b'\x00' * size, full_write)
+
+        # /dev/kmsg - kernel message buffer (dummy implementation)
+        self.kernel_messages = []
+
+        def kmsg_read(size):
+            if self.kernel_messages:
+                msg = self.kernel_messages.pop(0)
+                return msg.encode()[:size]
+            return b''
+
+        def kmsg_write(data):
+            self.kernel_messages.append(data.decode('utf-8', errors='replace'))
+            return len(data)
+
+        self.device_handlers['kmsg'] = (kmsg_read, kmsg_write)
 
     def _allocate_inode(self) -> int:
         """Allocate a new inode number"""
@@ -272,18 +368,35 @@ class VFS:
 
         return new_ino
 
-    def read_file(self, path: str, current_dir_ino: int = 1) -> Optional[bytes]:
+    def read_file(self, path: str, current_dir_ino: int = 1, size: int = -1) -> Optional[bytes]:
         """Read file contents"""
         ino = self._resolve_path(path, current_dir_ino)
         if ino is None:
             return None
 
         inode = self.inodes.get(ino)
-        if not inode or not inode.is_file():
+        if not inode:
             return None
 
         inode.atime = time.time()
-        return inode.content if isinstance(inode.content, bytes) else None
+
+        # Handle device files
+        if inode.is_device():
+            device_name = inode.content if isinstance(inode.content, str) else ''
+            if device_name in self.device_handlers:
+                read_handler, _ = self.device_handlers[device_name]
+                read_size = size if size > 0 else 4096  # Default read size
+                return read_handler(read_size)
+            return b''
+
+        # Regular file
+        if not inode.is_file():
+            return None
+
+        content = inode.content if isinstance(inode.content, bytes) else None
+        if content and size > 0:
+            return content[:size]
+        return content
 
     def write_file(self, path: str, content: bytes, current_dir_ino: int = 1) -> bool:
         """Write to existing file"""
@@ -292,7 +405,20 @@ class VFS:
             return False
 
         inode = self.inodes.get(ino)
-        if not inode or not inode.is_file():
+        if not inode:
+            return False
+
+        # Handle device files
+        if inode.is_device():
+            device_name = inode.content if isinstance(inode.content, str) else ''
+            if device_name in self.device_handlers:
+                _, write_handler = self.device_handlers[device_name]
+                write_handler(content)
+                return True
+            return False
+
+        # Regular file
+        if not inode.is_file():
             return False
 
         now = time.time()
@@ -417,8 +543,16 @@ class VFS:
 
         return True
 
-    def create_device(self, path: str, is_char: bool, uid: int, gid: int, current_dir_ino: int = 1) -> bool:
-        """Create a device file"""
+    def create_device(self, path: str, is_char: bool, uid: int, gid: int, current_dir_ino: int = 1, device_name: str = '') -> bool:
+        """Create a device file
+
+        Args:
+            path: Path to create device file at
+            is_char: True for character device, False for block device
+            uid, gid: Owner
+            current_dir_ino: Current directory inode
+            device_name: Name of the device (e.g. 'null', 'zero', 'tty')
+        """
         parent_path = '/'.join(path.rstrip('/').split('/')[:-1]) or '/'
         name = path.rstrip('/').split('/')[-1]
 
@@ -434,6 +568,10 @@ class VFS:
         if not isinstance(entries, dict) or name in entries:
             return False
 
+        # If device_name not specified, use the filename
+        if not device_name:
+            device_name = name
+
         # Create device
         now = time.time()
         new_ino = self._allocate_inode()
@@ -447,7 +585,7 @@ class VFS:
             atime=now,
             mtime=now,
             ctime=now,
-            content=b''
+            content=device_name  # Store device name for handler lookup
         )
 
         self.inodes[new_ino] = new_dev
