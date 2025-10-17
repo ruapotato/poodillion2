@@ -57,7 +57,7 @@ class PacketQueue:
         1. Parse IP header to get destination
         2. Find route (may go through multiple routers)
         3. Forward hop-by-hop, decrementing TTL
-        4. Deliver to final destination
+        4. Deliver to final destination (with firewall checking)
 
         Args:
             packet_bytes: Raw packet bytes (IP packet)
@@ -165,6 +165,14 @@ class PacketQueue:
             packet.raw = current_bytes
             packet.add_hop(dest_ip)
 
+            # PACKET-LEVEL FIREWALL CHECK
+            # Check firewall rules before delivering to destination
+            if not self._check_packet_firewall(current_bytes, dest_system, src_ip):
+                # Packet blocked by firewall - drop silently
+                if capture:
+                    dest_system.packet_queue._capture_packet(packet, 'drop')
+                return False
+
             # Deliver to destination's inbound queue
             if hasattr(dest_system, 'packet_queue'):
                 dest_system.packet_queue.inbound.append(packet)
@@ -234,6 +242,92 @@ class PacketQueue:
         """Send ICMP Destination Unreachable message"""
         # TODO: Implement ICMP error messages
         pass
+
+    def _check_packet_firewall(self, packet_bytes: bytes, dest_system: 'UnixSystem', src_ip: str) -> bool:
+        """
+        Check if packet is allowed by destination system's firewall
+
+        Args:
+            packet_bytes: Raw packet bytes
+            dest_system: Destination system
+            src_ip: Source IP address
+
+        Returns:
+            True if packet is allowed, False if blocked
+        """
+        if not hasattr(dest_system, 'firewall_rules'):
+            return True  # No firewall, allow all
+
+        # Parse packet to determine protocol and port
+        try:
+            ip_header = parse_ip_packet(packet_bytes)
+            protocol = ip_header['protocol']
+            protocol_name = {1: 'icmp', 6: 'tcp', 17: 'udp'}.get(protocol, 'unknown')
+
+            # Extract port for TCP/UDP
+            dst_port = None
+            if protocol == 6:  # TCP
+                tcp = parse_tcp_packet(ip_header['data'])
+                dst_port = tcp['dst_port']
+            elif protocol == 17:  # UDP
+                udp = parse_udp_packet(ip_header['data'])
+                dst_port = udp['dst_port']
+
+            # Check firewall rules
+            for rule in dest_system.firewall_rules:
+                action = rule.get('action', 'ACCEPT')
+                rule_protocol = rule.get('protocol', 'all')
+                rule_port = rule.get('port')
+                rule_source = rule.get('source', 'any')
+                rule_chain = rule.get('chain', 'INPUT')
+
+                # Only check INPUT chain for incoming packets
+                if rule_chain != 'INPUT':
+                    continue
+
+                # Check if protocol matches
+                if rule_protocol != 'all' and rule_protocol != protocol_name:
+                    continue
+
+                # Check if port matches (if specified)
+                if rule_port is not None and dst_port != rule_port:
+                    continue
+
+                # Check if source IP matches
+                if rule_source != 'any':
+                    # Support CIDR notation (e.g., "192.168.1.0/24")
+                    if '/' in rule_source:
+                        # Simple subnet matching
+                        subnet_base = rule_source.split('/')[0]
+                        prefix_len = rule_source.split('/')[1]
+
+                        # /24 = first 3 octets, /16 = first 2, /8 = first 1
+                        if prefix_len == '24':
+                            if not src_ip.startswith('.'.join(subnet_base.split('.')[:3])):
+                                continue
+                        elif prefix_len == '16':
+                            if not src_ip.startswith('.'.join(subnet_base.split('.')[:2])):
+                                continue
+                        elif prefix_len == '8':
+                            if not src_ip.startswith(subnet_base.split('.')[0]):
+                                continue
+                    else:
+                        # Exact IP match
+                        if src_ip != rule_source:
+                            continue
+
+                # Rule matches - apply action
+                if action == 'DROP' or action == 'REJECT':
+                    return False  # Block packet
+                elif action == 'ACCEPT':
+                    return True  # Allow packet
+
+            # No matching rule - default policy is ACCEPT
+            return True
+
+        except Exception as e:
+            # Error parsing packet - allow by default
+            return True
 
     def receive_packet(self, timeout: float = 0.0) -> Optional[bytes]:
         """
