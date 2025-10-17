@@ -68,7 +68,7 @@
 
         /* Window styling - GNOME 1 style */
         .window {
-            display: none;
+            display: flex;
             flex-direction: column;
             position: absolute;
             min-width: 400px;
@@ -76,10 +76,6 @@
             background: #D6D6D6;
             border: 1px solid #000;
             box-shadow: 3px 3px 8px rgba(0, 0, 0, 0.4);
-        }
-
-        .window.active {
-            display: flex;
         }
 
         .window.minimized {
@@ -106,7 +102,7 @@
             height: 26px;
         }
 
-        .window.inactive .title-bar {
+        .window:not(.active) .title-bar {
             background: linear-gradient(to bottom, #a8a8a8 0%, #888888 100%);
         }
 
@@ -404,8 +400,8 @@
             <div class="desktop-icon-label">Browser</div>
         </div>
 
-        <!-- Browser Window (only one) -->
-        <div class="window" id="browser-window" style="top: 80px; left: 200px; width: 700px; height: 550px;">
+        <!-- Browser Window (initially hidden) -->
+        <div class="window" id="browser-window" style="top: 80px; left: 200px; width: 700px; height: 550px; display: none;">
             <div class="title-bar">
                 <div class="title-bar-text">
                     🌐 Lynx Browser
@@ -511,7 +507,7 @@
 
             // Create window element
             const win = document.createElement('div');
-            win.className = 'window active';
+            win.className = 'window';
             win.id = termId;
             win.style.top = (50 + terminalCounter * 30) + 'px';
             win.style.left = (50 + terminalCounter * 30) + 'px';
@@ -620,7 +616,7 @@
         // Open browser
         function openBrowser() {
             const win = document.getElementById('browser-window');
-            win.classList.add('active');
+            win.style.display = 'flex';
             win.classList.remove('minimized');
             makeDraggable(win);
             focusWindow('browser-window');
@@ -631,7 +627,6 @@
         function minimizeWindow(windowId) {
             const win = document.getElementById(windowId);
             win.classList.add('minimized');
-            win.classList.remove('active');
             updateTaskbar();
         }
 
@@ -760,9 +755,9 @@
                 }
             });
 
-            // Add browser window
+            // Add browser window if it's been opened
             const browserWin = document.getElementById('browser-window');
-            if (browserWin && browserWin.classList.contains('active') && !browserWin.classList.contains('minimized')) {
+            if (browserWin && !browserWin.classList.contains('minimized') && browserWin.style.display !== 'none') {
                 addTaskbarButton('browser-window', '🌐 Browser', browserWin);
             }
         }
@@ -774,7 +769,6 @@
             btn.onclick = () => {
                 if (win.classList.contains('minimized')) {
                     win.classList.remove('minimized');
-                    win.classList.add('active');
                 }
                 focusWindow(windowId);
             };
