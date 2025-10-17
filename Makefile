@@ -309,6 +309,40 @@ run-shell-serial: $(KERNEL_SHELL_ELF)
 	@echo "========================================"
 	qemu-system-i386 -kernel $(KERNEL_SHELL_ELF) -serial stdio
 
+# Mini-Nim Shell kernel targets
+MININIM_SHELL_OBJ = $(BUILD_DIR)/shell_mininim.o
+MININIM_SHELL_WRAPPER_OBJ = $(BUILD_DIR)/mininim_shell_wrapper.o
+KERNEL_MININIM_SHELL_ELF = $(ISO_DIR)/boot/kernel_mininim_shell.elf
+
+$(MININIM_SHELL_OBJ): kernel/shell_mininim.nim | $(BUILD_DIR)
+	@echo "Compiling Mini-Nim shell kernel..."
+	cd compiler && python3 mininim.py ../kernel/shell_mininim.nim --kernel -o shell_mininim
+	@mv compiler/shell_mininim.o $(MININIM_SHELL_OBJ)
+	@echo "  Mini-Nim shell compiled: $(MININIM_SHELL_OBJ)"
+
+$(MININIM_SHELL_WRAPPER_OBJ): kernel/mininim_shell_wrapper.asm | $(BUILD_DIR)
+	@echo "Assembling Mini-Nim shell wrapper..."
+	$(AS) $(ASFLAGS_32) kernel/mininim_shell_wrapper.asm -o $(MININIM_SHELL_WRAPPER_OBJ)
+
+$(KERNEL_MININIM_SHELL_ELF): $(MULTIBOOT_OBJ) $(SERIAL_OBJ) $(MININIM_SHELL_WRAPPER_OBJ) $(MININIM_SHELL_OBJ) $(LINKER_GRUB) | $(GRUB_DIR)
+	@echo "Building Mini-Nim shell kernel for GRUB..."
+	$(LD) -m elf_i386 -T $(LINKER_GRUB) -o $(KERNEL_MININIM_SHELL_ELF) $(MULTIBOOT_OBJ) $(MININIM_SHELL_WRAPPER_OBJ) $(SERIAL_OBJ) $(MININIM_SHELL_OBJ)
+	@echo "  Mini-Nim Shell Kernel size: $$(stat -c%s $(KERNEL_MININIM_SHELL_ELF)) bytes"
+
+.PHONY: mininim-shell
+mininim-shell: $(KERNEL_MININIM_SHELL_ELF)
+	@echo "✓ Mini-Nim shell kernel ready!"
+	@echo "  Boot with: make run-mininim-shell"
+
+.PHONY: run-mininim-shell
+run-mininim-shell: $(KERNEL_MININIM_SHELL_ELF)
+	@echo "Booting PoodillionOS Mini-Nim Shell..."
+	@echo "========================================"
+	@echo "Shell written in Mini-Nim!"
+	@echo "Commands: ls, cat, echo, help"
+	@echo "========================================"
+	qemu-system-i386 -kernel $(KERNEL_MININIM_SHELL_ELF)
+
 .PHONY: run-grub-iso
 run-grub-iso: $(GRUB_ISO)
 	@echo "Booting PoodillionOS from GRUB ISO..."
