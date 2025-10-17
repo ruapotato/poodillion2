@@ -2,10 +2,10 @@
 bits 32
 
 section .text
-global kernel_main
+global mininim_kernel_main
 
     
-kernel_main:
+mininim_kernel_main:
     push ebp
     mov ebp, esp
     mov eax, 77
@@ -16,7 +16,7 @@ kernel_main:
     add eax, ebx
     pop ebx
     mov [eax], ebx
-    mov eax, 2
+    mov eax, 10
     push eax
     mov eax, 0
     mov ebx, eax
@@ -32,7 +32,7 @@ kernel_main:
     add eax, ebx
     pop ebx
     mov [eax], ebx
-    mov eax, 2
+    mov eax, 10
     push eax
     mov eax, 0
     mov ebx, eax
@@ -48,7 +48,7 @@ kernel_main:
     add eax, ebx
     pop ebx
     mov [eax], ebx
-    mov eax, 2
+    mov eax, 10
     push eax
     mov eax, 0
     mov ebx, eax
@@ -64,7 +64,7 @@ kernel_main:
     add eax, ebx
     pop ebx
     mov [eax], ebx
-    mov eax, 2
+    mov eax, 10
     push eax
     mov eax, 0
     mov ebx, eax

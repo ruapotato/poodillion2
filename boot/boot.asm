@@ -1,37 +1,18 @@
-; boot.asm - PoodillionOS Bootloader
-; Multiboot2 header for GRUB
+; boot.asm - PoodillionOS Kernel Entry Point
+; For custom bootloader (no multiboot needed)
 
-section .multiboot
-align 4
-multiboot_start:
-    dd 0xe85250d6                ; magic number (multiboot2)
-    dd 0                         ; architecture 0 (i386)
-    dd multiboot_end - multiboot_start  ; header length
-    ; checksum
-    dd -(0xe85250d6 + 0 + (multiboot_end - multiboot_start))
-
-    ; End tag
-    dw 0    ; type
-    dw 0    ; flags
-    dd 8    ; size
-multiboot_end:
-
-section .bss
-align 16
-stack_bottom:
-    resb 16384  ; 16 KB stack
-stack_top:
+[BITS 32]
 
 section .text
 global _start
-extern main
+extern kernel_main
 
 _start:
-    ; Set up stack
-    mov esp, stack_top
+    ; Set up stack (at 640KB, just before VGA memory)
+    mov esp, 0x90000
 
     ; Call kernel main
-    call main
+    call kernel_main
 
     ; Hang if kernel returns
 .hang:

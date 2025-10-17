@@ -1,131 +1,103 @@
 # PoodillionOS
 
-**A Real Operating System Written in Mini-Nim - Booting on Bare Metal!**
+**A Real Operating System - From Bootloader to Kernel**
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 
 ---
 
-## 🎉 MAJOR MILESTONE: WE BOOT! 🎉
-
-**PoodillionOS now boots on bare metal with a kernel written in our custom Mini-Nim language!**
+## 🎉 Current Status: **MINI-NIM KERNEL BOOTS!** 🎉
 
 ```
-┌─────────────────────────────────────────┐
-│  PoodillionOS v0.1                      │
-│  ================================        │
-│                                          │
-│  Kernel: Mini-Nim!                      │
-│  Booted OK!                             │
-│                                          │
-│  Architecture: x86                      │
-│  Compiler: Mini-Nim (custom built)      │
-│  Kernel Size: 5.9 KB                    │
-└─────────────────────────────────────────┘
+========================================
+  PoodillionOS Mini-Nim Kernel Booted!
+========================================
+
+Status: GRUB multiboot successful!
+Bootloader: GRUB handled protected mode
+Kernel: Compiled from Mini-Nim source!
+Size: 9052 bytes (720 byte .o + multiboot)
+
+VGA output: "MINI" in green text
+```
+
+**What Works:**
+- ✅ **C Kernel** boots successfully via GRUB
+- ✅ **Mini-Nim Kernel** compiles and boots via GRUB
+- ✅ **Mini-Nim Compiler** generates x86 assembly in kernel mode
+- ✅ **Serial Port Output** works in both C and Mini-Nim kernels
+- ✅ **VGA Text Mode** for visual output
+- ✅ **Protected Mode** transition handled by GRUB
+- ✅ **QEMU Testing** with serial and VGA output
+
+**What Doesn't Work (Yet):**
+- ❌ **Custom 2-Stage Bootloader** (hangs during protected mode transition)
+  - See `GRUB_SETUP.md` for details on the workaround
+
+---
+
+## 🚀 Quick Start
+
+### Boot the Mini-Nim Kernel (NEW!)
+
+```bash
+# Build and boot Mini-Nim kernel with serial output
+make run-grub-mininim
+
+# Output:
+# ========================================
+#   Mini-Nim Kernel Booted!
+# ========================================
+#
+# Compiled from Mini-Nim source!
+# Compiler: Mini-Nim -> x86 assembly
+# Bootloader: GRUB multiboot
+#
+# Calling Mini-Nim kernel_main()...
+```
+
+### Boot the C Kernel
+
+```bash
+# Boot C kernel with GRUB (shows output in terminal)
+make run-grub
+
+# Ctrl-C to exit QEMU
+```
+
+You'll see the kernel boot message and status via serial output!
+
+### Alternative: Use GUI Window
+
+```bash
+# Build GRUB ISO
+make grub
+
+# Boot with GUI (see VGA text output)
+make run-grub-iso
 ```
 
 ---
 
-## 🚀 Current Status: **BOOTABLE!**
-
-- ✅ **Custom Bootloader** (Stage 1 + Stage 2)
-- ✅ **Mini-Nim Compiler** (1,572 lines of working compiler code!)
-- ✅ **Kernel in Mini-Nim** (VGA driver, terminal output)
-- ✅ **Boots in QEMU** and on real hardware
-- 🚧 Keyboard driver (next up!)
-- 📋 Interactive shell (coming soon!)
-
----
-
-## 🛠️ Quick Start
-
-### Build and Boot PoodillionOS
+## 🛠️ Building
 
 ```bash
 # Check required tools
 make check-tools
 
-# Build disk image with Mini-Nim kernel
-make mininim
+# Build and boot Mini-Nim kernel
+make run-grub-mininim
 
-# Boot it!
-make run
+# Build and boot C kernel
+make run-grub
+
+# Or build without running
+make grub-mininim  # Mini-Nim kernel
+make grub          # C kernel
+
+# Clean everything
+make clean
 ```
-
-You'll see the kernel boot and display colorful text on the VGA screen!
-
-### Compile Mini-Nim Programs
-
-```bash
-cd compiler
-
-# Compile a Mini-Nim program
-./mininim.py hello.nim --run
-
-# Compile for kernel (no _start symbol)
-./mininim.py kernel.nim --kernel
-```
-
----
-
-## 🏗️ What We Built
-
-### 1. **Mini-Nim Compiler** (From Scratch!)
-
-A complete compiler for a Nim-like language, written in Python:
-
-- **Lexer** (391 lines): Tokenizes source code with hex literals, operators
-- **Parser** (426 lines): Recursive descent parser, builds AST
-- **Code Generator** (432 lines): Generates x86 assembly (NASM syntax)
-- **AST Nodes** (160 lines): Type system, expressions, statements
-- **Compiler Driver** (163 lines): Full compilation pipeline
-
-**Total: 1,572 lines of compiler code!**
-
-**Features:**
-- Procedures with parameters and return types
-- Variables (var/const) with type inference
-- Control flow: if/elif/else, while, for loops
-- Operators: arithmetic, comparison, **bitwise** (|, &, ^, <<, >>)
-- Types: int8/16/32, uint8/16/32, bool, char, pointers
-- Type casting: `cast[ptr uint16](0xB8000)`
-- **Hex literals**: `0xB8000`, `0xFF`, etc.
-- **Kernel mode**: Export main instead of _start
-
-### 2. **Bootable Kernel**
-
-A minimal kernel written entirely in **Mini-Nim**:
-
-```nim
-# VGA text mode constants
-const VGA_MEMORY: uint32 = 0xB8000
-const VGA_WIDTH: int32 = 80
-
-proc vga_entry_color(fg: uint8, bg: uint8): uint8 =
-  var shifted: uint8 = bg << 4
-  return fg | shifted
-
-proc main() =
-  terminal_initialize()
-  terminal_writestring("PoodillionOS v0.1")
-  terminal_writestring("Kernel: Mini-Nim!")
-  terminal_writestring("Booted OK!")
-  while true:
-    discard  # Halt
-```
-
-**Kernel Features:**
-- Direct VGA memory access (0xB8000)
-- Color management with bitwise operations
-- Character output to screen
-- Terminal initialization
-- Displays boot message
-
-### 3. **Custom Bootloader**
-
-Two-stage bootloader in x86 assembly:
-- **Stage 1** (512 bytes): MBR, loads Stage 2
-- **Stage 2**: Loads kernel, switches to protected mode, jumps to kernel
 
 ---
 
@@ -133,214 +105,218 @@ Two-stage bootloader in x86 assembly:
 
 ```
 poodillion2/
-├── compiler/              # Mini-Nim Compiler (Built from scratch!)
-│   ├── lexer.py          # Tokenizer with hex literals
-│   ├── parser.py         # AST builder
-│   ├── codegen_x86.py    # x86 code generator
-│   ├── ast_nodes.py      # AST node definitions
-│   ├── mininim.py        # Compiler driver
-│   └── kernel.nim        # Compiled kernel source
+├── boot/                      # Bootloader code
+│   ├── stage1.asm            # MBR bootloader (512 bytes)
+│   ├── stage2.asm            # Second stage (has pmode bug)
+│   ├── multiboot.asm         # GRUB multiboot header ✅
+│   ├── boot.asm              # Original kernel entry
+│   ├── linker.ld             # Custom bootloader linker
+│   └── linker_grub.ld        # GRUB multiboot linker ✅
 ├── kernel/
-│   ├── kernel.nim        # Mini-Nim kernel source
-│   └── kernel.c          # C kernel (for comparison)
-├── boot/                 # Custom bootloader
-│   ├── stage1.asm        # MBR bootloader
-│   ├── stage2.asm        # Second stage
-│   ├── boot.asm          # Kernel entry
-│   └── linker.ld         # Linker script
-├── build/                # Build artifacts
-│   ├── poodillion.img    # Bootable disk image
-│   ├── kernel.bin        # Kernel binary
-│   └── *.o               # Object files
-├── docs/
-│   └── compiler/         # Compiler documentation
-├── examples/             # Mini-Nim example programs
-└── game/                 # Original Poodillion 2 (archived)
+│   ├── kernel.c              # Working C kernel ✅
+│   └── kernel.nim            # Mini-Nim kernel source
+├── compiler/                  # Mini-Nim Compiler
+│   ├── mininim.py            # Compiler driver
+│   ├── lexer.py              # Tokenizer
+│   ├── parser.py             # Parser
+│   └── codegen_x86.py        # x86 code generator
+├── build/
+│   ├── poodillion.img        # Custom bootloader disk (buggy)
+│   ├── poodillion_grub.iso   # GRUB ISO (working) ✅
+│   └── iso/boot/kernel.elf   # Multiboot kernel ✅
+├── GRUB_SETUP.md             # Bootloader issue documentation
+└── Makefile
 ```
 
 ---
 
-## 🔧 Building
+## 🔧 Current Kernel Features
 
-```bash
-# Build C kernel version (original)
-make all
-
-# Build Mini-Nim kernel version
-make mininim
-
-# Build just the kernel
-make kernel-mininim
-
-# Run in QEMU
-make run
-
-# Run with debug output
-make run-debug
-
-# Clean build artifacts
-make clean
-```
-
----
-
-## 🎯 The Complete Stack
-
-```
-┌─────────────────────────────────────────┐
-│  Mini-Nim Kernel (kernel.nim)           │
-│  - VGA text mode driver                 │
-│  - Terminal output                      │
-│  - Color management                     │
-│  - Direct hardware access               │
-├─────────────────────────────────────────┤
-│  Mini-Nim Compiler (Python)             │
-│  - Lexer: Hex literals, operators       │
-│  - Parser: Full Mini-Nim syntax         │
-│  - Codegen: x86 assembly (NASM)         │
-│  - Features: Pointers, bitwise ops      │
-├─────────────────────────────────────────┤
-│  Custom Bootloader (x86 ASM)            │
-│  - Stage 1: MBR (512 bytes)             │
-│  - Stage 2: Kernel loader               │
-│  - Protected mode setup                 │
-├─────────────────────────────────────────┤
-│  Bare Metal x86 Hardware                │
-│  - QEMU / Real PC                       │
-└─────────────────────────────────────────┘
-```
-
----
-
-## 📚 Mini-Nim Language
-
-### Example Program
+### Mini-Nim Kernel (kernel.nim) ✨ NEW!
 
 ```nim
-# Hello World in Mini-Nim
+# Simplest possible kernel - direct memory writes
 proc main() =
-  var x: int32 = 42
-  var color: uint8 = 0x0F
+  # Write "MINI" to VGA memory at 0xB8000
+  cast[ptr uint8](0xB8000)[0] = cast[uint8]('M')
+  cast[ptr uint8](0xB8001)[0] = cast[uint8](0x02)  # Green
 
-  if x > 40:
-    x = x + 1
-
-  # Bitwise operations
-  var vga_addr: uint32 = 0xB8000
-  var entry: uint16 = cast[uint16]('H') | (color << 8)
+  cast[ptr uint8](0xB8002)[0] = cast[uint8]('I')
+  cast[ptr uint8](0xB8003)[0] = cast[uint8](0x02)
+  # ... and so on
 ```
 
-### Supported Features
+**Features:**
+- Written in Mini-Nim (custom Nim-like language)
+- Compiles to x86 assembly via custom compiler
+- VGA text mode output (green text)
+- Boots via GRUB multiboot
+- Only 720 bytes of compiled code!
 
-- **Types**: int8, int16, int32, uint8, uint16, uint32, bool, char, ptr T
-- **Control Flow**: if/elif/else, while, for i in start..end
-- **Operators**: +, -, *, /, %, ==, !=, <, >, <=, >=
-- **Bitwise**: |, &, ^, <<, >>
-- **Functions**: proc name(params): returntype = body
-- **Casting**: cast[TargetType](expression)
-- **Literals**: integers, hex (0x...), chars ('c'), strings ("...")
+**Compiler Pipeline:**
+```
+kernel.nim → Mini-Nim Compiler → kernel.asm → NASM → kernel.o
+kernel.o + multiboot.o → LD → kernel.elf → QEMU
+```
+
+### C Kernel (kernel.c)
+
+```c
+void kernel_main(void) {
+    serial_init();                    // Initialize COM1 serial port
+    serial_print("Kernel Booted!\n"); // Output to serial console
+
+    // Write to VGA memory
+    uint16_t* vga = (uint16_t*)0xB8000;
+    const char* msg = "BOOTLOADER WORKS! Mini-Nim coming soon...";
+    // ... display message in green
+}
+```
+
+**Features:**
+- Serial port output (COM1, 38400 baud)
+- VGA text mode (80x25, color)
+- Both serial and VGA output work simultaneously
+- Visible via `-serial stdio` in QEMU
 
 ---
 
-## 🎓 What Makes This Special
+## 🎯 Boot Methods Comparison
 
-1. **Built from Scratch**: Custom compiler, custom bootloader, custom kernel
-2. **Self-Contained**: No dependencies on existing compilers or kernels
-3. **Educational**: Learn OS development AND compiler construction
-4. **Minimal**: Entire kernel is ~200 lines of Mini-Nim
-5. **Real Hardware**: Boots on actual x86 PCs (not just an emulator)
-6. **Type-Safe**: Strong typing catches errors at compile time
-7. **Efficient**: 5.9 KB kernel, boots in milliseconds
+| Method | Status | Output | Use Case |
+|--------|--------|--------|----------|
+| **Custom Bootloader** | ❌ Broken | Hangs | Not usable yet |
+| **GRUB (Direct)** | ✅ Working | Serial + VGA | Development (recommended) |
+| **GRUB (ISO)** | ✅ Working | GUI/VGA | Testing/Distribution |
+
+### Why GRUB?
+
+The custom 2-stage bootloader has a bug in the protected mode transition (boot/stage2.asm:89). GRUB handles this complex low-level stuff for us, so we can focus on kernel development.
+
+See `GRUB_SETUP.md` for technical details about the bootloader issue.
 
 ---
 
-## 🚧 Roadmap
+## 📊 Memory Map
 
-### Phase 1: Bootable Kernel ✅ COMPLETE!
-- [x] Custom two-stage bootloader
-- [x] Mini-Nim compiler from scratch
-- [x] Kernel written in Mini-Nim
-- [x] VGA text mode driver
-- [x] Successfully boots in QEMU
+```
+Physical Memory:
+0x00000000 - 0x000003FF   BIOS interrupt vectors
+0x00000400 - 0x000004FF   BIOS data area
+0x00007C00 - 0x00007DFF   Bootloader stage 1 (if used)
+0x00007E00 - 0x00009FFF   Bootloader stage 2 (if used)
+0x000B8000 - 0x000B8F9F   VGA text mode buffer (80x25)
+0x00100000 - 0x001FFFFF   Kernel code and data (loaded by GRUB)
+```
 
-### Phase 2: Interactive OS (Current)
-- [ ] Keyboard driver (in progress)
-- [ ] Shell/REPL
-- [ ] Command interpreter
+---
+
+## 🚧 Development Roadmap
+
+### ✅ Phase 1: Boot Successfully (COMPLETE!)
+- [x] Get kernel to boot and display output
+- [x] GRUB multiboot setup
+- [x] Serial port output for debugging
+- [x] VGA text mode output
+
+### ✅ Phase 2: Mini-Nim Integration (COMPLETE!)
+- [x] Update Mini-Nim compiler for kernel mode
+- [x] Compile kernel from Mini-Nim source
+- [x] Test Mini-Nim kernel boots like C kernel
+- [x] Verify output matches
+
+### 📋 Phase 3: Interactive Features (NEXT)
+- [ ] Keyboard input driver
+- [ ] Simple command parser
 - [ ] Memory management
-- [ ] Process system
+- [ ] Basic shell/REPL
 
-### Phase 3: Self-Hosting
-- [ ] Rewrite compiler in Mini-Nim
-- [ ] Compile compiler on PoodillionOS
-- [ ] Self-hosting OS!
-
-### Phase 4: Advanced Features
-- [ ] Filesystem (FAT32 or custom)
-- [ ] Network stack
-- [ ] Multi-tasking
+### 🎯 Phase 4: Advanced OS Features
+- [ ] Process/task management
+- [ ] Filesystem support
 - [ ] User programs
+- [ ] Self-hosting compiler
+
+### 🔧 Phase 5: Fix Custom Bootloader (OPTIONAL)
+- [ ] Debug protected mode transition
+- [ ] Compare with working bootloader examples
+- [ ] Fix GDT/IDT setup
+- [ ] Test on real hardware
 
 ---
 
 ## 🔬 Technical Details
 
+### Boot Process (GRUB Method)
+
+1. **BIOS/UEFI** loads GRUB from disk/ISO
+2. **GRUB** reads `grub.cfg`, finds kernel
+3. **GRUB** loads kernel.elf to 0x100000 (1MB)
+4. **GRUB** switches to protected mode, sets up basic GDT
+5. **GRUB** jumps to kernel entry with:
+   - EAX = 0x2BADB002 (multiboot magic)
+   - EBX = multiboot info structure address
+6. **Kernel** `_start` sets up stack
+7. **Kernel** calls `kernel_main()`
+8. **Kernel** initializes serial + VGA
+9. **Kernel** displays boot message
+10. **Kernel** halts (infinite loop)
+
 ### Compilation Pipeline
 
 ```
-kernel.nim → Lexer → Tokens → Parser → AST
-    ↓
-Code Generator → x86 Assembly (NASM)
-    ↓
-NASM → Object File (.o)
-    ↓
-LD Linker → ELF → Binary → Bootable Image
+kernel.c → GCC (-m32 -ffreestanding) → kernel.o
+multiboot.asm → NASM (-f elf32) → multiboot.o
+kernel.o + multiboot.o → LD (custom linker script) → kernel.elf
+kernel.elf → GRUB ISO / direct boot
 ```
-
-### Memory Map
-
-```
-0x0000:0x7C00    - BIOS & bootloader
-0x0000:0x8000    - Stage 2 bootloader
-0x00100000       - Kernel entry point
-0x00106000       - Kernel stack
-0x000B8000       - VGA text buffer (80x25)
-```
-
-### Boot Process
-
-1. BIOS loads Stage 1 (MBR) to 0x7C00
-2. Stage 1 loads Stage 2 from disk
-3. Stage 2 enables A20 line
-4. Stage 2 switches to protected mode
-5. Stage 2 loads kernel to 0x100000
-6. Jumps to kernel main()
-7. Kernel initializes VGA, displays message
-8. System halts (infinite loop)
 
 ---
 
 ## 🤝 Contributing
 
-Want to help build a real OS? We'd love your contributions!
+Want to help build a real OS? Here are some tasks:
 
-**Easy Tasks:**
-- Add more operators to Mini-Nim
-- Write example programs
+**Easy:**
+- Test on different QEMU versions
 - Improve documentation
-- Test on real hardware
+- Add more serial output messages
 
-**Medium Tasks:**
+**Medium:**
 - Implement keyboard driver
-- Add string support to compiler
-- Build simple shell
+- Add basic memory management
+- Create simple shell
 
-**Hard Tasks:**
-- Memory allocator
-- Process scheduler
-- Filesystem driver
+**Hard:**
+- Fix custom bootloader protected mode bug
+- Port Mini-Nim compiler to kernel
+- Implement multitasking
 
-See [CONTRIBUTING.md](docs/CONTRIBUTING.md) for details.
+See issues on GitHub for specific tasks.
+
+---
+
+## 📚 Resources & References
+
+### Our Documentation
+- `GRUB_SETUP.md` - Bootloader issue details and GRUB setup
+- `Makefile` - See `make help` for all targets
+
+### External Resources
+- [OSDev Wiki](https://wiki.osdev.org/) - OS development reference
+- [GRUB Multiboot](https://www.gnu.org/software/grub/manual/multiboot/) - Multiboot specification
+- [x86 Assembly](https://www.nasm.us/doc/) - NASM documentation
+
+---
+
+## 🎮 About Poodillion
+
+Originally a Python-based Unix hacking game simulating a complete 1990s Unix system. Now we're building it for real!
+
+**Evolution:**
+1. **Poodillion 1** - Terminal hacking game concept
+2. **Poodillion 2** - Full Unix simulator in Python (archived in `game/`)
+3. **PoodillionOS** - Real operating system (current)
 
 ---
 
@@ -352,40 +328,32 @@ All code is free software. Hack away!
 
 ---
 
-## 🌟 Inspiration
+## 🌟 Status Summary
 
-- **SerenityOS**: Proves you can build a modern OS from scratch
-- **ToaruOS**: Beautiful educational OS
-- **TempleOS**: Unique vision (RIP Terry Davis)
-- **Nim Language**: Systems programming made elegant
+```
+Project: PoodillionOS
+Status:  MINI-NIM KERNEL BOOTING! ✅
+Method:  GRUB Multiboot
+Kernel:  C + Mini-Nim (both working!)
+Compiler: Custom Mini-Nim to x86
+Output:  Serial port + VGA
+Next:    Keyboard input & interactive features
+```
 
----
+**Run the Mini-Nim kernel right now:**
+```bash
+make run-grub-mininim
+```
 
-## 🎮 About Poodillion
+**Or run the C kernel:**
+```bash
+make run-grub
+```
 
-Originally a Python-based Unix hacking game, Poodillion simulated a complete 1990s-era Unix system with networking, processes, and a scripting language.
-
-**Now**: We've taken that simulation and made it REAL - booting on bare metal!
-
----
-
-## 📞 Contact
-
-- **Issues**: https://github.com/ruapotato/poodillion2/issues
-- **Discussions**: https://github.com/ruapotato/poodillion2/discussions
-
----
-
-## 🎯 Philosophy
-
-**"If you can simulate it, you can build it for real."**
-
-We started with a game that simulated an OS. Now we're building the OS for real, using our own compiler and language.
-
-**Status**: 🔥 **BOOTABLE!** The kernel works. The compiler works. Next: Make it interactive!
+Press Ctrl-C to exit. Let's build an OS! 🚀
 
 ---
 
-**Built with ❤️ and assembly language**
+**Built with ❤️ and x86 assembly**
 
-*PoodillionOS - From Virtual to Real, One Boot at a Time*
+*PoodillionOS - Real Hardware, Real OS, Real Learning*

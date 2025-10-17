@@ -21,6 +21,9 @@ class X86CodeGen:
         self.local_vars: Dict[str, int] = {}
         self.stack_offset = 0
 
+        # Type table (name -> Type)
+        self.type_table: Dict[str, Type] = {}
+
         # String literals
         self.string_counter = 0
         self.strings: Dict[str, str] = {}
@@ -186,17 +189,43 @@ class X86CodeGen:
             self.gen_expression(expr.index)
             self.emit("mov ebx, eax")  # Index in EBX
 
+            # Determine pointer type to calculate element size
+            pointer_type = None
+            if isinstance(expr.array, CastExpr):
+                # Type comes from cast expression
+                pointer_type = expr.array.target_type
+            elif isinstance(expr.array, Identifier):
+                # Look up type from type table
+                if expr.array.name in self.type_table:
+                    pointer_type = self.type_table[expr.array.name]
+
+            # Calculate element size
+            element_size = 1  # Default to 1 byte
+            if pointer_type and isinstance(pointer_type, PointerType):
+                element_size = self.type_size(pointer_type.base_type)
+
             # Generate array base address
-            if isinstance(expr.array, Identifier):
+            if isinstance(expr.array, CastExpr):
+                # Generate the cast expression to get the pointer value
+                self.gen_expression(expr.array)
+            elif isinstance(expr.array, Identifier):
                 if expr.array.name in self.local_vars:
                     offset = self.local_vars[expr.array.name]
-                    self.emit(f"lea eax, [ebp-{offset}]")
+                    # Load the pointer value (offset is already negative)
+                    self.emit(f"mov eax, [ebp{offset}]")
                 else:
                     self.emit(f"lea eax, [rel {expr.array.name}]")
 
             # Calculate address: base + index * element_size
-            # Assuming 2-byte elements for now (uint16)
-            self.emit("shl ebx, 1")  # index * 2
+            if element_size > 1:
+                # Multiply index by element size
+                if element_size == 2:
+                    self.emit("shl ebx, 1")  # index * 2
+                elif element_size == 4:
+                    self.emit("shl ebx, 2")  # index * 4
+                else:
+                    self.emit(f"imul ebx, {element_size}")  # index * element_size
+
             self.emit("add eax, ebx")
             self.emit("mov eax, [eax]")
 
@@ -207,6 +236,9 @@ class X86CodeGen:
     # Statement code generation
     def gen_statement(self, stmt: ASTNode):
         if isinstance(stmt, VarDecl):
+            # Record type
+            self.type_table[stmt.name] = stmt.var_type
+
             # Allocate space on stack (negative offset from EBP)
             size = self.type_size(stmt.var_type)
             self.stack_offset += size
@@ -236,16 +268,47 @@ class X86CodeGen:
                 # Array assignment
                 self.emit("push eax")  # Save value
 
-                # Calculate address
+                # Calculate index
                 self.gen_expression(stmt.target.index)
                 self.emit("mov ebx, eax")
 
-                if isinstance(stmt.target.array, Identifier):
+                # Determine pointer type to calculate element size
+                pointer_type = None
+                if isinstance(stmt.target.array, CastExpr):
+                    # Type comes from cast expression
+                    pointer_type = stmt.target.array.target_type
+                elif isinstance(stmt.target.array, Identifier):
+                    # Look up type from type table
+                    if stmt.target.array.name in self.type_table:
+                        pointer_type = self.type_table[stmt.target.array.name]
+
+                # Calculate element size
+                element_size = 1  # Default to 1 byte
+                if pointer_type and isinstance(pointer_type, PointerType):
+                    element_size = self.type_size(pointer_type.base_type)
+
+                # Generate array base address
+                if isinstance(stmt.target.array, CastExpr):
+                    # Generate the cast expression to get the pointer value
+                    self.gen_expression(stmt.target.array)
+                elif isinstance(stmt.target.array, Identifier):
                     if stmt.target.array.name in self.local_vars:
                         offset = self.local_vars[stmt.target.array.name]
-                        self.emit(f"lea eax, [ebp-{offset}]")
+                        # Load the pointer value (offset is already negative)
+                        self.emit(f"mov eax, [ebp{offset}]")
+                    else:
+                        self.emit(f"lea eax, [rel {stmt.target.array.name}]")
 
-                self.emit("shl ebx, 1")
+                # Calculate address: base + index * element_size
+                if element_size > 1:
+                    # Multiply index by element size
+                    if element_size == 2:
+                        self.emit("shl ebx, 1")  # index * 2
+                    elif element_size == 4:
+                        self.emit("shl ebx, 2")  # index * 4
+                    else:
+                        self.emit(f"imul ebx, {element_size}")  # index * element_size
+
                 self.emit("add eax, ebx")
 
                 self.emit("pop ebx")  # Restore value
@@ -342,7 +405,11 @@ class X86CodeGen:
     # Procedure code generation
     def gen_procedure(self, proc: ProcDecl):
         self.emit("")
-        self.emit_label(proc.name)
+        # In kernel mode, rename main to mininim_kernel_main
+        func_name = proc.name
+        if self.kernel_mode and proc.name == "main":
+            func_name = "mininim_kernel_main"
+        self.emit_label(func_name)
 
         # Prologue
         self.emit("push ebp")
@@ -358,6 +425,8 @@ class X86CodeGen:
         # Stack layout: [param2][param1][return addr][saved EBP] <- EBP
         param_offset = 8  # Skip return address (4 bytes) and saved EBP (4 bytes)
         for param in proc.params:
+            # Record parameter type
+            self.type_table[param.name] = param.param_type
             # Parameters are at positive offsets from EBP - mark with a special flag
             self.local_vars[param.name] = param_offset
             param_offset += 4
@@ -434,8 +503,8 @@ class X86CodeGen:
             asm.append("    hlt")
             asm.append("    jmp .halt")
         else:
-            # In kernel mode, export main
-            asm.append("global main")
+            # In kernel mode, export mininim_kernel_main
+            asm.append("global mininim_kernel_main")
             asm.append("")
 
         asm.extend(self.output)

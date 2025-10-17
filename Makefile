@@ -66,11 +66,30 @@ $(KERNEL_OBJ): $(KERNEL_C) | $(BUILD_DIR)
 	@echo "Compiling C kernel..."
 	$(CC) $(CFLAGS) -c $(KERNEL_C) -o $(KERNEL_OBJ)
 
-# Compile Mini-Nim kernel
+# Compile Mini-Nim kernel (for custom bootloader - deprecated)
 MININIM_KERNEL_OBJ = compiler/kernel.o
 $(MININIM_KERNEL_OBJ): kernel/kernel.nim
 	@echo "Compiling Mini-Nim kernel..."
 	cd compiler && python3 mininim.py ../kernel/kernel.nim --kernel
+
+# Compile Mini-Nim kernel for GRUB
+MININIM_KERNEL_OBJ_GRUB = $(BUILD_DIR)/kernel_mininim.o
+SERIAL_OBJ = $(BUILD_DIR)/serial.o
+MININIM_WRAPPER_OBJ = $(BUILD_DIR)/mininim_wrapper.o
+
+$(MININIM_KERNEL_OBJ_GRUB): kernel/kernel.nim | $(BUILD_DIR)
+	@echo "Compiling Mini-Nim kernel for GRUB..."
+	cd compiler && python3 mininim.py ../kernel/kernel.nim --kernel -o kernel_mininim
+	@mv compiler/kernel_mininim.o $(MININIM_KERNEL_OBJ_GRUB)
+	@echo "  Mini-Nim kernel compiled: $(MININIM_KERNEL_OBJ_GRUB)"
+
+$(SERIAL_OBJ): kernel/serial.asm | $(BUILD_DIR)
+	@echo "Assembling serial driver..."
+	$(AS) $(ASFLAGS_32) kernel/serial.asm -o $(SERIAL_OBJ)
+
+$(MININIM_WRAPPER_OBJ): kernel/mininim_wrapper.asm | $(BUILD_DIR)
+	@echo "Assembling Mini-Nim wrapper..."
+	$(AS) $(ASFLAGS_32) kernel/mininim_wrapper.asm -o $(MININIM_WRAPPER_OBJ)
 
 # Build kernel with Mini-Nim compiler
 .PHONY: kernel-mininim
@@ -168,6 +187,87 @@ check-tools:
 	@which dd > /dev/null || (echo "ERROR: dd not found (should be in coreutils)")
 	@echo "✓ All required tools are installed!"
 
+# ========== GRUB MULTIBOOT TARGETS ==========
+
+# GRUB-specific variables
+ISO_DIR = $(BUILD_DIR)/iso
+GRUB_DIR = $(ISO_DIR)/boot/grub
+MULTIBOOT_ASM = $(BOOT_DIR)/multiboot.asm
+MULTIBOOT_OBJ = $(BUILD_DIR)/multiboot.o
+LINKER_GRUB = $(BOOT_DIR)/linker_grub.ld
+KERNEL_ELF = $(ISO_DIR)/boot/kernel.elf
+GRUB_ISO = $(BUILD_DIR)/poodillion_grub.iso
+
+# Build multiboot kernel for GRUB (C version)
+$(KERNEL_ELF): $(MULTIBOOT_OBJ) $(KERNEL_OBJ) $(LINKER_GRUB) | $(GRUB_DIR)
+	@echo "Building multiboot kernel for GRUB..."
+	$(LD) -m elf_i386 -T $(LINKER_GRUB) -o $(KERNEL_ELF) $(MULTIBOOT_OBJ) $(KERNEL_OBJ)
+	@echo "  Kernel size: $$(stat -c%s $(KERNEL_ELF)) bytes"
+
+# Build Mini-Nim multiboot kernel for GRUB
+KERNEL_MININIM_ELF = $(ISO_DIR)/boot/kernel_mininim.elf
+$(KERNEL_MININIM_ELF): $(MULTIBOOT_OBJ) $(MININIM_KERNEL_OBJ_GRUB) $(SERIAL_OBJ) $(MININIM_WRAPPER_OBJ) $(LINKER_GRUB) | $(GRUB_DIR)
+	@echo "Building Mini-Nim multiboot kernel for GRUB..."
+	$(LD) -m elf_i386 -T $(LINKER_GRUB) -o $(KERNEL_MININIM_ELF) $(MULTIBOOT_OBJ) $(MININIM_WRAPPER_OBJ) $(SERIAL_OBJ) $(MININIM_KERNEL_OBJ_GRUB)
+	@echo "  Mini-Nim Kernel size: $$(stat -c%s $(KERNEL_MININIM_ELF)) bytes"
+
+$(MULTIBOOT_OBJ): $(MULTIBOOT_ASM) | $(BUILD_DIR)
+	@echo "Assembling multiboot header..."
+	$(AS) $(ASFLAGS_32) $(MULTIBOOT_ASM) -o $(MULTIBOOT_OBJ)
+
+$(GRUB_DIR):
+	@mkdir -p $(GRUB_DIR)
+	@echo "set timeout=0" > $(GRUB_DIR)/grub.cfg
+	@echo "set default=0" >> $(GRUB_DIR)/grub.cfg
+	@echo "" >> $(GRUB_DIR)/grub.cfg
+	@echo 'menuentry "PoodillionOS" {' >> $(GRUB_DIR)/grub.cfg
+	@echo "    multiboot /boot/kernel.elf" >> $(GRUB_DIR)/grub.cfg
+	@echo "    boot" >> $(GRUB_DIR)/grub.cfg
+	@echo "}" >> $(GRUB_DIR)/grub.cfg
+
+# Build bootable GRUB ISO
+$(GRUB_ISO): $(KERNEL_ELF)
+	@echo "Creating bootable GRUB ISO..."
+	@grub-mkrescue -o $(GRUB_ISO) $(ISO_DIR) 2>&1 | grep -v "^xorriso" || true
+	@echo "  ISO created: $(GRUB_ISO)"
+
+.PHONY: grub
+grub: $(GRUB_ISO)
+	@echo "✓ GRUB ISO ready!"
+	@echo "  Boot with: make run-grub"
+
+.PHONY: run-grub
+run-grub: $(KERNEL_ELF)
+	@echo "Booting PoodillionOS with GRUB (multiboot)..."
+	@echo "Serial output below (Ctrl-C to exit):"
+	@echo "========================================"
+	qemu-system-i386 -kernel $(KERNEL_ELF) -display none -serial stdio
+
+# Mini-Nim kernel targets
+.PHONY: grub-mininim
+grub-mininim: $(KERNEL_MININIM_ELF)
+	@echo "✓ Mini-Nim kernel ready!"
+	@echo "  Boot with: make run-grub-mininim"
+
+.PHONY: run-grub-mininim
+run-grub-mininim: $(KERNEL_MININIM_ELF)
+	@echo "Booting PoodillionOS Mini-Nim Kernel with GRUB..."
+	@echo "Serial output below (Ctrl-C to exit):"
+	@echo "========================================"
+	qemu-system-i386 -kernel $(KERNEL_MININIM_ELF) -display none -serial stdio
+
+.PHONY: run-grub-mininim-gui
+run-grub-mininim-gui: $(KERNEL_MININIM_ELF)
+	@echo "Booting PoodillionOS Mini-Nim Kernel with GRUB (GUI)..."
+	qemu-system-i386 -kernel $(KERNEL_MININIM_ELF)
+
+.PHONY: run-grub-iso
+run-grub-iso: $(GRUB_ISO)
+	@echo "Booting PoodillionOS from GRUB ISO..."
+	qemu-system-i386 -cdrom $(GRUB_ISO)
+
+# ========== DEBUGGING TARGETS ==========
+
 # Disassemble bootloader (for debugging)
 .PHONY: disasm-boot
 disasm-boot: $(STAGE1_BIN) $(STAGE2_BIN)
@@ -188,20 +288,34 @@ help:
 	@echo "PoodillionOS Build System"
 	@echo "========================="
 	@echo ""
-	@echo "Targets:"
-	@echo "  all            - Build bootable disk image (default)"
+	@echo "Primary Targets:"
+	@echo "  all            - Build bootable disk image with custom bootloader"
+	@echo "  grub           - Build GRUB multiboot ISO (RECOMMENDED)"
+	@echo "  run            - Boot custom bootloader in QEMU"
+	@echo "  run-grub       - Boot with GRUB (fast, recommended)"
+	@echo "  run-grub-iso   - Boot GRUB ISO in QEMU"
+	@echo ""
+	@echo "Build Targets:"
 	@echo "  kernel         - Build kernel only"
-	@echo "  bootloader     - Build bootloader only"
-	@echo "  run            - Boot in QEMU"
+	@echo "  bootloader     - Build custom bootloader only"
+	@echo "  mininim        - Build with Mini-Nim kernel"
+	@echo ""
+	@echo "Debug Targets:"
 	@echo "  run-debug      - Boot in QEMU with debug output"
 	@echo "  debug          - Start QEMU with GDB server"
 	@echo "  disasm-boot    - Disassemble bootloader"
 	@echo "  disasm-kernel  - Disassemble kernel"
+	@echo ""
+	@echo "Utility:"
 	@echo "  clean          - Remove build artifacts"
 	@echo "  check-tools    - Verify required tools"
 	@echo "  help           - Show this help"
 	@echo ""
-	@echo "Quick start:"
+	@echo "Quick start (GRUB - recommended):"
+	@echo "  make check-tools    # Verify tools"
+	@echo "  make run-grub       # Build and boot with GRUB"
+	@echo ""
+	@echo "Quick start (custom bootloader):"
 	@echo "  make check-tools    # Verify tools"
 	@echo "  make                # Build disk image"
 	@echo "  make run            # Boot it!"

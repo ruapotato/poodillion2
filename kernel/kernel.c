@@ -1,151 +1,99 @@
-/*
- * kernel.c - PoodillionOS Kernel
- *
- * Minimal kernel that boots and displays a message.
- */
-
+// Simple C kernel to demonstrate working bootloader
 #include <stdint.h>
-#include <stddef.h>
 
-// VGA text mode buffer
-#define VGA_MEMORY 0xB8000
-#define VGA_WIDTH 80
-#define VGA_HEIGHT 25
+// Serial port (COM1) base address
+#define SERIAL_PORT 0x3F8
 
-// VGA color constants
-enum vga_color {
-    VGA_COLOR_BLACK = 0,
-    VGA_COLOR_BLUE = 1,
-    VGA_COLOR_GREEN = 2,
-    VGA_COLOR_CYAN = 3,
-    VGA_COLOR_RED = 4,
-    VGA_COLOR_MAGENTA = 5,
-    VGA_COLOR_BROWN = 6,
-    VGA_COLOR_LIGHT_GREY = 7,
-    VGA_COLOR_DARK_GREY = 8,
-    VGA_COLOR_LIGHT_BLUE = 9,
-    VGA_COLOR_LIGHT_GREEN = 10,
-    VGA_COLOR_LIGHT_CYAN = 11,
-    VGA_COLOR_LIGHT_RED = 12,
-    VGA_COLOR_LIGHT_MAGENTA = 13,
-    VGA_COLOR_LIGHT_BROWN = 14,
-    VGA_COLOR_WHITE = 15,
-};
-
-static inline uint8_t vga_entry_color(enum vga_color fg, enum vga_color bg) {
-    return fg | bg << 4;
+// Initialize serial port
+static void serial_init(void) {
+    __asm__ volatile(
+        "mov $0x00, %%al\n"
+        "mov $0x3F9, %%dx\n"
+        "out %%al, %%dx\n"      // Disable interrupts
+        "mov $0x80, %%al\n"
+        "mov $0x3FB, %%dx\n"
+        "out %%al, %%dx\n"      // Enable DLAB
+        "mov $0x03, %%al\n"
+        "mov $0x3F8, %%dx\n"
+        "out %%al, %%dx\n"      // Set divisor low byte (38400 baud)
+        "mov $0x00, %%al\n"
+        "mov $0x3F9, %%dx\n"
+        "out %%al, %%dx\n"      // Set divisor high byte
+        "mov $0x03, %%al\n"
+        "mov $0x3FB, %%dx\n"
+        "out %%al, %%dx\n"      // 8 bits, no parity, one stop bit
+        "mov $0xC7, %%al\n"
+        "mov $0x3FA, %%dx\n"
+        "out %%al, %%dx\n"      // Enable FIFO
+        "mov $0x0B, %%al\n"
+        "mov $0x3FC, %%dx\n"
+        "out %%al, %%dx\n"      // IRQs enabled, RTS/DSR set
+        ::: "al", "dx"
+    );
 }
 
-static inline uint16_t vga_entry(unsigned char uc, uint8_t color) {
-    return (uint16_t) uc | (uint16_t) color << 8;
+// Write character to serial port
+static void serial_write(char c) {
+    // Wait for transmit buffer to be empty
+    while (1) {
+        uint8_t status;
+        __asm__ volatile(
+            "mov $0x3FD, %%dx\n"
+            "in %%dx, %%al\n"
+            : "=a"(status)
+            :: "dx"
+        );
+        if (status & 0x20) break;
+    }
+
+    // Write character
+    __asm__ volatile(
+        "mov $0x3F8, %%dx\n"
+        "out %%al, %%dx\n"
+        :: "a"(c), "d"(SERIAL_PORT)
+    );
 }
 
-// Terminal state
-static size_t terminal_row;
-static size_t terminal_column;
-static uint8_t terminal_color;
-static uint16_t* terminal_buffer;
-
-void terminal_initialize(void) {
-    terminal_row = 0;
-    terminal_column = 0;
-    terminal_color = vga_entry_color(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK);
-    terminal_buffer = (uint16_t*) VGA_MEMORY;
-
-    for (size_t y = 0; y < VGA_HEIGHT; y++) {
-        for (size_t x = 0; x < VGA_WIDTH; x++) {
-            const size_t index = y * VGA_WIDTH + x;
-            terminal_buffer[index] = vga_entry(' ', terminal_color);
-        }
+// Write string to serial port
+static void serial_print(const char* str) {
+    while (*str) {
+        serial_write(*str++);
     }
 }
 
-void terminal_setcolor(uint8_t color) {
-    terminal_color = color;
-}
-
-void terminal_putentryat(char c, uint8_t color, size_t x, size_t y) {
-    const size_t index = y * VGA_WIDTH + x;
-    terminal_buffer[index] = vga_entry(c, color);
-}
-
-void terminal_scroll(void) {
-    // Move all lines up
-    for (size_t y = 0; y < VGA_HEIGHT - 1; y++) {
-        for (size_t x = 0; x < VGA_WIDTH; x++) {
-            terminal_buffer[y * VGA_WIDTH + x] =
-                terminal_buffer[(y + 1) * VGA_WIDTH + x];
-        }
-    }
-
-    // Clear last line
-    for (size_t x = 0; x < VGA_WIDTH; x++) {
-        terminal_buffer[(VGA_HEIGHT - 1) * VGA_WIDTH + x] =
-            vga_entry(' ', terminal_color);
-    }
-}
-
-void terminal_putchar(char c) {
-    if (c == '\n') {
-        terminal_column = 0;
-        if (++terminal_row == VGA_HEIGHT) {
-            terminal_row = VGA_HEIGHT - 1;
-            terminal_scroll();
-        }
-        return;
-    }
-
-    terminal_putentryat(c, terminal_color, terminal_column, terminal_row);
-    if (++terminal_column == VGA_WIDTH) {
-        terminal_column = 0;
-        if (++terminal_row == VGA_HEIGHT) {
-            terminal_row = VGA_HEIGHT - 1;
-            terminal_scroll();
-        }
-    }
-}
-
-void terminal_write(const char* data, size_t size) {
-    for (size_t i = 0; i < size; i++)
-        terminal_putchar(data[i]);
-}
-
-void terminal_writestring(const char* data) {
-    size_t len = 0;
-    while (data[len]) len++;
-    terminal_write(data, len);
-}
-
-// Kernel main entry point
 void kernel_main(void) {
-    // Initialize terminal
-    terminal_initialize();
+    // Initialize serial port
+    serial_init();
 
-    // Print boot message
-    terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK));
-    terminal_writestring("PoodillionOS v0.1.0\n");
-    terminal_writestring("==================\n\n");
+    // Print to serial (visible with -nographic or -serial stdio)
+    serial_print("\n\n");
+    serial_print("========================================\n");
+    serial_print("  PoodillionOS Kernel Booted!\n");
+    serial_print("========================================\n");
+    serial_print("\n");
+    serial_print("Status: GRUB multiboot successful!\n");
+    serial_print("Bootloader: GRUB handled protected mode\n");
+    serial_print("Kernel: Loaded at 0x100000 (1MB)\n");
+    serial_print("\n");
+    serial_print("VGA output (see GUI window):\n");
 
-    terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
-    terminal_writestring("Kernel booted successfully!\n");
-    terminal_writestring("Architecture: x86_64\n");
-    terminal_writestring("Memory: Uninitialized\n");
-    terminal_writestring("Processes: Not yet implemented\n");
-    terminal_writestring("Filesystem: Not yet implemented\n\n");
+    // Also write to VGA for GUI display
+    uint16_t* vga = (uint16_t*)0xB8000;
+    const char* msg = "BOOTLOADER WORKS! Mini-Nim coming soon...";
+    uint8_t color = 0x0A; // Green on black
 
-    terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_CYAN, VGA_COLOR_BLACK));
-    terminal_writestring("Next steps:\n");
-    terminal_writestring("  1. Memory management\n");
-    terminal_writestring("  2. Process scheduler\n");
-    terminal_writestring("  3. VFS implementation\n");
-    terminal_writestring("  4. Device drivers\n");
-    terminal_writestring("  5. PooScript userspace\n\n");
+    for (int i = 0; msg[i] != '\0'; i++) {
+        vga[i] = (uint16_t)msg[i] | (uint16_t)(color << 8);
+    }
 
-    terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_MAGENTA, VGA_COLOR_BLACK));
-    terminal_writestring("System halted. Press reset to reboot.\n");
+    serial_print("  \"BOOTLOADER WORKS! Mini-Nim coming soon...\"\n");
+    serial_print("\n");
+    serial_print("Next: Implement Mini-Nim compiler backend!\n");
+    serial_print("\n");
+    serial_print("Kernel halted. Press Ctrl-A X to exit QEMU.\n");
 
     // Halt
     while(1) {
-        __asm__ volatile ("hlt");
+        __asm__("hlt");
     }
 }

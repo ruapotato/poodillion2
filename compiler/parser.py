@@ -122,7 +122,16 @@ class Parser:
             self.expect(TokenType.LPAREN)
             expr = self.parse_expression()
             self.expect(TokenType.RPAREN)
-            return CastExpr(target_type, expr)
+            cast_expr = CastExpr(target_type, expr)
+
+            # Check for indexing on the cast result: cast[Type](expr)[index]
+            if self.current_token().type == TokenType.LBRACKET:
+                self.advance()
+                index = self.parse_expression()
+                self.expect(TokenType.RBRACKET)
+                return IndexExpr(cast_expr, index)
+
+            return cast_expr
 
         # Parenthesized expression
         if token.type == TokenType.LPAREN:

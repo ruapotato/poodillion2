@@ -4,17 +4,11 @@ ENTRY(_start)
 
 SECTIONS
 {
-    /* Kernel starts at 1MB */
-    . = 1M;
+    /* Kernel starts at 64KB (where stage2 loads it) */
+    . = 0x10000;
 
-    /* Multiboot header must be in first 8KB */
-    .boot :
-    {
-        *(.multiboot)
-    }
-
-    /* Read-only code */
-    .text ALIGN(4K) : AT(ADDR(.text))
+    /* Read-only code - _start must be first! */
+    .text :
     {
         *(.text)
     }
