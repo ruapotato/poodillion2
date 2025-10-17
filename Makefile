@@ -66,7 +66,9 @@ $(KERNEL_OBJ): $(KERNEL_C) | $(BUILD_DIR)
 # Link kernel
 $(KERNEL_BIN): $(BOOT_OBJ) $(KERNEL_OBJ)
 	@echo "Linking kernel..."
-	$(LD) $(LDFLAGS) -o $(KERNEL_BIN) $(BOOT_OBJ) $(KERNEL_OBJ)
+	$(LD) $(LDFLAGS) -o $(BUILD_DIR)/kernel.elf $(BOOT_OBJ) $(KERNEL_OBJ)
+	@echo "Converting ELF to flat binary..."
+	objcopy -O binary $(BUILD_DIR)/kernel.elf $(KERNEL_BIN)
 	@echo "  Kernel size: $$(stat -c%s $(KERNEL_BIN)) bytes"
 
 # Create bootable disk image

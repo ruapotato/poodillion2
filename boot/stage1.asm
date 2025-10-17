@@ -15,6 +15,9 @@ start:
     mov sp, 0x7C00          ; Stack grows down from bootloader
     sti                     ; Enable interrupts
 
+    ; Save boot drive (BIOS passes it in DL)
+    mov [boot_drive], dl
+
     ; Print boot message
     mov si, msg_boot
     call print_string
