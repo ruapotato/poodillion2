@@ -42,6 +42,9 @@ class Process:
     # Environment variables
     env: Dict[str, str] = field(default_factory=dict)
 
+    # Controlling terminal (TTY object reference)
+    tty: Optional[Any] = None  # TTY object from core.tty
+
     # Exit status
     exit_code: Optional[int] = None
 

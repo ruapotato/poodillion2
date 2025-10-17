@@ -48,47 +48,76 @@ class GameSession:
         self.current_system_ip = attacker.ip
         self.current_system = attacker
 
-        # Create shell for the current system (already exists in the system)
-        self.shell = self.current_system.shell
+        # Multiple shell sessions - each terminal gets its own
+        self.shells = {}  # shell_id -> {'shell': Shell, 'process': Process}
+        self.shell_counter = 0
 
-        # Get initial shell process (usually spawned by init -> login)
-        # For simplicity, we'll use UID 0 (root) - adjust based on your world setup
-        processes = self.current_system.processes.list_processes()
-        shell_proc = None
-        for proc in processes:
-            if 'sh' in proc.command or 'shell' in proc.command:
-                shell_proc = proc
-                break
+    def create_shell(self) -> str:
+        """Create a new shell session with its own PTY and return its ID"""
+        self.shell_counter += 1
+        shell_id = f"shell-{self.shell_counter}"
 
-        if not shell_proc:
-            # Create a shell process if none exists
-            shell_proc = self.current_system.processes.spawn(
-                parent_pid=1,
-                uid=0,
-                gid=0,
-                euid=0,
-                egid=0,
-                command='/bin/sh',
-                args=['/bin/sh'],
-                cwd=1,  # root directory
-                env={'PATH': '/bin:/usr/bin:/sbin:/usr/sbin', 'HOME': '/root', 'USER': 'root'},
-                tags=[]
-            )
-            shell_proc = self.current_system.processes.get_process(shell_proc)
+        # Create a PTY pair for this terminal
+        master_path, slave_path, master_tty, slave_tty = self.current_system.create_pty_pair()
 
-        self.shell_process = shell_proc
+        # Use the system's shell
+        shell = self.current_system.shell
 
-    def execute_command(self, command: str) -> tuple[str, str]:
+        # Create a shell process with this PTY
+        shell_proc_id = self.current_system.processes.spawn(
+            parent_pid=1,
+            uid=0,
+            gid=0,
+            euid=0,
+            egid=0,
+            command='/bin/sh',
+            args=['/bin/sh'],
+            cwd=1,  # root directory
+            env={
+                'PATH': '/bin:/usr/bin:/sbin:/usr/sbin',
+                'HOME': '/root',
+                'USER': 'root',
+                'TERM': 'xterm',
+                'TTY': slave_path
+            },
+            tags=['shell', f'tty:{slave_path}']
+        )
+        shell_proc = self.current_system.processes.get_process(shell_proc_id)
+
+        # Attach TTY to process
+        if shell_proc:
+            shell_proc.tty = slave_tty
+
+        # Store shell info with TTY references
+        self.shells[shell_id] = {
+            'shell': shell,
+            'process': shell_proc,
+            'master_tty': master_tty,
+            'slave_tty': slave_tty,
+            'master_path': master_path,
+            'slave_path': slave_path
+        }
+
+        return shell_id
+
+    def execute_command(self, shell_id: str, command: str) -> tuple[str, str]:
         """
-        Execute a command and return (stdout, stderr)
+        Execute a command in a specific shell and return (stdout, stderr)
         """
         self.last_activity = time.time()
 
+        if shell_id not in self.shells:
+            return "", f"Error: Invalid shell session\n"
+
         try:
+            shell_info = self.shells[shell_id]
+            shell = shell_info['shell']
+            shell_proc = shell_info['process']
+
             # Execute the command using the shell
-            exit_code, stdout, stderr = self.shell.execute(
+            exit_code, stdout, stderr = shell.execute(
                 command,
-                self.shell_process.pid,
+                shell_proc.pid,
                 input_data=b''
             )
 
@@ -97,9 +126,14 @@ class GameSession:
         except Exception as e:
             return "", f"Error: {str(e)}\n"
 
-    def get_prompt(self) -> str:
-        """Generate shell prompt"""
-        proc = self.shell_process
+    def get_prompt(self, shell_id: str) -> str:
+        """Generate shell prompt for a specific shell"""
+        if shell_id not in self.shells:
+            return "# "
+
+        shell_info = self.shells[shell_id]
+        proc = shell_info['process']
+        slave_tty = shell_info['slave_tty']
 
         # Get username
         username = 'root' if proc.uid == 0 else f'user{proc.uid}'
@@ -118,6 +152,10 @@ class GameSession:
 
         # Use # for root, $ for others
         prompt_char = '#' if proc.uid == 0 else '$'
+
+        # Update TTY session info
+        if slave_tty:
+            slave_tty.session_leader = proc.pid
 
         return f"{username}@{hostname}:{cwd_path}{prompt_char} "
 
@@ -209,16 +247,6 @@ def handle_connect(auth=None):
     session_id = session['session_id']
     join_room(session_id)
 
-    # Get or create game session
-    game_session = get_or_create_session(session_id)
-
-    # Send initial prompt
-    emit('output', {
-        'data': f"Welcome to Poodillion - The 1990s Hacking Simulator\n"
-                f"Type 'help' for available commands\n\n"
-                f"{game_session.get_prompt()}"
-    })
-
     print(f"Client connected: {session_id}")
 
 
@@ -228,11 +256,44 @@ def handle_disconnect():
     print(f"Client disconnected")
 
 
+@socketio.on('create_shell')
+def handle_create_shell():
+    """Create a new shell session for a terminal"""
+    session_id = session.get('session_id')
+    if not session_id:
+        emit('shell_error', {'error': 'No session'})
+        return
+
+    # Get or create game session
+    game_session = get_or_create_session(session_id)
+
+    # Create new shell
+    shell_id = game_session.create_shell()
+
+    # Join a room for this shell
+    join_room(shell_id)
+
+    # Send initial welcome and prompt
+    emit('shell_created', {
+        'shell_id': shell_id,
+        'data': f"Welcome to Poodillion - The 1990s Hacking Simulator\n"
+                f"Type 'help' for available commands\n\n"
+                f"{game_session.get_prompt(shell_id)}"
+    })
+
+    print(f"Created shell {shell_id} for session {session_id}")
+
+
 @socketio.on('input')
 def handle_input(data):
     """Handle terminal input from client"""
     session_id = session.get('session_id')
     if not session_id:
+        return
+
+    shell_id = data.get('shell_id')
+    if not shell_id:
+        emit('output', {'data': 'Error: No shell_id provided\n'})
         return
 
     command = data.get('data', '').strip()
@@ -242,21 +303,21 @@ def handle_input(data):
 
     # Special commands
     if command in ('exit', 'quit'):
-        emit('output', {'data': '\nGoodbye!\n'})
+        emit('output', {'shell_id': shell_id, 'data': '\nGoodbye!\n'}, room=shell_id)
         return
 
     # Execute command
     if command:
-        stdout, stderr = game_session.execute_command(command)
+        stdout, stderr = game_session.execute_command(shell_id, command)
 
-        # Send output
+        # Send output to this specific shell only
         if stdout:
-            emit('output', {'data': stdout})
+            emit('output', {'shell_id': shell_id, 'data': stdout}, room=shell_id)
         if stderr:
-            emit('output', {'data': stderr})
+            emit('output', {'shell_id': shell_id, 'data': stderr}, room=shell_id)
 
     # Send new prompt
-    emit('output', {'data': game_session.get_prompt()})
+    emit('output', {'shell_id': shell_id, 'data': game_session.get_prompt(shell_id)}, room=shell_id)
 
 
 @app.route('/about')

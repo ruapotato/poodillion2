@@ -13,6 +13,7 @@ from core.network_physical import NetworkInterface
 from core.daemon import DaemonManager
 from core.script_installer import install_scripts
 from core.kernel import Kernel  # NEW: Kernel layer
+from core.tty import TTYManager, TTY  # NEW: TTY virtualization
 from typing import Optional, Tuple, Dict
 
 
@@ -63,6 +64,7 @@ class UnixSystem:
         self.permissions = PermissionSystem()
         self.processes = ProcessManager()
         self.daemon_manager = DaemonManager()  # Background daemon support
+        self.tty_manager = TTYManager()  # NEW: TTY virtualization
         self.network: Optional[VirtualNetwork] = None
         self.packet_queue = PacketQueue(self, self.network)
 
@@ -99,6 +101,64 @@ class UnixSystem:
             if iface != 'lo' and ip != '127.0.0.1':
                 return ip
         return '127.0.0.1'
+
+    def _create_tty_device(self, device_path: str, tty_name: str):
+        """Create a TTY device file with integrated TTY object"""
+        # Create virtual TTY
+        tty = self.tty_manager.create_tty(tty_name)
+
+        # Create device handlers that use this TTY
+        def tty_read(size):
+            data = tty.read(size)
+            return data
+
+        def tty_write(data):
+            return tty.write(data)
+
+        # Register handlers
+        self.vfs.device_handlers[tty_name] = (tty_read, tty_write)
+
+        # Create device file
+        self.vfs.create_device(device_path, True, 0, 0, device_name=tty_name)
+
+    def create_pty_pair(self) -> tuple[str, str, TTY, TTY]:
+        """
+        Create a PTY pair for a new terminal session
+        Returns (master_path, slave_path, master_tty, slave_tty)
+        """
+        # Create PTY pair
+        master, slave = self.tty_manager.create_pty()
+
+        # Create device files
+        master_path = f'/dev/ptm/{master.number}'
+        slave_path = f'/dev/pts/{slave.number}'
+
+        # Create device handlers for master
+        def master_read(size):
+            # Read from slave's output (what the shell writes)
+            return slave.read_output(size)
+
+        def master_write(data):
+            # Write to slave's input (user input)
+            slave.process_input(data)
+            return len(data)
+
+        self.vfs.device_handlers[master.name] = (master_read, master_write)
+
+        # Create device handlers for slave
+        def slave_read(size):
+            return slave.read(size)
+
+        def slave_write(data):
+            return slave.write(data)
+
+        self.vfs.device_handlers[slave.name] = (slave_read, slave_write)
+
+        # Create device files
+        self.vfs.create_device(master_path, True, 0, 0, device_name=master.name)
+        self.vfs.create_device(slave_path, True, 0, 0, device_name=slave.name)
+
+        return master_path, slave_path, master, slave
 
     def _init_network_interfaces(self):
         """Create physical NetworkInterface objects for each interface"""
@@ -180,11 +240,14 @@ class UnixSystem:
         self.vfs.create_device('/dev/random', True, 0, 0, device_name='random')
         self.vfs.create_device('/dev/urandom', True, 0, 0, device_name='urandom')
 
-        # TTY devices
-        self.vfs.create_device('/dev/tty', True, 0, 0, device_name='tty')
-        self.vfs.create_device('/dev/tty0', True, 0, 0, device_name='tty0')
-        self.vfs.create_device('/dev/tty1', True, 0, 0, device_name='tty1')
-        self.vfs.create_device('/dev/console', True, 0, 0, device_name='console')
+        # Create virtualized TTY devices
+        # Console and standard TTYs
+        self._create_tty_device('/dev/console', 'console')
+        self._create_tty_device('/dev/tty', 'tty')
+        self._create_tty_device('/dev/tty0', 'tty0')
+        self._create_tty_device('/dev/tty1', 'tty1')
+        self._create_tty_device('/dev/tty2', 'tty2')
+        self._create_tty_device('/dev/tty3', 'tty3')
 
         # Standard streams
         self.vfs.create_device('/dev/stdin', True, 0, 0, device_name='stdin')
@@ -195,9 +258,9 @@ class UnixSystem:
         self.vfs.create_device('/dev/full', True, 0, 0, device_name='full')  # Always returns ENOSPC on write
         self.vfs.create_device('/dev/kmsg', True, 0, 0, device_name='kmsg')  # Kernel messages
 
-        # Pseudo-TTY master/slave
+        # Pseudo-TTY master/slave directory
         self.vfs.mkdir('/dev/pts', 0o755, 0, 0)
-        self.vfs.create_device('/dev/pts/0', True, 0, 0, device_name='tty')
+        self.vfs.mkdir('/dev/ptm', 0o755, 0, 0)
 
         # Network devices
         self.vfs.mkdir('/dev/net', 0o755, 0, 0)
