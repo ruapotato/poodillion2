@@ -60,8 +60,16 @@ class GameSession:
         # Create a PTY pair for this terminal
         master_path, slave_path, master_tty, slave_tty = self.current_system.create_pty_pair()
 
-        # Use the system's shell
-        shell = self.current_system.shell
+        # Create a NEW Shell instance for this terminal (critical for isolation)
+        from core.shell import Shell
+        shell = Shell(
+            self.current_system.vfs,
+            self.current_system.permissions,
+            self.current_system.processes,
+            self.current_system.network,
+            self.current_system.ip,
+            system=self.current_system
+        )
 
         # Create a shell process with this PTY
         shell_proc_id = self.current_system.processes.spawn(
@@ -320,6 +328,40 @@ def handle_input(data):
     emit('output', {'shell_id': shell_id, 'data': game_session.get_prompt(shell_id)}, room=shell_id)
 
 
+@socketio.on('destroy_shell')
+def handle_destroy_shell(data):
+    """Clean up a shell when terminal is closed"""
+    session_id = session.get('session_id')
+    if not session_id:
+        return
+
+    shell_id = data.get('shell_id')
+    if not shell_id:
+        return
+
+    # Get game session
+    if session_id not in sessions:
+        return
+
+    game_session = sessions[session_id]
+
+    # Remove shell from session
+    if shell_id in game_session.shells:
+        shell_info = game_session.shells[shell_id]
+
+        # Clean up process
+        if shell_info['process']:
+            try:
+                game_session.current_system.processes.kill(shell_info['process'].pid)
+            except:
+                pass
+
+        # Remove shell
+        del game_session.shells[shell_id]
+
+        print(f"Destroyed shell {shell_id} for session {session_id}")
+
+
 @app.route('/about')
 def about():
     """About page"""
@@ -358,11 +400,18 @@ def api_browse():
     # Get game session
     game_session = get_or_create_session(session_id)
 
+    # Create or use a dedicated shell for browser requests
+    # Use the first shell if available, otherwise create one
+    if not game_session.shells:
+        shell_id = game_session.create_shell()
+    else:
+        shell_id = list(game_session.shells.keys())[0]
+
     # Execute lynx command to fetch the page
     command = f'lynx {url}'
 
     try:
-        stdout, stderr = game_session.execute_command(command)
+        stdout, stderr = game_session.execute_command(shell_id, command)
 
         if stderr and 'Error' in stderr:
             return jsonify({'success': False, 'error': stderr})

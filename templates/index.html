@@ -498,6 +498,51 @@
             socket.on('disconnect', function() {
                 console.log('Disconnected from server');
             });
+
+            // Global event handlers (registered once)
+            socket.on('shell_created', function(data) {
+                const shellId = data.shell_id;
+
+                // Find the terminal waiting for this shell
+                for (const termId in terminals) {
+                    const termInfo = terminals[termId];
+                    if (termInfo.shellId === null) {
+                        termInfo.shellId = shellId;
+
+                        // Write initial data
+                        let output = data.data;
+                        if (!output.includes('\r\n')) {
+                            output = output.replace(/\n/g, '\r\n');
+                        }
+                        termInfo.term.write(output);
+
+                        // Update status
+                        document.getElementById(`${termId}-status`).textContent = 'Connected';
+                        break;
+                    }
+                }
+            });
+
+            socket.on('output', function(data) {
+                const shellId = data.shell_id;
+
+                // Find terminal with this shell_id and send output to it
+                for (const termId in terminals) {
+                    const termInfo = terminals[termId];
+                    if (termInfo.shellId === shellId) {
+                        let output = data.data;
+                        if (!output.includes('\r\n')) {
+                            output = output.replace(/\n/g, '\r\n');
+                        }
+                        termInfo.term.write(output);
+                        break;
+                    }
+                }
+            });
+
+            socket.on('shell_error', function(data) {
+                console.error('Shell error:', data.error);
+            });
         }
 
         // Create a new terminal window
@@ -527,7 +572,7 @@
                     <div class="terminal-wrapper" id="${termId}-container"></div>
                 </div>
                 <div class="status-bar">
-                    <div class="status-bar-field" id="${termId}-status">Connected</div>
+                    <div class="status-bar-field" id="${termId}-status">Connecting...</div>
                     <div class="status-bar-field">Session: {{ session_id[:8] }}...</div>
                 </div>
                 <div class="resize-handle" onmousedown="startResize(event, '${termId}')"></div>
@@ -558,12 +603,29 @@
             // Track current line
             let currentLine = '';
 
+            // Store terminal info FIRST (before creating shell)
+            terminals[termId] = {
+                term: term,
+                fitAddon: fitAddon,
+                window: win,
+                shellId: null  // Will be set when shell_created event arrives
+            };
+
+            // Disable input until shell is ready
+            term.write('Initializing shell...\r\n');
+
+            // Request shell creation from server
+            socket.emit('create_shell');
+
             // Handle terminal input
             term.onData(function(data) {
+                // Don't accept input until shell is ready
+                if (terminals[termId].shellId === null) return;
+
                 if (data === '\r') {
                     // Enter - send command
                     term.write('\r\n');
-                    socket.emit('input', { data: currentLine });
+                    socket.emit('input', { shell_id: terminals[termId].shellId, data: currentLine });
                     currentLine = '';
                 } else if (data === '\x7F') {
                     // Backspace
@@ -574,7 +636,7 @@
                 } else if (data === '\x03') {
                     // Ctrl+C
                     term.write('^C\r\n');
-                    socket.emit('input', { data: '' });
+                    socket.emit('input', { shell_id: terminals[termId].shellId, data: '' });
                     currentLine = '';
                 } else if (data === '\t') {
                     // Tab - ignore for now (no completion)
@@ -589,22 +651,6 @@
                     term.write(data);
                 }
             });
-
-            // Handle output from server
-            socket.on('output', function(data) {
-                let output = data.data;
-                if (!output.includes('\r\n')) {
-                    output = output.replace(/\n/g, '\r\n');
-                }
-                term.write(output);
-            });
-
-            // Store terminal info
-            terminals[termId] = {
-                term: term,
-                fitAddon: fitAddon,
-                window: win
-            };
 
             makeDraggable(win);
             focusWindow(termId);
@@ -633,6 +679,12 @@
         function closeWindow(windowId) {
             const win = document.getElementById(windowId);
             if (terminals[windowId]) {
+                // Notify server to clean up shell
+                if (terminals[windowId].shellId) {
+                    socket.emit('destroy_shell', { shell_id: terminals[windowId].shellId });
+                }
+
+                // Clean up client-side
                 terminals[windowId].term.dispose();
                 delete terminals[windowId];
             }
