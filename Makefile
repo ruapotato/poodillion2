@@ -368,6 +368,30 @@ run-mininim-shell: $(KERNEL_MININIM_SHELL_ELF)
 	@echo "========================================"
 	qemu-system-i386 -kernel $(KERNEL_MININIM_SHELL_ELF)
 
+# NEW: Full Mini-Nim Shell with extern functions (SERIAL OUTPUT)
+.PHONY: run-nim-shell
+run-nim-shell: build/kernel_shell_nim.elf
+	@echo "========================================"
+	@echo "  PoodillionOS v0.1 - Mini-Nim Shell"
+	@echo "========================================"
+	@echo "Full OS shell written in Mini-Nim!"
+	@echo "Commands: ls, cat, echo, help"
+	@echo "Press Ctrl-C to exit"
+	@echo "========================================"
+	qemu-system-i386 -kernel build/kernel_shell_nim.elf -serial stdio -display none
+
+# Build Mini-Nim shell kernel
+build/kernel_shell_nim.elf: compiler/shell_nim.o build/multiboot.o build/serial.o kernel/mininim_shell_wrapper.asm | $(BUILD_DIR)
+	@echo "Building Mini-Nim shell kernel..."
+	@nasm -f elf32 kernel/mininim_shell_wrapper.asm -o build/wrapper_shell.o
+	@ld -m elf_i386 -T boot/linker_grub.ld -o build/kernel_shell_nim.elf build/multiboot.o build/wrapper_shell.o build/serial.o compiler/shell_nim.o
+	@echo "  Mini-Nim Shell Kernel: $$(stat -c%s build/kernel_shell_nim.elf) bytes"
+
+compiler/shell_nim.o: kernel/shell_nim.nim
+	@echo "Compiling Mini-Nim shell..."
+	cd compiler && python3 mininim.py ../kernel/shell_nim.nim --kernel -o shell_nim
+	@echo "  Shell compiled: $$(stat -c%s compiler/shell_nim.o) bytes"
+
 .PHONY: run-grub-iso
 run-grub-iso: $(GRUB_ISO)
 	@echo "Booting PoodillionOS from GRUB ISO..."

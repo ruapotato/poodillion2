@@ -6,31 +6,48 @@
 
 ---
 
-## 🎉 Current Status: **MINI-NIM KERNEL BOOTS!** 🎉
+## 🎉 Current Status: **FULL MINI-NIM OS SHELL!** 🎉
 
 ```
 ========================================
-  PoodillionOS Mini-Nim Kernel Booted!
+  PoodillionOS v0.1 - Mini-Nim Shell
 ========================================
 
-Status: GRUB multiboot successful!
-Bootloader: GRUB handled protected mode
-Kernel: Compiled from Mini-Nim source!
-Size: 9052 bytes (720 byte .o + multiboot)
+Built with Mini-Nim compiler!
+Type 'help' for available commands
 
-VGA output: "MINI" in green text
+root@poodillion:~# ls
+bin/  home/  root/  usr/  tmp/
+
+root@poodillion:~# cat welcome.txt
+Welcome to PoodillionOS!
+A real operating system written in Mini-Nim
+
+root@poodillion:~# help
+Available commands:
+  ls    - List files
+  cat   - Display file
+  echo  - Print text
+  help  - Show this help
 ```
 
 **What Works:**
+- ✅ **Full OS Shell written in Mini-Nim!** (NEW!)
+  - Commands: ls, cat, echo, help
+  - External function calls to assembly drivers
+  - String literals in data section
 - ✅ **C Kernel** boots successfully via GRUB
 - ✅ **Mini-Nim Kernel** compiles and boots via GRUB
 - ✅ **Mini-Nim Compiler** generates x86 assembly in kernel mode
+  - Supports `extern proc` for calling assembly functions
+  - String literal support with proper escaping
 - ✅ **Serial Port Output** works in both C and Mini-Nim kernels
 - ✅ **VGA Text Mode** for visual output
 - ✅ **Protected Mode** transition handled by GRUB
 - ✅ **QEMU Testing** with serial and VGA output
 
 **What Doesn't Work (Yet):**
+- ❌ **Interactive Input** - Shell currently demonstrates commands but doesn't read keyboard
 - ❌ **Custom 2-Stage Bootloader** (hangs during protected mode transition)
   - See `GRUB_SETUP.md` for details on the workaround
 
@@ -38,22 +55,34 @@ VGA output: "MINI" in green text
 
 ## 🚀 Quick Start
 
-### Boot the Mini-Nim Kernel (NEW!)
+### Boot the Mini-Nim Shell (NEWEST!)
 
 ```bash
-# Build and boot Mini-Nim kernel with serial output
+# Build and run the full Mini-Nim OS shell
+make run-nim-shell
+
+# Output shows interactive shell demonstrating commands:
+# ========================================
+#   PoodillionOS v0.1 - Mini-Nim Shell
+# ========================================
+# Built with Mini-Nim compiler!
+#
+# root@poodillion:~# ls
+# bin/  home/  root/  usr/  tmp/
+#
+# root@poodillion:~# help
+# Available commands...
+```
+
+**Note:** Currently demonstrates commands but doesn't accept keyboard input yet. See "Adding Interactive Input" section below.
+
+### Boot the Mini-Nim Kernel
+
+```bash
+# Build and boot simple Mini-Nim kernel with serial output
 make run-grub-mininim
 
-# Output:
-# ========================================
-#   Mini-Nim Kernel Booted!
-# ========================================
-#
-# Compiled from Mini-Nim source!
-# Compiler: Mini-Nim -> x86 assembly
-# Bootloader: GRUB multiboot
-#
-# Calling Mini-Nim kernel_main()...
+# Shows "MINI" in green on VGA display
 ```
 
 ### Boot the C Kernel
@@ -64,8 +93,6 @@ make run-grub
 
 # Ctrl-C to exit QEMU
 ```
-
-You'll see the kernel boot message and status via serial output!
 
 ### Alternative: Use GUI Window
 
@@ -225,11 +252,18 @@ Physical Memory:
 - [x] Test Mini-Nim kernel boots like C kernel
 - [x] Verify output matches
 
-### 📋 Phase 3: Interactive Features (NEXT)
-- [ ] Keyboard input driver
-- [ ] Simple command parser
-- [ ] Memory management
-- [ ] Basic shell/REPL
+### ✅ Phase 3A: OS Shell in Mini-Nim (COMPLETE!)
+- [x] Add `extern proc` support for calling assembly from Mini-Nim
+- [x] String literal support in compiler
+- [x] Create serial output driver (assembly)
+- [x] Implement shell commands in Mini-Nim (ls, cat, echo, help)
+- [x] Full working shell demonstrating OS capabilities
+
+### 📋 Phase 3B: Interactive Input (NEXT)
+- [ ] Add keyboard input via extern functions
+- [ ] Read user commands from keyboard
+- [ ] Parse and execute commands interactively
+- [ ] Command history and editing
 
 ### 🎯 Phase 4: Advanced OS Features
 - [ ] Process/task management
@@ -332,15 +366,22 @@ All code is free software. Hack away!
 
 ```
 Project: PoodillionOS
-Status:  MINI-NIM KERNEL BOOTING! ✅
+Status:  FULL MINI-NIM OS SHELL! ✅
 Method:  GRUB Multiboot
 Kernel:  C + Mini-Nim (both working!)
-Compiler: Custom Mini-Nim to x86
+Shell:   Complete OS shell written in Mini-Nim
+Compiler: Custom Mini-Nim to x86 + extern functions
 Output:  Serial port + VGA
-Next:    Keyboard input & interactive features
+Features: ls, cat, echo, help commands
+Next:    Keyboard input for interactive shell
 ```
 
-**Run the Mini-Nim kernel right now:**
+**Run the Mini-Nim OS shell right now:**
+```bash
+make run-nim-shell
+```
+
+**Or run the simple Mini-Nim kernel:**
 ```bash
 make run-grub-mininim
 ```
