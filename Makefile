@@ -309,7 +309,32 @@ run-shell-serial: $(KERNEL_SHELL_ELF)
 	@echo "========================================"
 	qemu-system-i386 -kernel $(KERNEL_SHELL_ELF) -serial stdio
 
-# Mini-Nim Shell kernel targets
+# Serial-based Shell kernel (assembly only for now)
+SHELL_SERIAL_OBJ = $(BUILD_DIR)/shell_serial.o
+KERNEL_SERIAL_SHELL_ELF = $(ISO_DIR)/boot/kernel_serial_shell.elf
+
+$(SHELL_SERIAL_OBJ): kernel/shell_serial.asm | $(BUILD_DIR)
+	@echo "Assembling serial shell..."
+	$(AS) $(ASFLAGS_32) kernel/shell_serial.asm -o $(SHELL_SERIAL_OBJ)
+
+$(KERNEL_SERIAL_SHELL_ELF): $(MULTIBOOT_OBJ) $(SERIAL_OBJ) $(SHELL_SERIAL_OBJ) $(LINKER_GRUB) | $(GRUB_DIR)
+	@echo "Building serial shell kernel for GRUB..."
+	$(LD) -m elf_i386 -T $(LINKER_GRUB) -o $(KERNEL_SERIAL_SHELL_ELF) $(MULTIBOOT_OBJ) $(SHELL_SERIAL_OBJ) $(SERIAL_OBJ)
+	@echo "  Serial Shell Kernel size: $$(stat -c%s $(KERNEL_SERIAL_SHELL_ELF)) bytes"
+
+.PHONY: serial-shell
+serial-shell: $(KERNEL_SERIAL_SHELL_ELF)
+	@echo "✓ Serial shell kernel ready!"
+	@echo "  Boot with: make run-serial-shell"
+
+.PHONY: run-serial-shell
+run-serial-shell: $(KERNEL_SERIAL_SHELL_ELF)
+	@echo "Booting PoodillionOS Serial Shell..."
+	@echo "Serial output below (Ctrl-C to exit):"
+	@echo "========================================"
+	qemu-system-i386 -kernel $(KERNEL_SERIAL_SHELL_ELF) -display none -serial stdio
+
+# Mini-Nim Shell kernel targets (VGA-based, kept for reference)
 MININIM_SHELL_OBJ = $(BUILD_DIR)/shell_mininim.o
 MININIM_SHELL_WRAPPER_OBJ = $(BUILD_DIR)/mininim_shell_wrapper.o
 KERNEL_MININIM_SHELL_ELF = $(ISO_DIR)/boot/kernel_mininim_shell.elf
@@ -336,7 +361,7 @@ mininim-shell: $(KERNEL_MININIM_SHELL_ELF)
 
 .PHONY: run-mininim-shell
 run-mininim-shell: $(KERNEL_MININIM_SHELL_ELF)
-	@echo "Booting PoodillionOS Mini-Nim Shell..."
+	@echo "Booting PoodillionOS Mini-Nim Shell (VGA)..."
 	@echo "========================================"
 	@echo "Shell written in Mini-Nim!"
 	@echo "Commands: ls, cat, echo, help"
