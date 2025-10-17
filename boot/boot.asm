@@ -24,14 +24,14 @@ stack_top:
 
 section .text
 global _start
-extern kernel_main
+extern main
 
 _start:
     ; Set up stack
     mov esp, stack_top
 
     ; Call kernel main
-    call kernel_main
+    call main
 
     ; Hang if kernel returns
 .hang:

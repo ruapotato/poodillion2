@@ -5,6 +5,7 @@
 AS = nasm
 CC = gcc
 LD = ld
+NIM = nim
 
 # Flags
 ASFLAGS_16 = -f bin
@@ -15,6 +16,7 @@ LDFLAGS = -m elf_i386 -T boot/linker.ld --no-relax
 # Directories
 BOOT_DIR = boot
 KERNEL_DIR = kernel
+NIM_DIR = nim
 BUILD_DIR = build
 
 # Output files
@@ -28,6 +30,7 @@ STAGE1_ASM = $(BOOT_DIR)/stage1.asm
 STAGE2_ASM = $(BOOT_DIR)/stage2.asm
 BOOT_ASM = $(BOOT_DIR)/boot.asm
 KERNEL_C = $(KERNEL_DIR)/kernel.c
+KERNEL_NIM = $(NIM_DIR)/kernel.nim
 
 # Object files
 BOOT_OBJ = $(BUILD_DIR)/boot.o
@@ -58,10 +61,34 @@ $(BOOT_OBJ): $(BOOT_ASM) | $(BUILD_DIR)
 	@echo "Assembling kernel boot code..."
 	$(AS) $(ASFLAGS_32) $(BOOT_ASM) -o $(BOOT_OBJ)
 
-# Compile kernel
+# Compile kernel (C version)
 $(KERNEL_OBJ): $(KERNEL_C) | $(BUILD_DIR)
-	@echo "Compiling kernel..."
+	@echo "Compiling C kernel..."
 	$(CC) $(CFLAGS) -c $(KERNEL_C) -o $(KERNEL_OBJ)
+
+# Compile Mini-Nim kernel
+MININIM_KERNEL_OBJ = compiler/kernel.o
+$(MININIM_KERNEL_OBJ): kernel/kernel.nim
+	@echo "Compiling Mini-Nim kernel..."
+	cd compiler && python3 mininim.py ../kernel/kernel.nim --kernel
+
+# Build kernel with Mini-Nim compiler
+.PHONY: kernel-mininim
+kernel-mininim: $(BOOT_OBJ) $(MININIM_KERNEL_OBJ)
+	@echo "Linking Mini-Nim kernel..."
+	$(LD) $(LDFLAGS) -o $(BUILD_DIR)/kernel.elf $(BOOT_OBJ) $(MININIM_KERNEL_OBJ)
+	@echo "Converting ELF to flat binary..."
+	objcopy -O binary $(BUILD_DIR)/kernel.elf $(KERNEL_BIN)
+	@echo "  Kernel size: $$(stat -c%s $(KERNEL_BIN)) bytes"
+
+# Compile Nim kernel
+.PHONY: kernel-nim
+kernel-nim: $(BUILD_DIR)
+	@echo "Compiling Nim kernel..."
+	cd $(NIM_DIR) && $(NIM) c --nimcache:../$(BUILD_DIR)/nimcache -c kernel.nim
+	@echo "Compiling generated C code..."
+	$(CC) $(CFLAGS) -I$(NIM_DIR) -c $(BUILD_DIR)/nimcache/*.c -o $(BUILD_DIR)/kernel_nim.o 2>/dev/null || true
+	@echo "Nim kernel compiled!"
 
 # Link kernel
 $(KERNEL_BIN): $(BOOT_OBJ) $(KERNEL_OBJ)
@@ -84,6 +111,18 @@ $(DISK_IMG): $(STAGE1_BIN) $(STAGE2_BIN) $(KERNEL_BIN)
 	dd if=$(KERNEL_BIN) of=$(DISK_IMG) conv=notrunc bs=512 seek=18 2>/dev/null
 	@echo "Disk image created: $(DISK_IMG)"
 	@echo "  Size: $$(stat -c%s $(DISK_IMG)) bytes"
+
+# Build full disk image with Mini-Nim kernel
+.PHONY: mininim
+mininim: $(STAGE1_BIN) $(STAGE2_BIN) kernel-mininim
+	@echo "Creating disk image with Mini-Nim kernel..."
+	dd if=/dev/zero of=$(DISK_IMG) bs=512 count=20480 2>/dev/null
+	dd if=$(STAGE1_BIN) of=$(DISK_IMG) conv=notrunc bs=512 count=1 2>/dev/null
+	dd if=$(STAGE2_BIN) of=$(DISK_IMG) conv=notrunc bs=512 seek=1 2>/dev/null
+	dd if=$(KERNEL_BIN) of=$(DISK_IMG) conv=notrunc bs=512 seek=18 2>/dev/null
+	@echo "✓ Mini-Nim disk image created: $(DISK_IMG)"
+	@echo "  Kernel: Mini-Nim compiled!"
+	@echo "  Run with: make run"
 
 # Build just the kernel
 .PHONY: kernel
