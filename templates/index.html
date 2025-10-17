@@ -5,22 +5,19 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Poodillion - 1990s Hacking Simulator</title>
 
-    <!-- Windows 95 CSS -->
-    <link rel="stylesheet" href="https://unpkg.com/98.css">
-
     <!-- xterm.js CSS -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css" />
 
     <style>
         * {
             box-sizing: border-box;
+            margin: 0;
+            padding: 0;
         }
 
         body {
-            margin: 0;
-            padding: 0;
-            background: teal;
-            font-family: "MS Sans Serif", sans-serif;
+            font-family: "Helvetica", "Arial", sans-serif;
+            background: #5B7E91;
             overflow: hidden;
             height: 100vh;
             display: flex;
@@ -31,165 +28,291 @@
             flex: 1;
             position: relative;
             overflow: hidden;
+            background: #5B7E91;
         }
 
+        /* Desktop Icons */
+        .desktop-icon {
+            position: absolute;
+            width: 80px;
+            text-align: center;
+            cursor: pointer;
+            padding: 8px;
+            user-select: none;
+            border: 1px solid transparent;
+        }
+
+        .desktop-icon:hover {
+            background: rgba(255, 255, 255, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.4);
+        }
+
+        .desktop-icon.selected {
+            background: rgba(255, 255, 255, 0.3);
+            border: 1px dotted white;
+        }
+
+        .desktop-icon img {
+            width: 48px;
+            height: 48px;
+            filter: drop-shadow(1px 1px 2px rgba(0, 0, 0, 0.5));
+        }
+
+        .desktop-icon-label {
+            color: white;
+            text-shadow: 1px 1px 2px black;
+            font-size: 11px;
+            margin-top: 4px;
+            font-weight: bold;
+        }
+
+        /* Window styling - GNOME 1 style */
         .window {
-            box-shadow: 4px 4px 10px rgba(0, 0, 0, 0.3);
-            display: flex;
+            display: none;
             flex-direction: column;
             position: absolute;
             min-width: 400px;
             min-height: 300px;
-            resize: both;
-            overflow: hidden;
+            background: #D6D6D6;
+            border: 1px solid #000;
+            box-shadow: 3px 3px 8px rgba(0, 0, 0, 0.4);
+        }
+
+        .window.active {
+            display: flex;
+        }
+
+        .window.minimized {
+            display: none;
         }
 
         .window.maximized {
             top: 0 !important;
             left: 0 !important;
             width: 100% !important;
-            height: calc(100vh - 40px) !important;
-            resize: none;
+            height: calc(100vh - 50px) !important;
         }
 
-        .window.hidden {
-            display: none;
-        }
-
-        #terminal-window {
-            width: 800px;
-            height: 600px;
-            top: 50px;
-            left: 50px;
-            z-index: 1;
-        }
-
-        #browser-window {
-            width: 700px;
-            height: 550px;
-            top: 80px;
-            left: 200px;
-            z-index: 2;
-            display: none;
-        }
-
-        .window-body {
-            margin: 0;
-            padding: 0;
-            background: #000;
-            flex: 1;
-            overflow: hidden;
-        }
-
-        #terminal-container {
-            padding: 4px;
-            background: #000;
-            height: 100%;
-        }
-
-        #browser-content {
-            padding: 10px;
-            background: white;
-            color: black;
-            font-family: Arial, sans-serif;
-            overflow-y: auto;
-            flex: 1;
-        }
-
+        /* GNOME 1 title bar */
         .title-bar {
+            background: linear-gradient(to bottom, #8fa9ba 0%, #6d8a9c 100%);
+            border-bottom: 1px solid #4a6b7c;
+            padding: 4px;
+            cursor: move;
+            user-select: none;
             display: flex;
             align-items: center;
             justify-content: space-between;
-            cursor: move;
-            user-select: none;
+            height: 26px;
+        }
+
+        .window.inactive .title-bar {
+            background: linear-gradient(to bottom, #a8a8a8 0%, #888888 100%);
         }
 
         .title-bar-text {
             font-weight: bold;
-        }
-
-        .status-bar {
+            color: white;
+            text-shadow: 1px 1px 1px rgba(0, 0, 0, 0.5);
+            font-size: 12px;
+            padding-left: 4px;
             display: flex;
-            gap: 1px;
+            align-items: center;
+            gap: 4px;
         }
 
-        .status-bar-field {
-            padding: 2px 4px;
-        }
-
-        .toolbar {
+        .title-bar-controls {
             display: flex;
             gap: 2px;
-            padding: 2px;
-            background: silver;
-            border-bottom: 2px solid #808080;
         }
 
-        .toolbar button {
-            min-width: 60px;
+        .title-bar-button {
+            width: 18px;
+            height: 18px;
+            border: 1px outset #ddd;
+            background: #c0c0c0;
+            cursor: pointer;
+            font-size: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+        }
+
+        .title-bar-button:hover {
+            background: #d0d0d0;
+        }
+
+        .title-bar-button:active {
+            border-style: inset;
+        }
+
+        /* Window body */
+        .window-body {
+            flex: 1;
+            background: #000;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        #terminal-container {
+            flex: 1;
+            background: #000;
+        }
+
+        .terminal-wrapper {
+            width: 100%;
+            height: 100%;
+            padding: 4px;
+        }
+
+        /* Browser specific */
+        #browser-content {
+            flex: 1;
+            padding: 10px;
+            background: white;
+            color: black;
+            overflow-y: auto;
         }
 
         .address-bar {
             display: flex;
             gap: 4px;
             padding: 4px;
-            background: silver;
-            align-items: center;
-        }
-
-        .address-bar label {
-            font-weight: bold;
+            background: #e8e8e8;
+            border-bottom: 1px solid #aaa;
         }
 
         .address-bar input {
             flex: 1;
-            padding: 2px 4px;
+            padding: 3px 6px;
+            border: 1px inset #999;
         }
 
-        /* Custom xterm.js styling for retro look */
-        .xterm {
-            font-family: "Courier New", Courier, monospace;
-            font-size: 14px;
-            padding: 8px;
-            height: 100% !important;
+        .address-bar button {
+            padding: 2px 12px;
+            border: 1px outset #ddd;
+            background: #c0c0c0;
+            cursor: pointer;
         }
 
-        .xterm-viewport {
-            background-color: #000 !important;
+        .address-bar button:active {
+            border-style: inset;
         }
 
-        /* Taskbar */
-        .taskbar {
-            height: 40px;
-            background: silver;
-            border-top: 2px solid white;
+        /* Status bar */
+        .status-bar {
+            background: #e8e8e8;
+            border-top: 1px solid #aaa;
+            padding: 3px 6px;
+            font-size: 11px;
+            display: flex;
+            gap: 8px;
+        }
+
+        .status-bar-field {
+            border: 1px inset #999;
+            padding: 2px 6px;
+        }
+
+        /* GNOME Panel (taskbar) */
+        .panel {
+            height: 48px;
+            background: linear-gradient(to bottom, #6d8a9c 0%, #4a6b7c 100%);
+            border-top: 1px solid #8fa9ba;
             display: flex;
             align-items: center;
-            padding: 2px 4px;
+            padding: 0 4px;
             gap: 4px;
             flex-shrink: 0;
-            position: relative;
+            box-shadow: 0 -2px 4px rgba(0, 0, 0, 0.2);
         }
 
-        .start-button {
-            height: 32px;
-            padding: 0 12px;
+        /* Main menu button */
+        .main-menu-button {
+            height: 40px;
+            padding: 0 16px;
+            background: linear-gradient(to bottom, #8fa9ba 0%, #6d8a9c 100%);
+            border: 1px outset #aaa;
+            cursor: pointer;
+            color: white;
+            font-weight: bold;
+            font-size: 13px;
             display: flex;
             align-items: center;
-            gap: 4px;
+            gap: 6px;
+        }
+
+        .main-menu-button:hover {
+            background: linear-gradient(to bottom, #9fb9ca 0%, #7d9aac 100%);
+        }
+
+        .main-menu-button:active,
+        .main-menu-button.active {
+            border-style: inset;
+        }
+
+        .main-menu-button img {
+            width: 24px;
+            height: 24px;
+        }
+
+        /* Main Menu */
+        .main-menu {
+            position: absolute;
+            bottom: 50px;
+            left: 4px;
+            width: 280px;
+            background: #e8e8e8;
+            border: 2px outset #ddd;
+            box-shadow: 3px 3px 8px rgba(0, 0, 0, 0.4);
+            display: none;
+            z-index: 10000;
+        }
+
+        .main-menu.open {
+            display: block;
+        }
+
+        .main-menu-header {
+            background: linear-gradient(to right, #6d8a9c 0%, #4a6b7c 100%);
+            color: white;
+            padding: 8px 12px;
             font-weight: bold;
-            font-size: 14px;
+            border-bottom: 1px solid #999;
         }
 
-        .start-button img {
-            width: 20px;
-            height: 20px;
+        .main-menu-items {
+            padding: 4px;
         }
 
-        .taskbar-separator {
-            width: 2px;
-            height: 32px;
-            background: #808080;
+        .main-menu-item {
+            padding: 8px 12px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            border: 1px solid transparent;
+        }
+
+        .main-menu-item:hover {
+            background: #5B7E91;
+            color: white;
+            border: 1px solid #4a6b7c;
+        }
+
+        .main-menu-separator {
+            height: 1px;
+            background: #999;
+            margin: 4px 8px;
+        }
+
+        /* Taskbar items */
+        .panel-separator {
+            width: 1px;
+            height: 40px;
+            background: #4a6b7c;
             margin: 0 4px;
         }
 
@@ -200,274 +323,157 @@
         }
 
         .taskbar-button {
-            padding: 4px 12px;
+            height: 40px;
+            padding: 0 12px;
+            background: linear-gradient(to bottom, #8fa9ba 0%, #6d8a9c 100%);
+            border: 1px outset #aaa;
+            cursor: pointer;
+            color: white;
+            font-size: 12px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
             min-width: 150px;
-            text-align: left;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
+            max-width: 200px;
+        }
+
+        .taskbar-button:hover {
+            background: linear-gradient(to bottom, #9fb9ca 0%, #7d9aac 100%);
         }
 
         .taskbar-button.active {
             border-style: inset;
+            background: linear-gradient(to bottom, #6d8a9c 0%, #4a6b7c 100%);
         }
 
-        .taskbar-clock {
-            padding: 4px 8px;
-            border: 2px inset #dfdfdf;
-            font-family: "MS Sans Serif", sans-serif;
-            font-size: 11px;
-        }
-
-        /* Start Menu */
-        .start-menu {
-            position: absolute;
-            bottom: 40px;
-            left: 2px;
-            width: 250px;
-            background: silver;
-            border: 2px solid;
-            border-color: white #808080 #808080 white;
-            box-shadow: 4px 4px 10px rgba(0, 0, 0, 0.3);
-            display: none;
-            z-index: 10000;
-        }
-
-        .start-menu.open {
-            display: block;
-        }
-
-        .start-menu-banner {
-            background: linear-gradient(to right, #000080, #1084d0);
+        /* Clock */
+        .panel-clock {
+            height: 40px;
+            padding: 0 12px;
             color: white;
-            padding: 4px;
-            font-weight: bold;
-            writing-mode: vertical-rl;
-            text-orientation: mixed;
-            float: left;
-            height: 100%;
-            min-height: 200px;
+            font-size: 12px;
             display: flex;
-            align-items: flex-end;
-            font-size: 24px;
-            padding: 8px 4px;
+            align-items: center;
+            font-weight: bold;
         }
 
-        .start-menu-items {
-            margin-left: 32px;
-            padding: 4px 0;
+        /* Xterm styling */
+        .xterm {
+            font-family: "Courier New", Courier, monospace;
+            font-size: 14px;
+            padding: 4px;
         }
 
-        .start-menu-item {
-            padding: 8px 32px 8px 40px;
-            cursor: pointer;
-            position: relative;
-            background: silver;
-            border: none;
-            width: 100%;
-            text-align: left;
-            font-family: "MS Sans Serif", sans-serif;
-            font-size: 11px;
+        .xterm-viewport {
+            background-color: #000 !important;
         }
 
-        .start-menu-item:hover {
-            background: #000080;
-            color: white;
-        }
-
-        .start-menu-item::before {
-            content: '';
+        /* Resize handle */
+        .resize-handle {
             position: absolute;
-            left: 8px;
-            top: 50%;
-            transform: translateY(-50%);
-            width: 24px;
-            height: 24px;
-            background-size: contain;
+            right: 0;
+            bottom: 0;
+            width: 16px;
+            height: 16px;
+            cursor: se-resize;
+            background: linear-gradient(135deg, transparent 0%, transparent 50%, #999 50%, #999 100%);
         }
 
-        .start-menu-separator {
-            height: 2px;
-            background: #808080;
-            margin: 2px 4px;
-        }
-
-        /* Browser styles */
+        /* Browser content */
         #browser-content pre {
             white-space: pre-wrap;
             font-family: monospace;
         }
 
-        #browser-content h1, #browser-content h2, #browser-content h3 {
-            color: #000080;
-        }
-
-        #browser-content a {
-            color: blue;
-            text-decoration: underline;
-            cursor: pointer;
-        }
-
-        #browser-content a:visited {
-            color: purple;
-        }
-
-        /* Loading indicator */
         .loading {
             text-align: center;
             padding: 40px;
-            font-style: italic;
-        }
-
-        /* Desktop icons */
-        .desktop-icon {
-            position: absolute;
-            width: 80px;
-            text-align: center;
-            cursor: pointer;
-            padding: 8px;
-            user-select: none;
-        }
-
-        .desktop-icon:hover {
-            background: rgba(0, 0, 128, 0.3);
-        }
-
-        .desktop-icon img {
-            width: 48px;
-            height: 48px;
-        }
-
-        .desktop-icon-label {
-            color: white;
-            text-shadow: 1px 1px 2px black;
-            font-size: 11px;
-            margin-top: 4px;
         }
     </style>
 </head>
 <body>
     <div class="desktop" id="desktop">
         <!-- Desktop Icons -->
-        <div class="desktop-icon" style="top: 10px; left: 10px;" ondblclick="openTerminal()">
-            <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAYAAABXAvmHAAAABHNCSVQICAgIfAhkiAAAAAlwSFlzAAAAdgAAAHYBTnsmCAAAABl0RVh0U29mdHdhcmUAd3d3Lmlua3NjYXBlLm9yZ5vuPBoAAAE5SURBVGiB7ZnBDcIwDEVfxwAswAiMwCawCRuwARuwCWzACIzACrABG8AGXKpGQqJNXCc9VPwrVWqd96Mk/QshhBBCCCGEkD9CAEyAJbADXsAROAMX4GpZ9wDWQGG8fwEWlr4jYNvmsziN4/6o+rz+VWMDCNOe17dYEzDVuE1bfWO+j+ozaLo+Jq5vknjuhmGTuG6duDaJ6/WNe3UP3C2wfp9eqvMHxg7UHajcgcoduP3CgboDlTtQuQOVO1C5Azy+Sdz9xvW/qE8Sf/lXwA5YAWsgq/5RfVZ9Vr1S+wb4kL50Tc/l7L2O/NdQ/BqKX0Pxayh+DSUvonwCWqDPqr8Gg9Vb9S3QWvVW/T3ht2qfWu8TUGr0kSdwMeijTuBoXB91AgeifgA+jXqrPqs+qz6r/h9RQgghhBBC+DQvaY90DCqsXZMAAAAASUVORK5CYII=" alt="Terminal">
+        <div class="desktop-icon" style="top: 10px; left: 10px;" ondblclick="createTerminal()">
+            <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Crect fill='%23333' x='4' y='4' width='40' height='40' rx='2'/%3E%3Crect fill='%23000' x='6' y='10' width='36' height='30'/%3E%3Ctext x='10' y='25' fill='%2300ff00' font-family='monospace' font-size='8'%3E%3E_%3C/text%3E%3C/svg%3E" alt="Terminal">
             <div class="desktop-icon-label">Terminal</div>
         </div>
 
         <div class="desktop-icon" style="top: 110px; left: 10px;" ondblclick="openBrowser()">
-            <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAYAAABXAvmHAAAABHNCSVQICAgIfAhkiAAAAAlwSFlzAAAAdgAAAHYBTnsmCAAAABl0RVh0U29mdHdhcmUAd3d3Lmlua3NjYXBlLm9yZ5vuPBoAAAHOSURBVGiB7ZnNi8IwEMZ/6ksPehD8gz0IevKgBw/iRfCgePKgB8GTB0UE8ST4Lyh48OBB8OBB0YMeVFARWZ3Z6Wzbdtu0m+7C/qBQ0pnMl6ZpZhIhhBBCCCGEkH8LAEwALIEjgD2ABwAngLe1tgNQAyit9z4A1NZ6awDblnpHANsO+hxOY7u/V33e/6qxAYRpz+rbWxMw1bhNW31jvo/qM2i6PiaujyfuukncOHHNOnFtEte7G/fqAdwtsN6fV5f0D4wdqDtQuQOVO1C5A9d/cKDuQOUOVO5A5Q5w+SZx92vrvaoviaf8K+AI4AxgBmCu+lz1ufVK7QbwIX3pmq7L2Xsd+V+h+FYofhWKX4XiV1HyIsonYAD6rPprMFi9Vd8DvVVv1f8SfqvOqfU+AZVGH3kCV4M+6gROxvVRJ3Ak6gfg26i36nPrc+tz669C8a1QfCsU3wrFt0LxrVB8KxTfCsW3QvGtUPxrUHwrFN8Kxb8GxX8HxX8Hxb8Gxe8GxX8Hxe8Gxe8Gxe8Gxe8Gxe8Gxe8Gxe8Gxe8GxX8HxX8HxX8HxX8HxX8Hxe8Gxb8Gxb8GxX8Hxe8Gxe8GxX8HxX8HxX8HxX8HxX8HxX8HxX8HxbdC8QkhhBBCCCGk1H4AbCB1EhZXV2cAAAAASUVORK5CYII=" alt="Browser">
-            <div class="desktop-icon-label">Lynx Browser</div>
+            <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Ccircle fill='%234a6b7c' cx='24' cy='24' r='20'/%3E%3Cpath fill='white' d='M24 8 L16 24 L24 40 M24 8 L32 24 L24 40 M12 24 L36 24'/%3E%3C/svg%3E" alt="Browser">
+            <div class="desktop-icon-label">Browser</div>
         </div>
 
-        <!-- Terminal Window -->
-        <div class="window" id="terminal-window">
+        <!-- Browser Window (only one) -->
+        <div class="window" id="browser-window" style="top: 80px; left: 200px; width: 700px; height: 550px;">
             <div class="title-bar">
                 <div class="title-bar-text">
-                    <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAwAAAAMCAYAAABWdVznAAAABHNCSVQICAgIfAhkiAAAAAlwSFlzAAAAdgAAAHYBTnsmCAAAABl0RVh0U29mdHdhcmUAd3d3Lmlua3NjYXBlLm9yZ5vuPBoAAABJSURBVCiRY/j//z8DKYCJgUTAqGEYGvj/n4H+Bvz/z0B/A/7/Z6C/Af//M9DfgP//GehvwP//DPQ34P9/BgYGhv8E1ZOuAQCAlwMQE7btMwAAAABJRU5ErkJggg==" width="12" height="12" alt="">
-                    Terminal - root@kali-box
+                    🌐 Lynx Browser
                 </div>
                 <div class="title-bar-controls">
-                    <button aria-label="Minimize" onclick="minimizeWindow('terminal-window')"></button>
-                    <button aria-label="Maximize" onclick="toggleMaximize('terminal-window')"></button>
-                    <button aria-label="Close" onclick="closeWindow('terminal-window')"></button>
+                    <button class="title-bar-button" onclick="minimizeWindow('browser-window')" title="Minimize">_</button>
+                    <button class="title-bar-button" onclick="toggleMaximize('browser-window')" title="Maximize">□</button>
+                    <button class="title-bar-button" onclick="closeWindow('browser-window')" title="Close">×</button>
                 </div>
             </div>
 
-            <!-- Toolbar -->
-            <div class="toolbar">
-                <button onclick="clearTerminal()">Clear</button>
-                <button onclick="openBrowser()">Browser</button>
-                <button onclick="showHelp()">Help</button>
-            </div>
-
-            <!-- Terminal -->
-            <div class="window-body">
-                <div id="terminal-container"></div>
-            </div>
-
-            <!-- Status Bar -->
-            <div class="status-bar">
-                <div class="status-bar-field" id="status-connection">Connecting...</div>
-                <div class="status-bar-field" id="status-session">Session: {{ session_id[:8] }}...</div>
-            </div>
-        </div>
-
-        <!-- Browser Window -->
-        <div class="window" id="browser-window">
-            <div class="title-bar">
-                <div class="title-bar-text">
-                    🌐 Lynx Browser - Text-Based Web Browser
-                </div>
-                <div class="title-bar-controls">
-                    <button aria-label="Minimize" onclick="minimizeWindow('browser-window')"></button>
-                    <button aria-label="Maximize" onclick="toggleMaximize('browser-window')"></button>
-                    <button aria-label="Close" onclick="closeWindow('browser-window')"></button>
-                </div>
-            </div>
-
-            <!-- Address Bar -->
             <div class="address-bar">
                 <label>URL:</label>
-                <input type="text" id="browser-url" placeholder="Enter hostname (e.g., cybermart.com)" />
+                <input type="text" id="browser-url" placeholder="cybermart.com" />
                 <button onclick="browseTo()">Go</button>
-                <button onclick="browserBack()">Back</button>
                 <button onclick="browserRefresh()">Refresh</button>
             </div>
 
-            <!-- Browser Content -->
             <div class="window-body">
                 <div id="browser-content">
                     <div class="loading">
-                        <h2>Welcome to Lynx Browser</h2>
-                        <p>A text-based web browser for the early internet.</p>
-                        <p>Enter a hostname in the address bar above, or type <code>lynx &lt;hostname&gt;</code> in the terminal.</p>
-                        <p><strong>Available Sites:</strong></p>
+                        <h2>Lynx Browser</h2>
+                        <p>Text-based web browser</p>
+                        <p><strong>Available sites:</strong></p>
                         <ul>
-                            <li><a onclick="browseToSite('cybermart.com')">cybermart.com</a> - CyberMart Shopping</li>
-                            <li><a onclick="browseToSite('bbs.cyberspace.net')">bbs.cyberspace.net</a> - CyberSpace BBS</li>
-                            <li><a onclick="browseToSite('underground.bbs')">underground.bbs</a> - The Underground</li>
+                            <li><a href="#" onclick="browseToSite('cybermart.com'); return false;">cybermart.com</a></li>
+                            <li><a href="#" onclick="browseToSite('bbs.cyberspace.net'); return false;">bbs.cyberspace.net</a></li>
+                            <li><a href="#" onclick="browseToSite('underground.bbs'); return false;">underground.bbs</a></li>
                         </ul>
                     </div>
                 </div>
             </div>
 
-            <!-- Status Bar -->
             <div class="status-bar">
                 <div class="status-bar-field" id="browser-status">Ready</div>
             </div>
+
+            <div class="resize-handle" onmousedown="startResize(event, 'browser-window')"></div>
         </div>
     </div>
 
-    <!-- Windows 95 Taskbar -->
-    <div class="taskbar">
-        <button class="start-button" id="start-button" onclick="toggleStartMenu()">
-            <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAABHNCSVQICAgIfAhkiAAAAAlwSFlzAAAAdgAAAHYBTnsmCAAAABl0RVh0U29mdHdhcmUAd3d3Lmlua3NjYXBlLm9yZ5vuPBoAAADCSURBVDiNndM9CsJAEIbhJ4iNhZWVYGMh2Fh4Aw/gDTyBR/AMHsHSm3gDr+ARbKy0sbDQQkEQLPyBkF0YIYtm4YVhZ2b3Y3eGmR/qMcACG9xiGkpfMUQ7FP+BDVo/8BhL1H7gERa/8AhLVH/gEZY/8AhL5H/gCItfYPELLL6BxTeweBGLF7H4L7D4DhbfwOI7WJzBqljrK0aYoBdKX9HBBN1Q/A1maMfQ3TCAOXaY4xT3LfAOcxzwfI2/AEw0MZ4ozC2yAAAAAElFTkSuQmCC" alt="Logo">
+    <!-- GNOME Panel -->
+    <div class="panel">
+        <button class="main-menu-button" id="main-menu-button" onclick="toggleMainMenu()">
+            <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='white' d='M3 6h18v2H3V6m0 5h18v2H3v-2m0 5h18v2H3v-2z'/%3E%3C/svg%3E" alt="Menu">
             Poodillion
         </button>
 
-        <!-- Start Menu -->
-        <div class="start-menu" id="start-menu">
-            <div class="start-menu-banner">Poodillion 95</div>
-            <div class="start-menu-items">
-                <button class="start-menu-item" onclick="openTerminal(); toggleStartMenu();">
-                    🖥️ Terminal
-                </button>
-                <button class="start-menu-item" onclick="openBrowser(); toggleStartMenu();">
-                    🌐 Lynx Browser
-                </button>
-                <div class="start-menu-separator"></div>
-                <button class="start-menu-item" onclick="showAbout(); toggleStartMenu();">
+        <!-- Main Menu -->
+        <div class="main-menu" id="main-menu">
+            <div class="main-menu-header">Applications</div>
+            <div class="main-menu-items">
+                <div class="main-menu-item" onclick="createTerminal(); toggleMainMenu();">
+                    🖥️ New Terminal
+                </div>
+                <div class="main-menu-item" onclick="openBrowser(); toggleMainMenu();">
+                    🌐 Browser
+                </div>
+                <div class="main-menu-separator"></div>
+                <div class="main-menu-item" onclick="showAbout(); toggleMainMenu();">
                     ℹ️ About
-                </button>
-                <button class="start-menu-item" onclick="showHelp(); toggleStartMenu();">
-                    ❓ Help
-                </button>
+                </div>
             </div>
         </div>
 
-        <div class="taskbar-separator"></div>
+        <div class="panel-separator"></div>
         <div class="taskbar-items" id="taskbar-items"></div>
-        <div class="taskbar-clock" id="taskbar-clock"></div>
+        <div class="panel-clock" id="panel-clock"></div>
     </div>
 
     <!-- Socket.IO -->
@@ -478,128 +484,211 @@
     <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
 
     <script>
-        // Window management state
+        // Global state
         let activeWindow = null;
         let zIndexCounter = 100;
-        let windows = {};
+        let terminalCounter = 0;
+        let terminals = {};
+        let socket = null;
 
-        // Initialize terminal
-        const term = new Terminal({
-            cursorBlink: true,
-            fontSize: 14,
-            fontFamily: '"Courier New", Courier, monospace',
-            theme: {
-                background: '#000000',
-                foreground: '#00ff00',
-                cursor: '#00ff00',
-                cursorAccent: '#000000',
-                black: '#000000',
-                red: '#ff0000',
-                green: '#00ff00',
-                yellow: '#ffff00',
-                blue: '#0000ff',
-                magenta: '#ff00ff',
-                cyan: '#00ffff',
-                white: '#ffffff',
-                brightBlack: '#808080',
-                brightRed: '#ff8080',
-                brightGreen: '#80ff80',
-                brightYellow: '#ffff80',
-                brightBlue: '#8080ff',
-                brightMagenta: '#ff80ff',
-                brightCyan: '#80ffff',
-                brightWhite: '#ffffff'
-            },
-            convertEol: true  // Convert \n to \r\n automatically
-        });
+        // Initialize socket connection
+        function initSocket() {
+            socket = io();
 
-        // Fit addon for responsive terminal
-        const fitAddon = new FitAddon.FitAddon();
-        term.loadAddon(fitAddon);
+            socket.on('connect', function() {
+                console.log('Connected to server');
+            });
 
-        // Open terminal in container
-        term.open(document.getElementById('terminal-container'));
-        fitAddon.fit();
+            socket.on('disconnect', function() {
+                console.log('Disconnected from server');
+            });
+        }
 
-        // Handle window resize
-        window.addEventListener('resize', () => {
+        // Create a new terminal window
+        function createTerminal() {
+            terminalCounter++;
+            const termId = `terminal-${terminalCounter}`;
+
+            // Create window element
+            const win = document.createElement('div');
+            win.className = 'window active';
+            win.id = termId;
+            win.style.top = (50 + terminalCounter * 30) + 'px';
+            win.style.left = (50 + terminalCounter * 30) + 'px';
+            win.style.width = '800px';
+            win.style.height = '600px';
+
+            win.innerHTML = `
+                <div class="title-bar">
+                    <div class="title-bar-text">Terminal ${terminalCounter} - root@kali-box</div>
+                    <div class="title-bar-controls">
+                        <button class="title-bar-button" onclick="minimizeWindow('${termId}')" title="Minimize">_</button>
+                        <button class="title-bar-button" onclick="toggleMaximize('${termId}')" title="Maximize">□</button>
+                        <button class="title-bar-button" onclick="closeWindow('${termId}')" title="Close">×</button>
+                    </div>
+                </div>
+                <div class="window-body">
+                    <div class="terminal-wrapper" id="${termId}-container"></div>
+                </div>
+                <div class="status-bar">
+                    <div class="status-bar-field" id="${termId}-status">Connected</div>
+                    <div class="status-bar-field">Session: {{ session_id[:8] }}...</div>
+                </div>
+                <div class="resize-handle" onmousedown="startResize(event, '${termId}')"></div>
+            `;
+
+            document.getElementById('desktop').appendChild(win);
+
+            // Create xterm instance
+            const term = new Terminal({
+                cursorBlink: true,
+                fontSize: 14,
+                fontFamily: '"Courier New", Courier, monospace',
+                theme: {
+                    background: '#000000',
+                    foreground: '#00ff00',
+                    cursor: '#00ff00',
+                    cursorAccent: '#000000'
+                },
+                convertEol: true
+            });
+
+            const fitAddon = new FitAddon.FitAddon();
+            term.loadAddon(fitAddon);
+
+            term.open(document.getElementById(`${termId}-container`));
             fitAddon.fit();
-        });
 
-        // Connect to server via Socket.IO
-        const socket = io();
+            // Track current line
+            let currentLine = '';
 
-        let currentLine = '';
-
-        // Handle connection
-        socket.on('connect', function() {
-            document.getElementById('status-connection').textContent = 'Connected';
-            document.getElementById('status-connection').style.background = '#90EE90';
-        });
-
-        socket.on('disconnect', function() {
-            document.getElementById('status-connection').textContent = 'Disconnected';
-            document.getElementById('status-connection').style.background = '#FFB6C1';
-            term.writeln('\r\n\x1b[31mDisconnected from server\x1b[0m');
-        });
-
-        // Receive output from server
-        socket.on('output', function(data) {
-            // Fix newlines - replace \n with \r\n if not already present
-            let output = data.data;
-            if (!output.includes('\r\n')) {
-                output = output.replace(/\n/g, '\r\n');
-            }
-            term.write(output);
-        });
-
-        // Handle terminal input
-        term.onData(function(data) {
-            // Handle special keys
-            if (data === '\r') {
-                // Enter key - send command
-                term.write('\r\n');
-                socket.emit('input', { data: currentLine });
-                currentLine = '';
-            } else if (data === '\x7F') {
-                // Backspace
-                if (currentLine.length > 0) {
-                    currentLine = currentLine.slice(0, -1);
-                    term.write('\b \b');
+            // Handle terminal input
+            term.onData(function(data) {
+                if (data === '\r') {
+                    // Enter - send command
+                    term.write('\r\n');
+                    socket.emit('input', { data: currentLine });
+                    currentLine = '';
+                } else if (data === '\x7F') {
+                    // Backspace
+                    if (currentLine.length > 0) {
+                        currentLine = currentLine.slice(0, -1);
+                        term.write('\b \b');
+                    }
+                } else if (data === '\x03') {
+                    // Ctrl+C
+                    term.write('^C\r\n');
+                    socket.emit('input', { data: '' });
+                    currentLine = '';
+                } else if (data === '\t') {
+                    // Tab - ignore for now (no completion)
+                    // Could implement tab completion here later
+                    return;
+                } else if (data.charCodeAt(0) < 32) {
+                    // Ignore other control characters
+                    return;
+                } else {
+                    // Regular character
+                    currentLine += data;
+                    term.write(data);
                 }
-            } else if (data === '\x03') {
-                // Ctrl+C
-                term.write('^C\r\n');
-                socket.emit('input', { data: '' });
-                currentLine = '';
-            } else if (data === '\t') {
-                // Tab key - send to server for completion
-                socket.emit('input', { data: currentLine + '\t' });
-                currentLine += '\t';
-            } else if (data.charCodeAt(0) < 32 && data !== '\t') {
-                // Ignore other control characters except tab
-                return;
-            } else {
-                // Regular character
-                currentLine += data;
-                term.write(data);
-            }
-        });
+            });
 
-        // Window dragging functionality
+            // Handle output from server
+            socket.on('output', function(data) {
+                let output = data.data;
+                if (!output.includes('\r\n')) {
+                    output = output.replace(/\n/g, '\r\n');
+                }
+                term.write(output);
+            });
+
+            // Store terminal info
+            terminals[termId] = {
+                term: term,
+                fitAddon: fitAddon,
+                window: win
+            };
+
+            makeDraggable(win);
+            focusWindow(termId);
+            updateTaskbar();
+
+            term.focus();
+        }
+
+        // Open browser
+        function openBrowser() {
+            const win = document.getElementById('browser-window');
+            win.classList.add('active');
+            win.classList.remove('minimized');
+            makeDraggable(win);
+            focusWindow('browser-window');
+            updateTaskbar();
+        }
+
+        // Window management
+        function minimizeWindow(windowId) {
+            const win = document.getElementById(windowId);
+            win.classList.add('minimized');
+            win.classList.remove('active');
+            updateTaskbar();
+        }
+
+        function closeWindow(windowId) {
+            const win = document.getElementById(windowId);
+            if (terminals[windowId]) {
+                terminals[windowId].term.dispose();
+                delete terminals[windowId];
+            }
+            win.remove();
+            updateTaskbar();
+        }
+
+        function toggleMaximize(windowId) {
+            const win = document.getElementById(windowId);
+            win.classList.toggle('maximized');
+
+            // Refit terminal if it's a terminal window
+            if (terminals[windowId]) {
+                setTimeout(() => terminals[windowId].fitAddon.fit(), 100);
+            }
+        }
+
+        function focusWindow(windowId) {
+            const win = document.getElementById(windowId);
+            if (!win) return;
+
+            // Remove active class from all windows
+            document.querySelectorAll('.window').forEach(w => {
+                w.classList.remove('active');
+                w.querySelector('.title-bar').classList.remove('active');
+            });
+
+            // Add active class to this window
+            win.classList.add('active');
+            win.style.zIndex = ++zIndexCounter;
+            activeWindow = windowId;
+
+            // Focus terminal if it's a terminal window
+            if (terminals[windowId]) {
+                terminals[windowId].term.focus();
+            }
+
+            updateTaskbar();
+        }
+
+        // Make window draggable
         function makeDraggable(windowElement) {
             const titleBar = windowElement.querySelector('.title-bar');
             let isDragging = false;
-            let currentX;
-            let currentY;
-            let initialX;
-            let initialY;
+            let currentX, currentY, initialX, initialY;
 
             titleBar.addEventListener('mousedown', function(e) {
                 if (e.target.closest('.title-bar-controls')) return;
 
                 isDragging = true;
-                focusWindow(windowElement);
+                focusWindow(windowElement.id);
 
                 initialX = e.clientX - windowElement.offsetLeft;
                 initialY = e.clientY - windowElement.offsetTop;
@@ -627,133 +716,103 @@
             });
         }
 
-        // Window focus
-        function focusWindow(windowElement) {
-            if (typeof windowElement === 'string') {
-                windowElement = document.getElementById(windowElement);
+        // Window resizing
+        function startResize(e, windowId) {
+            e.preventDefault();
+            const win = document.getElementById(windowId);
+            const startX = e.clientX;
+            const startY = e.clientY;
+            const startWidth = win.offsetWidth;
+            const startHeight = win.offsetHeight;
+
+            function doResize(e) {
+                const newWidth = startWidth + (e.clientX - startX);
+                const newHeight = startHeight + (e.clientY - startY);
+
+                if (newWidth > 400) win.style.width = newWidth + 'px';
+                if (newHeight > 300) win.style.height = newHeight + 'px';
+
+                // Refit terminal if resizing a terminal
+                if (terminals[windowId]) {
+                    terminals[windowId].fitAddon.fit();
+                }
             }
 
-            activeWindow = windowElement;
-            windowElement.style.zIndex = ++zIndexCounter;
-
-            updateTaskbar();
-        }
-
-        // Window operations
-        function openTerminal() {
-            const win = document.getElementById('terminal-window');
-            win.classList.remove('hidden');
-            win.style.display = 'flex';
-            focusWindow(win);
-            term.focus();
-            updateTaskbar();
-        }
-
-        function openBrowser() {
-            const win = document.getElementById('browser-window');
-            win.classList.remove('hidden');
-            win.style.display = 'flex';
-            focusWindow(win);
-            updateTaskbar();
-        }
-
-        function minimizeWindow(windowId) {
-            const win = document.getElementById(windowId);
-            win.classList.add('hidden');
-            updateTaskbar();
-        }
-
-        function closeWindow(windowId) {
-            const win = document.getElementById(windowId);
-            win.style.display = 'none';
-            win.classList.add('hidden');
-            updateTaskbar();
-        }
-
-        function toggleMaximize(windowId) {
-            const win = document.getElementById(windowId);
-            win.classList.toggle('maximized');
-
-            if (windowId === 'terminal-window') {
-                setTimeout(() => fitAddon.fit(), 100);
+            function stopResize() {
+                document.removeEventListener('mousemove', doResize);
+                document.removeEventListener('mouseup', stopResize);
             }
+
+            document.addEventListener('mousemove', doResize);
+            document.addEventListener('mouseup', stopResize);
         }
 
-        // Update taskbar with open windows
+        // Update taskbar
         function updateTaskbar() {
             const taskbarItems = document.getElementById('taskbar-items');
             taskbarItems.innerHTML = '';
 
-            const windowList = [
-                { id: 'terminal-window', title: '🖥️ Terminal', element: document.getElementById('terminal-window') },
-                { id: 'browser-window', title: '🌐 Browser', element: document.getElementById('browser-window') }
-            ];
-
-            windowList.forEach(win => {
-                if (win.element.style.display !== 'none' && !win.element.classList.contains('hidden')) {
-                    const btn = document.createElement('button');
-                    btn.className = 'taskbar-button';
-                    btn.textContent = win.title;
-                    btn.onclick = () => {
-                        if (win.element.classList.contains('hidden')) {
-                            win.element.classList.remove('hidden');
-                        }
-                        focusWindow(win.element);
-                        if (win.id === 'terminal-window') term.focus();
-                    };
-
-                    if (activeWindow === win.element) {
-                        btn.classList.add('active');
-                    }
-
-                    taskbarItems.appendChild(btn);
+            // Add terminal windows
+            Object.keys(terminals).forEach(termId => {
+                const win = terminals[termId].window;
+                if (!win.classList.contains('minimized')) {
+                    addTaskbarButton(termId, '🖥️ Terminal', win);
                 }
             });
+
+            // Add browser window
+            const browserWin = document.getElementById('browser-window');
+            if (browserWin && browserWin.classList.contains('active') && !browserWin.classList.contains('minimized')) {
+                addTaskbarButton('browser-window', '🌐 Browser', browserWin);
+            }
         }
 
-        // Start Menu
-        function toggleStartMenu() {
-            const menu = document.getElementById('start-menu');
+        function addTaskbarButton(windowId, title, win) {
+            const btn = document.createElement('button');
+            btn.className = 'taskbar-button';
+            btn.textContent = title;
+            btn.onclick = () => {
+                if (win.classList.contains('minimized')) {
+                    win.classList.remove('minimized');
+                    win.classList.add('active');
+                }
+                focusWindow(windowId);
+            };
+
+            if (activeWindow === windowId) {
+                btn.classList.add('active');
+            }
+
+            document.getElementById('taskbar-items').appendChild(btn);
+        }
+
+        // Main menu
+        function toggleMainMenu() {
+            const menu = document.getElementById('main-menu');
+            const button = document.getElementById('main-menu-button');
             menu.classList.toggle('open');
+            button.classList.toggle('active');
         }
 
-        // Close start menu when clicking outside
+        // Close main menu when clicking outside
         document.addEventListener('click', function(e) {
-            const startMenu = document.getElementById('start-menu');
-            const startButton = document.getElementById('start-button');
+            const menu = document.getElementById('main-menu');
+            const button = document.getElementById('main-menu-button');
 
-            if (!startMenu.contains(e.target) && !startButton.contains(e.target)) {
-                startMenu.classList.remove('open');
+            if (!menu.contains(e.target) && !button.contains(e.target)) {
+                menu.classList.remove('open');
+                button.classList.remove('active');
             }
         });
 
-        // Update taskbar clock
+        // Update clock
         function updateClock() {
             const now = new Date();
             const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-            document.getElementById('taskbar-clock').textContent = timeStr;
+            document.getElementById('panel-clock').textContent = timeStr;
         }
         setInterval(updateClock, 1000);
         updateClock();
-
-        // Toolbar functions
-        function clearTerminal() {
-            term.clear();
-        }
-
-        function showHelp() {
-            socket.emit('input', { data: 'help' });
-        }
-
-        function showAbout() {
-            alert(
-                'POODILLION - 1990s Unix Hacking Simulator\n\n' +
-                'A web-based terminal hacking game where you explore\n' +
-                'a virtual Unix network circa 1990.\n\n' +
-                'Everything runs in your browser!\n\n' +
-                'Type "help" in the terminal for available commands.'
-            );
-        }
 
         // Browser functions
         function browseToSite(hostname) {
@@ -768,7 +827,6 @@
             document.getElementById('browser-status').textContent = `Loading ${url}...`;
             document.getElementById('browser-content').innerHTML = '<div class="loading">Loading...</div>';
 
-            // Request page content via lynx command
             fetch('/api/browse', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -777,51 +835,37 @@
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
-                    document.getElementById('browser-content').innerHTML = formatBrowserContent(data.content);
+                    document.getElementById('browser-content').innerHTML =
+                        '<pre>' + data.content.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</pre>';
                     document.getElementById('browser-status').textContent = `Loaded: ${url}`;
                 } else {
                     document.getElementById('browser-content').innerHTML =
                         `<div class="loading"><h2>Error</h2><p>${data.error || 'Failed to load page'}</p></div>`;
-                    document.getElementById('browser-status').textContent = 'Error loading page';
+                    document.getElementById('browser-status').textContent = 'Error';
                 }
             })
             .catch(error => {
                 document.getElementById('browser-content').innerHTML =
-                    `<div class="loading"><h2>Error</h2><p>Network error: ${error.message}</p></div>`;
+                    `<div class="loading"><h2>Error</h2><p>${error.message}</p></div>`;
                 document.getElementById('browser-status').textContent = 'Error';
             });
-        }
-
-        function formatBrowserContent(content) {
-            // Convert plain text to HTML with basic formatting
-            // Preserve line breaks and add some basic styling
-            return '<pre>' + content.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</pre>';
-        }
-
-        function browserBack() {
-            // Could implement history
-            alert('Back button - not yet implemented');
         }
 
         function browserRefresh() {
             browseTo();
         }
 
-        // Handle Enter key in address bar
         document.getElementById('browser-url').addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') {
-                browseTo();
-            }
+            if (e.key === 'Enter') browseTo();
         });
 
-        // Initialize window dragging
-        makeDraggable(document.getElementById('terminal-window'));
-        makeDraggable(document.getElementById('browser-window'));
+        function showAbout() {
+            alert('POODILLION - 1990s Unix Hacking Simulator\n\nA web-based terminal hacking game.');
+        }
 
-        // Focus terminal on load and update taskbar
-        term.focus();
-        focusWindow('terminal-window');
-        updateTaskbar();
+        // Initialize
+        initSocket();
+        createTerminal();
     </script>
 </body>
 </html>
