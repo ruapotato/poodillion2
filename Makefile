@@ -261,6 +261,54 @@ run-grub-mininim-gui: $(KERNEL_MININIM_ELF)
 	@echo "Booting PoodillionOS Mini-Nim Kernel with GRUB (GUI)..."
 	qemu-system-i386 -kernel $(KERNEL_MININIM_ELF)
 
+# Interactive Shell kernel targets
+KEYBOARD_OBJ = $(BUILD_DIR)/keyboard.o
+VGA_OBJ = $(BUILD_DIR)/vga.o
+SHELL_OBJ = $(BUILD_DIR)/shell.o
+SHELL_WRAPPER_OBJ = $(BUILD_DIR)/shell_wrapper.o
+KERNEL_SHELL_ELF = $(ISO_DIR)/boot/kernel_shell.elf
+
+$(KEYBOARD_OBJ): kernel/keyboard.asm | $(BUILD_DIR)
+	@echo "Assembling keyboard driver..."
+	$(AS) $(ASFLAGS_32) kernel/keyboard.asm -o $(KEYBOARD_OBJ)
+
+$(VGA_OBJ): kernel/vga.asm | $(BUILD_DIR)
+	@echo "Assembling VGA driver..."
+	$(AS) $(ASFLAGS_32) kernel/vga.asm -o $(VGA_OBJ)
+
+$(SHELL_OBJ): kernel/shell.asm | $(BUILD_DIR)
+	@echo "Assembling shell..."
+	$(AS) $(ASFLAGS_32) kernel/shell.asm -o $(SHELL_OBJ)
+
+$(SHELL_WRAPPER_OBJ): kernel/shell_wrapper.asm | $(BUILD_DIR)
+	@echo "Assembling shell wrapper..."
+	$(AS) $(ASFLAGS_32) kernel/shell_wrapper.asm -o $(SHELL_WRAPPER_OBJ)
+
+$(KERNEL_SHELL_ELF): $(MULTIBOOT_OBJ) $(SERIAL_OBJ) $(KEYBOARD_OBJ) $(VGA_OBJ) $(SHELL_OBJ) $(SHELL_WRAPPER_OBJ) $(LINKER_GRUB) | $(GRUB_DIR)
+	@echo "Building interactive shell kernel for GRUB..."
+	$(LD) -m elf_i386 -T $(LINKER_GRUB) -o $(KERNEL_SHELL_ELF) $(MULTIBOOT_OBJ) $(SHELL_WRAPPER_OBJ) $(SERIAL_OBJ) $(VGA_OBJ) $(KEYBOARD_OBJ) $(SHELL_OBJ)
+	@echo "  Shell Kernel size: $$(stat -c%s $(KERNEL_SHELL_ELF)) bytes"
+
+.PHONY: shell
+shell: $(KERNEL_SHELL_ELF)
+	@echo "✓ Interactive shell kernel ready!"
+	@echo "  Boot with: make run-shell"
+
+.PHONY: run-shell
+run-shell: $(KERNEL_SHELL_ELF)
+	@echo "Booting PoodillionOS Interactive Shell..."
+	@echo "========================================"
+	@echo "Type commands and press Enter."
+	@echo "Try: help, clear, echo, ls, ps, uname"
+	@echo "========================================"
+	qemu-system-i386 -kernel $(KERNEL_SHELL_ELF)
+
+.PHONY: run-shell-serial
+run-shell-serial: $(KERNEL_SHELL_ELF)
+	@echo "Booting PoodillionOS Interactive Shell (with serial)..."
+	@echo "========================================"
+	qemu-system-i386 -kernel $(KERNEL_SHELL_ELF) -serial stdio
+
 .PHONY: run-grub-iso
 run-grub-iso: $(GRUB_ISO)
 	@echo "Booting PoodillionOS from GRUB ISO..."
