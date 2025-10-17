@@ -15,6 +15,7 @@ class TokenType(Enum):
     VAR = auto()
     CONST = auto()
     PROC = auto()
+    EXTERN = auto()
     RETURN = auto()
     IF = auto()
     ELIF = auto()
@@ -114,6 +115,7 @@ class Lexer:
             'var': TokenType.VAR,
             'const': TokenType.CONST,
             'proc': TokenType.PROC,
+            'extern': TokenType.EXTERN,
             'return': TokenType.RETURN,
             'if': TokenType.IF,
             'elif': TokenType.ELIF,

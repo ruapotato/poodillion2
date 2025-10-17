@@ -157,6 +157,13 @@ class ProcDecl(ASTNode):
     body: List[ASTNode]
     is_inline: bool = False
 
+@dataclass
+class ExternDecl(ASTNode):
+    """External function declaration (implemented in assembly)"""
+    name: str
+    params: List[Parameter]
+    return_type: Optional[Type]
+
 # Program
 @dataclass
 class Program(ASTNode):

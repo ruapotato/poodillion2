@@ -83,6 +83,12 @@ class X86CodeGen:
             self.emit(f"mov eax, {1 if expr.value else 0}")
             return "eax"
 
+        if isinstance(expr, StringLiteral):
+            # Add string to data section and load its address
+            label = self.add_string(expr.value)
+            self.emit(f"lea eax, [rel {label}]")
+            return "eax"
+
         if isinstance(expr, Identifier):
             # Check if it's a constant
             if hasattr(self, 'constants') and expr.name in self.constants:
@@ -211,8 +217,11 @@ class X86CodeGen:
             elif isinstance(expr.array, Identifier):
                 if expr.array.name in self.local_vars:
                     offset = self.local_vars[expr.array.name]
-                    # Load the pointer value (offset is already negative)
-                    self.emit(f"mov eax, [ebp{offset}]")
+                    # Load the pointer value - check if parameter or local
+                    if offset > 0:
+                        self.emit(f"mov eax, [ebp+{offset}]")
+                    else:
+                        self.emit(f"mov eax, [ebp{offset}]")
                 else:
                     self.emit(f"lea eax, [rel {expr.array.name}]")
 
@@ -294,8 +303,11 @@ class X86CodeGen:
                 elif isinstance(stmt.target.array, Identifier):
                     if stmt.target.array.name in self.local_vars:
                         offset = self.local_vars[stmt.target.array.name]
-                        # Load the pointer value (offset is already negative)
-                        self.emit(f"mov eax, [ebp{offset}]")
+                        # Load the pointer value - check if parameter or local
+                        if offset > 0:
+                            self.emit(f"mov eax, [ebp+{offset}]")
+                        else:
+                            self.emit(f"mov eax, [ebp{offset}]")
                     else:
                         self.emit(f"lea eax, [rel {stmt.target.array.name}]")
 
@@ -318,7 +330,7 @@ class X86CodeGen:
             if stmt.value:
                 self.gen_expression(stmt.value)
             # Leave and return (handled by procedure epilogue)
-            self.emit("jmp .return")
+            self.emit(f"jmp {self.return_label}")
 
         elif isinstance(stmt, IfStmt):
             end_label = self.new_label("endif")
@@ -421,6 +433,10 @@ class X86CodeGen:
         self.local_vars = {}
         self.stack_offset = 0
 
+        # Create unique return label for this function
+        old_return_label = getattr(self, 'return_label', None)
+        self.return_label = f"{func_name}_return"
+
         # Parameters (on stack, above EBP)
         # Stack layout: [param2][param1][return addr][saved EBP] <- EBP
         param_offset = 8  # Skip return address (4 bytes) and saved EBP (4 bytes)
@@ -436,7 +452,7 @@ class X86CodeGen:
             self.gen_statement(stmt)
 
         # Epilogue
-        self.emit_label(".return")
+        self.emit_label(self.return_label)
         self.emit("mov esp, ebp")
         self.emit("pop ebp")
         self.emit("ret")
@@ -444,22 +460,31 @@ class X86CodeGen:
         # Restore
         self.local_vars = old_locals
         self.stack_offset = old_offset
+        self.return_label = old_return_label
 
     # Program generation
     def generate(self, program: Program) -> str:
         """Generate complete x86 assembly"""
-        # First pass: collect constants
+        # First pass: collect constants and extern declarations
         self.constants = {}
+        self.externs = []
         for decl in program.declarations:
             if isinstance(decl, VarDecl) and decl.is_const and decl.value:
                 # Inline constants - store for lookup
                 if isinstance(decl.value, IntLiteral):
                     self.constants[decl.name] = decl.value.value
+            elif isinstance(decl, ExternDecl):
+                # Collect external function names
+                self.externs.append(decl.name)
 
         # Generate code for all declarations
         for decl in program.declarations:
             if isinstance(decl, ProcDecl):
                 self.gen_procedure(decl)
+            elif isinstance(decl, ExternDecl):
+                # External declarations - no code generation needed
+                # They're just function prototypes
+                pass
             elif isinstance(decl, VarDecl):
                 # Skip constants (they're inlined)
                 if decl.is_const:
@@ -473,12 +498,23 @@ class X86CodeGen:
         asm.append("bits 32")
         asm.append("")
 
+        # External declarations
+        if self.externs:
+            for extern_name in self.externs:
+                asm.append(f"extern {extern_name}")
+            asm.append("")
+
         # Data section
         if self.strings or self.data_section:
             asm.append("section .data")
             for label, value in self.strings.items():
-                # Escape and add string
-                escaped = value.replace('\\', '\\\\').replace('"', '\\"')
+                # Escape special characters for NASM syntax
+                escaped = value.replace('\\', '\\\\')  # Backslash first
+                escaped = escaped.replace('"', '\\"')   # Quote marks
+                escaped = escaped.replace('\n', '\\n')  # Newlines
+                escaped = escaped.replace('\t', '\\t')  # Tabs
+                escaped = escaped.replace('\r', '\\r')  # Carriage return
+                escaped = escaped.replace('\0', '\\0')  # Null (though we add 0 after)
                 asm.append(f'{label}: db "{escaped}", 0')
             asm.extend(self.data_section)
             asm.append("")

@@ -433,6 +433,38 @@ class Parser:
 
         return ProcDecl(name, params, return_type, body)
 
+    def parse_extern_decl(self) -> ExternDecl:
+        self.advance()  # Skip 'extern'
+        self.expect(TokenType.PROC)
+
+        name = self.expect(TokenType.IDENT).value
+        self.expect(TokenType.LPAREN)
+
+        # Parse parameters
+        params = []
+        if self.current_token().type != TokenType.RPAREN:
+            param_name = self.expect(TokenType.IDENT).value
+            self.expect(TokenType.COLON)
+            param_type = self.parse_type()
+            params.append(Parameter(param_name, param_type))
+
+            while self.current_token().type == TokenType.COMMA:
+                self.advance()
+                param_name = self.expect(TokenType.IDENT).value
+                self.expect(TokenType.COLON)
+                param_type = self.parse_type()
+                params.append(Parameter(param_name, param_type))
+
+        self.expect(TokenType.RPAREN)
+
+        # Parse return type
+        return_type = None
+        if self.current_token().type == TokenType.COLON:
+            self.advance()
+            return_type = self.parse_type()
+
+        return ExternDecl(name, params, return_type)
+
     def parse(self) -> Program:
         declarations = []
 
@@ -441,7 +473,9 @@ class Parser:
         while self.current_token().type != TokenType.EOF:
             token = self.current_token()
 
-            if token.type == TokenType.PROC:
+            if token.type == TokenType.EXTERN:
+                declarations.append(self.parse_extern_decl())
+            elif token.type == TokenType.PROC:
                 declarations.append(self.parse_proc_decl())
             elif token.type in [TokenType.VAR, TokenType.CONST]:
                 declarations.append(self.parse_var_decl())
