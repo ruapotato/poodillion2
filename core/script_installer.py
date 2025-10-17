@@ -6,12 +6,13 @@ Reads scripts from scripts/ directory and installs them into the virtual filesys
 import os
 
 
-def install_scripts(vfs):
+def install_scripts(vfs, verbose=False):
     """
     Install all PooScript files from scripts/ into the VFS
 
     Args:
         vfs: VFS instance to install scripts into
+        verbose: If True, print installation messages
     """
     # Get the base directory (parent of core/)
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -69,15 +70,19 @@ def install_scripts(vfs):
 
                 if result:
                     installed_count += 1
-                    print(f"  Installed: {vfs_file_path}")
+                    if verbose:
+                        print(f"  Installed: {vfs_file_path}")
 
             except Exception as e:
-                print(f"  Warning: Failed to install {filename}: {e}")
+                if verbose:
+                    print(f"  Warning: Failed to install {filename}: {e}")
 
     # Create /bin/sh symlink to pooshell
     if vfs.stat('/bin/pooshell', 1):
         vfs.symlink('/bin/pooshell', '/bin/sh', 0, 0, 1)
-        print(f"  Created symlink: /bin/sh -> /bin/pooshell")
+        if verbose:
+            print(f"  Created symlink: /bin/sh -> /bin/pooshell")
 
-    print(f"  Total PooScript commands installed: {installed_count}")
+    if verbose:
+        print(f"  Total PooScript commands installed: {installed_count}")
     return installed_count

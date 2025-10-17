@@ -4,7 +4,7 @@ Poodillion Web Server
 Flask-based web interface for the Poodillion hacking game
 """
 
-from flask import Flask, render_template, session, request
+from flask import Flask, render_template, session, request, jsonify
 from flask_socketio import SocketIO, emit, join_room
 import uuid
 import threading
@@ -13,7 +13,7 @@ from typing import Dict, Optional
 from io import StringIO
 
 from core.system import UnixSystem
-from core.shell import ShellExecutor
+from core.shell import Shell
 from world_1990 import create_december_1990_world
 
 app = Flask(__name__)
@@ -48,17 +48,12 @@ class GameSession:
         self.current_system_ip = attacker.ip
         self.current_system = attacker
 
-        # Create shell executor for the current system
-        self.shell = ShellExecutor(
-            vfs=self.current_system.vfs,
-            process_manager=self.current_system.process_manager,
-            network=self.world.get('network'),
-            system=self.current_system
-        )
+        # Create shell for the current system (already exists in the system)
+        self.shell = self.current_system.shell
 
         # Get initial shell process (usually spawned by init -> login)
         # For simplicity, we'll use UID 0 (root) - adjust based on your world setup
-        processes = self.current_system.process_manager.list_processes()
+        processes = self.current_system.processes.list_processes()
         shell_proc = None
         for proc in processes:
             if 'sh' in proc.command or 'shell' in proc.command:
@@ -67,7 +62,7 @@ class GameSession:
 
         if not shell_proc:
             # Create a shell process if none exists
-            shell_proc = self.current_system.process_manager.spawn(
+            shell_proc = self.current_system.processes.spawn(
                 parent_pid=1,
                 uid=0,
                 gid=0,
@@ -79,7 +74,7 @@ class GameSession:
                 env={'PATH': '/bin:/usr/bin:/sbin:/usr/sbin', 'HOME': '/root', 'USER': 'root'},
                 tags=[]
             )
-            shell_proc = self.current_system.process_manager.get_process(shell_proc)
+            shell_proc = self.current_system.processes.get_process(shell_proc)
 
         self.shell_process = shell_proc
 
@@ -90,8 +85,8 @@ class GameSession:
         self.last_activity = time.time()
 
         try:
-            # Execute the command using the shell executor
-            exit_code, stdout, stderr = self.shell.execute_command(
+            # Execute the command using the shell
+            exit_code, stdout, stderr = self.shell.execute(
                 command,
                 self.shell_process.pid,
                 input_data=b''
@@ -206,7 +201,7 @@ def index():
 
 
 @socketio.on('connect')
-def handle_connect():
+def handle_connect(auth=None):
     """Handle new WebSocket connection"""
     if 'session_id' not in session:
         session['session_id'] = str(uuid.uuid4())
@@ -284,6 +279,41 @@ def stats():
             for sid, s in sessions.items()
         ]
     }
+
+
+@app.route('/api/browse', methods=['POST'])
+def api_browse():
+    """Handle browser requests - execute lynx command to get page content"""
+    session_id = session.get('session_id')
+    if not session_id:
+        return jsonify({'success': False, 'error': 'No session'})
+
+    data = request.get_json()
+    url = data.get('url', '').strip()
+
+    if not url:
+        return jsonify({'success': False, 'error': 'No URL provided'})
+
+    # Get game session
+    game_session = get_or_create_session(session_id)
+
+    # Execute lynx command to fetch the page
+    command = f'lynx {url}'
+
+    try:
+        stdout, stderr = game_session.execute_command(command)
+
+        if stderr and 'Error' in stderr:
+            return jsonify({'success': False, 'error': stderr})
+
+        return jsonify({
+            'success': True,
+            'content': stdout,
+            'url': url
+        })
+
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
 
 
 if __name__ == '__main__':

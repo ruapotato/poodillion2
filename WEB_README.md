@@ -6,6 +6,8 @@ A Windows 95-style web interface for Poodillion!
 
 ```bash
 # Install dependencies
+python3 -m venv pyenv
+source ./pyenv/bin/activate
 pip install -r requirements.txt
 
 # Start the server

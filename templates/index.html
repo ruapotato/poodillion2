@@ -12,36 +12,66 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css" />
 
     <style>
+        * {
+            box-sizing: border-box;
+        }
+
         body {
             margin: 0;
-            padding: 20px;
+            padding: 0;
             background: teal;
             font-family: "MS Sans Serif", sans-serif;
+            overflow: hidden;
+            height: 100vh;
             display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
+            flex-direction: column;
         }
 
         .desktop {
-            width: 100%;
-            max-width: 1200px;
+            flex: 1;
+            padding: 10px;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            overflow: auto;
         }
 
         .window {
-            margin: 0 auto;
             box-shadow: 4px 4px 10px rgba(0, 0, 0, 0.3);
+            display: flex;
+            flex-direction: column;
+            height: calc(100vh - 60px);
+        }
+
+        .window.browser {
+            display: none;
+        }
+
+        .window.browser.active {
+            display: flex;
         }
 
         .window-body {
             margin: 0;
             padding: 0;
             background: #000;
+            flex: 1;
+            overflow: hidden;
         }
 
         #terminal-container {
             padding: 4px;
             background: #000;
+            height: 100%;
+        }
+
+        #browser-content {
+            padding: 10px;
+            background: white;
+            color: black;
+            font-family: Arial, sans-serif;
+            overflow-y: auto;
+            flex: 1;
         }
 
         .title-bar {
@@ -75,81 +105,143 @@
             min-width: 60px;
         }
 
+        .address-bar {
+            display: flex;
+            gap: 4px;
+            padding: 4px;
+            background: silver;
+            align-items: center;
+        }
+
+        .address-bar label {
+            font-weight: bold;
+        }
+
+        .address-bar input {
+            flex: 1;
+            padding: 2px 4px;
+        }
+
         /* Custom xterm.js styling for retro look */
         .xterm {
             font-family: "Courier New", Courier, monospace;
             font-size: 14px;
             padding: 8px;
+            height: 100% !important;
         }
 
         .xterm-viewport {
             background-color: #000 !important;
         }
 
-        /* Info panel */
-        .info-panel {
-            margin-bottom: 20px;
-            text-align: center;
+        /* Taskbar */
+        .taskbar {
+            height: 40px;
+            background: silver;
+            border-top: 2px solid white;
+            display: flex;
+            align-items: center;
+            padding: 2px 4px;
+            gap: 4px;
+            flex-shrink: 0;
         }
 
-        .info-panel h1 {
-            color: white;
-            text-shadow: 2px 2px 0px #000;
-            font-size: 32px;
-            margin: 10px 0;
+        .start-button {
+            height: 32px;
+            padding: 0 12px;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            font-weight: bold;
+            font-size: 14px;
         }
 
-        .info-panel p {
-            color: white;
-            text-shadow: 1px 1px 0px #000;
+        .start-button img {
+            width: 20px;
+            height: 20px;
         }
 
-        /* Footer */
-        .footer {
-            margin-top: 20px;
-            text-align: center;
-            color: white;
-            text-shadow: 1px 1px 0px #000;
-            font-size: 12px;
+        .taskbar-separator {
+            width: 2px;
+            height: 32px;
+            background: #808080;
+            margin: 0 4px;
         }
 
-        .footer a {
-            color: yellow;
-            text-decoration: none;
+        .taskbar-items {
+            display: flex;
+            gap: 4px;
+            flex: 1;
         }
 
-        .footer a:hover {
+        .taskbar-button {
+            padding: 4px 12px;
+            min-width: 150px;
+            text-align: left;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .taskbar-button.active {
+            border-style: inset;
+        }
+
+        .taskbar-clock {
+            padding: 4px 8px;
+            border: 2px inset #dfdfdf;
+            font-family: "MS Sans Serif", sans-serif;
+            font-size: 11px;
+        }
+
+        /* Browser styles */
+        #browser-content pre {
+            white-space: pre-wrap;
+            font-family: monospace;
+        }
+
+        #browser-content h1, #browser-content h2, #browser-content h3 {
+            color: #000080;
+        }
+
+        #browser-content a {
+            color: blue;
             text-decoration: underline;
+            cursor: pointer;
+        }
+
+        #browser-content a:visited {
+            color: purple;
+        }
+
+        /* Loading indicator */
+        .loading {
+            text-align: center;
+            padding: 40px;
+            font-style: italic;
         }
     </style>
 </head>
 <body>
     <div class="desktop">
-        <!-- Info Panel -->
-        <div class="info-panel">
-            <h1>🖥️ POODILLION</h1>
-            <p>The 1990s Unix Hacking Simulator</p>
-        </div>
-
-        <!-- Main Terminal Window -->
-        <div class="window">
+        <!-- Terminal Window -->
+        <div class="window" id="terminal-window">
             <div class="title-bar">
                 <div class="title-bar-text">
                     <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAwAAAAMCAYAAABWdVznAAAABHNCSVQICAgIfAhkiAAAAAlwSFlzAAAAdgAAAHYBTnsmCAAAABl0RVh0U29mdHdhcmUAd3d3Lmlua3NjYXBlLm9yZ5vuPBoAAABJSURBVCiRY/j//z8DKYCJgUTAqGEYGvj/n4H+Bvz/z0B/A/7/Z6C/Af//M9DfgP//GehvwP//DPQ34P9/BgYGhv8E1ZOuAQCAlwMQE7btMwAAAABJRU5ErkJggg==" width="12" height="12" alt="">
                     Terminal - root@kali-box
                 </div>
                 <div class="title-bar-controls">
-                    <button aria-label="Minimize"></button>
-                    <button aria-label="Maximize"></button>
-                    <button aria-label="Close" onclick="if(confirm('Close terminal?')) window.close()"></button>
+                    <button aria-label="Minimize" onclick="minimizeWindow('terminal')"></button>
+                    <button aria-label="Maximize" onclick="maximizeWindow('terminal')"></button>
+                    <button aria-label="Close" disabled></button>
                 </div>
             </div>
 
             <!-- Toolbar -->
             <div class="toolbar">
-                <button onclick="newTerminal()">New</button>
                 <button onclick="clearTerminal()">Clear</button>
-                <button onclick="showAbout()">About</button>
+                <button onclick="showBrowser()">Browser</button>
                 <button onclick="showHelp()">Help</button>
             </div>
 
@@ -162,18 +254,71 @@
             <div class="status-bar">
                 <div class="status-bar-field" id="status-connection">Connecting...</div>
                 <div class="status-bar-field" id="status-session">Session: {{ session_id[:8] }}...</div>
-                <div class="status-bar-field" style="width: 100px;" id="status-time"></div>
             </div>
         </div>
 
-        <!-- Footer -->
-        <div class="footer">
-            <p>
-                🎮 Open Source Hacking Game |
-                <a href="https://github.com/yourusername/poodillion2" target="_blank">GitHub</a> |
-                <a href="/about">About</a>
-            </p>
+        <!-- Browser Window -->
+        <div class="window browser" id="browser-window">
+            <div class="title-bar">
+                <div class="title-bar-text">
+                    🌐 Lynx Browser - Text-Based Web Browser
+                </div>
+                <div class="title-bar-controls">
+                    <button aria-label="Minimize" onclick="minimizeWindow('browser')"></button>
+                    <button aria-label="Maximize" onclick="maximizeWindow('browser')"></button>
+                    <button aria-label="Close" onclick="closeBrowser()"></button>
+                </div>
+            </div>
+
+            <!-- Address Bar -->
+            <div class="address-bar">
+                <label>URL:</label>
+                <input type="text" id="browser-url" placeholder="Enter hostname (e.g., cybermart.com)" />
+                <button onclick="browseTo()">Go</button>
+                <button onclick="browserBack()">Back</button>
+                <button onclick="browserRefresh()">Refresh</button>
+            </div>
+
+            <!-- Browser Content -->
+            <div class="window-body">
+                <div id="browser-content">
+                    <div class="loading">
+                        <h2>Welcome to Lynx Browser</h2>
+                        <p>A text-based web browser for the early internet.</p>
+                        <p>Enter a hostname in the address bar above, or type <code>lynx &lt;hostname&gt;</code> in the terminal.</p>
+                        <p><strong>Available Sites:</strong></p>
+                        <ul>
+                            <li><a onclick="browseToSite('cybermart.com')">cybermart.com</a> - CyberMart Shopping</li>
+                            <li><a onclick="browseToSite('bbs.cyberspace.net')">bbs.cyberspace.net</a> - CyberSpace BBS</li>
+                            <li><a onclick="browseToSite('underground.bbs')">underground.bbs</a> - The Underground</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Status Bar -->
+            <div class="status-bar">
+                <div class="status-bar-field" id="browser-status">Ready</div>
+            </div>
         </div>
+    </div>
+
+    <!-- Windows 95 Taskbar -->
+    <div class="taskbar">
+        <button class="start-button">
+            <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAABHNCSVQICAgIfAhkiAAAAAlwSFlzAAAAdgAAAHYBTnsmCAAAABl0RVh0U29mdHdhcmUAd3d3Lmlua3NjYXBlLm9yZ5vuPBoAAADCSURBVDiNndM9CsJAEIbhJ4iNhZWVYGMh2Fh4Aw/gDTyBR/AMHsHSm3gDr+ARbKy0sbDQQkEQLPyBkF0YIYtm4YVhZ2b3Y3eGmR/qMcACG9xiGkpfMUQ7FP+BDVo/8BhL1H7gERa/8AhLVH/gEZY/8AhL5H/gCItfYPELLL6BxTeweBGLF7H4L7D4DhbfwOI7WJzBqljrK0aYoBdKX9HBBN1Q/A1maMfQ3TCAOXaY4xT3LfAOcxzwfI2/AEw0MZ4ozC2yAAAAAElFTkSuQmCC" alt="Logo">
+            Poodillion
+        </button>
+        <div class="taskbar-separator"></div>
+        <div class="taskbar-items">
+            <button class="taskbar-button active" onclick="focusWindow('terminal')">
+                🖥️ Terminal
+            </button>
+            <button class="taskbar-button" id="browser-taskbar-button" onclick="focusWindow('browser')" style="display: none;">
+                🌐 Browser
+            </button>
+        </div>
+        <div class="taskbar-clock" id="taskbar-clock"></div>
     </div>
 
     <!-- Socket.IO -->
@@ -211,8 +356,7 @@
                 brightCyan: '#80ffff',
                 brightWhite: '#ffffff'
             },
-            cols: 100,
-            rows: 30
+            convertEol: true  // Convert \n to \r\n automatically
         });
 
         // Fit addon for responsive terminal
@@ -247,7 +391,12 @@
 
         // Receive output from server
         socket.on('output', function(data) {
-            term.write(data.data);
+            // Fix newlines - replace \n with \r\n if not already present
+            let output = data.data;
+            if (!output.includes('\r\n')) {
+                output = output.replace(/\n/g, '\r\n');
+            }
+            term.write(output);
         });
 
         // Handle terminal input
@@ -279,39 +428,116 @@
             }
         });
 
-        // Update clock
+        // Update taskbar clock
         function updateClock() {
             const now = new Date();
-            const timeStr = now.toLocaleTimeString();
-            document.getElementById('status-time').textContent = timeStr;
+            const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            document.getElementById('taskbar-clock').textContent = timeStr;
         }
         setInterval(updateClock, 1000);
         updateClock();
+
+        // Window management
+        function focusWindow(windowName) {
+            if (windowName === 'terminal') {
+                document.getElementById('terminal-window').style.display = 'flex';
+                term.focus();
+            } else if (windowName === 'browser') {
+                showBrowser();
+            }
+        }
+
+        function minimizeWindow(windowName) {
+            if (windowName === 'terminal') {
+                document.getElementById('terminal-window').style.display = 'none';
+            } else if (windowName === 'browser') {
+                document.getElementById('browser-window').classList.remove('active');
+            }
+        }
+
+        function maximizeWindow(windowName) {
+            // Could implement full-screen mode here
+        }
 
         // Toolbar functions
         function clearTerminal() {
             term.clear();
         }
 
-        function newTerminal() {
-            if (confirm('Open new terminal window?')) {
-                window.open('/', '_blank');
-            }
-        }
-
-        function showAbout() {
-            alert(
-                'POODILLION - 1990s Unix Hacking Simulator\n\n' +
-                'A web-based terminal hacking game where you explore\n' +
-                'a virtual Unix network circa 1990.\n\n' +
-                'Everything runs in your browser!\n\n' +
-                'Type "help" in the terminal for available commands.'
-            );
-        }
-
         function showHelp() {
             socket.emit('input', { data: 'help' });
         }
+
+        // Browser functions
+        function showBrowser() {
+            document.getElementById('browser-window').classList.add('active');
+            document.getElementById('browser-taskbar-button').style.display = 'block';
+            document.querySelector('#browser-taskbar-button').classList.add('active');
+        }
+
+        function closeBrowser() {
+            document.getElementById('browser-window').classList.remove('active');
+            document.getElementById('browser-taskbar-button').style.display = 'none';
+            term.focus();
+        }
+
+        function browseToSite(hostname) {
+            document.getElementById('browser-url').value = hostname;
+            browseTo();
+        }
+
+        function browseTo() {
+            const url = document.getElementById('browser-url').value.trim();
+            if (!url) return;
+
+            document.getElementById('browser-status').textContent = `Loading ${url}...`;
+            document.getElementById('browser-content').innerHTML = '<div class="loading">Loading...</div>';
+
+            // Request page content via lynx command
+            fetch('/api/browse', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url: url })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    document.getElementById('browser-content').innerHTML = formatBrowserContent(data.content);
+                    document.getElementById('browser-status').textContent = `Loaded: ${url}`;
+                } else {
+                    document.getElementById('browser-content').innerHTML =
+                        `<div class="loading"><h2>Error</h2><p>${data.error || 'Failed to load page'}</p></div>`;
+                    document.getElementById('browser-status').textContent = 'Error loading page';
+                }
+            })
+            .catch(error => {
+                document.getElementById('browser-content').innerHTML =
+                    `<div class="loading"><h2>Error</h2><p>Network error: ${error.message}</p></div>`;
+                document.getElementById('browser-status').textContent = 'Error';
+            });
+        }
+
+        function formatBrowserContent(content) {
+            // Convert plain text to HTML with basic formatting
+            // Preserve line breaks and add some basic styling
+            return '<pre>' + content.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</pre>';
+        }
+
+        function browserBack() {
+            // Could implement history
+            alert('Back button - not yet implemented');
+        }
+
+        function browserRefresh() {
+            browseTo();
+        }
+
+        // Handle Enter key in address bar
+        document.getElementById('browser-url').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                browseTo();
+            }
+        });
 
         // Focus terminal on load
         term.focus();

@@ -161,17 +161,26 @@ def create_december_1990_world():
     # BOOT ALL SYSTEMS
     # ========================================
 
-    # Boot attacker system with full boot messages
-    attacker.boot(verbose=True)
+    # Boot attacker system
+    print(f"Booting {attacker.hostname}...")
+    attacker.boot(verbose=False)
 
     # Boot all remote systems silently (in background)
+    print(f"Booting {bbs_main.hostname}...")
     bbs_main.boot(verbose=False)
+    print(f"Booting {bbs_underground.hostname}...")
     bbs_underground.boot(verbose=False)
+    print(f"Booting {bbs_corp.hostname}...")
     bbs_corp.boot(verbose=False)
+    print(f"Booting {university.hostname}...")
     university.boot(verbose=False)
+    print(f"Booting {nexus.hostname}...")
     nexus.boot(verbose=False)
+    print(f"Booting {research.hostname}...")
     research.boot(verbose=False)
+    print(f"Booting {cybermart.hostname}...")
     cybermart.boot(verbose=False)
+    print(f"Booting {repo_server.hostname}...")
     repo_server.boot(verbose=False)
 
     # All systems
@@ -1144,6 +1153,5 @@ Hint: pooget-build is your friend.
     # Setup HTTP daemon to serve the repository
     # This will be handled by the HTTP server infrastructure
 
-    print(f"  Repository server: {system.hostname} ({system.ip})")
-    print(f"    WARNING: /repo/packages/ is world-writable!")
+    # Repository server configured (silent)
 

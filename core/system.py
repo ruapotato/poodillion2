@@ -237,9 +237,8 @@ class UnixSystem:
         self.vfs.create_device('/proc/net/tcp', True, 0, 0, device_name='proc_net_tcp')
         self.vfs.create_device('/proc/net/udp', True, 0, 0, device_name='proc_net_udp')
 
-        # Install PooScript commands from scripts/ directory
-        print("Installing PooScript commands...")
-        install_scripts(self.vfs)
+        # Install PooScript commands from scripts/ directory (silently)
+        install_scripts(self.vfs, verbose=False)
 
         # Create log files
         self.vfs.create_file('/var/log/messages', 0o644, 0, 0,
