@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Poodillion - 1990s Hacking Simulator</title>
+
+    <!-- Windows 95 CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/98.css">
+
+    <!-- xterm.js CSS -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css" />
+
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            background: teal;
+            font-family: "MS Sans Serif", sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        .desktop {
+            width: 100%;
+            max-width: 1200px;
+        }
+
+        .window {
+            margin: 0 auto;
+            box-shadow: 4px 4px 10px rgba(0, 0, 0, 0.3);
+        }
+
+        .window-body {
+            margin: 0;
+            padding: 0;
+            background: #000;
+        }
+
+        #terminal-container {
+            padding: 4px;
+            background: #000;
+        }
+
+        .title-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .title-bar-text {
+            font-weight: bold;
+        }
+
+        .status-bar {
+            display: flex;
+            gap: 1px;
+        }
+
+        .status-bar-field {
+            padding: 2px 4px;
+        }
+
+        .toolbar {
+            display: flex;
+            gap: 2px;
+            padding: 2px;
+            background: silver;
+            border-bottom: 2px solid #808080;
+        }
+
+        .toolbar button {
+            min-width: 60px;
+        }
+
+        /* Custom xterm.js styling for retro look */
+        .xterm {
+            font-family: "Courier New", Courier, monospace;
+            font-size: 14px;
+            padding: 8px;
+        }
+
+        .xterm-viewport {
+            background-color: #000 !important;
+        }
+
+        /* Info panel */
+        .info-panel {
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .info-panel h1 {
+            color: white;
+            text-shadow: 2px 2px 0px #000;
+            font-size: 32px;
+            margin: 10px 0;
+        }
+
+        .info-panel p {
+            color: white;
+            text-shadow: 1px 1px 0px #000;
+        }
+
+        /* Footer */
+        .footer {
+            margin-top: 20px;
+            text-align: center;
+            color: white;
+            text-shadow: 1px 1px 0px #000;
+            font-size: 12px;
+        }
+
+        .footer a {
+            color: yellow;
+            text-decoration: none;
+        }
+
+        .footer a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="desktop">
+        <!-- Info Panel -->
+        <div class="info-panel">
+            <h1>🖥️ POODILLION</h1>
+            <p>The 1990s Unix Hacking Simulator</p>
+        </div>
+
+        <!-- Main Terminal Window -->
+        <div class="window">
+            <div class="title-bar">
+                <div class="title-bar-text">
+                    <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAwAAAAMCAYAAABWdVznAAAABHNCSVQICAgIfAhkiAAAAAlwSFlzAAAAdgAAAHYBTnsmCAAAABl0RVh0U29mdHdhcmUAd3d3Lmlua3NjYXBlLm9yZ5vuPBoAAABJSURBVCiRY/j//z8DKYCJgUTAqGEYGvj/n4H+Bvz/z0B/A/7/Z6C/Af//M9DfgP//GehvwP//DPQ34P9/BgYGhv8E1ZOuAQCAlwMQE7btMwAAAABJRU5ErkJggg==" width="12" height="12" alt="">
+                    Terminal - root@kali-box
+                </div>
+                <div class="title-bar-controls">
+                    <button aria-label="Minimize"></button>
+                    <button aria-label="Maximize"></button>
+                    <button aria-label="Close" onclick="if(confirm('Close terminal?')) window.close()"></button>
+                </div>
+            </div>
+
+            <!-- Toolbar -->
+            <div class="toolbar">
+                <button onclick="newTerminal()">New</button>
+                <button onclick="clearTerminal()">Clear</button>
+                <button onclick="showAbout()">About</button>
+                <button onclick="showHelp()">Help</button>
+            </div>
+
+            <!-- Terminal -->
+            <div class="window-body">
+                <div id="terminal-container"></div>
+            </div>
+
+            <!-- Status Bar -->
+            <div class="status-bar">
+                <div class="status-bar-field" id="status-connection">Connecting...</div>
+                <div class="status-bar-field" id="status-session">Session: {{ session_id[:8] }}...</div>
+                <div class="status-bar-field" style="width: 100px;" id="status-time"></div>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="footer">
+            <p>
+                🎮 Open Source Hacking Game |
+                <a href="https://github.com/yourusername/poodillion2" target="_blank">GitHub</a> |
+                <a href="/about">About</a>
+            </p>
+        </div>
+    </div>
+
+    <!-- Socket.IO -->
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+
+    <!-- xterm.js -->
+    <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
+
+    <script>
+        // Initialize terminal
+        const term = new Terminal({
+            cursorBlink: true,
+            fontSize: 14,
+            fontFamily: '"Courier New", Courier, monospace',
+            theme: {
+                background: '#000000',
+                foreground: '#00ff00',
+                cursor: '#00ff00',
+                cursorAccent: '#000000',
+                black: '#000000',
+                red: '#ff0000',
+                green: '#00ff00',
+                yellow: '#ffff00',
+                blue: '#0000ff',
+                magenta: '#ff00ff',
+                cyan: '#00ffff',
+                white: '#ffffff',
+                brightBlack: '#808080',
+                brightRed: '#ff8080',
+                brightGreen: '#80ff80',
+                brightYellow: '#ffff80',
+                brightBlue: '#8080ff',
+                brightMagenta: '#ff80ff',
+                brightCyan: '#80ffff',
+                brightWhite: '#ffffff'
+            },
+            cols: 100,
+            rows: 30
+        });
+
+        // Fit addon for responsive terminal
+        const fitAddon = new FitAddon.FitAddon();
+        term.loadAddon(fitAddon);
+
+        // Open terminal in container
+        term.open(document.getElementById('terminal-container'));
+        fitAddon.fit();
+
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            fitAddon.fit();
+        });
+
+        // Connect to server via Socket.IO
+        const socket = io();
+
+        let currentLine = '';
+
+        // Handle connection
+        socket.on('connect', function() {
+            document.getElementById('status-connection').textContent = 'Connected';
+            document.getElementById('status-connection').style.background = '#90EE90';
+        });
+
+        socket.on('disconnect', function() {
+            document.getElementById('status-connection').textContent = 'Disconnected';
+            document.getElementById('status-connection').style.background = '#FFB6C1';
+            term.writeln('\r\n\x1b[31mDisconnected from server\x1b[0m');
+        });
+
+        // Receive output from server
+        socket.on('output', function(data) {
+            term.write(data.data);
+        });
+
+        // Handle terminal input
+        term.onData(function(data) {
+            // Handle special keys
+            if (data === '\r') {
+                // Enter key - send command
+                term.write('\r\n');
+                socket.emit('input', { data: currentLine });
+                currentLine = '';
+            } else if (data === '\x7F') {
+                // Backspace
+                if (currentLine.length > 0) {
+                    currentLine = currentLine.slice(0, -1);
+                    term.write('\b \b');
+                }
+            } else if (data === '\x03') {
+                // Ctrl+C
+                term.write('^C\r\n');
+                socket.emit('input', { data: '' });
+                currentLine = '';
+            } else if (data.charCodeAt(0) < 32) {
+                // Ignore other control characters
+                return;
+            } else {
+                // Regular character
+                currentLine += data;
+                term.write(data);
+            }
+        });
+
+        // Update clock
+        function updateClock() {
+            const now = new Date();
+            const timeStr = now.toLocaleTimeString();
+            document.getElementById('status-time').textContent = timeStr;
+        }
+        setInterval(updateClock, 1000);
+        updateClock();
+
+        // Toolbar functions
+        function clearTerminal() {
+            term.clear();
+        }
+
+        function newTerminal() {
+            if (confirm('Open new terminal window?')) {
+                window.open('/', '_blank');
+            }
+        }
+
+        function showAbout() {
+            alert(
+                'POODILLION - 1990s Unix Hacking Simulator\n\n' +
+                'A web-based terminal hacking game where you explore\n' +
+                'a virtual Unix network circa 1990.\n\n' +
+                'Everything runs in your browser!\n\n' +
+                'Type "help" in the terminal for available commands.'
+            );
+        }
+
+        function showHelp() {
+            socket.emit('input', { data: 'help' });
+        }
+
+        // Focus terminal on load
+        term.focus();
+    </script>
+</body>
+</html>

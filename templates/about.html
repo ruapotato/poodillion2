@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>About - Poodillion</title>
+    <link rel="stylesheet" href="https://unpkg.com/98.css">
+    <style>
+        body {
+            background: teal;
+            padding: 20px;
+            font-family: "MS Sans Serif", sans-serif;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        .window {
+            margin-bottom: 20px;
+        }
+        .content {
+            line-height: 1.6;
+        }
+        h2 {
+            border-bottom: 2px solid #000;
+            padding-bottom: 4px;
+        }
+        code {
+            background: #e0e0e0;
+            padding: 2px 4px;
+            font-family: "Courier New", monospace;
+        }
+        .back-btn {
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="window">
+            <div class="title-bar">
+                <div class="title-bar-text">About Poodillion</div>
+                <div class="title-bar-controls">
+                    <button aria-label="Close" onclick="window.location.href='/'"></button>
+                </div>
+            </div>
+            <div class="window-body content">
+                <h2>🖥️ What is Poodillion?</h2>
+                <p>
+                    <strong>Poodillion</strong> is a web-based Unix hacking simulator set in the early 1990s.
+                    It provides a complete virtual Unix environment where you can learn hacking, networking,
+                    and system administration in a safe, legal environment.
+                </p>
+
+                <h2>🎮 Features</h2>
+                <ul>
+                    <li><strong>Complete Unix Emulation</strong> - Virtual filesystem, processes, permissions</li>
+                    <li><strong>Virtual Network</strong> - Multiple systems, routing, firewalls</li>
+                    <li><strong>PooScript Language</strong> - Hackable scripting language for all binaries</li>
+                    <li><strong>Realistic Commands</strong> - ls, ps, nmap, ssh, and more</li>
+                    <li><strong>Educational</strong> - Learn real Unix and networking concepts</li>
+                    <li><strong>100% Browser-Based</strong> - No installation required</li>
+                </ul>
+
+                <h2>🚀 Getting Started</h2>
+                <p>Start by running basic commands:</p>
+                <ul>
+                    <li><code>help</code> - Show available commands</li>
+                    <li><code>ls</code> - List files</li>
+                    <li><code>cat notes.txt</code> - Read files</li>
+                    <li><code>nmap 192.168.1.0/24</code> - Scan the network</li>
+                    <li><code>ps -ef</code> - List processes</li>
+                    <li><code>ifconfig</code> - Show network interfaces</li>
+                </ul>
+
+                <h2>💡 Learning Path</h2>
+                <ol>
+                    <li><strong>Explore</strong> - Use <code>ls</code>, <code>cat</code>, <code>pwd</code> to understand the filesystem</li>
+                    <li><strong>Discover</strong> - Find hidden files and clues (<code>find / -name "*.txt"</code>)</li>
+                    <li><strong>Scan</strong> - Map the network with <code>nmap</code></li>
+                    <li><strong>Exploit</strong> - Find vulnerabilities and gain access</li>
+                    <li><strong>Learn</strong> - Read PooScript binaries to understand how everything works</li>
+                </ol>
+
+                <h2>🛠️ Technology</h2>
+                <p>
+                    Poodillion is built with:
+                </p>
+                <ul>
+                    <li><strong>Python</strong> - Core Unix emulation</li>
+                    <li><strong>Flask</strong> - Web server</li>
+                    <li><strong>Socket.IO</strong> - Real-time communication</li>
+                    <li><strong>xterm.js</strong> - Terminal emulation</li>
+                    <li><strong>98.css</strong> - Retro Windows 95 styling</li>
+                </ul>
+
+                <h2>📝 About PooScript</h2>
+                <p>
+                    <strong>PooScript</strong> is the heart of Poodillion. Every command, daemon, and service
+                    is written in PooScript - a safe Python-like language. This means:
+                </p>
+                <ul>
+                    <li>You can <strong>read</strong> any binary: <code>cat /bin/ls</code></li>
+                    <li>You can <strong>modify</strong> system behavior</li>
+                    <li>You can <strong>create</strong> your own tools and exploits</li>
+                    <li>Nothing is hidden - it's all transparent!</li>
+                </ul>
+
+                <h2>🎓 Educational Use</h2>
+                <p>
+                    Poodillion is perfect for:
+                </p>
+                <ul>
+                    <li>Learning Unix/Linux command line</li>
+                    <li>Understanding networking concepts (TCP/IP, routing, firewalls)</li>
+                    <li>Practicing penetration testing in a legal environment</li>
+                    <li>Teaching cybersecurity concepts</li>
+                    <li>Having fun with retro computing!</li>
+                </ul>
+
+                <h2>⚖️ Legal & Ethical</h2>
+                <p>
+                    <strong>Important:</strong> This is a simulation! Everything runs in an isolated virtual
+                    environment. No real systems are harmed. Use the skills you learn here responsibly and legally.
+                </p>
+
+                <h2>🔗 Links</h2>
+                <ul>
+                    <li><a href="https://github.com/yourusername/poodillion2" target="_blank">GitHub Repository</a></li>
+                    <li><a href="/" target="_blank">Play Now</a></li>
+                </ul>
+
+                <div class="back-btn">
+                    <button onclick="window.location.href='/'">← Back to Terminal</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
