@@ -81,7 +81,8 @@ psh> bin/ps
 **Userland Utilities** (all in Mini-Nim, no libc):
 - **echo** (8.9KB) - Display text output
 - **cat** (5.1KB) - Concatenate and display files
-- **edit** (11KB) - CLI text editor with ANSI colors! ⭐ NEW
+- **edit** (11KB) - CLI text editor with ANSI colors!
+- **fbinfo** (9.6KB) - Framebuffer info (graphics!) ⭐ NEW
 - **true** (4.8KB) - Exit with success code
 - **false** (4.8KB) - Exit with failure code
 
@@ -323,6 +324,7 @@ poodillion2/
 │   ├── echo.nim       # ✅ Working
 │   ├── cat.nim        # ✅ Working
 │   ├── edit.nim       # ✅ Working (text editor)
+│   ├── fbinfo.nim     # ✅ Working (framebuffer info) 🎨
 │   ├── true.nim       # ✅ Working
 │   ├── false.nim      # ✅ Working
 │   ├── ps.nim         # ✅ Working (binary output)
@@ -338,6 +340,7 @@ poodillion2/
 │   ├── echo           # 8.9KB ELF32
 │   ├── cat            # 5.1KB ELF32
 │   ├── edit           # 11KB ELF32 - Text Editor!
+│   ├── fbinfo         # 9.6KB ELF32 - Framebuffer Info! 🎨
 │   ├── true           # 4.8KB ELF32
 │   ├── false          # 4.8KB ELF32
 │   ├── ps             # 8.8KB ELF32
@@ -408,6 +411,57 @@ See **[VISION.md](VISION.md)** for the complete vision.
 - [ ] **Schema evolution** - Handle version changes
 - [ ] **Distributed queries** - Query across machines
 - [ ] **Zero-copy mmap** - Shared memory pipelines
+
+### Phase 6: Graphics & Display Server 🎨 ⬅ NEXT BIG THING
+
+**Goal**: Build a minimal X11/Wayland-like display server from scratch
+
+**See [DISPLAY_ROADMAP.md](DISPLAY_ROADMAP.md) for complete roadmap**
+
+#### Sub-Phase 6.1: Framebuffer Foundation (Month 1-2) 🏗️ IN PROGRESS
+- [x] **Framebuffer access** - Open `/dev/fb0` and mmap it ✅
+- [x] **syscall6 support** - Added for mmap syscall ✅
+- [x] **fbinfo utility** - Display framebuffer information ✅
+- [ ] **Pixel plotting** - Direct pixel manipulation
+- [ ] **Graphics primitives** - Rectangle, line, circle drawing
+- [ ] **Text rendering** - Bitmap font support
+
+#### Sub-Phase 6.2: Input & Events (Month 2-3)
+- [ ] **Mouse support** - Read `/dev/input/mice`
+- [ ] **Keyboard input** - Process keyboard events
+- [ ] **Event loop** - Handle input events
+- [ ] **Cursor rendering** - Mouse cursor display
+
+#### Sub-Phase 6.3: Protocol Design (Month 3-4)
+- [ ] **PoodDisplay Protocol (PDP)** - Binary protocol like X11 but simpler
+- [ ] **Unix sockets** - IPC mechanism
+- [ ] **Message format** - Window operations, drawing commands
+- [ ] **Protocol library** - Client/server implementation
+
+#### Sub-Phase 6.4: Display Server (Month 4-6)
+- [ ] **poodd daemon** - Display server process
+- [ ] **Window manager** - Multi-window support
+- [ ] **Compositor** - Render windows to framebuffer
+- [ ] **Client library** - libpdp for applications
+
+#### Sub-Phase 6.5: Desktop Environment (Month 6-9)
+- [ ] **Window decorations** - Title bars, borders, buttons
+- [ ] **Graphical apps** - Terminal, editor, file manager
+- [ ] **Desktop shell** - Taskbar, launcher, wallpaper
+- [ ] **Widget toolkit** - Buttons, menus, text boxes
+
+#### Sub-Phase 6.6: Advanced Display Features (Month 9-12)
+- [ ] **Compositing effects** - Transparency, shadows, animations
+- [ ] **Remote display** - Network transparency (X11-like)
+- [ ] **Hardware acceleration** - DRM/KMS, OpenGL/Vulkan
+- [ ] **Multi-monitor** - Support multiple displays
+
+**Target**:
+- Simpler than X11 (no legacy cruft)
+- More complete than basic framebuffer
+- ~100-150KB total code
+- Binary protocol (fits PoodillionOS data philosophy)
+- Works with existing Mini-Nim utilities
 
 ---
 
@@ -579,19 +633,20 @@ All code is free software. Fork it, hack it, improve it!
 Project:    PoodillionOS - Data-Oriented Operating System
 Language:   Mini-Nim (custom compiled language)
 Runtime:    Zero dependencies (no libc, no stdlib)
-Utilities:  13 working + Type-Aware Shell!
-            (echo, cat, edit, true, false, ps, inspect, where, count, head, tail, select, psh)
-Size:       ~121KB total for all utilities
+Utilities:  14 working + Type-Aware Shell!
+            (echo, cat, edit, fbinfo, true, false, ps, inspect, where, count, head, tail, select, psh)
+Size:       ~131KB total for all utilities
 Platform:   Linux x86/x86_64 (32-bit executables)
 Status:     🚧 Active Development
 
 Vision:     Unix performance + PowerShell composability
 Innovation: Binary typed data streams, not text
-Goal:       Type-safe, zero-copy, SQL-queryable OS
+Goal:       Type-safe, zero-copy, SQL-queryable OS + Graphics!
 
 ✅ Working:  Type-aware shell with automatic schema detection and pretty formatting!
 ✅ Working:  Full data pipeline! (ps | where | select | head | tail | count | inspect)
-Next:       Pipeline composition in shell, command-line args parsing
+✅ Working:  Framebuffer access! (fbinfo - first step toward GUI)
+Next:       Display server & graphics system (see DISPLAY_ROADMAP.md)
 ```
 
 **Try it now**:
