@@ -28,8 +28,8 @@ proc print_hex(val: uint8) =
   var upper: uint8 = val >> 4
   var lower: uint8 = val & cast[uint8](15)
 
-  discard syscall3(SYS_write, STDOUT, cast[int32](hex + cast[int32](upper)), 1)
-  discard syscall3(SYS_write, STDOUT, cast[int32](hex + cast[int32](lower)), 1)
+  discard syscall3(SYS_write, STDOUT, cast[int32](addr(hex[cast[int32](upper)])), 1)
+  discard syscall3(SYS_write, STDOUT, cast[int32](addr(hex[cast[int32](lower)])), 1)
 
 proc main() =
   # Allocate buffer
@@ -49,7 +49,7 @@ proc main() =
 
   var i: int32 = 0
   while i < 4:
-    discard syscall3(SYS_write, STDOUT, cast[int32](buffer + i), 1)
+    discard syscall3(SYS_write, STDOUT, cast[int32](addr(buffer[i])), 1)
     i = i + 1
 
   discard syscall3(SYS_write, STDOUT, cast[int32]("\n"), 1)

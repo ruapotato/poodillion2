@@ -133,6 +133,14 @@ class Parser:
 
             return cast_expr
 
+        # Address-of expression: addr(var)
+        if token.type == TokenType.ADDR:
+            self.advance()
+            self.expect(TokenType.LPAREN)
+            expr = self.parse_expression()
+            self.expect(TokenType.RPAREN)
+            return AddrOfExpr(expr)
+
         # Parenthesized expression
         if token.type == TokenType.LPAREN:
             self.advance()

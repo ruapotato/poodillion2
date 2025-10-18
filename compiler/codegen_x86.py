@@ -97,14 +97,34 @@ class X86CodeGen:
             # Load variable from stack
             if expr.name in self.local_vars:
                 offset = self.local_vars[expr.name]
+                # Determine variable type to use appropriate load size
+                var_type = self.type_table.get(expr.name)
+                var_size = self.type_size(var_type) if var_type else 4
+
                 # Local variables are at negative offsets, parameters at positive
                 if offset > 0:
-                    self.emit(f"mov eax, [ebp+{offset}]")
+                    addr = f"[ebp+{offset}]"
                 else:
-                    self.emit(f"mov eax, [ebp{offset}]")
+                    addr = f"[ebp{offset}]"
+
+                # Load with appropriate size
+                if var_size == 1:
+                    self.emit(f"movzx eax, byte {addr}")
+                elif var_size == 2:
+                    self.emit(f"movzx eax, word {addr}")
+                else:
+                    self.emit(f"mov eax, {addr}")
             else:
-                # Global variable
-                self.emit(f"mov eax, [rel {expr.name}]")
+                # Global variable - load with appropriate size
+                var_type = self.type_table.get(expr.name)
+                var_size = self.type_size(var_type) if var_type else 4
+
+                if var_size == 1:
+                    self.emit(f"movzx eax, byte [rel {expr.name}]")
+                elif var_size == 2:
+                    self.emit(f"movzx eax, word [rel {expr.name}]")
+                else:
+                    self.emit(f"mov eax, [rel {expr.name}]")
             return "eax"
 
         if isinstance(expr, BinaryExpr):
@@ -236,8 +256,79 @@ class X86CodeGen:
                     self.emit(f"imul ebx, {element_size}")  # index * element_size
 
             self.emit("add eax, ebx")
-            self.emit("mov eax, [eax]")
 
+            # Load value with appropriate size
+            if element_size == 1:
+                self.emit("movzx eax, byte [eax]")  # Load byte and zero-extend
+            elif element_size == 2:
+                self.emit("movzx eax, word [eax]")  # Load word and zero-extend
+            else:
+                self.emit("mov eax, [eax]")  # Load dword
+
+            return "eax"
+
+        if isinstance(expr, AddrOfExpr):
+            # Address-of operator: get the address of a variable or array element
+            if isinstance(expr.expr, Identifier):
+                if expr.expr.name in self.local_vars:
+                    offset = self.local_vars[expr.expr.name]
+                    # Calculate address of local variable or parameter
+                    if offset > 0:
+                        # Parameter (positive offset from EBP)
+                        self.emit(f"lea eax, [ebp+{offset}]")
+                    else:
+                        # Local variable (negative offset from EBP)
+                        self.emit(f"lea eax, [ebp{offset}]")  # offset is already negative
+                else:
+                    # Global variable
+                    self.emit(f"lea eax, [rel {expr.expr.name}]")
+            elif isinstance(expr.expr, IndexExpr):
+                # Address of array element: addr(array[index])
+                # This is like IndexExpr but without the final dereference
+
+                # Generate index
+                self.gen_expression(expr.expr.index)
+                self.emit("mov ebx, eax")  # Index in EBX
+
+                # Determine pointer type to calculate element size
+                pointer_type = None
+                if isinstance(expr.expr.array, CastExpr):
+                    pointer_type = expr.expr.array.target_type
+                elif isinstance(expr.expr.array, Identifier):
+                    if expr.expr.array.name in self.type_table:
+                        pointer_type = self.type_table[expr.expr.array.name]
+
+                # Calculate element size
+                element_size = 1  # Default to 1 byte
+                if pointer_type and isinstance(pointer_type, PointerType):
+                    element_size = self.type_size(pointer_type.base_type)
+
+                # Generate array base address
+                if isinstance(expr.expr.array, CastExpr):
+                    self.gen_expression(expr.expr.array)
+                elif isinstance(expr.expr.array, Identifier):
+                    if expr.expr.array.name in self.local_vars:
+                        offset = self.local_vars[expr.expr.array.name]
+                        if offset > 0:
+                            self.emit(f"mov eax, [ebp+{offset}]")
+                        else:
+                            self.emit(f"mov eax, [ebp{offset}]")
+                    else:
+                        self.emit(f"lea eax, [rel {expr.expr.array.name}]")
+
+                # Calculate address: base + index * element_size
+                if element_size > 1:
+                    if element_size == 2:
+                        self.emit("shl ebx, 1")
+                    elif element_size == 4:
+                        self.emit("shl ebx, 2")
+                    else:
+                        self.emit(f"imul ebx, {element_size}")
+
+                self.emit("add eax, ebx")
+                # DON'T dereference - we want the address, not the value
+            else:
+                raise NotImplementedError(f"Address-of only supports identifiers and array indexing, got {type(expr.expr).__name__}")
             return "eax"
 
         raise NotImplementedError(f"Code generation for {type(expr).__name__} not implemented")
@@ -256,7 +347,13 @@ class X86CodeGen:
             # Initialize if there's a value
             if stmt.value:
                 self.gen_expression(stmt.value)
-                self.emit(f"mov [ebp-{self.stack_offset}], eax")
+                # Store with appropriate size
+                if size == 1:
+                    self.emit(f"mov byte [ebp-{self.stack_offset}], al")
+                elif size == 2:
+                    self.emit(f"mov word [ebp-{self.stack_offset}], ax")
+                else:
+                    self.emit(f"mov [ebp-{self.stack_offset}], eax")
 
         elif isinstance(stmt, Assignment):
             # Generate value
@@ -264,14 +361,32 @@ class X86CodeGen:
 
             # Store to target
             if isinstance(stmt.target, Identifier):
+                # Determine variable type to use appropriate store size
+                var_type = self.type_table.get(stmt.target.name)
+                var_size = self.type_size(var_type) if var_type else 4
+
                 if stmt.target.name in self.local_vars:
                     offset = self.local_vars[stmt.target.name]
                     if offset > 0:
-                        self.emit(f"mov [ebp+{offset}], eax")
+                        addr = f"[ebp+{offset}]"
                     else:
-                        self.emit(f"mov [ebp{offset}], eax")  # offset is already negative
+                        addr = f"[ebp{offset}]"  # offset is already negative
+
+                    # Store with appropriate size
+                    if var_size == 1:
+                        self.emit(f"mov byte {addr}, al")
+                    elif var_size == 2:
+                        self.emit(f"mov word {addr}, ax")
+                    else:
+                        self.emit(f"mov {addr}, eax")
                 else:
-                    self.emit(f"mov [rel {stmt.target.name}], eax")
+                    # Global variable
+                    if var_size == 1:
+                        self.emit(f"mov byte [rel {stmt.target.name}], al")
+                    elif var_size == 2:
+                        self.emit(f"mov word [rel {stmt.target.name}], ax")
+                    else:
+                        self.emit(f"mov [rel {stmt.target.name}], eax")
 
             elif isinstance(stmt.target, IndexExpr):
                 # Array assignment
@@ -324,7 +439,13 @@ class X86CodeGen:
                 self.emit("add eax, ebx")
 
                 self.emit("pop ebx")  # Restore value
-                self.emit("mov [eax], ebx")
+                # Store value with appropriate size
+                if element_size == 1:
+                    self.emit("mov byte [eax], bl")  # Store low byte
+                elif element_size == 2:
+                    self.emit("mov word [eax], bx")  # Store low word
+                else:
+                    self.emit("mov [eax], ebx")  # Store dword
 
         elif isinstance(stmt, ReturnStmt):
             if stmt.value:

@@ -99,6 +99,11 @@ class IndexExpr(ASTNode):
     array: ASTNode
     index: ASTNode
 
+@dataclass
+class AddrOfExpr(ASTNode):
+    """Address-of operator - gets the address of a variable"""
+    expr: ASTNode
+
 # Statements
 @dataclass
 class VarDecl(ASTNode):

@@ -26,6 +26,7 @@ class TokenType(Enum):
     ASM = auto()
     CAST = auto()
     DISCARD = auto()
+    ADDR = auto()
 
     # Types
     INT8 = auto()
@@ -126,6 +127,7 @@ class Lexer:
             'asm': TokenType.ASM,
             'cast': TokenType.CAST,
             'discard': TokenType.DISCARD,
+            'addr': TokenType.ADDR,
             'true': TokenType.TRUE,
             'false': TokenType.FALSE,
             # Types
