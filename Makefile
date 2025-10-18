@@ -426,9 +426,15 @@ $(BIN_DIR)/%: $(USERLAND_DIR)/%.nim $(LIB_DIR)/syscalls.o | $(BIN_DIR)
 
 # Build all userland utilities
 .PHONY: userland
-userland: $(BIN_DIR)/echo $(BIN_DIR)/true $(BIN_DIR)/false $(BIN_DIR)/cat $(BIN_DIR)/ps $(BIN_DIR)/inspect $(BIN_DIR)/edit $(BIN_DIR)/fbinfo
+userland: $(BIN_DIR)/echo $(BIN_DIR)/true $(BIN_DIR)/false $(BIN_DIR)/cat $(BIN_DIR)/ps $(BIN_DIR)/inspect $(BIN_DIR)/edit $(BIN_DIR)/fbinfo $(BIN_DIR)/clear $(BIN_DIR)/demo
 	@echo "✓ All userland utilities built!"
 	@ls -lh $(BIN_DIR)/
+
+# Graphics utilities target
+.PHONY: graphics
+graphics: $(BIN_DIR)/fbinfo $(BIN_DIR)/clear $(BIN_DIR)/demo
+	@echo "✓ Graphics utilities built!"
+	@ls -lh $(BIN_DIR)/fbinfo $(BIN_DIR)/clear $(BIN_DIR)/demo
 
 # Test echo utility
 .PHONY: test-echo

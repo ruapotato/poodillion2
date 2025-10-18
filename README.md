@@ -82,7 +82,9 @@ psh> bin/ps
 - **echo** (8.9KB) - Display text output
 - **cat** (5.1KB) - Concatenate and display files
 - **edit** (11KB) - CLI text editor with ANSI colors!
-- **fbinfo** (9.6KB) - Framebuffer info (graphics!) ⭐ NEW
+- **fbinfo** (9.6KB) - Framebuffer info (graphics!)
+- **clear** (~10KB) - Clear screen to color ⭐ NEW
+- **demo** (~11KB) - Graphics demo (shapes!) ⭐ NEW
 - **true** (4.8KB) - Exit with success code
 - **false** (4.8KB) - Exit with failure code
 
@@ -92,6 +94,14 @@ psh> bin/ps
   - Displays schemas in pretty boxes
   - Formats binary data as hex tables
   - Interactive REPL with psh> prompt
+
+**Graphics Tools** ⭐ NEW (framebuffer direct access!):
+- **fbinfo** (9.6KB) - Display framebuffer information
+- **clear** (~10KB) - Clear screen to solid color
+- **demo** (~11KB) - Graphics demonstration (shapes, colors)
+  - Draws rectangles, lines, circles
+  - Shows off framebuffer capabilities
+  - Pure syscalls, no graphics libraries!
 
 **Data-Oriented Tools** (working binary pipeline!):
 - **ps** (8.8KB) - Output binary Process objects with schema
@@ -422,9 +432,12 @@ See **[VISION.md](VISION.md)** for the complete vision.
 - [x] **Framebuffer access** - Open `/dev/fb0` and mmap it ✅
 - [x] **syscall6 support** - Added for mmap syscall ✅
 - [x] **fbinfo utility** - Display framebuffer information ✅
-- [ ] **Pixel plotting** - Direct pixel manipulation
-- [ ] **Graphics primitives** - Rectangle, line, circle drawing
-- [ ] **Text rendering** - Bitmap font support
+- [x] **Pixel plotting** - Direct pixel manipulation ✅
+- [x] **Graphics primitives** - Rectangle, line, circle drawing ✅
+- [x] **clear utility** - Clear screen to solid color ✅
+- [x] **demo utility** - Graphics demonstration ✅
+- [ ] **Text rendering** - Bitmap font support (NEXT)
+- [ ] **Optimized drawing** - Double buffering, fast fills
 
 #### Sub-Phase 6.2: Input & Events (Month 2-3)
 - [ ] **Mouse support** - Read `/dev/input/mice`
@@ -633,20 +646,21 @@ All code is free software. Fork it, hack it, improve it!
 Project:    PoodillionOS - Data-Oriented Operating System
 Language:   Mini-Nim (custom compiled language)
 Runtime:    Zero dependencies (no libc, no stdlib)
-Utilities:  14 working + Type-Aware Shell!
-            (echo, cat, edit, fbinfo, true, false, ps, inspect, where, count, head, tail, select, psh)
-Size:       ~131KB total for all utilities
+Utilities:  16 working + Type-Aware Shell!
+            (echo, cat, edit, fbinfo, clear, demo, true, false, ps, inspect,
+             where, count, head, tail, select, psh)
+Size:       ~151KB total for all utilities
 Platform:   Linux x86/x86_64 (32-bit executables)
-Status:     🚧 Active Development
+Status:     🚧 Active Development - GRAPHICS WORK IN PROGRESS! 🎨
 
-Vision:     Unix performance + PowerShell composability
-Innovation: Binary typed data streams, not text
-Goal:       Type-safe, zero-copy, SQL-queryable OS + Graphics!
+Vision:     Unix performance + PowerShell composability + Graphics!
+Innovation: Binary typed data streams + Direct framebuffer access
+Goal:       Type-safe, zero-copy, SQL-queryable OS with GUI!
 
 ✅ Working:  Type-aware shell with automatic schema detection and pretty formatting!
 ✅ Working:  Full data pipeline! (ps | where | select | head | tail | count | inspect)
-✅ Working:  Framebuffer access! (fbinfo - first step toward GUI)
-Next:       Display server & graphics system (see DISPLAY_ROADMAP.md)
+✅ Working:  Framebuffer graphics! (pixel plotting, shapes, colors)
+Next:       Text rendering, then mouse support (see DISPLAY_ROADMAP.md)
 ```
 
 **Try it now**:
