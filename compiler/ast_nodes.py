@@ -148,6 +148,21 @@ class ExprStmt(ASTNode):
 class DiscardStmt(ASTNode):
     pass
 
+@dataclass
+class BreakStmt(ASTNode):
+    pass
+
+@dataclass
+class ContinueStmt(ASTNode):
+    pass
+
+@dataclass
+class ConditionalExpr(ASTNode):
+    """Conditional expression: if cond: a else: b"""
+    condition: ASTNode
+    then_expr: ASTNode
+    else_expr: ASTNode
+
 # Procedures
 @dataclass
 class Parameter(ASTNode):

@@ -127,6 +127,19 @@ class X86CodeGen:
                     self.emit(f"mov eax, [rel {expr.name}]")
             return "eax"
 
+        if isinstance(expr, UnaryExpr):
+            # Generate operand
+            self.gen_expression(expr.expr)
+
+            if expr.op == UnaryOp.NEG:
+                self.emit("neg eax")
+            elif expr.op == UnaryOp.NOT:
+                self.emit("test eax, eax")
+                self.emit("setz al")
+                self.emit("movzx eax, al")
+
+            return "eax"
+
         if isinstance(expr, BinaryExpr):
             # Evaluate left operand
             self.gen_expression(expr.left)
@@ -186,6 +199,31 @@ class X86CodeGen:
             elif expr.op == BinOp.SHR:
                 self.emit("mov ecx, ebx")  # Shift count must be in CL
                 self.emit("shr eax, cl")
+            # Logical operators
+            elif expr.op == BinOp.AND:
+                self.emit("test eax, eax")  # Test left
+                short_label = self.new_label("and_short")
+                end_label = self.new_label("and_end")
+                self.emit(f"jz {short_label}")  # If left is false, short-circuit
+                self.emit("test ebx, ebx")  # Test right
+                self.emit(f"jz {short_label}")  # If right is false, result is false
+                self.emit("mov eax, 1")  # Both true
+                self.emit(f"jmp {end_label}")
+                self.emit_label(short_label)
+                self.emit("xor eax, eax")  # Result is false
+                self.emit_label(end_label)
+            elif expr.op == BinOp.OR:
+                self.emit("test eax, eax")  # Test left
+                short_label = self.new_label("or_short")
+                end_label = self.new_label("or_end")
+                self.emit(f"jnz {short_label}")  # If left is true, short-circuit
+                self.emit("test ebx, ebx")  # Test right
+                self.emit(f"jnz {short_label}")  # If right is true, result is true
+                self.emit("xor eax, eax")  # Both false
+                self.emit(f"jmp {end_label}")
+                self.emit_label(short_label)
+                self.emit("mov eax, 1")  # Result is true
+                self.emit_label(end_label)
 
             return "eax"
 
@@ -265,6 +303,27 @@ class X86CodeGen:
             else:
                 self.emit("mov eax, [eax]")  # Load dword
 
+            return "eax"
+
+        if isinstance(expr, ConditionalExpr):
+            # Conditional expression: if cond: a else: b
+            else_label = self.new_label("cond_else")
+            end_label = self.new_label("cond_end")
+
+            # Evaluate condition
+            self.gen_expression(expr.condition)
+            self.emit("test eax, eax")
+            self.emit(f"jz {else_label}")
+
+            # Then expression
+            self.gen_expression(expr.then_expr)
+            self.emit(f"jmp {end_label}")
+
+            # Else expression
+            self.emit_label(else_label)
+            self.gen_expression(expr.else_expr)
+
+            self.emit_label(end_label)
             return "eax"
 
         if isinstance(expr, AddrOfExpr):
@@ -475,9 +534,29 @@ class X86CodeGen:
 
             self.emit_label(end_label)
 
+        elif isinstance(stmt, BreakStmt):
+            # Jump to end of loop
+            if hasattr(self, 'loop_end_label'):
+                self.emit(f"jmp {self.loop_end_label}")
+            else:
+                raise SyntaxError("break statement outside loop")
+
+        elif isinstance(stmt, ContinueStmt):
+            # Jump to start of loop
+            if hasattr(self, 'loop_start_label'):
+                self.emit(f"jmp {self.loop_start_label}")
+            else:
+                raise SyntaxError("continue statement outside loop")
+
         elif isinstance(stmt, WhileStmt):
             start_label = self.new_label("while_start")
             end_label = self.new_label("while_end")
+
+            # Save loop labels for break/continue
+            old_start = getattr(self, 'loop_start_label', None)
+            old_end = getattr(self, 'loop_end_label', None)
+            self.loop_start_label = start_label
+            self.loop_end_label = end_label
 
             self.emit_label(start_label)
 
@@ -492,6 +571,10 @@ class X86CodeGen:
 
             self.emit(f"jmp {start_label}")
             self.emit_label(end_label)
+
+            # Restore old loop labels
+            self.loop_start_label = old_start
+            self.loop_end_label = old_end
 
         elif isinstance(stmt, ForStmt):
             # for i in start..end:

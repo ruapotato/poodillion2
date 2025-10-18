@@ -23,6 +23,8 @@ class TokenType(Enum):
     WHILE = auto()
     FOR = auto()
     IN = auto()
+    BREAK = auto()
+    CONTINUE = auto()
     ASM = auto()
     CAST = auto()
     DISCARD = auto()
@@ -124,6 +126,11 @@ class Lexer:
             'while': TokenType.WHILE,
             'for': TokenType.FOR,
             'in': TokenType.IN,
+            'break': TokenType.BREAK,
+            'continue': TokenType.CONTINUE,
+            'and': TokenType.AND,
+            'or': TokenType.OR,
+            'not': TokenType.NOT,
             'asm': TokenType.ASM,
             'cast': TokenType.CAST,
             'discard': TokenType.DISCARD,

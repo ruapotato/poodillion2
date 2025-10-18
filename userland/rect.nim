@@ -1,7 +1,5 @@
-# clear - Clear screen to a color
-# Usage: clear [color]
-# Color format: RRGGBB hex (e.g., FF0000 for red)
-# Default: 000000 (black)
+# rect - Draw a rectangle
+# Usage: rect <x> <y> <width> <height> <color> [fill]
 
 const SYS_open: int32 = 5
 const SYS_close: int32 = 6
@@ -24,8 +22,13 @@ proc print(msg: ptr uint8, len: int32) =
   discard syscall3(SYS_write, STDOUT, cast[int32](msg), len)
 
 proc main() =
-  # Default color: black
-  var color: int32 = 0x000000
+  # For testing: Draw filled blue rectangle at (50, 50), 100x80
+  var x: int32 = 50
+  var y: int32 = 50
+  var width: int32 = 100
+  var height: int32 = 80
+  var color: int32 = 0x0000FF  # Blue
+  var fill: int32 = 1  # 1 = filled, 0 = outline
 
   var fd: int32 = syscall2(SYS_open, cast[int32]("/dev/fb0"), O_RDWR)
   if fd < 0:
@@ -44,14 +47,10 @@ proc main() =
     discard syscall1(SYS_close, fd)
     discard syscall1(SYS_exit, 1)
 
-  # Extract screen parameters
   var xres: int32 = cast[int32](vinfo[0])
   var yres: int32 = cast[int32](vinfo[1])
-  var bpp: int32 = cast[int32](vinfo[6])
-  var bytes_per_pixel: int32 = bpp / 8
-  var screen_size: int32 = xres * yres * bytes_per_pixel
 
-  # Allocate buffer (4KB)
+  # Allocate line buffer (max 4KB = 1024 pixels)
   var buffer_brk: int32 = syscall1(SYS_brk, 0)
   var buffer_size: int32 = 4096
   discard syscall1(SYS_brk, buffer_brk + buffer_size)
@@ -63,21 +62,28 @@ proc main() =
     buffer[i] = color
     i = i + 1
 
-  # Seek to start of framebuffer
-  discard syscall3(SYS_lseek, fd, 0, SEEK_SET)
+  # Draw filled rectangle line by line
+  if fill == 1:
+    var row: int32 = 0
+    while row < height:
+      var py: int32 = y + row
+      if py >= 0 and py < yres:
+        var px: int32 = x
+        if px < 0:
+          px = 0
+        var pwidth: int32 = width
+        if px + pwidth > xres:
+          pwidth = xres - px
 
-  # Write buffer repeatedly to fill screen
-  var written: int32 = 0
-  while written < screen_size:
-    var to_write: int32 = buffer_size
-    if written + to_write > screen_size:
-      to_write = screen_size - written
+        # Seek to line position
+        var offset: int32 = (py * xres + px) * 4
+        discard syscall3(SYS_lseek, fd, offset, SEEK_SET)
 
-    var bytes_written: int32 = syscall3(SYS_write, fd, cast[int32](buffer), to_write)
-    if bytes_written > 0:
-      written = written + bytes_written
-    else:
-      written = screen_size
+        # Write line
+        var bytes_to_write: int32 = pwidth * 4
+        discard syscall3(SYS_write, fd, cast[int32](buffer), bytes_to_write)
+
+      row = row + 1
 
   discard syscall1(SYS_close, fd)
   discard syscall1(SYS_exit, 0)

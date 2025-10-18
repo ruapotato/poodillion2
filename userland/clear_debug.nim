@@ -1,7 +1,4 @@
-# clear - Clear screen to a color
-# Usage: clear [color]
-# Color format: RRGGBB hex (e.g., FF0000 for red)
-# Default: 000000 (black)
+# clear_debug - Clear screen by writing directly to framebuffer
 
 const SYS_open: int32 = 5
 const SYS_close: int32 = 6
@@ -24,8 +21,7 @@ proc print(msg: ptr uint8, len: int32) =
   discard syscall3(SYS_write, STDOUT, cast[int32](msg), len)
 
 proc main() =
-  # Default color: black
-  var color: int32 = 0x000000
+  print(cast[ptr uint8]("Clearing screen...\n"), 19)
 
   var fd: int32 = syscall2(SYS_open, cast[int32]("/dev/fb0"), O_RDWR)
   if fd < 0:
@@ -51,22 +47,22 @@ proc main() =
   var bytes_per_pixel: int32 = bpp / 8
   var screen_size: int32 = xres * yres * bytes_per_pixel
 
-  # Allocate buffer (4KB)
+  # Allocate buffer for one line (4096 bytes = 1024 pixels)
   var buffer_brk: int32 = syscall1(SYS_brk, 0)
   var buffer_size: int32 = 4096
   discard syscall1(SYS_brk, buffer_brk + buffer_size)
   var buffer: ptr uint32 = cast[ptr uint32](buffer_brk)
 
-  # Fill buffer with color
+  # Fill buffer with black (0x00000000)
   var i: int32 = 0
   while i < buffer_size / 4:
-    buffer[i] = color
+    buffer[i] = 0x00000000
     i = i + 1
 
   # Seek to start of framebuffer
   discard syscall3(SYS_lseek, fd, 0, SEEK_SET)
 
-  # Write buffer repeatedly to fill screen
+  # Write buffer repeatedly to clear entire screen
   var written: int32 = 0
   while written < screen_size:
     var to_write: int32 = buffer_size
@@ -74,10 +70,14 @@ proc main() =
       to_write = screen_size - written
 
     var bytes_written: int32 = syscall3(SYS_write, fd, cast[int32](buffer), to_write)
-    if bytes_written > 0:
-      written = written + bytes_written
-    else:
-      written = screen_size
+    if bytes_written <= 0:
+      print(cast[ptr uint8]("Error: Write failed\n"), 20)
+      discard syscall1(SYS_close, fd)
+      discard syscall1(SYS_exit, 1)
+
+    written = written + bytes_written
+
+  print(cast[ptr uint8]("Screen cleared!\n"), 16)
 
   discard syscall1(SYS_close, fd)
   discard syscall1(SYS_exit, 0)

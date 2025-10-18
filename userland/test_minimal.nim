@@ -1,7 +1,4 @@
-# clear - Clear screen to a color
-# Usage: clear [color]
-# Color format: RRGGBB hex (e.g., FF0000 for red)
-# Default: 000000 (black)
+# test_minimal - Direct write to framebuffer (no mmap)
 
 const SYS_open: int32 = 5
 const SYS_close: int32 = 6
@@ -24,15 +21,16 @@ proc print(msg: ptr uint8, len: int32) =
   discard syscall3(SYS_write, STDOUT, cast[int32](msg), len)
 
 proc main() =
-  # Default color: black
-  var color: int32 = 0x000000
+  print(cast[ptr uint8]("Opening /dev/fb0...\n"), 20)
 
   var fd: int32 = syscall2(SYS_open, cast[int32]("/dev/fb0"), O_RDWR)
   if fd < 0:
-    print(cast[ptr uint8]("Error: Cannot open /dev/fb0\n"), 29)
+    print(cast[ptr uint8]("Error: Cannot open\n"), 19)
     discard syscall1(SYS_exit, 1)
 
-  # Get screen info
+  print(cast[ptr uint8]("Getting screen info...\n"), 23)
+
+  # Get screen info using brk for memory
   var old_brk: int32 = syscall1(SYS_brk, 0)
   var new_brk: int32 = old_brk + 160
   discard syscall1(SYS_brk, new_brk)
@@ -40,7 +38,7 @@ proc main() =
 
   var result: int32 = syscall3(SYS_ioctl, fd, FBIOGET_VSCREENINFO, cast[int32](vinfo))
   if result < 0:
-    print(cast[ptr uint8]("Error: Cannot get screen info\n"), 31)
+    print(cast[ptr uint8]("Error: Cannot get info\n"), 23)
     discard syscall1(SYS_close, fd)
     discard syscall1(SYS_exit, 1)
 
@@ -48,36 +46,29 @@ proc main() =
   var xres: int32 = cast[int32](vinfo[0])
   var yres: int32 = cast[int32](vinfo[1])
   var bpp: int32 = cast[int32](vinfo[6])
-  var bytes_per_pixel: int32 = bpp / 8
-  var screen_size: int32 = xres * yres * bytes_per_pixel
 
-  # Allocate buffer (4KB)
-  var buffer_brk: int32 = syscall1(SYS_brk, 0)
-  var buffer_size: int32 = 4096
-  discard syscall1(SYS_brk, buffer_brk + buffer_size)
-  var buffer: ptr uint32 = cast[ptr uint32](buffer_brk)
-
-  # Fill buffer with color
-  var i: int32 = 0
-  while i < buffer_size / 4:
-    buffer[i] = color
-    i = i + 1
+  print(cast[ptr uint8]("Writing red pixel...\n"), 21)
 
   # Seek to start of framebuffer
   discard syscall3(SYS_lseek, fd, 0, SEEK_SET)
 
-  # Write buffer repeatedly to fill screen
-  var written: int32 = 0
-  while written < screen_size:
-    var to_write: int32 = buffer_size
-    if written + to_write > screen_size:
-      to_write = screen_size - written
+  # Allocate buffer for one pixel (4 bytes for 32bpp)
+  var pixel_brk: int32 = syscall1(SYS_brk, 0)
+  discard syscall1(SYS_brk, pixel_brk + 4)
+  var pixel: ptr uint32 = cast[ptr uint32](pixel_brk)
 
-    var bytes_written: int32 = syscall3(SYS_write, fd, cast[int32](buffer), to_write)
-    if bytes_written > 0:
-      written = written + bytes_written
-    else:
-      written = screen_size
+  # Red pixel (BGRA format: 0x00FF0000 = red)
+  pixel[0] = 0x00FF0000
+
+  # Write pixel to framebuffer
+  var bytes_written: int32 = syscall3(SYS_write, fd, cast[int32](pixel), 4)
+
+  if bytes_written < 4:
+    print(cast[ptr uint8]("Error: Write failed\n"), 20)
+    discard syscall1(SYS_close, fd)
+    discard syscall1(SYS_exit, 1)
+
+  print(cast[ptr uint8]("SUCCESS! Pixel written\n"), 23)
 
   discard syscall1(SYS_close, fd)
   discard syscall1(SYS_exit, 0)

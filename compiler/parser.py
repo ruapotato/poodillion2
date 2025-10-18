@@ -255,8 +255,43 @@ class Parser:
 
         return left
 
+    def parse_logical_and(self) -> ASTNode:
+        left = self.parse_comparison()
+
+        while self.current_token().type == TokenType.AND:
+            self.advance()
+            right = self.parse_comparison()
+            left = BinaryExpr(left, BinOp.AND, right)
+
+        return left
+
+    def parse_logical_or(self) -> ASTNode:
+        left = self.parse_logical_and()
+
+        while self.current_token().type == TokenType.OR:
+            self.advance()
+            right = self.parse_logical_and()
+            left = BinaryExpr(left, BinOp.OR, right)
+
+        return left
+
+    def parse_conditional_expr(self) -> ASTNode:
+        """Parse conditional expressions: if cond: a else: b"""
+        # Check if this is a conditional expression
+        if self.current_token().type == TokenType.IF:
+            self.advance()
+            condition = self.parse_logical_or()
+            self.expect(TokenType.COLON)
+            then_expr = self.parse_logical_or()
+            self.expect(TokenType.ELSE)
+            self.expect(TokenType.COLON)
+            else_expr = self.parse_logical_or()
+            return ConditionalExpr(condition, then_expr, else_expr)
+
+        return self.parse_logical_or()
+
     def parse_expression(self) -> ASTNode:
-        return self.parse_comparison()
+        return self.parse_conditional_expr()
 
     # Statement parsing
     def parse_var_decl(self) -> VarDecl:
@@ -358,6 +393,14 @@ class Parser:
 
         if token.type == TokenType.RETURN:
             return self.parse_return_stmt()
+
+        if token.type == TokenType.BREAK:
+            self.advance()
+            return BreakStmt()
+
+        if token.type == TokenType.CONTINUE:
+            self.advance()
+            return ContinueStmt()
 
         if token.type == TokenType.IF:
             return self.parse_if_stmt()
