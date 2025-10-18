@@ -82,9 +82,6 @@ psh> bin/ps
 - **echo** (8.9KB) - Display text output
 - **cat** (5.1KB) - Concatenate and display files
 - **edit** (11KB) - CLI text editor with ANSI colors!
-- **fbinfo** (9.6KB) - Framebuffer info (graphics!)
-- **clear** (~10KB) - Clear screen to color ⭐ NEW
-- **demo** (~11KB) - Graphics demo (shapes!) ⭐ NEW
 - **true** (4.8KB) - Exit with success code
 - **false** (4.8KB) - Exit with failure code
 
@@ -95,13 +92,18 @@ psh> bin/ps
   - Formats binary data as hex tables
   - Interactive REPL with psh> prompt
 
-**Graphics Tools** ⭐ NEW (framebuffer direct access!):
+**Graphics Library** 🎨 NEW (direct framebuffer access!):
 - **fbinfo** (9.6KB) - Display framebuffer information
-- **clear** (~10KB) - Clear screen to solid color
-- **demo** (~11KB) - Graphics demonstration (shapes, colors)
-  - Draws rectangles, lines, circles
-  - Shows off framebuffer capabilities
-  - Pure syscalls, no graphics libraries!
+- **clear** (9.3KB) - Clear screen to solid color
+- **pixel** (9.0KB) - Draw individual pixels at x,y
+- **line** (9.7KB) - Bresenham's line algorithm
+- **rect** (9.3KB) - Draw filled rectangles
+- **circle** (9.4KB) - Midpoint circle algorithm
+
+**Key Innovation**: Direct write to `/dev/fb0` via lseek + write
+- No mmap needed! (VTY console blocks mmap)
+- Pure syscalls, no graphics libraries
+- All shapes compile from Mini-Nim to x86
 
 **Data-Oriented Tools** (working binary pipeline!):
 - **ps** (8.8KB) - Output binary Process objects with schema
@@ -126,6 +128,10 @@ psh> bin/ps
 - Block-scoped parsing with indentation
 - Size-aware loads/stores (byte, word, dword)
 - Address-of operator (`addr`) for safe pointer operations
+- Logical operators: `and`, `or` with short-circuit evaluation
+- Conditional expressions: `if cond: a else: b`
+- Control flow: `break`, `continue` statements
+- Unary operators: `-x`, `not x`
 - Dynamic stack allocation
 - 45+ Linux syscalls exposed
 - Zero dependencies (no libc!)
@@ -428,16 +434,17 @@ See **[VISION.md](VISION.md)** for the complete vision.
 
 **See [DISPLAY_ROADMAP.md](DISPLAY_ROADMAP.md) for complete roadmap**
 
-#### Sub-Phase 6.1: Framebuffer Foundation (Month 1-2) 🏗️ IN PROGRESS
-- [x] **Framebuffer access** - Open `/dev/fb0` and mmap it ✅
+#### Sub-Phase 6.1: Framebuffer Foundation (Month 1-2) ✅ COMPLETE!
+- [x] **Framebuffer access** - Direct write to `/dev/fb0` (no mmap!) ✅
 - [x] **syscall6 support** - Added for mmap syscall ✅
 - [x] **fbinfo utility** - Display framebuffer information ✅
-- [x] **Pixel plotting** - Direct pixel manipulation ✅
-- [x] **Graphics primitives** - Rectangle, line, circle drawing ✅
+- [x] **Pixel plotting** - Direct pixel manipulation via lseek+write ✅
+- [x] **Graphics primitives** - Line, rect, circle drawing ✅
 - [x] **clear utility** - Clear screen to solid color ✅
-- [x] **demo utility** - Graphics demonstration ✅
-- [ ] **Text rendering** - Bitmap font support (NEXT)
+- [x] **Mini-Nim extensions** - and/or/break/continue/conditional exprs ✅
+- [ ] **Text rendering** - Bitmap font support ⬅ NEXT
 - [ ] **Optimized drawing** - Double buffering, fast fills
+- [ ] **Sprite support** - Blit images to screen
 
 #### Sub-Phase 6.2: Input & Events (Month 2-3)
 - [ ] **Mouse support** - Read `/dev/input/mice`
@@ -646,21 +653,21 @@ All code is free software. Fork it, hack it, improve it!
 Project:    PoodillionOS - Data-Oriented Operating System
 Language:   Mini-Nim (custom compiled language)
 Runtime:    Zero dependencies (no libc, no stdlib)
-Utilities:  16 working + Type-Aware Shell!
-            (echo, cat, edit, fbinfo, clear, demo, true, false, ps, inspect,
-             where, count, head, tail, select, psh)
-Size:       ~151KB total for all utilities
+Utilities:  18 working + Type-Aware Shell!
+            (echo, cat, edit, true, false, ps, inspect, where, count,
+             head, tail, select, psh, fbinfo, clear, pixel, line, rect, circle)
+Size:       ~167KB total for all utilities
 Platform:   Linux x86/x86_64 (32-bit executables)
-Status:     🚧 Active Development - GRAPHICS WORK IN PROGRESS! 🎨
+Status:     🚀 Active Development - GRAPHICS FOUNDATION COMPLETE! 🎨
 
-Vision:     Unix performance + PowerShell composability + Graphics!
-Innovation: Binary typed data streams + Direct framebuffer access
-Goal:       Type-safe, zero-copy, SQL-queryable OS with GUI!
+Vision:     Unix performance + PowerShell composability + Native Graphics!
+Innovation: Binary typed data streams + Direct framebuffer manipulation
+Goal:       Type-safe, zero-copy, SQL-queryable OS with custom display server!
 
-✅ Working:  Type-aware shell with automatic schema detection and pretty formatting!
-✅ Working:  Full data pipeline! (ps | where | select | head | tail | count | inspect)
-✅ Working:  Framebuffer graphics! (pixel plotting, shapes, colors)
-Next:       Text rendering, then mouse support (see DISPLAY_ROADMAP.md)
+✅ Complete: Type-aware shell with automatic schema detection and formatting!
+✅ Complete: Full data pipeline! (ps | where | select | head | tail | count)
+✅ Complete: Graphics primitives! (clear, pixel, line, rect, circle)
+Next:       Text rendering → Mouse input → Display server protocol
 ```
 
 **Try it now**:
