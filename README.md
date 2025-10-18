@@ -81,6 +81,7 @@ psh> bin/ps
 **Userland Utilities** (all in Mini-Nim, no libc):
 - **echo** (8.9KB) - Display text output
 - **cat** (5.1KB) - Concatenate and display files
+- **edit** (11KB) - CLI text editor with ANSI colors! ⭐ NEW
 - **true** (4.8KB) - Exit with success code
 - **false** (4.8KB) - Exit with failure code
 
@@ -206,6 +207,10 @@ make userland
 echo "test" | ./bin/cat
 ./bin/true && echo "Success: $?"
 ./bin/false || echo "Failed: $?"
+
+# Try the text editor!
+./bin/edit          # Opens file.txt in a beautiful CLI editor
+# Type text, Backspace to delete, Ctrl+S to save, Ctrl+Q to quit
 ```
 
 ### Try the Type-Aware Shell! ⭐ NEW
@@ -317,6 +322,7 @@ poodillion2/
 │   ├── psh.nim        # ✅ Type-Aware Shell! 🎨
 │   ├── echo.nim       # ✅ Working
 │   ├── cat.nim        # ✅ Working
+│   ├── edit.nim       # ✅ Working (text editor)
 │   ├── true.nim       # ✅ Working
 │   ├── false.nim      # ✅ Working
 │   ├── ps.nim         # ✅ Working (binary output)
@@ -331,6 +337,7 @@ poodillion2/
 │   ├── psh            # 13KB ELF32 - Type-Aware Shell! 🎨
 │   ├── echo           # 8.9KB ELF32
 │   ├── cat            # 5.1KB ELF32
+│   ├── edit           # 11KB ELF32 - Text Editor!
 │   ├── true           # 4.8KB ELF32
 │   ├── false          # 4.8KB ELF32
 │   ├── ps             # 8.8KB ELF32
@@ -572,9 +579,9 @@ All code is free software. Fork it, hack it, improve it!
 Project:    PoodillionOS - Data-Oriented Operating System
 Language:   Mini-Nim (custom compiled language)
 Runtime:    Zero dependencies (no libc, no stdlib)
-Utilities:  12 working + Type-Aware Shell!
-            (echo, cat, true, false, ps, inspect, where, count, head, tail, select, psh)
-Size:       ~110KB total for all utilities
+Utilities:  13 working + Type-Aware Shell!
+            (echo, cat, edit, true, false, ps, inspect, where, count, head, tail, select, psh)
+Size:       ~121KB total for all utilities
 Platform:   Linux x86/x86_64 (32-bit executables)
 Status:     🚧 Active Development
 
