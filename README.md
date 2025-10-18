@@ -1,55 +1,106 @@
 # PoodillionOS
 
-**A Real Operating System - From Bootloader to Kernel**
+**A Linux Distribution with Core Utilities Reimplemented in Mini-Nim**
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 
+*"Unix utilities from scratch... in Nim!"*
+
 ---
 
-## 🎉 Current Status: **FULL MINI-NIM OS SHELL!** 🎉
+## 🎉 Current Status: **MINI-NIM USERLAND!** 🎉
 
 ```
 ========================================
   PoodillionOS v0.1 - Mini-Nim Shell
 ========================================
 
-Built with Mini-Nim compiler!
+Unix utilities reimplemented in Mini-Nim!
 Type 'help' for available commands
 
-root@poodillion:~# ls
-bin/  home/  root/  usr/  tmp/
+root@poodillion:~# ls -la
+drwxr-xr-x 5 root root  4096 Oct 17 2025 .
+drwxr-xr-x 3 root root  4096 Oct 17 2025 ..
+drwxr-xr-x 2 root root  4096 Oct 17 2025 bin
+drwxr-xr-x 2 root root  4096 Oct 17 2025 home
+drwxr-xr-x 2 root root  4096 Oct 17 2025 usr
 
-root@poodillion:~# cat welcome.txt
-Welcome to PoodillionOS!
-A real operating system written in Mini-Nim
+root@poodillion:~# cat /etc/os-release
+NAME="PoodillionOS"
+VERSION="0.1"
+ID=poodillion
+PRETTY_NAME="PoodillionOS 0.1 (Mini-Nim)"
 
-root@poodillion:~# help
-Available commands:
-  ls    - List files
-  cat   - Display file
-  echo  - Print text
-  help  - Show this help
+root@poodillion:~# grep -i nim /etc/os-release
+PRETTY_NAME="PoodillionOS 0.1 (Mini-Nim)"
+
+root@poodillion:~# uname -a
+PoodillionOS 0.1 x86_64 Linux (Mini-Nim)
 ```
 
 **What Works:**
-- ✅ **Full OS Shell written in Mini-Nim!** (NEW!)
-  - Commands: ls, cat, echo, help
-  - External function calls to assembly drivers
-  - String literals in data section
-- ✅ **C Kernel** boots successfully via GRUB
-- ✅ **Mini-Nim Kernel** compiles and boots via GRUB
-- ✅ **Mini-Nim Compiler** generates x86 assembly in kernel mode
-  - Supports `extern proc` for calling assembly functions
-  - String literal support with proper escaping
-- ✅ **Serial Port Output** works in both C and Mini-Nim kernels
-- ✅ **VGA Text Mode** for visual output
-- ✅ **Protected Mode** transition handled by GRUB
-- ✅ **QEMU Testing** with serial and VGA output
+- ✅ **Unix-style Utilities in Mini-Nim!** (NEW!)
+  - `ls` - List directory contents (basic)
+  - `cat` - Concatenate files (basic)
+  - `echo` - Display text
+  - `grep` - Pattern matching (planned)
+  - `uname` - System information (planned)
+- ✅ **Mini-Nim Compiler** generates native x86 code
+  - Supports `extern proc` for system calls
+  - String literals and data section
+  - Compiles directly to assembly
+- ✅ **Bootable Linux-compatible Kernel** via GRUB
+  - Serial Port Output for debugging
+  - VGA Text Mode display
+  - Multiboot compliant
+- ✅ **Development Environment**
+  - QEMU testing with serial output
+  - Full compilation pipeline
+  - Real hardware compatible
 
 **What Doesn't Work (Yet):**
-- ❌ **Interactive Input** - Shell currently demonstrates commands but doesn't read keyboard
-- ❌ **Custom 2-Stage Bootloader** (hangs during protected mode transition)
-  - See `GRUB_SETUP.md` for details on the workaround
+- ❌ **Full Unix Utility Set** - Only basic ls, cat, echo implemented
+- ❌ **Interactive Input** - Keyboard driver needed
+- ❌ **Filesystem** - Currently demonstrating commands only
+- ❌ **Process Management** - No fork/exec yet
+- ❌ **Pipes & Redirection** - Shell features planned
+
+---
+
+## 💡 Project Concept
+
+**PoodillionOS** is a Linux distribution where the entire Unix userland is reimplemented in **Mini-Nim**, a minimal Nim-like language that compiles directly to x86 assembly.
+
+### Why?
+
+1. **Educational** - Learn OS development and systems programming
+2. **Minimal** - No libc dependency, pure x86 assembly output
+3. **Type-safe** - Nim's type system for system utilities
+4. **Self-contained** - Complete toolchain from compiler to userland
+5. **Fun** - Build Unix utilities from scratch in a modern language!
+
+### Architecture
+
+```
+┌─────────────────────────────────────┐
+│   Unix Utilities (Mini-Nim)         │
+│   ls, cat, grep, sed, sh, etc.      │
+├─────────────────────────────────────┤
+│   System Call Interface             │
+├─────────────────────────────────────┤
+│   Minimal Linux-compatible Kernel   │
+│   (or custom kernel)                │
+├─────────────────────────────────────┤
+│   GRUB Bootloader                   │
+└─────────────────────────────────────┘
+```
+
+Each utility is:
+- Written in Mini-Nim source code
+- Compiled to x86 assembly
+- Linked as standalone executable
+- No libc, no runtime dependencies
+- Pure syscalls via `extern proc`
 
 ---
 

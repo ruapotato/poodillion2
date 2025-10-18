@@ -397,6 +397,55 @@ run-grub-iso: $(GRUB_ISO)
 	@echo "Booting PoodillionOS from GRUB ISO..."
 	qemu-system-i386 -cdrom $(GRUB_ISO)
 
+# ========== USER LAND UTILITIES ==========
+
+# Userland directories
+USERLAND_DIR = userland
+LIB_DIR = lib
+BIN_DIR = bin
+
+# Create bin directory
+$(BIN_DIR):
+	@mkdir -p $(BIN_DIR)
+
+# Build syscall library
+$(LIB_DIR)/syscalls.o: $(LIB_DIR)/syscalls.asm | $(BUILD_DIR)
+	@echo "Assembling syscall library..."
+	$(AS) $(ASFLAGS_32) $(LIB_DIR)/syscalls.asm -o $(LIB_DIR)/syscalls.o
+
+# Generic rule to compile userland utilities
+$(BIN_DIR)/%: $(USERLAND_DIR)/%.nim $(LIB_DIR)/syscalls.o | $(BIN_DIR)
+	@echo "Compiling $* utility..."
+	cd compiler && python3 mininim.py ../$(USERLAND_DIR)/$*.nim --asm-only > $*.asm
+	@echo "Assembling $* utility..."
+	$(AS) $(ASFLAGS_32) compiler/$*.asm -o compiler/$*.o
+	@echo "Linking $* utility..."
+	$(LD) -m elf_i386 -o $(BIN_DIR)/$* compiler/$*.o $(LIB_DIR)/syscalls.o
+	@echo "  Created: $(BIN_DIR)/$* ($$(stat -c%s $(BIN_DIR)/$*) bytes)"
+	@rm -f compiler/$*.o compiler/$*.asm
+
+# Build all userland utilities
+.PHONY: userland
+userland: $(BIN_DIR)/echo $(BIN_DIR)/true $(BIN_DIR)/false $(BIN_DIR)/cat
+	@echo "✓ All userland utilities built!"
+	@ls -lh $(BIN_DIR)/
+
+# Test echo utility
+.PHONY: test-echo
+test-echo: $(BIN_DIR)/echo
+	@echo "Testing echo utility..."
+	@echo "========================================"
+	@./$(BIN_DIR)/echo
+	@echo "========================================"
+	@echo "✓ Echo test complete!"
+
+# Clean userland binaries
+.PHONY: clean-userland
+clean-userland:
+	@echo "Cleaning userland binaries..."
+	@rm -rf $(BIN_DIR)
+	@rm -f $(LIB_DIR)/syscalls.o
+
 # ========== DEBUGGING TARGETS ==========
 
 # Disassemble bootloader (for debugging)

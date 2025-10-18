@@ -427,6 +427,9 @@ class X86CodeGen:
         self.emit("push ebp")
         self.emit("mov ebp, esp")
 
+        # Mark where we'll insert stack allocation later
+        stack_alloc_pos = len(self.output)
+
         # Save and reset local variables for this function
         old_locals = self.local_vars
         old_offset = self.stack_offset
@@ -450,6 +453,14 @@ class X86CodeGen:
         # Generate body (this will add local variables with negative offsets)
         for stmt in proc.body:
             self.gen_statement(stmt)
+
+        # Allocate stack space for local variables (if any)
+        # Insert after the "mov ebp, esp" instruction
+        if self.stack_offset > 0:
+            # Round up to 16-byte alignment for better performance (optional)
+            stack_size = self.stack_offset
+            # Insert the allocation instruction
+            self.output.insert(stack_alloc_pos, f"    sub esp, {stack_size}")
 
         # Epilogue
         self.emit_label(self.return_label)
@@ -509,12 +520,18 @@ class X86CodeGen:
             asm.append("section .data")
             for label, value in self.strings.items():
                 # Escape special characters for NASM syntax
-                escaped = value.replace('\\', '\\\\')  # Backslash first
-                escaped = escaped.replace('"', '\\"')   # Quote marks
-                escaped = escaped.replace('\n', '\\n')  # Newlines
-                escaped = escaped.replace('\t', '\\t')  # Tabs
-                escaped = escaped.replace('\r', '\\r')  # Carriage return
-                escaped = escaped.replace('\0', '\\0')  # Null (though we add 0 after)
+                # Don't double-escape - these are already raw characters from the parser
+                escaped = value.replace('"', '\\"')     # Quote marks need escaping
+                # Note: \n, \t, etc. are ALREADY actual newline/tab characters from the lexer
+                # We need to convert them back to NASM escape sequences
+                escaped = escaped.replace('\n', '", 10, "')  # Newline as byte value
+                escaped = escaped.replace('\t', '", 9, "')   # Tab as byte value
+                escaped = escaped.replace('\r', '", 13, "')  # CR as byte value
+                escaped = escaped.replace('\0', '", 0, "')   # Null as byte value
+                # Clean up empty strings from replacements
+                escaped = escaped.replace('""', '')
+                escaped = escaped.replace(', ""', '')
+                escaped = escaped.replace('"", ', '')
                 asm.append(f'{label}: db "{escaped}", 0')
             asm.extend(self.data_section)
             asm.append("")

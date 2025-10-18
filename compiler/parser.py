@@ -371,6 +371,9 @@ class Parser:
         """Parse an indented block of statements"""
         statements = []
 
+        # Track the indentation level of the first statement in the block
+        block_indent = None
+
         # Parse all statements until we hit EOF or a dedent-level keyword
         while True:
             self.skip_newlines()
@@ -387,6 +390,14 @@ class Parser:
 
             # Stop at same-level control flow (elif/else)
             if token.type in [TokenType.ELIF, TokenType.ELSE]:
+                break
+
+            # Track indentation of first statement
+            if block_indent is None:
+                block_indent = token.col
+            # If we encounter a statement at LOWER indentation, block is done (dedent)
+            elif token.col < block_indent and len(statements) > 0:
+                # Exception: elif/else are handled separately above
                 break
 
             # Parse the statement
