@@ -106,22 +106,26 @@ psh> bin/ps
 - All shapes compile from Mini-Nim to x86
 
 **Data-Oriented Tools** (working binary pipeline!):
-- **ps** (8.8KB) - Output binary Process objects with schema
+- **ps** (10.7KB) - Read real `/proc` data, output binary Process objects
 - **inspect** (9.6KB) - View schema and hex dump structured data
-- **where** (9.7KB) - Filter structured data streams by predicate
-- **count** (9.3KB) - Count records in stream
-- **head** (9.1KB) - Take first N records
+- **where** (10.8KB) - Filter by field: `where FIELD OP VALUE`
+- **count** (9.4KB) - Count records in stream
+- **head** (9.6KB) - Take first N records: `head N`
 - **tail** (9.2KB) - Take last N records
 - **select** (9.0KB) - Project specific fields
+- **sort** (10.3KB) - Sort by field: `sort FIELD [desc]`
+- **fmt** (10.4KB) - Format binary records as human-readable text
+- **ls** (9.6KB) - List directory contents as structured data
 
-**Shell Features** (psh - 13KB):
+**Shell Features** (psh - 19KB):
 - 🎨 Beautiful box-drawing UI
 - 🔍 Automatic PSCH format detection
 - 📊 Pretty hex table formatting
 - ⚡ Zero-copy data display
 - 💻 Interactive REPL
-- 🚀 Process forking & piping
-- 📝 Built-in commands: exit, quit
+- 🚀 **Full pipeline support**: `ps | sort 3 desc | head 10 | fmt`
+- 📝 Command argument passing to child processes
+- 🔧 Built-in commands: exit, quit
 
 **Compiler Features**:
 - Type-safe Mini-Nim → x86 compiler
@@ -132,6 +136,7 @@ psh> bin/ps
 - Conditional expressions: `if cond: a else: b`
 - Control flow: `break`, `continue` statements
 - Unary operators: `-x`, `not x`
+- **argc/argv support**: `get_argc()`, `get_argv(i)` builtins
 - Dynamic stack allocation
 - 45+ Linux syscalls exposed
 - Zero dependencies (no libc!)
@@ -336,36 +341,42 @@ poodillion2/
 │   └── schema.nim     # Data schema definitions
 │
 ├── userland/          # Unix Utilities
-│   ├── psh.nim        # ✅ Type-Aware Shell! 🎨
+│   ├── psh.nim        # ✅ Type-Aware Shell with pipelines! 🎨
 │   ├── echo.nim       # ✅ Working
 │   ├── cat.nim        # ✅ Working
 │   ├── edit.nim       # ✅ Working (text editor)
 │   ├── fbinfo.nim     # ✅ Working (framebuffer info) 🎨
 │   ├── true.nim       # ✅ Working
 │   ├── false.nim      # ✅ Working
-│   ├── ps.nim         # ✅ Working (binary output)
+│   ├── ps.nim         # ✅ Real /proc parsing!
 │   ├── inspect.nim    # ✅ Working (schema viewer)
-│   ├── where.nim      # ✅ Working (data filter)
+│   ├── where.nim      # ✅ Filter: where FIELD OP VALUE
 │   ├── count.nim      # ✅ Working (count records)
-│   ├── head.nim       # ✅ Working (take first N)
+│   ├── head.nim       # ✅ head N (take first N)
 │   ├── tail.nim       # ✅ Working (take last N)
-│   └── select.nim     # ✅ Working (field projection)
+│   ├── select.nim     # ✅ Working (field projection)
+│   ├── sort.nim       # ✅ sort FIELD [desc]
+│   ├── fmt.nim        # ✅ Human-readable output
+│   └── ls.nim         # ✅ Directory listing
 │
 ├── bin/               # Compiled executables
-│   ├── psh            # 13KB ELF32 - Type-Aware Shell! 🎨
+│   ├── psh            # 19KB ELF32 - Type-Aware Shell with pipelines! 🎨
 │   ├── echo           # 8.9KB ELF32
 │   ├── cat            # 5.1KB ELF32
 │   ├── edit           # 11KB ELF32 - Text Editor!
 │   ├── fbinfo         # 9.6KB ELF32 - Framebuffer Info! 🎨
 │   ├── true           # 4.8KB ELF32
 │   ├── false          # 4.8KB ELF32
-│   ├── ps             # 8.8KB ELF32
+│   ├── ps             # 10.7KB ELF32 - Real /proc!
 │   ├── inspect        # 9.6KB ELF32
-│   ├── where          # 9.7KB ELF32
-│   ├── count          # 9.3KB ELF32
-│   ├── head           # 9.1KB ELF32
+│   ├── where          # 10.8KB ELF32
+│   ├── count          # 9.4KB ELF32
+│   ├── head           # 9.6KB ELF32
 │   ├── tail           # 9.2KB ELF32
-│   └── select         # 9.0KB ELF32
+│   ├── select         # 9.0KB ELF32
+│   ├── sort           # 10.3KB ELF32
+│   ├── fmt            # 10.4KB ELF32
+│   └── ls             # 9.6KB ELF32
 │
 ├── kernel/            # OS Kernel (optional)
 │   ├── kernel.c       # C kernel
@@ -374,15 +385,12 @@ poodillion2/
 ├── boot/              # Bootloader
 │   └── multiboot.asm  # GRUB multiboot
 │
-├── VISION.md          # 📖 Full vision document
 └── Makefile           # Build system
 ```
 
 ---
 
 ## 🎯 Vision & Roadmap
-
-See **[VISION.md](VISION.md)** for the complete vision.
 
 ### Phase 1: Core Infrastructure ✅ COMPLETE
 
@@ -397,15 +405,18 @@ See **[VISION.md](VISION.md)** for the complete vision.
 - [x] **Fix binary I/O** - Address-of operator implemented ✅
 - [x] **Size-aware codegen** - Proper byte/word/dword operations ✅
 - [x] **Working pipeline** - ps | inspect fully functional ✅
-- [x] **`where` command** - Filtering implemented! (hardcoded for now) ✅
+- [x] **`where` command** - Filter by `FIELD OP VALUE` ✅
 - [x] **`count` command** - Count records in stream ✅
-- [x] **`head` command** - Take first N records ✅
+- [x] **`head` command** - Take first N records (with args) ✅
 - [x] **`tail` command** - Take last N records ✅
 - [x] **`select` command** - Field projection ✅
 - [x] **`psh` shell** - Type-aware shell with automatic schema detection! ✅ 🎨
-- [ ] **Command-line args** - Parse filter expressions from args
-- [ ] **`sort` command** - Order by fields
-- [ ] **Pipeline support in shell** - Parse and execute `cmd1 | cmd2` syntax
+- [x] **Command-line args** - argc/argv support for all utilities ✅
+- [x] **`sort` command** - Sort by field ascending/descending ✅
+- [x] **`fmt` command** - Human-readable output formatting ✅
+- [x] **`ls` command** - Directory listing as structured data ✅
+- [x] **Pipeline support in shell** - Full `cmd1 | cmd2 | cmd3` pipelines ✅
+- [x] **Real /proc parsing** - ps reads actual process data ✅
 
 ### Phase 3: Query Engine
 
@@ -526,38 +537,22 @@ source.nim → Mini-Nim Lexer → Tokens
 
 ### Immediate Priorities
 
-1. **Add pipeline support to `psh` shell** ⬅ NEXT
-   ```bash
-   psh> bin/ps | bin/where | bin/select
-   # Parse pipe syntax, create child processes, connect with pipes
-   # Execute pipeline and display final output
-   ```
+1. **Text rendering** ⬅ NEXT
+   - Bitmap font support for framebuffer
+   - Print strings directly to screen
 
-2. **Add command-line arguments to utilities**
-   ```bash
-   $ ps | where 0 > 100      # Filter field 0 (pid) > 100
-   $ ps | where 1 < 5000     # Filter field 1 (memory) < 5000
-   $ ps | select 0 1         # Select fields 0 and 1
-   $ ps | head 5             # Take first 5 records
-   # Parse field_index, operator, value from command line
-   ```
+2. **Enhanced shell features**
+   - Command history with arrow keys
+   - Tab completion
+   - PATH resolution
 
-3. **Implement `sort` utility**
-   ```bash
-   $ ps | sort 0             # Sort by field 0 (pid)
-   $ ps | sort 1 desc        # Sort by field 1 (memory) descending
-   # Read all records, sort in memory, output sorted stream
-   ```
-
-4. **Add more source utilities**
-   - `ls` - List files as structured data
-   - Real `/proc` parsing for `ps`
-   - `netstat` - Network connections
+3. **More source utilities**
+   - `netstat` - Network connections as structured data
+   - `df` - Disk usage
+   - `free` - Memory info
 
 ### Medium Term
 
-- **Enhanced shell features** - Command history, tab completion, PATH resolution
-- **Real `/proc` integration** - Read actual process data
 - **Schema versioning** - Handle format changes
 - **Performance testing** - Benchmark vs Unix pipes
 - **Error messages** - Better diagnostics when pipelines fail
