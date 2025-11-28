@@ -162,6 +162,10 @@ class X86CodeGen:
             elif expr.op == BinOp.DIV:
                 self.emit("xor edx, edx")  # Clear EDX for division
                 self.emit("idiv ebx")
+            elif expr.op == BinOp.MOD:
+                self.emit("xor edx, edx")  # Clear EDX for division
+                self.emit("idiv ebx")
+                self.emit("mov eax, edx")  # Remainder is in EDX, move to EAX
             elif expr.op == BinOp.EQ:
                 self.emit("cmp eax, ebx")
                 self.emit("sete al")
@@ -713,10 +717,12 @@ class X86CodeGen:
         asm.append("bits 32")
         asm.append("")
 
-        # External declarations
+        # External declarations (skip built-in get_argc/get_argv)
+        builtin_funcs = ['get_argc', 'get_argv']
         if self.externs:
             for extern_name in self.externs:
-                asm.append(f"extern {extern_name}")
+                if extern_name not in builtin_funcs:
+                    asm.append(f"extern {extern_name}")
             asm.append("")
 
         # Data section
@@ -752,13 +758,38 @@ class X86CodeGen:
         # Only generate _start if not in kernel mode
         if not self.kernel_mode:
             asm.append("global _start")
+            asm.append("global get_argc")
+            asm.append("global get_argv")
+            asm.append("")
+            asm.append("section .bss")
+            asm.append("_startup_esp: resd 1")
+            asm.append("")
+            asm.append("section .text")
             asm.append("")
             asm.append("_start:")
+            asm.append("    mov [_startup_esp], esp  ; Save initial stack pointer")
             asm.append("    call main")
             asm.append("    ; Halt (infinite loop)")
             asm.append(".halt:")
             asm.append("    hlt")
             asm.append("    jmp .halt")
+            asm.append("")
+            asm.append("; get_argc() - returns argument count")
+            asm.append("get_argc:")
+            asm.append("    mov eax, [_startup_esp]")
+            asm.append("    mov eax, [eax]  ; argc is at [esp]")
+            asm.append("    ret")
+            asm.append("")
+            asm.append("; get_argv(index) - returns pointer to argument string")
+            asm.append("get_argv:")
+            asm.append("    push ebp")
+            asm.append("    mov ebp, esp")
+            asm.append("    mov eax, [_startup_esp]")
+            asm.append("    mov ecx, [ebp+8]  ; index")
+            asm.append("    lea eax, [eax + 4 + ecx*4]  ; argv[index] = esp + 4 + index*4")
+            asm.append("    mov eax, [eax]")
+            asm.append("    pop ebp")
+            asm.append("    ret")
         else:
             # In kernel mode, export mininim_kernel_main
             asm.append("global mininim_kernel_main")

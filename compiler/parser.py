@@ -330,6 +330,8 @@ class Parser:
         return ReturnStmt(value)
 
     def parse_if_stmt(self) -> IfStmt:
+        # Record column of the 'if' keyword for matching else/elif
+        if_col = self.current_token().col
         self.advance()  # Skip 'if'
 
         condition = self.parse_expression()
@@ -339,9 +341,10 @@ class Parser:
         # Parse then block
         then_block = self.parse_block()
 
-        # Parse elif blocks
+        # Parse elif blocks - only if at same column as this if
         elif_blocks = []
-        while self.current_token().type == TokenType.ELIF:
+        while (self.current_token().type == TokenType.ELIF and
+               self.current_token().col == if_col):
             self.advance()
             elif_cond = self.parse_expression()
             self.expect(TokenType.COLON)
@@ -349,9 +352,10 @@ class Parser:
             elif_body = self.parse_block()
             elif_blocks.append((elif_cond, elif_body))
 
-        # Parse else block
+        # Parse else block - only if at same column as this if
         else_block = None
-        if self.current_token().type == TokenType.ELSE:
+        if (self.current_token().type == TokenType.ELSE and
+            self.current_token().col == if_col):
             self.advance()
             self.expect(TokenType.COLON)
             self.skip_newlines()

@@ -1,0 +1,147 @@
+# sort - sort structured data by field
+# Usage: ps | sort FIELD_INDEX [desc]
+# Example: ps | sort 3 desc  (sort by RSS descending)
+
+const SYS_read: int32 = 3
+const SYS_write: int32 = 4
+const SYS_exit: int32 = 1
+const SYS_brk: int32 = 45
+
+const STDIN: int32 = 0
+const STDOUT: int32 = 1
+const STDERR: int32 = 2
+
+extern proc syscall1(num: int32, arg1: int32): int32
+extern proc syscall3(num: int32, arg1: int32, arg2: int32, arg3: int32): int32
+extern proc get_argc(): int32
+extern proc get_argv(index: int32): ptr uint8
+
+proc strlen(s: ptr uint8): int32 =
+  var i: int32 = 0
+  while s[i] != cast[uint8](0):
+    i = i + 1
+  return i
+
+proc print_err(msg: ptr uint8) =
+  var len: int32 = strlen(msg)
+  discard syscall3(SYS_write, STDERR, cast[int32](msg), len)
+
+proc parse_int(s: ptr uint8): int32 =
+  var result: int32 = 0
+  var i: int32 = 0
+  while s[i] >= cast[uint8](48):
+    if s[i] > cast[uint8](57):
+      break
+    result = result * 10 + cast[int32](s[i]) - 48
+    i = i + 1
+  return result
+
+# Check if string starts with "desc"
+proc is_desc(s: ptr uint8): int32 =
+  if s[0] == cast[uint8](100):  # 'd'
+    if s[1] == cast[uint8](101):  # 'e'
+      if s[2] == cast[uint8](115):  # 's'
+        if s[3] == cast[uint8](99):  # 'c'
+          return 1
+  return 0
+
+# Swap two records in buffer
+proc swap_records(buf: ptr uint8, i: int32, j: int32, rec_size: int32) =
+  var a_offset: int32 = i * rec_size
+  var b_offset: int32 = j * rec_size
+  var k: int32 = 0
+  while k < rec_size:
+    var tmp: uint8 = buf[a_offset + k]
+    buf[a_offset + k] = buf[b_offset + k]
+    buf[b_offset + k] = tmp
+    k = k + 1
+
+# Get field value from record
+proc get_field(buf: ptr uint8, rec_idx: int32, rec_size: int32, field_idx: int32): int32 =
+  var offset: int32 = rec_idx * rec_size + field_idx * 4
+  var field_ptr: ptr int32 = cast[ptr int32](cast[int32](buf) + offset)
+  return field_ptr[0]
+
+# Simple bubble sort (good enough for small datasets)
+proc bubble_sort(buf: ptr uint8, count: int32, rec_size: int32, field_idx: int32, descending: int32) =
+  var i: int32 = 0
+  while i < count - 1:
+    var j: int32 = 0
+    while j < count - 1 - i:
+      var val_j: int32 = get_field(buf, j, rec_size, field_idx)
+      var val_j1: int32 = get_field(buf, j + 1, rec_size, field_idx)
+
+      var should_swap: int32 = 0
+      if descending == 1:
+        # Descending: swap if j < j+1
+        if val_j < val_j1:
+          should_swap = 1
+      else:
+        # Ascending: swap if j > j+1
+        if val_j > val_j1:
+          should_swap = 1
+
+      if should_swap == 1:
+        swap_records(buf, j, j + 1, rec_size)
+
+      j = j + 1
+    i = i + 1
+
+proc main() =
+  var argc: int32 = get_argc()
+
+  # Default: sort by field 0, ascending
+  var sort_field: int32 = 0
+  var descending: int32 = 0
+
+  if argc >= 2:
+    var arg1: ptr uint8 = get_argv(1)
+    sort_field = parse_int(arg1)
+
+  if argc >= 3:
+    var arg2: ptr uint8 = get_argv(2)
+    descending = is_desc(arg2)
+
+  # Allocate buffer (256KB for up to ~5000 records)
+  var old_brk: int32 = syscall1(SYS_brk, 0)
+  var new_brk: int32 = old_brk + 262144
+  discard syscall1(SYS_brk, new_brk)
+  var header_buf: ptr uint8 = cast[ptr uint8](old_brk)
+  var data_buf: ptr uint8 = cast[ptr uint8](old_brk + 64)
+
+  # Read schema header (8 bytes)
+  var n: int32 = syscall3(SYS_read, STDIN, cast[int32](header_buf), 8)
+  if n != 8:
+    print_err(cast[ptr uint8]("Error: No schema header\n"))
+    discard syscall1(SYS_exit, 1)
+
+  var rec_size_ptr: ptr uint16 = cast[ptr uint16](header_buf + 6)
+  var rec_size: int32 = cast[int32](rec_size_ptr[0])
+
+  # Read record count
+  n = syscall3(SYS_read, STDIN, cast[int32](header_buf + 8), 4)
+  var rec_count_ptr: ptr int32 = cast[ptr int32](header_buf + 8)
+  var rec_count: int32 = rec_count_ptr[0]
+
+  # Read all records into buffer
+  var total_data: int32 = rec_count * rec_size
+  var bytes_read: int32 = 0
+  while bytes_read < total_data:
+    n = syscall3(SYS_read, STDIN, cast[int32](data_buf) + bytes_read, total_data - bytes_read)
+    if n <= 0:
+      break
+    bytes_read = bytes_read + n
+
+  # Sort the records
+  bubble_sort(data_buf, rec_count, rec_size, sort_field, descending)
+
+  # Output header
+  discard syscall3(SYS_write, STDOUT, cast[int32](header_buf), 8)
+
+  # Output record count
+  discard syscall3(SYS_write, STDOUT, cast[int32](header_buf + 8), 4)
+
+  # Output sorted records
+  discard syscall3(SYS_write, STDOUT, cast[int32](data_buf), bytes_read)
+
+  discard syscall1(SYS_exit, 0)
