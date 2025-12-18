@@ -16,6 +16,15 @@ const SYS_getcwd: int32 = 183
 const SYS_open: int32 = 5
 const SYS_readlink: int32 = 89
 const SYS_access: int32 = 33
+const SYS_getdents64: int32 = 220
+const SYS_ioctl: int32 = 54
+
+const O_RDONLY: int32 = 0
+const O_DIRECTORY: int32 = 65536
+
+# Terminal control
+const TCGETS: int32 = 0x5401
+const TCSETS: int32 = 0x5402
 
 const STDIN: int32 = 0
 const STDOUT: int32 = 1
@@ -663,6 +672,76 @@ proc exec_pipeline(input: ptr uint8) =
     discard syscall3(SYS_waitpid, pids[i], cast[int32](addr(status)), 0)
     i = i + 1
 
+# Tab completion - find commands in /bin/ matching prefix
+# Returns number of matches, stores matches in match_buf (space-separated)
+proc find_completions(prefix: ptr uint8, prefix_len: int32, match_buf: ptr uint8, single_match: ptr uint8): int32 =
+  var match_count: int32 = 0
+  var match_pos: int32 = 0
+  single_match[0] = cast[uint8](0)
+  match_buf[0] = cast[uint8](0)
+
+  # Allocate buffer for directory reading
+  var old_brk: int32 = syscall1(SYS_brk, 0)
+  var new_brk: int32 = old_brk + 8192
+  discard syscall1(SYS_brk, new_brk)
+  var dent_buf: ptr uint8 = cast[ptr uint8](old_brk)
+
+  # Open /bin/
+  var bin_path: ptr uint8 = cast[ptr uint8]("/bin")
+  var fd: int32 = syscall3(SYS_open, cast[int32](bin_path), O_RDONLY | O_DIRECTORY, 0)
+  if fd < 0:
+    return 0
+
+  var nread: int32 = syscall3(SYS_getdents64, fd, cast[int32](dent_buf), 8192)
+  while nread > 0:
+    var pos: int32 = 0
+    while pos < nread:
+      var reclen_ptr: ptr uint16 = cast[ptr uint16](cast[int32](dent_buf) + pos + 16)
+      var reclen: int32 = cast[int32](reclen_ptr[0])
+      var d_name: ptr uint8 = cast[ptr uint8](cast[int32](dent_buf) + pos + 19)
+
+      # Check if name starts with prefix
+      var matches: int32 = 1
+      var i: int32 = 0
+      while i < prefix_len:
+        if d_name[i] != prefix[i]:
+          matches = 0
+          break
+        if d_name[i] == cast[uint8](0):
+          matches = 0
+          break
+        i = i + 1
+
+      if matches != 0:
+        # Found a match
+        if match_count == 0:
+          # First match - copy to single_match
+          i = 0
+          while d_name[i] != cast[uint8](0):
+            single_match[i] = d_name[i]
+            i = i + 1
+          single_match[i] = cast[uint8](0)
+
+        # Add to match_buf with space separator
+        if match_pos > 0:
+          match_buf[match_pos] = cast[uint8](32)  # space
+          match_pos = match_pos + 1
+
+        i = 0
+        while d_name[i] != cast[uint8](0):
+          match_buf[match_pos] = d_name[i]
+          match_pos = match_pos + 1
+          i = i + 1
+
+        match_count = match_count + 1
+
+      pos = pos + reclen
+    nread = syscall3(SYS_getdents64, fd, cast[int32](dent_buf), 8192)
+
+  discard syscall1(SYS_close, fd)
+  match_buf[match_pos] = cast[uint8](0)
+  return match_count
+
 # Main REPL
 proc main() =
   # Welcome banner
@@ -673,8 +752,9 @@ proc main() =
   print(cast[ptr uint8]("║  • Type-safe binary pipelines                 ║\n"))
   print(cast[ptr uint8]("║  • Automatic schema detection                 ║\n"))
   print(cast[ptr uint8]("║  • Pretty table formatting                    ║\n"))
+  print(cast[ptr uint8]("║  • Tab completion for commands                ║\n"))
   print(cast[ptr uint8]("║                                                ║\n"))
-  print(cast[ptr uint8]("║  Try: bin/ps | bin/where | bin/select         ║\n"))
+  print(cast[ptr uint8]("║  Try: ps | ls -l                              ║\n"))
   print(cast[ptr uint8]("╚════════════════════════════════════════════════╝\n"))
   print(cast[ptr uint8]("\n"))
 
@@ -759,8 +839,14 @@ proc main() =
     print(cast[ptr uint8]("psh> "))
 
     # Read command character by character until newline or EOF
+    # Supports: tab completion, backspace
     var n: int32 = 0
     var c_buf: uint8 = cast[uint8](0)
+
+    # Buffers for tab completion (reuse memory after prompt_buf)
+    var match_buf: ptr uint8 = cast[ptr uint8](initial_brk + 9000)
+    var single_match: ptr uint8 = cast[ptr uint8](initial_brk + 13000)
+
     while n < 1000:
       var r: int32 = syscall3(SYS_read, STDIN, cast[int32](addr(c_buf)), 1)
       if r <= 0:
@@ -771,9 +857,66 @@ proc main() =
       if c_buf == cast[uint8](10):
         # Newline - end of line
         break
-      input[n] = c_buf
-      n = n + 1
+
+      if c_buf == cast[uint8](9):
+        # Tab - do completion
+        # Find word start (after last space or beginning)
+        var word_start: int32 = n
+        while word_start > 0:
+          if input[word_start - 1] == cast[uint8](32):  # space
+            break
+          word_start = word_start - 1
+        var word_len: int32 = n - word_start
+
+        if word_len > 0:
+          var prefix: ptr uint8 = cast[ptr uint8](cast[int32](input) + word_start)
+          var matches: int32 = find_completions(prefix, word_len, match_buf, single_match)
+
+          if matches == 1:
+            # Single match - complete it
+            var comp_len: int32 = strlen(single_match)
+            # Erase current word from display
+            var k: int32 = 0
+            while k < word_len:
+              discard syscall3(SYS_write, STDOUT, cast[int32]("\b \b"), 3)
+              k = k + 1
+            # Copy completion to input
+            k = 0
+            while k < comp_len:
+              input[word_start + k] = single_match[k]
+              k = k + 1
+            n = word_start + comp_len
+            # Print completed word
+            discard syscall3(SYS_write, STDOUT, cast[int32](single_match), comp_len)
+            # Add space after command
+            input[n] = cast[uint8](32)
+            n = n + 1
+            discard syscall3(SYS_write, STDOUT, cast[int32](" "), 1)
+          else:
+            if matches > 1:
+              # Multiple matches - show them
+              print(cast[ptr uint8]("\n"))
+              print(match_buf)
+              print(cast[ptr uint8]("\npsh> "))
+              # Reprint current input
+              input[n] = cast[uint8](0)
+              print(input)
+        discard 0  # Don't add tab to input
+      else:
+        if c_buf == cast[uint8](127):
+          # Backspace (DEL)
+          if n > 0:
+            n = n - 1
+            discard syscall3(SYS_write, STDOUT, cast[int32]("\b \b"), 3)
+        else:
+          # Regular character
+          input[n] = c_buf
+          n = n + 1
+          # Echo character
+          discard syscall3(SYS_write, STDOUT, cast[int32](addr(c_buf)), 1)
+
     input[n] = cast[uint8](0)
+    print(cast[ptr uint8]("\n"))  # Newline after input
 
     if running != 0:
 
