@@ -424,11 +424,89 @@ $(BIN_DIR)/%: $(USERLAND_DIR)/%.nim $(LIB_DIR)/syscalls.o | $(BIN_DIR)
 	@echo "  Created: $(BIN_DIR)/$* ($$(stat -c%s $(BIN_DIR)/$*) bytes)"
 	@rm -f compiler/$*.o compiler/$*.asm
 
+# Core utilities (original)
+CORE_UTILS = $(BIN_DIR)/echo $(BIN_DIR)/true $(BIN_DIR)/false $(BIN_DIR)/cat $(BIN_DIR)/edit
+
+# Data pipeline utilities
+DATA_UTILS = $(BIN_DIR)/ps $(BIN_DIR)/inspect $(BIN_DIR)/where $(BIN_DIR)/count $(BIN_DIR)/head $(BIN_DIR)/tail $(BIN_DIR)/select $(BIN_DIR)/sort $(BIN_DIR)/fmt $(BIN_DIR)/ls
+
+# Graphics utilities
+GRAPHICS_UTILS = $(BIN_DIR)/fbinfo $(BIN_DIR)/clear $(BIN_DIR)/demo $(BIN_DIR)/pixel $(BIN_DIR)/line $(BIN_DIR)/rect $(BIN_DIR)/circle
+
+# File manipulation utilities (new)
+FILE_UTILS = $(BIN_DIR)/rm $(BIN_DIR)/mkdir $(BIN_DIR)/rmdir $(BIN_DIR)/mv $(BIN_DIR)/touch $(BIN_DIR)/cp
+
+# Text processing utilities (new)
+TEXT_UTILS = $(BIN_DIR)/wc $(BIN_DIR)/tee $(BIN_DIR)/rev $(BIN_DIR)/yes $(BIN_DIR)/seq
+
+# System info utilities (new)
+SYSINFO_UTILS = $(BIN_DIR)/uname $(BIN_DIR)/free $(BIN_DIR)/uptime $(BIN_DIR)/hostname $(BIN_DIR)/whoami $(BIN_DIR)/id
+
+# Process utilities (new)
+PROC_UTILS = $(BIN_DIR)/kill $(BIN_DIR)/pidof $(BIN_DIR)/sleep
+
+# Disk utilities (new)
+DISK_UTILS = $(BIN_DIR)/df $(BIN_DIR)/du $(BIN_DIR)/stat $(BIN_DIR)/file $(BIN_DIR)/ln $(BIN_DIR)/readlink
+
+# Shell
+SHELL_UTILS = $(BIN_DIR)/psh
+
+# All utilities
+ALL_UTILS = $(CORE_UTILS) $(DATA_UTILS) $(GRAPHICS_UTILS) $(FILE_UTILS) $(TEXT_UTILS) $(SYSINFO_UTILS) $(PROC_UTILS) $(DISK_UTILS) $(SHELL_UTILS)
+
 # Build all userland utilities
 .PHONY: userland
-userland: $(BIN_DIR)/echo $(BIN_DIR)/true $(BIN_DIR)/false $(BIN_DIR)/cat $(BIN_DIR)/ps $(BIN_DIR)/inspect $(BIN_DIR)/edit $(BIN_DIR)/fbinfo $(BIN_DIR)/clear $(BIN_DIR)/demo $(BIN_DIR)/pixel $(BIN_DIR)/line $(BIN_DIR)/rect $(BIN_DIR)/circle
+userland: $(ALL_UTILS)
 	@echo "✓ All userland utilities built!"
-	@ls -lh $(BIN_DIR)/
+	@echo ""
+	@echo "Core utilities:"
+	@ls -lh $(CORE_UTILS) 2>/dev/null || true
+	@echo ""
+	@echo "Data pipeline:"
+	@ls -lh $(DATA_UTILS) 2>/dev/null || true
+	@echo ""
+	@echo "File utilities:"
+	@ls -lh $(FILE_UTILS) 2>/dev/null || true
+	@echo ""
+	@echo "Text utilities:"
+	@ls -lh $(TEXT_UTILS) 2>/dev/null || true
+	@echo ""
+	@echo "System info:"
+	@ls -lh $(SYSINFO_UTILS) 2>/dev/null || true
+	@echo ""
+	@echo "Process utilities:"
+	@ls -lh $(PROC_UTILS) 2>/dev/null || true
+	@echo ""
+	@echo "Disk utilities:"
+	@ls -lh $(DISK_UTILS) 2>/dev/null || true
+	@echo ""
+	@echo "Shell:"
+	@ls -lh $(SHELL_UTILS) 2>/dev/null || true
+
+# Build file utilities
+.PHONY: file-utils
+file-utils: $(FILE_UTILS)
+	@echo "✓ File utilities built!"
+
+# Build text utilities
+.PHONY: text-utils
+text-utils: $(TEXT_UTILS)
+	@echo "✓ Text utilities built!"
+
+# Build system info utilities
+.PHONY: sysinfo-utils
+sysinfo-utils: $(SYSINFO_UTILS)
+	@echo "✓ System info utilities built!"
+
+# Build process utilities
+.PHONY: proc-utils
+proc-utils: $(PROC_UTILS)
+	@echo "✓ Process utilities built!"
+
+# Build disk utilities
+.PHONY: disk-utils
+disk-utils: $(DISK_UTILS)
+	@echo "✓ Disk utilities built!"
 
 # Graphics utilities target
 .PHONY: graphics

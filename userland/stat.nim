@@ -1,0 +1,293 @@
+# stat - Display file or file system status
+# Usage: stat filename
+
+const SYS_read: int32 = 3
+const SYS_write: int32 = 4
+const SYS_exit: int32 = 1
+const SYS_brk: int32 = 45
+const SYS_lstat: int32 = 107
+
+const STDIN: int32 = 0
+const STDOUT: int32 = 1
+const STDERR: int32 = 2
+
+# File mode bits
+const S_IFMT: int32 = 61440    # 0170000
+const S_IFSOCK: int32 = 49152  # 0140000
+const S_IFLNK: int32 = 40960   # 0120000
+const S_IFREG: int32 = 32768   # 0100000
+const S_IFBLK: int32 = 24576   # 0060000
+const S_IFDIR: int32 = 16384   # 0040000
+const S_IFCHR: int32 = 8192    # 0020000
+const S_IFIFO: int32 = 4096    # 0010000
+
+extern proc syscall1(num: int32, arg1: int32): int32
+extern proc syscall2(num: int32, arg1: int32, arg2: int32): int32
+extern proc syscall3(num: int32, arg1: int32, arg2: int32, arg3: int32): int32
+extern proc get_argc(): int32
+extern proc get_argv(i: int32): ptr uint8
+
+proc strlen(s: ptr uint8): int32 =
+  var i: int32 = 0
+  while s[i] != cast[uint8](0):
+    i = i + 1
+  return i
+
+proc print(msg: ptr uint8) =
+  var len: int32 = strlen(msg)
+  discard syscall3(SYS_write, STDOUT, cast[int32](msg), len)
+
+proc print_err(msg: ptr uint8) =
+  var len: int32 = strlen(msg)
+  discard syscall3(SYS_write, STDERR, cast[int32](msg), len)
+
+proc print_num(n: int32) =
+  if n == 0:
+    discard syscall3(SYS_write, STDOUT, cast[int32]("0"), 1)
+    return
+
+  var buf: ptr uint8 = cast[ptr uint8](0)
+  var old_brk: int32 = syscall1(SYS_brk, 0)
+  var new_brk: int32 = old_brk + 32
+  discard syscall1(SYS_brk, new_brk)
+  buf = cast[ptr uint8](old_brk)
+
+  var num: int32 = n
+  var i: int32 = 0
+  while num > 0:
+    var digit: int32 = num % 10
+    buf[i] = cast[uint8](48 + digit)
+    num = num / 10
+    i = i + 1
+
+  # Reverse
+  var j: int32 = 0
+  var k: int32 = i - 1
+  while j < k:
+    var temp: uint8 = buf[j]
+    buf[j] = buf[k]
+    buf[k] = temp
+    j = j + 1
+    k = k - 1
+
+  discard syscall3(SYS_write, STDOUT, cast[int32](buf), i)
+
+proc print_hex(n: int32, digits: int32) =
+  var buf: ptr uint8 = cast[ptr uint8](0)
+  var old_brk: int32 = syscall1(SYS_brk, 0)
+  var new_brk: int32 = old_brk + 32
+  discard syscall1(SYS_brk, new_brk)
+  buf = cast[ptr uint8](old_brk)
+
+  var num: int32 = n
+  var i: int32 = 0
+  while i < digits:
+    var digit: int32 = num & 15
+    if digit < 10:
+      buf[i] = cast[uint8](48 + digit)
+    else:
+      buf[i] = cast[uint8](97 + digit - 10)
+    num = num >> 4
+    i = i + 1
+
+  # Reverse
+  var j: int32 = 0
+  var k: int32 = digits - 1
+  while j < k:
+    var temp: uint8 = buf[j]
+    buf[j] = buf[k]
+    buf[k] = temp
+    j = j + 1
+    k = k - 1
+
+  discard syscall3(SYS_write, STDOUT, cast[int32](buf), digits)
+
+proc print_octal(n: int32) =
+  var buf: ptr uint8 = cast[ptr uint8](0)
+  var old_brk: int32 = syscall1(SYS_brk, 0)
+  var new_brk: int32 = old_brk + 32
+  discard syscall1(SYS_brk, new_brk)
+  buf = cast[ptr uint8](old_brk)
+
+  var num: int32 = n
+  var i: int32 = 0
+  while i < 6:
+    var digit: int32 = num & 7
+    buf[i] = cast[uint8](48 + digit)
+    num = num >> 3
+    i = i + 1
+
+  # Reverse and skip leading zeros
+  var start: int32 = 5
+  while start > 0 and buf[start] == cast[uint8](48):
+    start = start - 1
+
+  var j: int32 = 0
+  while j <= start:
+    discard syscall3(SYS_write, STDOUT, cast[int32](buf) + start - j, 1)
+    j = j + 1
+
+proc main() =
+  var argc: int32 = get_argc()
+  if argc < 2:
+    print_err(cast[ptr uint8]("Usage: stat filename\n"))
+    discard syscall1(SYS_exit, 1)
+
+  var filename: ptr uint8 = get_argv(1)
+
+  # Allocate stat buffer
+  var old_brk: int32 = syscall1(SYS_brk, 0)
+  var new_brk: int32 = old_brk + 256
+  discard syscall1(SYS_brk, new_brk)
+  var stat_buf: ptr uint8 = cast[ptr uint8](old_brk)
+
+  # Call lstat
+  var ret: int32 = syscall2(SYS_lstat, cast[int32](filename), cast[int32](stat_buf))
+  if ret < 0:
+    print_err(cast[ptr uint8]("stat: cannot stat '"))
+    print_err(filename)
+    print_err(cast[ptr uint8]("'\n"))
+    discard syscall1(SYS_exit, 1)
+
+  # Parse stat structure (x86 32-bit):
+  # st_dev: uint64 (8 bytes) at offset 0
+  # st_ino: uint64 (8 bytes) at offset 8
+  # st_mode: uint32 (4 bytes) at offset 16
+  # st_nlink: uint32 (4 bytes) at offset 20
+  # st_uid: uint32 (4 bytes) at offset 24
+  # st_gid: uint32 (4 bytes) at offset 28
+  # st_rdev: uint64 (8 bytes) at offset 32
+  # st_size: int64 (8 bytes) at offset 48
+  # st_blksize: int32 (4 bytes) at offset 56
+  # st_blocks: int64 (8 bytes) at offset 60
+  # st_atime: int32 (4 bytes) at offset 68
+  # st_mtime: int32 (4 bytes) at offset 76
+  # st_ctime: int32 (4 bytes) at offset 84
+
+  var dev_ptr: ptr int32 = cast[ptr int32](cast[int32](stat_buf) + 0)
+  var ino_ptr: ptr int32 = cast[ptr int32](cast[int32](stat_buf) + 8)
+  var mode_ptr: ptr uint32 = cast[ptr uint32](cast[int32](stat_buf) + 16)
+  var nlink_ptr: ptr uint32 = cast[ptr uint32](cast[int32](stat_buf) + 20)
+  var uid_ptr: ptr uint32 = cast[ptr uint32](cast[int32](stat_buf) + 24)
+  var gid_ptr: ptr uint32 = cast[ptr uint32](cast[int32](stat_buf) + 28)
+  var rdev_ptr: ptr int32 = cast[ptr int32](cast[int32](stat_buf) + 32)
+  var size_ptr: ptr int32 = cast[ptr int32](cast[int32](stat_buf) + 48)
+  var blksize_ptr: ptr int32 = cast[ptr int32](cast[int32](stat_buf) + 56)
+  var blocks_ptr: ptr int32 = cast[ptr int32](cast[int32](stat_buf) + 60)
+  var atime_ptr: ptr int32 = cast[ptr int32](cast[int32](stat_buf) + 68)
+  var mtime_ptr: ptr int32 = cast[ptr int32](cast[int32](stat_buf) + 76)
+  var ctime_ptr: ptr int32 = cast[ptr int32](cast[int32](stat_buf) + 84)
+
+  var dev: int32 = dev_ptr[0]
+  var ino: int32 = ino_ptr[0]
+  var mode: int32 = cast[int32](mode_ptr[0])
+  var nlink: int32 = cast[int32](nlink_ptr[0])
+  var uid: int32 = cast[int32](uid_ptr[0])
+  var gid: int32 = cast[int32](gid_ptr[0])
+  var rdev: int32 = rdev_ptr[0]
+  var size: int32 = size_ptr[0]
+  var blksize: int32 = blksize_ptr[0]
+  var blocks: int32 = blocks_ptr[0]
+  var atime: int32 = atime_ptr[0]
+  var mtime: int32 = mtime_ptr[0]
+  var ctime: int32 = ctime_ptr[0]
+
+  # Print file info
+  print(cast[ptr uint8]("  File: "))
+  print(filename)
+  discard syscall3(SYS_write, STDOUT, cast[int32]("\n"), 1)
+
+  # Print size
+  print(cast[ptr uint8]("  Size: "))
+  print_num(size)
+  print(cast[ptr uint8]("    Blocks: "))
+  print_num(blocks)
+  print(cast[ptr uint8]("  IO Block: "))
+  print_num(blksize)
+  discard syscall3(SYS_write, STDOUT, cast[int32](" "), 1)
+
+  # Print file type
+  var file_type: int32 = mode & S_IFMT
+  if file_type == S_IFREG:
+    print(cast[ptr uint8]("regular file"))
+  if file_type == S_IFDIR:
+    print(cast[ptr uint8]("directory"))
+  if file_type == S_IFLNK:
+    print(cast[ptr uint8]("symbolic link"))
+  if file_type == S_IFCHR:
+    print(cast[ptr uint8]("character device"))
+  if file_type == S_IFBLK:
+    print(cast[ptr uint8]("block device"))
+  if file_type == S_IFIFO:
+    print(cast[ptr uint8]("FIFO"))
+  if file_type == S_IFSOCK:
+    print(cast[ptr uint8]("socket"))
+  discard syscall3(SYS_write, STDOUT, cast[int32]("\n"), 1)
+
+  # Device
+  print(cast[ptr uint8]("Device: "))
+  print_hex(dev, 4)
+  print(cast[ptr uint8]("h/"))
+  print_num(dev)
+  print(cast[ptr uint8]("d  Inode: "))
+  print_num(ino)
+  print(cast[ptr uint8]("  Links: "))
+  print_num(nlink)
+  discard syscall3(SYS_write, STDOUT, cast[int32]("\n"), 1)
+
+  # Access mode
+  print(cast[ptr uint8]("Access: ("))
+  print_octal(mode & 4095)
+  print(cast[ptr uint8]("/"))
+
+  # Permission string
+  var perms: ptr uint8 = cast[ptr uint8]("----------")
+  if file_type == S_IFDIR:
+    perms[0] = cast[uint8](100)  # 'd'
+  if file_type == S_IFLNK:
+    perms[0] = cast[uint8](108)  # 'l'
+  if file_type == S_IFCHR:
+    perms[0] = cast[uint8](99)   # 'c'
+  if file_type == S_IFBLK:
+    perms[0] = cast[uint8](98)   # 'b'
+
+  if (mode & 256) != 0:
+    perms[1] = cast[uint8](114)  # 'r'
+  if (mode & 128) != 0:
+    perms[2] = cast[uint8](119)  # 'w'
+  if (mode & 64) != 0:
+    perms[3] = cast[uint8](120)  # 'x'
+  if (mode & 32) != 0:
+    perms[4] = cast[uint8](114)  # 'r'
+  if (mode & 16) != 0:
+    perms[5] = cast[uint8](119)  # 'w'
+  if (mode & 8) != 0:
+    perms[6] = cast[uint8](120)  # 'x'
+  if (mode & 4) != 0:
+    perms[7] = cast[uint8](114)  # 'r'
+  if (mode & 2) != 0:
+    perms[8] = cast[uint8](119)  # 'w'
+  if (mode & 1) != 0:
+    perms[9] = cast[uint8](120)  # 'x'
+
+  discard syscall3(SYS_write, STDOUT, cast[int32](perms), 10)
+  print(cast[ptr uint8](")  Uid: ("))
+  print_num(uid)
+  print(cast[ptr uint8](")   Gid: ("))
+  print_num(gid)
+  print(cast[ptr uint8](")\n"))
+
+  # Timestamps
+  print(cast[ptr uint8]("Access: "))
+  print_num(atime)
+  discard syscall3(SYS_write, STDOUT, cast[int32]("\n"), 1)
+
+  print(cast[ptr uint8]("Modify: "))
+  print_num(mtime)
+  discard syscall3(SYS_write, STDOUT, cast[int32]("\n"), 1)
+
+  print(cast[ptr uint8]("Change: "))
+  print_num(ctime)
+  discard syscall3(SYS_write, STDOUT, cast[int32]("\n"), 1)
+
+  discard syscall1(SYS_exit, 0)

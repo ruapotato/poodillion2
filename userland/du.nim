@@ -1,0 +1,233 @@
+# du - Estimate file space usage
+# Usage: du [-s] [path]
+# -s: Display only total for directory
+
+const SYS_read: int32 = 3
+const SYS_write: int32 = 4
+const SYS_open: int32 = 5
+const SYS_close: int32 = 6
+const SYS_exit: int32 = 1
+const SYS_brk: int32 = 45
+const SYS_lstat: int32 = 107
+const SYS_getdents64: int32 = 220
+
+const STDIN: int32 = 0
+const STDOUT: int32 = 1
+const STDERR: int32 = 2
+
+const O_RDONLY: int32 = 0
+const O_DIRECTORY: int32 = 65536  # 0x10000
+
+# File mode bits
+const S_IFMT: int32 = 61440    # 0170000 - file type mask
+const S_IFDIR: int32 = 16384   # 0040000 - directory
+
+extern proc syscall1(num: int32, arg1: int32): int32
+extern proc syscall2(num: int32, arg1: int32, arg2: int32): int32
+extern proc syscall3(num: int32, arg1: int32, arg2: int32, arg3: int32): int32
+extern proc get_argc(): int32
+extern proc get_argv(i: int32): ptr uint8
+
+# String utilities
+proc strlen(s: ptr uint8): int32 =
+  var i: int32 = 0
+  while s[i] != cast[uint8](0):
+    i = i + 1
+  return i
+
+proc print(msg: ptr uint8) =
+  var len: int32 = strlen(msg)
+  discard syscall3(SYS_write, STDOUT, cast[int32](msg), len)
+
+proc print_err(msg: ptr uint8) =
+  var len: int32 = strlen(msg)
+  discard syscall3(SYS_write, STDERR, cast[int32](msg), len)
+
+proc strcmp(s1: ptr uint8, s2: ptr uint8): int32 =
+  var i: int32 = 0
+  while true:
+    if s1[i] != s2[i]:
+      return 1
+    if s1[i] == cast[uint8](0):
+      return 0
+    i = i + 1
+  return 0
+
+# Print a number
+proc print_num(n: int32) =
+  if n == 0:
+    discard syscall3(SYS_write, STDOUT, cast[int32]("0"), 1)
+    return
+
+  var buf: ptr uint8 = cast[ptr uint8](0)
+  var old_brk: int32 = syscall1(SYS_brk, 0)
+  var new_brk: int32 = old_brk + 32
+  discard syscall1(SYS_brk, new_brk)
+  buf = cast[ptr uint8](old_brk)
+
+  var num: int32 = n
+  var i: int32 = 0
+  while num > 0:
+    var digit: int32 = num % 10
+    buf[i] = cast[uint8](48 + digit)
+    num = num / 10
+    i = i + 1
+
+  # Reverse
+  var j: int32 = 0
+  var k: int32 = i - 1
+  while j < k:
+    var temp: uint8 = buf[j]
+    buf[j] = buf[k]
+    buf[k] = temp
+    j = j + 1
+    k = k - 1
+
+  discard syscall3(SYS_write, STDOUT, cast[int32](buf), i)
+
+# String copy
+proc strcpy(dest: ptr uint8, src: ptr uint8): int32 =
+  var i: int32 = 0
+  while src[i] != cast[uint8](0):
+    dest[i] = src[i]
+    i = i + 1
+  dest[i] = cast[uint8](0)
+  return i
+
+# Append path component
+proc path_append(path: ptr uint8, name: ptr uint8) =
+  var path_len: int32 = strlen(path)
+  # Add slash if needed
+  if path_len > 0 and path[path_len - 1] != cast[uint8](47):
+    path[path_len] = cast[uint8](47)  # '/'
+    path_len = path_len + 1
+  # Copy name
+  var i: int32 = 0
+  while name[i] != cast[uint8](0):
+    path[path_len + i] = name[i]
+    i = i + 1
+  path[path_len + i] = cast[uint8](0)
+
+# Global variables for recursion
+var global_stat_buf: ptr uint8 = cast[ptr uint8](0)
+var global_dent_buf: ptr uint8 = cast[ptr uint8](0)
+var global_path_buf: ptr uint8 = cast[ptr uint8](0)
+var global_summary_only: int32 = 0
+
+# Calculate size of a file or directory
+proc calculate_size(path: ptr uint8): int32 =
+  # Get file stats
+  var ret: int32 = syscall2(SYS_lstat, cast[int32](path), cast[int32](global_stat_buf))
+  if ret < 0:
+    return 0
+
+  # stat structure:
+  # st_dev: uint64 (8 bytes) at offset 0
+  # st_ino: uint64 (8 bytes) at offset 8
+  # st_mode: uint32 (4 bytes) at offset 16
+  # st_nlink: uint32 (4 bytes) at offset 20
+  # ...
+  # st_size: int64 (8 bytes) at offset 48
+  # st_blksize: int32 (4 bytes) at offset 56
+  # st_blocks: int64 (8 bytes) at offset 60
+
+  var mode_ptr: ptr uint32 = cast[ptr uint32](cast[int32](global_stat_buf) + 16)
+  var blocks_ptr: ptr int32 = cast[ptr int32](cast[int32](global_stat_buf) + 60)
+
+  var mode: int32 = cast[int32](mode_ptr[0])
+  var blocks: int32 = blocks_ptr[0]
+
+  # Use block count * 512 for actual disk usage
+  var file_size: int32 = blocks * 512
+
+  # Check if directory
+  if (mode & S_IFMT) == S_IFDIR:
+    # Open directory
+    var fd: int32 = syscall3(SYS_open, cast[int32](path), O_RDONLY | O_DIRECTORY, 0)
+    if fd < 0:
+      return file_size
+
+    # Read directory entries and recurse
+    var nread: int32 = syscall3(SYS_getdents64, fd, cast[int32](global_dent_buf), 8192)
+
+    while nread > 0:
+      var pos: int32 = 0
+      while pos < nread:
+        var reclen_ptr: ptr uint16 = cast[ptr uint16](cast[int32](global_dent_buf) + pos + 16)
+        var reclen: int32 = cast[int32](reclen_ptr[0])
+        var d_name: ptr uint8 = cast[ptr uint8](cast[int32](global_dent_buf) + pos + 19)
+
+        # Skip . and ..
+        var skip: int32 = 0
+        if d_name[0] == cast[uint8](46):  # '.'
+          if d_name[1] == cast[uint8](0):
+            skip = 1
+          if d_name[1] == cast[uint8](46) and d_name[2] == cast[uint8](0):
+            skip = 1
+
+        if skip == 0:
+          # Build full path
+          var old_len: int32 = strcpy(global_path_buf, path)
+          path_append(global_path_buf, d_name)
+
+          # Recurse
+          var child_size: int32 = calculate_size(global_path_buf)
+          file_size = file_size + child_size
+
+          # Restore path
+          global_path_buf[old_len] = cast[uint8](0)
+
+        pos = pos + reclen
+
+      nread = syscall3(SYS_getdents64, fd, cast[int32](global_dent_buf), 8192)
+
+    discard syscall1(SYS_close, fd)
+
+    # Print directory size if not summary only
+    if global_summary_only == 0:
+      print_num(file_size / 1024)
+      discard syscall3(SYS_write, STDOUT, cast[int32]("\t"), 1)
+      print(path)
+      discard syscall3(SYS_write, STDOUT, cast[int32]("\n"), 1)
+
+  return file_size
+
+proc main() =
+  # Allocate memory
+  var old_brk: int32 = syscall1(SYS_brk, 0)
+  var new_brk: int32 = old_brk + 20480
+  discard syscall1(SYS_brk, new_brk)
+
+  # Memory layout:
+  # old_brk + 0: stat buffer (256 bytes)
+  # old_brk + 256: getdents buffer (8KB)
+  # old_brk + 8448: path buffer (4KB)
+  global_stat_buf = cast[ptr uint8](old_brk)
+  global_dent_buf = cast[ptr uint8](old_brk + 256)
+  global_path_buf = cast[ptr uint8](old_brk + 8448)
+
+  # Parse arguments
+  var argc: int32 = get_argc()
+  var target_path: ptr uint8 = cast[ptr uint8](".")
+  global_summary_only = 0
+
+  var i: int32 = 1
+  while i < argc:
+    var arg: ptr uint8 = get_argv(i)
+    if arg[0] == cast[uint8](45):  # '-'
+      if arg[1] == cast[uint8](115):  # 's'
+        global_summary_only = 1
+    else:
+      target_path = arg
+    i = i + 1
+
+  # Calculate total size
+  var total_size: int32 = calculate_size(target_path)
+
+  # Print total
+  print_num(total_size / 1024)
+  discard syscall3(SYS_write, STDOUT, cast[int32]("\t"), 1)
+  print(target_path)
+  discard syscall3(SYS_write, STDOUT, cast[int32]("\n"), 1)
+
+  discard syscall1(SYS_exit, 0)

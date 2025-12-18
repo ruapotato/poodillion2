@@ -11,6 +11,11 @@ const SYS_pipe: int32 = 42
 const SYS_dup2: int32 = 63
 const SYS_close: int32 = 6
 const SYS_brk: int32 = 45
+const SYS_chdir: int32 = 12
+const SYS_getcwd: int32 = 183
+const SYS_open: int32 = 5
+const SYS_readlink: int32 = 89
+const SYS_access: int32 = 21
 
 const STDIN: int32 = 0
 const STDOUT: int32 = 1
@@ -19,6 +24,14 @@ const STDERR: int32 = 2
 extern proc syscall1(num: int32, arg1: int32): int32
 extern proc syscall2(num: int32, arg1: int32, arg2: int32): int32
 extern proc syscall3(num: int32, arg1: int32, arg2: int32, arg3: int32): int32
+
+# Global state for shell (allocated in main)
+var g_cwd_buf: ptr uint8
+var g_prev_dir: ptr uint8
+var g_home_dir: ptr uint8
+var g_history: ptr int32  # Array of string pointers
+var g_history_count: int32 = 0
+var g_history_storage: ptr uint8  # Buffer for history strings
 
 # Print utilities
 proc print(msg: ptr uint8) =
@@ -84,6 +97,208 @@ proc strcpy(dest: ptr uint8, src: ptr uint8) =
     dest[i] = src[i]
     i = i + 1
   dest[i] = cast[uint8](0)
+
+# Concatenate two strings
+proc strcat(dest: ptr uint8, src: ptr uint8) =
+  var i: int32 = 0
+  while dest[i] != cast[uint8](0):
+    i = i + 1
+  var j: int32 = 0
+  while src[j] != cast[uint8](0):
+    dest[i] = src[j]
+    i = i + 1
+    j = j + 1
+  dest[i] = cast[uint8](0)
+
+# Check if file exists and is executable (simplified)
+proc file_exists(path: ptr uint8): int32 =
+  var result: int32 = syscall2(SYS_access, cast[int32](path), 0)  # F_OK = 0
+  if result == 0:
+    return 1
+  return 0
+
+# Try to find command in PATH directories
+# Returns pointer to resolved path in path_buf, or original cmd if not found
+proc resolve_path(cmd: ptr uint8, path_buf: ptr uint8): ptr uint8 =
+  # If command starts with / or ./, use as-is
+  if cmd[0] == cast[uint8](47):  # '/'
+    strcpy(path_buf, cmd)
+    return path_buf
+  if cmd[0] == cast[uint8](46):  # '.'
+    strcpy(path_buf, cmd)
+    return path_buf
+
+  # Try ./bin/
+  strcpy(path_buf, cast[ptr uint8]("./bin/"))
+  strcat(path_buf, cmd)
+  if file_exists(path_buf) != 0:
+    return path_buf
+
+  # Try /bin/
+  strcpy(path_buf, cast[ptr uint8]("/bin/"))
+  strcat(path_buf, cmd)
+  if file_exists(path_buf) != 0:
+    return path_buf
+
+  # Try /usr/bin/
+  strcpy(path_buf, cast[ptr uint8]("/usr/bin/"))
+  strcat(path_buf, cmd)
+  if file_exists(path_buf) != 0:
+    return path_buf
+
+  # Not found, return original with ./ prefix if needed
+  if cmd[0] == cast[uint8](47):  # starts with '/'
+    strcpy(path_buf, cmd)
+  else:
+    strcpy(path_buf, cast[ptr uint8]("./"))
+    strcat(path_buf, cmd)
+  return path_buf
+
+# Get current working directory
+# Returns length of path on success, -1 on error
+proc get_cwd(buf: ptr uint8, size: int32): int32 =
+  var result: int32 = syscall2(SYS_getcwd, cast[int32](buf), size)
+  if result < 0:
+    return -1
+  return strlen(buf)
+
+# Built-in: pwd - Print working directory
+# Uses g_cwd_buf for temp storage
+proc builtin_pwd(): int32 =
+  var len: int32 = get_cwd(g_cwd_buf, 512)
+  if len < 0:
+    print_err(cast[ptr uint8]("pwd: error getting current directory\n"))
+    return 1
+
+  println(g_cwd_buf)
+  return 0
+
+# Built-in: cd - Change directory
+proc builtin_cd(arg: ptr uint8): int32 =
+  var target: ptr uint8
+
+  # Handle different cd arguments
+  if arg == cast[ptr uint8](0):
+    # cd with no args - go to home
+    target = g_home_dir
+  else:
+    # cd path - go to specified path
+    target = arg
+
+  var result: int32 = syscall1(SYS_chdir, cast[int32](target))
+  if result != 0:
+    print_err(cast[ptr uint8]("cd: "))
+    print_err(target)
+    print_err(cast[ptr uint8](": No such file or directory\n"))
+    return 1
+
+  return 0
+
+# Built-in: env - Display environment variables
+proc builtin_env(): int32 =
+  # Read /proc/self/environ
+  var fd: int32 = syscall3(SYS_open, cast[int32]("/proc/self/environ"), 0, 0)  # O_RDONLY
+  if fd < 0:
+    print_err(cast[ptr uint8]("env: cannot open /proc/self/environ\n"))
+    return 1
+
+  var old_brk: int32 = syscall1(SYS_brk, 0)
+  var new_brk: int32 = old_brk + 8192
+  discard syscall1(SYS_brk, new_brk)
+  var buf: ptr uint8 = cast[ptr uint8](old_brk)
+
+  var n: int32 = syscall3(SYS_read, fd, cast[int32](buf), 8000)
+  discard syscall1(SYS_close, fd)
+
+  if n <= 0:
+    print_err(cast[ptr uint8]("env: error reading environment\n"))
+    return 1
+
+  # Environment variables are null-separated, print each one
+  var i: int32 = 0
+  while i < n:
+    if buf[i] == cast[uint8](0):
+      discard syscall3(SYS_write, STDOUT, cast[int32]("\n"), 1)
+      i = i + 1
+    else:
+      var start: int32 = i
+      while i < n:
+        if buf[i] == cast[uint8](0):
+          break
+        i = i + 1
+      discard syscall3(SYS_write, STDOUT, cast[int32](buf) + start, i - start)
+
+  return 0
+
+# Built-in: history - Display command history
+proc builtin_history(): int32 =
+  var i: int32 = 0
+  while i < g_history_count:
+    # Print command (without line numbers to avoid brk issues)
+    var cmd_ptr: ptr uint8 = cast[ptr uint8](g_history[i])
+    println(cmd_ptr)
+    i = i + 1
+  return 0
+
+# Add command to history
+proc add_to_history(cmd: ptr uint8) =
+  var cmd_len: int32 = strlen(cmd)
+  if cmd_len == 0:
+    return
+
+  # Use a circular buffer approach to avoid shifting
+  # For now, limit to 20 commands, then stop adding (simpler)
+  if g_history_count < 20:
+    # Calculate storage offset for this command
+    var storage_offset: int32 = g_history_count * 256
+    var dest: ptr uint8 = cast[ptr uint8](cast[int32](g_history_storage) + storage_offset)
+
+    # Copy command to storage
+    strcpy(dest, cmd)
+
+    # Store pointer in history array
+    g_history[g_history_count] = cast[int32](dest)
+    g_history_count = g_history_count + 1
+
+# Check if command is a built-in and execute it
+# Returns 1 if it was a built-in, 0 if not, -1 on error
+# cmd_buf should be pre-allocated by caller
+proc try_builtin_impl(trimmed: ptr uint8, cmd_buf: ptr uint8): int32 =
+  var i: int32 = 0
+  while trimmed[i] != cast[uint8](0):
+    if trimmed[i] == cast[uint8](32):  # space
+      break
+    cmd_buf[i] = trimmed[i]
+    i = i + 1
+  cmd_buf[i] = cast[uint8](0)
+
+  # Find argument (skip spaces)
+  while trimmed[i] == cast[uint8](32):
+    i = i + 1
+  var arg: ptr uint8
+  if trimmed[i] == cast[uint8](0):
+    arg = cast[ptr uint8](0)
+  else:
+    arg = cast[ptr uint8](cast[int32](trimmed) + i)
+
+  # Check for built-ins
+  if strcmp(cmd_buf, cast[ptr uint8]("pwd")) == 0:
+    discard builtin_pwd()
+    return 1
+
+  if strcmp(cmd_buf, cast[ptr uint8]("cd")) == 0:
+    discard builtin_cd(arg)
+    return 1
+
+  if strcmp(cmd_buf, cast[ptr uint8]("env")) == 0:
+    discard builtin_env()
+    return 1
+
+  if strcmp(cmd_buf, cast[ptr uint8]("history")) == 0:
+    discard builtin_history()
+    return 1
+
+  return 0
 
 # Display PSCH schema as a pretty table
 proc display_schema(buffer: ptr uint8) =
@@ -359,10 +574,10 @@ proc exec_pipeline(input: ptr uint8) =
       var argv: ptr int32 = cast[ptr int32](cast[int32](argv_base) + i * 64)  # 16 args * 4 bytes
       var argc: int32 = parse_args(cast[ptr uint8](cmd_ptrs[i]), arg_buf, argv)
 
-      # Build exec path from first argument (prepend ./ if needed)
+      # Build exec path from first argument (use PATH resolution)
       var path_buf: ptr uint8 = cast[ptr uint8](cast[int32](path_base) + i * 256)
       var first_arg: ptr uint8 = cast[ptr uint8](argv[0])
-      var exec_path: ptr uint8 = make_exec_path(first_arg, path_buf)
+      var exec_path: ptr uint8 = resolve_path(first_arg, path_buf)
 
       # Update argv[0] to use the exec path
       argv[0] = cast[int32](exec_path)
@@ -463,16 +678,84 @@ proc main() =
   print(cast[ptr uint8]("╚════════════════════════════════════════════════╝\n"))
   print(cast[ptr uint8]("\n"))
 
-  # Allocate input buffer
-  var old_brk: int32 = syscall1(SYS_brk, 0)
-  var new_brk: int32 = old_brk + 4096
-  discard syscall1(SYS_brk, new_brk)
-  var input: ptr uint8 = cast[ptr uint8](old_brk)
+  # Allocate ALL memory upfront - never use brk again!
+  var initial_brk: int32 = syscall1(SYS_brk, 0)
+  var total_mem: int32 = initial_brk + 65536  # 64KB total
+  discard syscall1(SYS_brk, total_mem)
+
+  # Memory layout:
+  # initial_brk + 0:     input buffer (1KB)
+  # initial_brk + 1024:  g_cwd_buf (512 bytes)
+  # initial_brk + 1536:  g_prev_dir (512 bytes)
+  # initial_brk + 2048:  g_home_dir (512 bytes)
+  # initial_brk + 2560:  g_history array (20 pointers * 4 = 80 bytes)
+  # initial_brk + 2640:  g_history_storage (20 commands * 256 = 5120 bytes)
+  # initial_brk + 7760:  prompt buffer (512 bytes)
+  # initial_brk + 8272:  cmd_buf for parsing (256 bytes)
+  # initial_brk + 8528:  reserved for future builtins (56KB)
+
+  var input: ptr uint8 = cast[ptr uint8](initial_brk)
+  g_cwd_buf = cast[ptr uint8](initial_brk + 1024)
+  g_prev_dir = cast[ptr uint8](initial_brk + 1536)
+  g_home_dir = cast[ptr uint8](initial_brk + 2048)
+  g_history = cast[ptr int32](initial_brk + 2560)
+  g_history_storage = cast[ptr uint8](initial_brk + 2640)
+  var prompt_buf: ptr uint8 = cast[ptr uint8](initial_brk + 7760)
+  var cmd_buf: ptr uint8 = cast[ptr uint8](initial_brk + 8272)
+
+  # Save the brk limit - built-ins can use memory starting here
+  var builtin_scratch: ptr uint8 = cast[ptr uint8](initial_brk + 8528)
+  var pipeline_brk_start: int32 = initial_brk + 8528
+
+  # Initialize previous directory to empty
+  g_prev_dir[0] = cast[uint8](0)
+
+  # Get HOME from environment (use /root as default)
+  strcpy(g_home_dir, cast[ptr uint8]("/root"))
+
+  # Try to read HOME from /proc/self/environ
+  var env_fd: int32 = syscall3(SYS_open, cast[int32]("/proc/self/environ"), 0, 0)
+  if env_fd >= 0:
+    var env_buf_brk: int32 = syscall1(SYS_brk, 0)
+    var env_buf_new: int32 = env_buf_brk + 4096
+    discard syscall1(SYS_brk, env_buf_new)
+    var env_buf: ptr uint8 = cast[ptr uint8](env_buf_brk)
+
+    var env_n: int32 = syscall3(SYS_read, env_fd, cast[int32](env_buf), 4000)
+    discard syscall1(SYS_close, env_fd)
+
+    if env_n > 0:
+      # Search for HOME= in environment
+      var i: int32 = 0
+      while i < env_n:
+        # Check if this entry starts with "HOME="
+        if i + 5 < env_n:
+          if env_buf[i] == cast[uint8](72):      # 'H'
+            if env_buf[i+1] == cast[uint8](79):  # 'O'
+              if env_buf[i+2] == cast[uint8](77):  # 'M'
+                if env_buf[i+3] == cast[uint8](69):  # 'E'
+                  if env_buf[i+4] == cast[uint8](61):  # '='
+                    # Found HOME=, copy the value
+                    var j: int32 = 0
+                    var k: int32 = i + 5
+                    while k < env_n:
+                      if env_buf[k] == cast[uint8](0):
+                        break
+                      g_home_dir[j] = env_buf[k]
+                      j = j + 1
+                      k = k + 1
+                    g_home_dir[j] = cast[uint8](0)
+        # Skip to next entry
+        while i < env_n:
+          if env_buf[i] == cast[uint8](0):
+            i = i + 1
+            break
+          i = i + 1
 
   # REPL loop
   var running: int32 = 1
   while running != 0:
-    # Display prompt
+    # Build prompt with current directory (but keep it simple for now)
     print(cast[ptr uint8]("psh> "))
 
     # Read command
@@ -499,7 +782,16 @@ proc main() =
 
         # Execute command if not exiting
         if running != 0:
-          exec_pipeline(input)
+          # Add to history
+          add_to_history(input)
+
+          # Try built-in commands first
+          var trimmed: ptr uint8 = trim_start(input)
+          trim_end(trimmed)
+          var is_builtin: int32 = try_builtin_impl(trimmed, cmd_buf)
+          if is_builtin == 0:
+            # Not a built-in, execute as pipeline
+            exec_pipeline(input)
 
   println(cast[ptr uint8]("Goodbye!"))
   discard syscall1(SYS_exit, 0)

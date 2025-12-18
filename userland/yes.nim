@@ -1,0 +1,44 @@
+# yes - output a string repeatedly until killed
+# Usage: yes        -> outputs "y" repeatedly
+#        yes hello  -> outputs "hello" repeatedly
+# Part of PoodillionOS text utilities
+
+const SYS_write: int32 = 4
+const SYS_exit: int32 = 1
+
+const STDOUT: int32 = 1
+
+extern proc syscall1(num: int32, arg1: int32): int32
+extern proc syscall3(num: int32, arg1: int32, arg2: int32, arg3: int32): int32
+extern proc get_argc(): int32
+extern proc get_argv(index: int32): ptr uint8
+
+proc strlen(s: ptr uint8): int32 =
+  var i: int32 = 0
+  while s[i] != cast[uint8](0):
+    i = i + 1
+  return i
+
+proc main() =
+  var argc: int32 = get_argc()
+  var output: ptr uint8
+  var output_len: int32
+
+  # If no argument, output "y"
+  if argc < 2:
+    output = cast[ptr uint8]("y\n")
+    output_len = 2
+  else:
+    # Use first argument
+    output = get_argv(1)
+    output_len = strlen(output)
+
+  # Output repeatedly forever
+  while true:
+    discard syscall3(SYS_write, STDOUT, cast[int32](output), output_len)
+    # If using argument, add newline after each output
+    if argc >= 2:
+      discard syscall3(SYS_write, STDOUT, cast[int32]("\n"), 1)
+
+  # Never reached, but keep compiler happy
+  discard syscall1(SYS_exit, 0)
