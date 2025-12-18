@@ -771,3 +771,45 @@ help:
 	@echo "  make check-tools    # Verify tools"
 	@echo "  make                # Build disk image"
 	@echo "  make run            # Boot it!"
+
+# =============================================================================
+# Distribution Targets
+# =============================================================================
+
+.PHONY: distro rootfs initramfs test-qemu
+
+# Create root filesystem
+rootfs:
+	@echo "Creating PoodillionOS root filesystem..."
+	@./distro/scripts/create_rootfs.sh
+
+# Create initramfs
+initramfs: userland
+	@echo "Creating PoodillionOS initramfs..."
+	@./distro/scripts/create_disk_image.sh
+
+# Test with QEMU (serial console)
+test-qemu: initramfs
+	@echo "Starting PoodillionOS in QEMU..."
+	qemu-system-x86_64 -m 256M \
+		-kernel /boot/vmlinuz-$$(uname -r) \
+		-initrd distro/poodillion-full.cpio.gz \
+		-append 'console=ttyS0 init=/bin/init' \
+		-nographic
+
+# Test with QEMU (graphical)
+test-qemu-gui: initramfs
+	@echo "Starting PoodillionOS in QEMU (GUI)..."
+	qemu-system-x86_64 -m 256M \
+		-kernel /boot/vmlinuz-$$(uname -r) \
+		-initrd distro/poodillion-full.cpio.gz \
+		-append 'console=tty0 init=/bin/init'
+
+# Full distro build
+distro: userland rootfs initramfs
+	@echo ""
+	@echo "=== PoodillionOS Distribution Built ==="
+	@echo "Root filesystem: distro/rootfs/"
+	@echo "Initramfs: distro/poodillion-full.cpio.gz"
+	@echo ""
+	@echo "Test with: make test-qemu"
