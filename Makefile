@@ -1,4 +1,4 @@
-# Makefile for PoodillionOS
+# Makefile for BrainhairOS
 # Builds custom bootloader, kernel, and disk image
 
 # Toolchain
@@ -23,14 +23,14 @@ BUILD_DIR = build
 STAGE1_BIN = $(BUILD_DIR)/stage1.bin
 STAGE2_BIN = $(BUILD_DIR)/stage2.bin
 KERNEL_BIN = $(BUILD_DIR)/kernel.bin
-DISK_IMG = $(BUILD_DIR)/poodillion.img
+DISK_IMG = $(BUILD_DIR)/brainhair.img
 
 # Source files
 STAGE1_ASM = $(BOOT_DIR)/stage1.asm
 STAGE2_ASM = $(BOOT_DIR)/stage2.asm
 BOOT_ASM = $(BOOT_DIR)/boot.asm
 KERNEL_C = $(KERNEL_DIR)/kernel.c
-KERNEL_NIM = $(NIM_DIR)/kernel.nim
+KERNEL_NIM = $(NIM_DIR)/kernel.bh
 
 # Object files
 BOOT_OBJ = $(BUILD_DIR)/boot.o
@@ -66,36 +66,36 @@ $(KERNEL_OBJ): $(KERNEL_C) | $(BUILD_DIR)
 	@echo "Compiling C kernel..."
 	$(CC) $(CFLAGS) -c $(KERNEL_C) -o $(KERNEL_OBJ)
 
-# Compile Mini-Nim kernel (for custom bootloader - deprecated)
-MININIM_KERNEL_OBJ = compiler/kernel.o
-$(MININIM_KERNEL_OBJ): kernel/kernel.nim
-	@echo "Compiling Mini-Nim kernel..."
-	cd compiler && python3 mininim.py ../kernel/kernel.nim --kernel
+# Compile Brainhair kernel (for custom bootloader - deprecated)
+BRAINHAIR_KERNEL_OBJ = compiler/kernel.o
+$(BRAINHAIR_KERNEL_OBJ): kernel/kernel.bh
+	@echo "Compiling Brainhair kernel..."
+	cd compiler && python3 brainhair.py ../kernel/kernel.bh --kernel
 
-# Compile Mini-Nim kernel for GRUB
-MININIM_KERNEL_OBJ_GRUB = $(BUILD_DIR)/kernel_mininim.o
+# Compile Brainhair kernel for GRUB
+BRAINHAIR_KERNEL_OBJ_GRUB = $(BUILD_DIR)/kernel_brainhair.o
 SERIAL_OBJ = $(BUILD_DIR)/serial.o
-MININIM_WRAPPER_OBJ = $(BUILD_DIR)/mininim_wrapper.o
+BRAINHAIR_WRAPPER_OBJ = $(BUILD_DIR)/brainhair_wrapper.o
 
-$(MININIM_KERNEL_OBJ_GRUB): kernel/kernel.nim | $(BUILD_DIR)
-	@echo "Compiling Mini-Nim kernel for GRUB..."
-	cd compiler && python3 mininim.py ../kernel/kernel.nim --kernel -o kernel_mininim
-	@mv compiler/kernel_mininim.o $(MININIM_KERNEL_OBJ_GRUB)
-	@echo "  Mini-Nim kernel compiled: $(MININIM_KERNEL_OBJ_GRUB)"
+$(BRAINHAIR_KERNEL_OBJ_GRUB): kernel/kernel.bh | $(BUILD_DIR)
+	@echo "Compiling Brainhair kernel for GRUB..."
+	cd compiler && python3 brainhair.py ../kernel/kernel.bh --kernel -o kernel_brainhair
+	@mv compiler/kernel_brainhair.o $(BRAINHAIR_KERNEL_OBJ_GRUB)
+	@echo "  Brainhair kernel compiled: $(BRAINHAIR_KERNEL_OBJ_GRUB)"
 
 $(SERIAL_OBJ): kernel/serial.asm | $(BUILD_DIR)
 	@echo "Assembling serial driver..."
 	$(AS) $(ASFLAGS_32) kernel/serial.asm -o $(SERIAL_OBJ)
 
-$(MININIM_WRAPPER_OBJ): kernel/mininim_wrapper.asm | $(BUILD_DIR)
-	@echo "Assembling Mini-Nim wrapper..."
-	$(AS) $(ASFLAGS_32) kernel/mininim_wrapper.asm -o $(MININIM_WRAPPER_OBJ)
+$(BRAINHAIR_WRAPPER_OBJ): kernel/brainhair_wrapper.asm | $(BUILD_DIR)
+	@echo "Assembling Brainhair wrapper..."
+	$(AS) $(ASFLAGS_32) kernel/brainhair_wrapper.asm -o $(BRAINHAIR_WRAPPER_OBJ)
 
-# Build kernel with Mini-Nim compiler
-.PHONY: kernel-mininim
-kernel-mininim: $(BOOT_OBJ) $(MININIM_KERNEL_OBJ)
-	@echo "Linking Mini-Nim kernel..."
-	$(LD) $(LDFLAGS) -o $(BUILD_DIR)/kernel.elf $(BOOT_OBJ) $(MININIM_KERNEL_OBJ)
+# Build kernel with Brainhair compiler
+.PHONY: kernel-brainhair
+kernel-brainhair: $(BOOT_OBJ) $(BRAINHAIR_KERNEL_OBJ)
+	@echo "Linking Brainhair kernel..."
+	$(LD) $(LDFLAGS) -o $(BUILD_DIR)/kernel.elf $(BOOT_OBJ) $(BRAINHAIR_KERNEL_OBJ)
 	@echo "Converting ELF to flat binary..."
 	objcopy -O binary $(BUILD_DIR)/kernel.elf $(KERNEL_BIN)
 	@echo "  Kernel size: $$(stat -c%s $(KERNEL_BIN)) bytes"
@@ -104,7 +104,7 @@ kernel-mininim: $(BOOT_OBJ) $(MININIM_KERNEL_OBJ)
 .PHONY: kernel-nim
 kernel-nim: $(BUILD_DIR)
 	@echo "Compiling Nim kernel..."
-	cd $(NIM_DIR) && $(NIM) c --nimcache:../$(BUILD_DIR)/nimcache -c kernel.nim
+	cd $(NIM_DIR) && $(NIM) c --nimcache:../$(BUILD_DIR)/nimcache -c kernel.bh
 	@echo "Compiling generated C code..."
 	$(CC) $(CFLAGS) -I$(NIM_DIR) -c $(BUILD_DIR)/nimcache/*.c -o $(BUILD_DIR)/kernel_nim.o 2>/dev/null || true
 	@echo "Nim kernel compiled!"
@@ -131,16 +131,16 @@ $(DISK_IMG): $(STAGE1_BIN) $(STAGE2_BIN) $(KERNEL_BIN)
 	@echo "Disk image created: $(DISK_IMG)"
 	@echo "  Size: $$(stat -c%s $(DISK_IMG)) bytes"
 
-# Build full disk image with Mini-Nim kernel
-.PHONY: mininim
-mininim: $(STAGE1_BIN) $(STAGE2_BIN) kernel-mininim
-	@echo "Creating disk image with Mini-Nim kernel..."
+# Build full disk image with Brainhair kernel
+.PHONY: brainhair
+brainhair: $(STAGE1_BIN) $(STAGE2_BIN) kernel-brainhair
+	@echo "Creating disk image with Brainhair kernel..."
 	dd if=/dev/zero of=$(DISK_IMG) bs=512 count=20480 2>/dev/null
 	dd if=$(STAGE1_BIN) of=$(DISK_IMG) conv=notrunc bs=512 count=1 2>/dev/null
 	dd if=$(STAGE2_BIN) of=$(DISK_IMG) conv=notrunc bs=512 seek=1 2>/dev/null
 	dd if=$(KERNEL_BIN) of=$(DISK_IMG) conv=notrunc bs=512 seek=18 2>/dev/null
-	@echo "✓ Mini-Nim disk image created: $(DISK_IMG)"
-	@echo "  Kernel: Mini-Nim compiled!"
+	@echo "✓ Brainhair disk image created: $(DISK_IMG)"
+	@echo "  Kernel: Brainhair compiled!"
 	@echo "  Run with: make run"
 
 # Build just the kernel
@@ -154,13 +154,13 @@ bootloader: $(STAGE1_BIN) $(STAGE2_BIN)
 # Run in QEMU
 .PHONY: run
 run: $(DISK_IMG)
-	@echo "Booting PoodillionOS in QEMU..."
+	@echo "Booting BrainhairOS in QEMU..."
 	qemu-system-i386 -drive file=$(DISK_IMG),format=raw
 
 # Run with debugging output
 .PHONY: run-debug
 run-debug: $(DISK_IMG)
-	@echo "Booting PoodillionOS in QEMU (debug mode)..."
+	@echo "Booting BrainhairOS in QEMU (debug mode)..."
 	qemu-system-i386 -drive file=$(DISK_IMG),format=raw -serial stdio -d cpu_reset
 
 # Run with GDB debugging
@@ -196,7 +196,7 @@ MULTIBOOT_ASM = $(BOOT_DIR)/multiboot.asm
 MULTIBOOT_OBJ = $(BUILD_DIR)/multiboot.o
 LINKER_GRUB = $(BOOT_DIR)/linker_grub.ld
 KERNEL_ELF = $(ISO_DIR)/boot/kernel.elf
-GRUB_ISO = $(BUILD_DIR)/poodillion_grub.iso
+GRUB_ISO = $(BUILD_DIR)/brainhair_grub.iso
 
 # Build multiboot kernel for GRUB (C version)
 $(KERNEL_ELF): $(MULTIBOOT_OBJ) $(KERNEL_OBJ) $(LINKER_GRUB) | $(GRUB_DIR)
@@ -204,12 +204,12 @@ $(KERNEL_ELF): $(MULTIBOOT_OBJ) $(KERNEL_OBJ) $(LINKER_GRUB) | $(GRUB_DIR)
 	$(LD) -m elf_i386 -T $(LINKER_GRUB) -o $(KERNEL_ELF) $(MULTIBOOT_OBJ) $(KERNEL_OBJ)
 	@echo "  Kernel size: $$(stat -c%s $(KERNEL_ELF)) bytes"
 
-# Build Mini-Nim multiboot kernel for GRUB
-KERNEL_MININIM_ELF = $(ISO_DIR)/boot/kernel_mininim.elf
-$(KERNEL_MININIM_ELF): $(MULTIBOOT_OBJ) $(MININIM_KERNEL_OBJ_GRUB) $(SERIAL_OBJ) $(MININIM_WRAPPER_OBJ) $(LINKER_GRUB) | $(GRUB_DIR)
-	@echo "Building Mini-Nim multiboot kernel for GRUB..."
-	$(LD) -m elf_i386 -T $(LINKER_GRUB) -o $(KERNEL_MININIM_ELF) $(MULTIBOOT_OBJ) $(MININIM_WRAPPER_OBJ) $(SERIAL_OBJ) $(MININIM_KERNEL_OBJ_GRUB)
-	@echo "  Mini-Nim Kernel size: $$(stat -c%s $(KERNEL_MININIM_ELF)) bytes"
+# Build Brainhair multiboot kernel for GRUB
+KERNEL_BRAINHAIR_ELF = $(ISO_DIR)/boot/kernel_brainhair.elf
+$(KERNEL_BRAINHAIR_ELF): $(MULTIBOOT_OBJ) $(BRAINHAIR_KERNEL_OBJ_GRUB) $(SERIAL_OBJ) $(BRAINHAIR_WRAPPER_OBJ) $(LINKER_GRUB) | $(GRUB_DIR)
+	@echo "Building Brainhair multiboot kernel for GRUB..."
+	$(LD) -m elf_i386 -T $(LINKER_GRUB) -o $(KERNEL_BRAINHAIR_ELF) $(MULTIBOOT_OBJ) $(BRAINHAIR_WRAPPER_OBJ) $(SERIAL_OBJ) $(BRAINHAIR_KERNEL_OBJ_GRUB)
+	@echo "  Brainhair Kernel size: $$(stat -c%s $(KERNEL_BRAINHAIR_ELF)) bytes"
 
 $(MULTIBOOT_OBJ): $(MULTIBOOT_ASM) | $(BUILD_DIR)
 	@echo "Assembling multiboot header..."
@@ -220,7 +220,7 @@ $(GRUB_DIR):
 	@echo "set timeout=0" > $(GRUB_DIR)/grub.cfg
 	@echo "set default=0" >> $(GRUB_DIR)/grub.cfg
 	@echo "" >> $(GRUB_DIR)/grub.cfg
-	@echo 'menuentry "PoodillionOS" {' >> $(GRUB_DIR)/grub.cfg
+	@echo 'menuentry "BrainhairOS" {' >> $(GRUB_DIR)/grub.cfg
 	@echo "    multiboot /boot/kernel.elf" >> $(GRUB_DIR)/grub.cfg
 	@echo "    boot" >> $(GRUB_DIR)/grub.cfg
 	@echo "}" >> $(GRUB_DIR)/grub.cfg
@@ -238,28 +238,28 @@ grub: $(GRUB_ISO)
 
 .PHONY: run-grub
 run-grub: $(KERNEL_ELF)
-	@echo "Booting PoodillionOS with GRUB (multiboot)..."
+	@echo "Booting BrainhairOS with GRUB (multiboot)..."
 	@echo "Serial output below (Ctrl-C to exit):"
 	@echo "========================================"
 	qemu-system-i386 -kernel $(KERNEL_ELF) -display none -serial stdio
 
-# Mini-Nim kernel targets
-.PHONY: grub-mininim
-grub-mininim: $(KERNEL_MININIM_ELF)
-	@echo "✓ Mini-Nim kernel ready!"
-	@echo "  Boot with: make run-grub-mininim"
+# Brainhair kernel targets
+.PHONY: grub-brainhair
+grub-brainhair: $(KERNEL_BRAINHAIR_ELF)
+	@echo "✓ Brainhair kernel ready!"
+	@echo "  Boot with: make run-grub-brainhair"
 
-.PHONY: run-grub-mininim
-run-grub-mininim: $(KERNEL_MININIM_ELF)
-	@echo "Booting PoodillionOS Mini-Nim Kernel with GRUB..."
+.PHONY: run-grub-brainhair
+run-grub-brainhair: $(KERNEL_BRAINHAIR_ELF)
+	@echo "Booting BrainhairOS Brainhair Kernel with GRUB..."
 	@echo "Serial output below (Ctrl-C to exit):"
 	@echo "========================================"
-	qemu-system-i386 -kernel $(KERNEL_MININIM_ELF) -display none -serial stdio
+	qemu-system-i386 -kernel $(KERNEL_BRAINHAIR_ELF) -display none -serial stdio
 
-.PHONY: run-grub-mininim-gui
-run-grub-mininim-gui: $(KERNEL_MININIM_ELF)
-	@echo "Booting PoodillionOS Mini-Nim Kernel with GRUB (GUI)..."
-	qemu-system-i386 -kernel $(KERNEL_MININIM_ELF)
+.PHONY: run-grub-brainhair-gui
+run-grub-brainhair-gui: $(KERNEL_BRAINHAIR_ELF)
+	@echo "Booting BrainhairOS Brainhair Kernel with GRUB (GUI)..."
+	qemu-system-i386 -kernel $(KERNEL_BRAINHAIR_ELF)
 
 # Interactive Shell kernel targets
 KEYBOARD_OBJ = $(BUILD_DIR)/keyboard.o
@@ -296,7 +296,7 @@ shell: $(KERNEL_SHELL_ELF)
 
 .PHONY: run-shell
 run-shell: $(KERNEL_SHELL_ELF)
-	@echo "Booting PoodillionOS Interactive Shell..."
+	@echo "Booting BrainhairOS Interactive Shell..."
 	@echo "========================================"
 	@echo "Type commands and press Enter."
 	@echo "Try: help, clear, echo, ls, ps, uname"
@@ -305,7 +305,7 @@ run-shell: $(KERNEL_SHELL_ELF)
 
 .PHONY: run-shell-serial
 run-shell-serial: $(KERNEL_SHELL_ELF)
-	@echo "Booting PoodillionOS Interactive Shell (with serial)..."
+	@echo "Booting BrainhairOS Interactive Shell (with serial)..."
 	@echo "========================================"
 	qemu-system-i386 -kernel $(KERNEL_SHELL_ELF) -serial stdio
 
@@ -329,72 +329,72 @@ serial-shell: $(KERNEL_SERIAL_SHELL_ELF)
 
 .PHONY: run-serial-shell
 run-serial-shell: $(KERNEL_SERIAL_SHELL_ELF)
-	@echo "Booting PoodillionOS Serial Shell..."
+	@echo "Booting BrainhairOS Serial Shell..."
 	@echo "Serial output below (Ctrl-C to exit):"
 	@echo "========================================"
 	qemu-system-i386 -kernel $(KERNEL_SERIAL_SHELL_ELF) -display none -serial stdio
 
-# Mini-Nim Shell kernel targets (VGA-based, kept for reference)
-MININIM_SHELL_OBJ = $(BUILD_DIR)/shell_mininim.o
-MININIM_SHELL_WRAPPER_OBJ = $(BUILD_DIR)/mininim_shell_wrapper.o
-KERNEL_MININIM_SHELL_ELF = $(ISO_DIR)/boot/kernel_mininim_shell.elf
+# Brainhair Shell kernel targets (VGA-based, kept for reference)
+BRAINHAIR_SHELL_OBJ = $(BUILD_DIR)/shell_brainhair.o
+BRAINHAIR_SHELL_WRAPPER_OBJ = $(BUILD_DIR)/brainhair_shell_wrapper.o
+KERNEL_BRAINHAIR_SHELL_ELF = $(ISO_DIR)/boot/kernel_brainhair_shell.elf
 
-$(MININIM_SHELL_OBJ): kernel/shell_mininim.nim | $(BUILD_DIR)
-	@echo "Compiling Mini-Nim shell kernel..."
-	cd compiler && python3 mininim.py ../kernel/shell_mininim.nim --kernel -o shell_mininim
-	@mv compiler/shell_mininim.o $(MININIM_SHELL_OBJ)
-	@echo "  Mini-Nim shell compiled: $(MININIM_SHELL_OBJ)"
+$(BRAINHAIR_SHELL_OBJ): kernel/shell_brainhair.bh | $(BUILD_DIR)
+	@echo "Compiling Brainhair shell kernel..."
+	cd compiler && python3 brainhair.py ../kernel/shell_brainhair.bh --kernel -o shell_brainhair
+	@mv compiler/shell_brainhair.o $(BRAINHAIR_SHELL_OBJ)
+	@echo "  Brainhair shell compiled: $(BRAINHAIR_SHELL_OBJ)"
 
-$(MININIM_SHELL_WRAPPER_OBJ): kernel/mininim_shell_wrapper.asm | $(BUILD_DIR)
-	@echo "Assembling Mini-Nim shell wrapper..."
-	$(AS) $(ASFLAGS_32) kernel/mininim_shell_wrapper.asm -o $(MININIM_SHELL_WRAPPER_OBJ)
+$(BRAINHAIR_SHELL_WRAPPER_OBJ): kernel/brainhair_shell_wrapper.asm | $(BUILD_DIR)
+	@echo "Assembling Brainhair shell wrapper..."
+	$(AS) $(ASFLAGS_32) kernel/brainhair_shell_wrapper.asm -o $(BRAINHAIR_SHELL_WRAPPER_OBJ)
 
-$(KERNEL_MININIM_SHELL_ELF): $(MULTIBOOT_OBJ) $(SERIAL_OBJ) $(MININIM_SHELL_WRAPPER_OBJ) $(MININIM_SHELL_OBJ) $(LINKER_GRUB) | $(GRUB_DIR)
-	@echo "Building Mini-Nim shell kernel for GRUB..."
-	$(LD) -m elf_i386 -T $(LINKER_GRUB) -o $(KERNEL_MININIM_SHELL_ELF) $(MULTIBOOT_OBJ) $(MININIM_SHELL_WRAPPER_OBJ) $(SERIAL_OBJ) $(MININIM_SHELL_OBJ)
-	@echo "  Mini-Nim Shell Kernel size: $$(stat -c%s $(KERNEL_MININIM_SHELL_ELF)) bytes"
+$(KERNEL_BRAINHAIR_SHELL_ELF): $(MULTIBOOT_OBJ) $(SERIAL_OBJ) $(BRAINHAIR_SHELL_WRAPPER_OBJ) $(BRAINHAIR_SHELL_OBJ) $(LINKER_GRUB) | $(GRUB_DIR)
+	@echo "Building Brainhair shell kernel for GRUB..."
+	$(LD) -m elf_i386 -T $(LINKER_GRUB) -o $(KERNEL_BRAINHAIR_SHELL_ELF) $(MULTIBOOT_OBJ) $(BRAINHAIR_SHELL_WRAPPER_OBJ) $(SERIAL_OBJ) $(BRAINHAIR_SHELL_OBJ)
+	@echo "  Brainhair Shell Kernel size: $$(stat -c%s $(KERNEL_BRAINHAIR_SHELL_ELF)) bytes"
 
-.PHONY: mininim-shell
-mininim-shell: $(KERNEL_MININIM_SHELL_ELF)
-	@echo "✓ Mini-Nim shell kernel ready!"
-	@echo "  Boot with: make run-mininim-shell"
+.PHONY: brainhair-shell
+brainhair-shell: $(KERNEL_BRAINHAIR_SHELL_ELF)
+	@echo "✓ Brainhair shell kernel ready!"
+	@echo "  Boot with: make run-brainhair-shell"
 
-.PHONY: run-mininim-shell
-run-mininim-shell: $(KERNEL_MININIM_SHELL_ELF)
-	@echo "Booting PoodillionOS Mini-Nim Shell (VGA)..."
+.PHONY: run-brainhair-shell
+run-brainhair-shell: $(KERNEL_BRAINHAIR_SHELL_ELF)
+	@echo "Booting BrainhairOS Brainhair Shell (VGA)..."
 	@echo "========================================"
-	@echo "Shell written in Mini-Nim!"
+	@echo "Shell written in Brainhair!"
 	@echo "Commands: ls, cat, echo, help"
 	@echo "========================================"
-	qemu-system-i386 -kernel $(KERNEL_MININIM_SHELL_ELF)
+	qemu-system-i386 -kernel $(KERNEL_BRAINHAIR_SHELL_ELF)
 
-# NEW: Full Mini-Nim Shell with extern functions (SERIAL OUTPUT)
+# NEW: Full Brainhair Shell with extern functions (SERIAL OUTPUT)
 .PHONY: run-nim-shell
 run-nim-shell: build/kernel_shell_nim.elf
 	@echo "========================================"
-	@echo "  PoodillionOS v0.1 - Mini-Nim Shell"
+	@echo "  BrainhairOS v0.1 - Brainhair Shell"
 	@echo "========================================"
-	@echo "Full OS shell written in Mini-Nim!"
+	@echo "Full OS shell written in Brainhair!"
 	@echo "Commands: ls, cat, echo, help"
 	@echo "Press Ctrl-C to exit"
 	@echo "========================================"
 	qemu-system-i386 -kernel build/kernel_shell_nim.elf -serial stdio -display none
 
-# Build Mini-Nim shell kernel
-build/kernel_shell_nim.elf: compiler/shell_nim.o build/multiboot.o build/serial.o kernel/mininim_shell_wrapper.asm | $(BUILD_DIR)
-	@echo "Building Mini-Nim shell kernel..."
-	@nasm -f elf32 kernel/mininim_shell_wrapper.asm -o build/wrapper_shell.o
+# Build Brainhair shell kernel
+build/kernel_shell_nim.elf: compiler/shell_nim.o build/multiboot.o build/serial.o kernel/brainhair_shell_wrapper.asm | $(BUILD_DIR)
+	@echo "Building Brainhair shell kernel..."
+	@nasm -f elf32 kernel/brainhair_shell_wrapper.asm -o build/wrapper_shell.o
 	@ld -m elf_i386 -T boot/linker_grub.ld -o build/kernel_shell_nim.elf build/multiboot.o build/wrapper_shell.o build/serial.o compiler/shell_nim.o
-	@echo "  Mini-Nim Shell Kernel: $$(stat -c%s build/kernel_shell_nim.elf) bytes"
+	@echo "  Brainhair Shell Kernel: $$(stat -c%s build/kernel_shell_nim.elf) bytes"
 
-compiler/shell_nim.o: kernel/shell_nim.nim
-	@echo "Compiling Mini-Nim shell..."
-	cd compiler && python3 mininim.py ../kernel/shell_nim.nim --kernel -o shell_nim
+compiler/shell_nim.o: kernel/shell_nim.bh
+	@echo "Compiling Brainhair shell..."
+	cd compiler && python3 brainhair.py ../kernel/shell_nim.bh --kernel -o shell_nim
 	@echo "  Shell compiled: $$(stat -c%s compiler/shell_nim.o) bytes"
 
 .PHONY: run-grub-iso
 run-grub-iso: $(GRUB_ISO)
-	@echo "Booting PoodillionOS from GRUB ISO..."
+	@echo "Booting BrainhairOS from GRUB ISO..."
 	qemu-system-i386 -cdrom $(GRUB_ISO)
 
 # ========== USER LAND UTILITIES ==========
@@ -408,21 +408,14 @@ BIN_DIR = bin
 $(BIN_DIR):
 	@mkdir -p $(BIN_DIR)
 
-# Build syscall library
+# Build syscall library (using self-hosted assembler)
 $(LIB_DIR)/syscalls.o: $(LIB_DIR)/syscalls.asm | $(BUILD_DIR)
 	@echo "Assembling syscall library..."
-	$(AS) $(ASFLAGS_32) $(LIB_DIR)/syscalls.asm -o $(LIB_DIR)/syscalls.o
+	@./bin/basm $(LIB_DIR)/syscalls.asm $(LIB_DIR)/syscalls.o
 
-# Generic rule to compile userland utilities
-$(BIN_DIR)/%: $(USERLAND_DIR)/%.nim $(LIB_DIR)/syscalls.o | $(BIN_DIR)
-	@echo "Compiling $* utility..."
-	cd compiler && python3 mininim.py ../$(USERLAND_DIR)/$*.nim --asm-only > $*.asm
-	@echo "Assembling $* utility..."
-	$(AS) $(ASFLAGS_32) compiler/$*.asm -o compiler/$*.o
-	@echo "Linking $* utility..."
-	$(LD) -m elf_i386 -o $(BIN_DIR)/$* compiler/$*.o $(LIB_DIR)/syscalls.o
-	@echo "  Created: $(BIN_DIR)/$* ($$(stat -c%s $(BIN_DIR)/$*) bytes)"
-	@rm -f compiler/$*.o compiler/$*.asm
+# Generic rule to compile userland utilities (using self-hosted toolchain)
+$(BIN_DIR)/%: $(USERLAND_DIR)/%.bh $(LIB_DIR)/syscalls.o | $(BIN_DIR)
+	@./bin/bhbuild $(USERLAND_DIR)/$*.bh $(BIN_DIR)/$*
 
 # Core utilities (original)
 CORE_UTILS = $(BIN_DIR)/echo $(BIN_DIR)/true $(BIN_DIR)/false $(BIN_DIR)/cat $(BIN_DIR)/edit
@@ -737,7 +730,7 @@ disasm-kernel: $(KERNEL_BIN)
 # Display help
 .PHONY: help
 help:
-	@echo "PoodillionOS Build System"
+	@echo "BrainhairOS Build System"
 	@echo "========================="
 	@echo ""
 	@echo "Primary Targets:"
@@ -750,7 +743,7 @@ help:
 	@echo "Build Targets:"
 	@echo "  kernel         - Build kernel only"
 	@echo "  bootloader     - Build custom bootloader only"
-	@echo "  mininim        - Build with Mini-Nim kernel"
+	@echo "  brainhair        - Build with Brainhair kernel"
 	@echo ""
 	@echo "Debug Targets:"
 	@echo "  run-debug      - Boot in QEMU with debug output"
@@ -780,36 +773,36 @@ help:
 
 # Create root filesystem
 rootfs:
-	@echo "Creating PoodillionOS root filesystem..."
+	@echo "Creating BrainhairOS root filesystem..."
 	@./distro/scripts/create_rootfs.sh
 
 # Create initramfs
 initramfs: userland
-	@echo "Creating PoodillionOS initramfs..."
+	@echo "Creating BrainhairOS initramfs..."
 	@./distro/scripts/create_disk_image.sh
 
 # Test with QEMU (serial console)
 test-qemu: initramfs
-	@echo "Starting PoodillionOS in QEMU..."
+	@echo "Starting BrainhairOS in QEMU..."
 	qemu-system-x86_64 -m 256M \
 		-kernel /boot/vmlinuz-$$(uname -r) \
-		-initrd distro/poodillion-full.cpio.gz \
+		-initrd distro/brainhair-full.cpio.gz \
 		-append 'console=ttyS0 rdinit=/init' \
 		-nographic
 
 # Test with QEMU (graphical)
 test-qemu-gui: initramfs
-	@echo "Starting PoodillionOS in QEMU (GUI)..."
+	@echo "Starting BrainhairOS in QEMU (GUI)..."
 	qemu-system-x86_64 -m 256M \
 		-kernel /boot/vmlinuz-$$(uname -r) \
-		-initrd distro/poodillion-full.cpio.gz \
+		-initrd distro/brainhair-full.cpio.gz \
 		-append 'console=tty0 rdinit=/init'
 
 # Full distro build
 distro: userland rootfs initramfs
 	@echo ""
-	@echo "=== PoodillionOS Distribution Built ==="
+	@echo "=== BrainhairOS Distribution Built ==="
 	@echo "Root filesystem: distro/rootfs/"
-	@echo "Initramfs: distro/poodillion-full.cpio.gz"
+	@echo "Initramfs: distro/brainhair-full.cpio.gz"
 	@echo ""
 	@echo "Test with: make test-qemu"
