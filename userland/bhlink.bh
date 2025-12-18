@@ -1,0 +1,709 @@
+# bhlink.bh - Brainhair ELF32 Linker
+# Links ELF32 relocatable object files into executables
+
+const SYS_read: int32 = 3
+const SYS_write: int32 = 4
+const SYS_open: int32 = 5
+const SYS_close: int32 = 6
+const SYS_brk: int32 = 45
+const SYS_exit: int32 = 1
+
+const O_RDONLY: int32 = 0
+const O_WRONLY: int32 = 1
+const O_CREAT: int32 = 64
+const O_TRUNC: int32 = 512
+
+const STDOUT: int32 = 1
+const STDERR: int32 = 2
+
+# ELF constants
+const ELF_MAGIC: int32 = 0x464C457F   # "\x7fELF"
+const ET_REL: int32 = 1                # Relocatable file
+const ET_EXEC: int32 = 2               # Executable file
+const EM_386: int32 = 3                # Intel 80386
+const PT_LOAD: int32 = 1               # Loadable segment
+
+# Relocation types
+const R_386_32: int32 = 1              # Direct 32-bit
+const R_386_PC32: int32 = 2            # PC-relative 32-bit
+
+# Section header types
+const SHT_NULL: int32 = 0
+const SHT_PROGBITS: int32 = 1
+const SHT_SYMTAB: int32 = 2
+const SHT_STRTAB: int32 = 3
+const SHT_NOBITS: int32 = 8
+const SHT_REL: int32 = 9
+
+# Base addresses for ELF segments
+const BASE_ADDR: int32 = 0x08048000    # Load address
+const TEXT_ADDR: int32 = 0x08049000    # Code segment
+const DATA_ADDR: int32 = 0x0804A000    # Data segment
+
+# Maximum sizes
+const MAX_FILES: int32 = 16
+const MAX_SYMBOLS: int32 = 4096
+const MAX_SECTIONS: int32 = 64
+const MAX_RELOCS: int32 = 4096
+
+extern proc syscall1(num: int32, a1: int32): int32
+extern proc syscall3(num: int32, a1: int32, a2: int32, a3: int32): int32
+extern proc get_argc(): int32
+extern proc get_argv(index: int32): ptr uint8
+
+# Output buffer
+var g_output: ptr uint8 = cast[ptr uint8](0)
+var g_output_len: int32 = 0
+var g_output_cap: int32 = 0
+
+# Combined sections
+var g_text: ptr uint8 = cast[ptr uint8](0)
+var g_text_len: int32 = 0
+var g_data: ptr uint8 = cast[ptr uint8](0)
+var g_data_len: int32 = 0
+var g_bss_len: int32 = 0
+
+# Symbol table
+var g_sym_names: ptr uint8 = cast[ptr uint8](0)    # String pool for names
+var g_sym_name_len: int32 = 0
+var g_sym_values: ptr int32 = cast[ptr int32](0)   # Symbol values (addresses)
+var g_sym_sections: ptr int32 = cast[ptr int32](0) # Symbol sections (0=undef, 1=text, 2=data, 3=bss)
+var g_sym_offsets: ptr int32 = cast[ptr int32](0)  # Offsets into g_sym_names
+var g_sym_count: int32 = 0
+
+# Relocations
+var g_reloc_offsets: ptr int32 = cast[ptr int32](0)  # Offset in text section
+var g_reloc_types: ptr int32 = cast[ptr int32](0)    # R_386_32 or R_386_PC32
+var g_reloc_syms: ptr int32 = cast[ptr int32](0)     # Symbol index
+var g_reloc_count: int32 = 0
+
+# Entry point symbol
+var g_entry_point: int32 = 0
+
+# Error flag
+var g_error: int32 = 0
+
+proc strlen(s: ptr uint8): int32 =
+  var len: int32 = 0
+  while s[len] != cast[uint8](0):
+    len = len + 1
+  return len
+
+proc print(msg: ptr uint8) =
+  var len: int32 = strlen(msg)
+  discard syscall3(SYS_write, STDOUT, cast[int32](msg), len)
+
+proc print_err(msg: ptr uint8) =
+  var len: int32 = strlen(msg)
+  discard syscall3(SYS_write, STDERR, cast[int32](msg), len)
+
+proc println(msg: ptr uint8) =
+  print(msg)
+  discard syscall3(SYS_write, STDOUT, cast[int32]("\n"), 1)
+
+proc print_num(n: int32) =
+  var buf: array[12, uint8]
+  var i: int32 = 10
+  buf[11] = cast[uint8](0)
+  if n == 0:
+    buf[10] = cast[uint8](48)
+    i = 10
+  else:
+    var num: int32 = n
+    var neg: int32 = 0
+    if num < 0:
+      neg = 1
+      num = 0 - num
+    while num > 0 and i > 0:
+      buf[i] = cast[uint8](48 + (num % 10))
+      num = num / 10
+      i = i - 1
+    if neg == 1:
+      buf[i] = cast[uint8](45)
+      i = i - 1
+    i = i + 1
+  print(cast[ptr uint8](cast[int32](addr(buf)) + i))
+
+proc print_hex(n: int32) =
+  var buf: array[12, uint8]
+  # Initialize buffer with "0x00000000\0"
+  buf[0] = cast[uint8](48)  # '0'
+  buf[1] = cast[uint8](120) # 'x'
+  var j: int32 = 2
+  while j < 10:
+    buf[j] = cast[uint8](48)  # '0'
+    j = j + 1
+  buf[10] = cast[uint8](0)
+  # Fill in hex digits from right to left
+  var i: int32 = 9
+  var num: int32 = n
+  while num != 0 and i >= 2:
+    var digit: int32 = num & 15
+    if digit < 10:
+      buf[i] = cast[uint8](48 + digit)
+    else:
+      buf[i] = cast[uint8](87 + digit)  # 'a' - 10 = 87
+    num = num >> 4
+    i = i - 1
+  print(cast[ptr uint8](addr(buf)))
+
+proc alloc(size: int32): ptr uint8 =
+  var old_brk: int32 = syscall1(SYS_brk, 0)
+  var new_brk: int32 = old_brk + size
+  discard syscall1(SYS_brk, new_brk)
+  return cast[ptr uint8](old_brk)
+
+proc streq(a: ptr uint8, b: ptr uint8): int32 =
+  var i: int32 = 0
+  while a[i] != cast[uint8](0) and b[i] != cast[uint8](0):
+    if a[i] != b[i]:
+      return 0
+    i = i + 1
+  if a[i] != b[i]:
+    return 0
+  return 1
+
+proc memcpy(dst: ptr uint8, src: ptr uint8, len: int32) =
+  var i: int32 = 0
+  while i < len:
+    dst[i] = src[i]
+    i = i + 1
+
+proc read_u32(buf: ptr uint8, offset: int32): int32 =
+  var p: ptr uint8 = cast[ptr uint8](cast[int32](buf) + offset)
+  var b0: int32 = cast[int32](p[0])
+  var b1: int32 = cast[int32](p[1])
+  var b2: int32 = cast[int32](p[2])
+  var b3: int32 = cast[int32](p[3])
+  return b0 + (b1 << 8) + (b2 << 16) + (b3 << 24)
+
+proc read_u16(buf: ptr uint8, offset: int32): int32 =
+  var p: ptr uint8 = cast[ptr uint8](cast[int32](buf) + offset)
+  var b0: int32 = cast[int32](p[0])
+  var b1: int32 = cast[int32](p[1])
+  return b0 + (b1 << 8)
+
+proc write_u32(buf: ptr uint8, offset: int32, val: int32) =
+  var p: ptr uint8 = cast[ptr uint8](cast[int32](buf) + offset)
+  p[0] = cast[uint8](val & 255)
+  p[1] = cast[uint8]((val >> 8) & 255)
+  p[2] = cast[uint8]((val >> 16) & 255)
+  p[3] = cast[uint8]((val >> 24) & 255)
+
+proc write_u16(buf: ptr uint8, offset: int32, val: int32) =
+  var p: ptr uint8 = cast[ptr uint8](cast[int32](buf) + offset)
+  p[0] = cast[uint8](val & 255)
+  p[1] = cast[uint8]((val >> 8) & 255)
+
+# Find or add a symbol
+proc find_or_add_symbol(name: ptr uint8, value: int32, section: int32): int32 =
+  # Search for existing symbol (use read_u32 to avoid ptr indexing bug)
+  var i: int32 = 0
+  while i < g_sym_count:
+    var name_off: int32 = read_u32(cast[ptr uint8](g_sym_offsets), i * 4)
+    var sym_name: ptr uint8 = cast[ptr uint8](cast[int32](g_sym_names) + name_off)
+    if streq(sym_name, name) == 1:
+      # Update if this definition is better (defined vs undefined)
+      var sym_sec: int32 = read_u32(cast[ptr uint8](g_sym_sections), i * 4)
+      if sym_sec == 0 and section != 0:
+        write_u32(cast[ptr uint8](g_sym_values), i * 4, value)
+        write_u32(cast[ptr uint8](g_sym_sections), i * 4, section)
+      return i
+    i = i + 1
+
+  # Add new symbol
+  if g_sym_count >= MAX_SYMBOLS:
+    print_err(cast[ptr uint8]("Error: too many symbols\n"))
+    g_error = 1
+    return -1
+
+  # Copy name to string pool
+  var name_len: int32 = strlen(name) + 1
+  var name_off: int32 = g_sym_name_len
+  memcpy(cast[ptr uint8](cast[int32](g_sym_names) + g_sym_name_len), name, name_len)
+  g_sym_name_len = g_sym_name_len + name_len
+
+  # Add symbol entry (use write_u32 to avoid ptr indexing bug)
+  var idx: int32 = g_sym_count
+  write_u32(cast[ptr uint8](g_sym_offsets), idx * 4, name_off)
+  write_u32(cast[ptr uint8](g_sym_values), idx * 4, value)
+  write_u32(cast[ptr uint8](g_sym_sections), idx * 4, section)
+  g_sym_count = g_sym_count + 1
+
+  return idx
+
+# Parse an object file and add its symbols/sections
+proc parse_object_file(filename: ptr uint8, file_buf: ptr uint8, file_len: int32, text_base: int32, data_base: int32): int32 =
+  # Verify ELF magic
+  var magic: int32 = read_u32(file_buf, 0)
+  if magic != ELF_MAGIC:
+    print_err(cast[ptr uint8]("Error: not an ELF file: "))
+    print_err(filename)
+    print_err(cast[ptr uint8]("\n"))
+    return 1
+
+  # Check type
+  var elf_type: int32 = read_u16(file_buf, 16)
+  if elf_type != ET_REL:
+    print_err(cast[ptr uint8]("Error: not a relocatable file\n"))
+    return 1
+
+  # Get section header info
+  var shoff: int32 = read_u32(file_buf, 32)       # Section header offset
+  var shentsize: int32 = read_u16(file_buf, 46)   # Section header entry size
+  var shnum: int32 = read_u16(file_buf, 48)       # Number of section headers
+  var shstrndx: int32 = read_u16(file_buf, 50)    # Section header string table index
+
+  # Find section header string table
+  var shstrtab_off: int32 = shoff + (shstrndx * shentsize)
+  var shstrtab_addr: int32 = read_u32(file_buf, shstrtab_off + 16)
+  var shstrtab: ptr uint8 = cast[ptr uint8](cast[int32](file_buf) + shstrtab_addr)
+
+  # Variables to track section locations AND their ELF indices
+  var text_sh_idx: int32 = -1
+  var text_sh_size: int32 = 0
+  var text_file_off: int32 = 0
+  var data_sh_idx: int32 = -1
+  var data_sh_size: int32 = 0
+  var data_file_off: int32 = 0
+  var bss_sh_idx: int32 = -1
+  var bss_sh_size: int32 = 0
+  var symtab_off: int32 = 0
+  var symtab_size: int32 = 0
+  var symtab_entsize: int32 = 0
+  var symtab_link: int32 = 0
+  var strtab_off: int32 = 0
+  var rel_text_off: int32 = 0
+  var rel_text_size: int32 = 0
+
+  # Scan sections - record the actual ELF section indices
+  var i: int32 = 0
+  while i < shnum:
+    var sh_off: int32 = shoff + (i * shentsize)
+    var sh_name: int32 = read_u32(file_buf, sh_off)
+    var sh_type: int32 = read_u32(file_buf, sh_off + 4)
+    var sh_offset: int32 = read_u32(file_buf, sh_off + 16)
+    var sh_size: int32 = read_u32(file_buf, sh_off + 20)
+    var sh_link: int32 = read_u32(file_buf, sh_off + 24)
+    var sh_entsize: int32 = read_u32(file_buf, sh_off + 36)
+
+    var name: ptr uint8 = cast[ptr uint8](cast[int32](shstrtab) + sh_name)
+
+    if streq(name, cast[ptr uint8](".text")) == 1:
+      text_sh_idx = i
+      text_sh_size = sh_size
+      text_file_off = sh_offset
+    else:
+      if streq(name, cast[ptr uint8](".data")) == 1:
+        data_sh_idx = i
+        data_sh_size = sh_size
+        data_file_off = sh_offset
+      else:
+        if streq(name, cast[ptr uint8](".bss")) == 1:
+          bss_sh_idx = i
+          bss_sh_size = sh_size
+        else:
+          if sh_type == SHT_SYMTAB:
+            symtab_off = sh_offset
+            symtab_size = sh_size
+            symtab_entsize = sh_entsize
+            symtab_link = sh_link
+          else:
+            if streq(name, cast[ptr uint8](".rel.text")) == 1:
+              rel_text_off = sh_offset
+              rel_text_size = sh_size
+
+    i = i + 1
+
+  # Get string table for symbols
+  if symtab_link > 0:
+    var strtab_sh: int32 = shoff + (symtab_link * shentsize)
+    strtab_off = read_u32(file_buf, strtab_sh + 16)
+
+  # Map from file symbol index to global symbol index
+  var sym_map: ptr int32 = cast[ptr int32](alloc(1024 * 4))
+  var sym_count: int32 = symtab_size / symtab_entsize
+
+  # Calculate where bss starts for this file (after its data section)
+  var bss_base: int32 = g_data_len + data_sh_size
+
+  # Process symbols - use the recorded section indices
+  i = 0
+  while i < sym_count:
+    var sym_off: int32 = symtab_off + (i * symtab_entsize)
+    var st_name: int32 = read_u32(file_buf, sym_off)
+    var st_value: int32 = read_u32(file_buf, sym_off + 4)
+    var st_info: int32 = cast[int32](file_buf[sym_off + 12])
+    var st_shndx: int32 = read_u16(file_buf, sym_off + 14)
+
+    var name: ptr uint8 = cast[ptr uint8](cast[int32](file_buf) + strtab_off + st_name)
+
+    # Determine section and adjust value by comparing against actual section indices
+    var section: int32 = 0
+    var value: int32 = st_value
+
+    if st_shndx == 0:
+      section = 0  # Undefined
+    else:
+      if st_shndx == text_sh_idx:
+        section = 1  # .text
+        value = text_base + st_value
+      else:
+        if st_shndx == data_sh_idx:
+          section = 2  # .data
+          value = data_base + st_value
+        else:
+          if st_shndx == bss_sh_idx:
+            section = 3  # .bss - store offset relative to data segment
+            value = bss_base + st_value
+
+    # Skip null symbol
+    if i > 0:
+      var global_idx: int32 = find_or_add_symbol(name, value, section)
+      sym_map[i] = global_idx
+
+      # Check for _start entry point
+      if streq(name, cast[ptr uint8]("_start")) == 1:
+        g_entry_point = value
+    else:
+      sym_map[i] = -1
+
+    i = i + 1
+
+  # Copy .text section
+  if text_sh_size > 0:
+    memcpy(cast[ptr uint8](cast[int32](g_text) + text_base),
+           cast[ptr uint8](cast[int32](file_buf) + text_file_off),
+           text_sh_size)
+    g_text_len = text_base + text_sh_size
+
+  # Copy .data section
+  if data_sh_size > 0:
+    memcpy(cast[ptr uint8](cast[int32](g_data) + data_base),
+           cast[ptr uint8](cast[int32](file_buf) + data_file_off),
+           data_sh_size)
+    g_data_len = data_base + data_sh_size
+
+  # Update .bss size
+  g_bss_len = g_bss_len + bss_sh_size
+
+  # Process relocations
+  if rel_text_size > 0:
+    var rel_count: int32 = rel_text_size / 8
+    i = 0
+    while i < rel_count:
+      var rel_off: int32 = rel_text_off + (i * 8)
+      var r_offset: int32 = read_u32(file_buf, rel_off)
+      var r_info: int32 = read_u32(file_buf, rel_off + 4)
+      var r_sym: int32 = r_info >> 8
+      var r_type: int32 = r_info & 255
+
+      # Add relocation with adjusted offset and global symbol index
+      if g_reloc_count < MAX_RELOCS:
+        # Use write_u32 to bypass potentially buggy ptr indexing
+        write_u32(cast[ptr uint8](g_reloc_offsets), g_reloc_count * 4, text_base + r_offset)
+        write_u32(cast[ptr uint8](g_reloc_types), g_reloc_count * 4, r_type)
+        write_u32(cast[ptr uint8](g_reloc_syms), g_reloc_count * 4, sym_map[r_sym])
+        g_reloc_count = g_reloc_count + 1
+
+      i = i + 1
+
+  return 0
+
+# Apply relocations
+proc apply_relocations(): int32 =
+  var i: int32 = 0
+  while i < g_reloc_count:
+    var offset: int32 = read_u32(cast[ptr uint8](g_reloc_offsets), i * 4)
+    var rtype: int32 = read_u32(cast[ptr uint8](g_reloc_types), i * 4)
+    var sym_idx: int32 = read_u32(cast[ptr uint8](g_reloc_syms), i * 4)
+
+    if sym_idx < 0 or sym_idx >= g_sym_count:
+      i = i + 1
+      continue
+
+    var sym_value: int32 = read_u32(cast[ptr uint8](g_sym_values), sym_idx * 4)
+    var sym_section: int32 = read_u32(cast[ptr uint8](g_sym_sections), sym_idx * 4)
+
+    if sym_section == 0:
+      var sym_name_off: int32 = read_u32(cast[ptr uint8](g_sym_offsets), sym_idx * 4)
+      var sym_name: ptr uint8 = cast[ptr uint8](cast[int32](g_sym_names) + sym_name_off)
+      print_err(cast[ptr uint8]("Error: undefined symbol: "))
+      print_err(sym_name)
+      print_err(cast[ptr uint8]("\n"))
+      return 1
+
+    # Calculate final symbol address based on section
+    # sym_value is already section-relative offset for all sections
+    var final_addr: int32 = 0
+    if sym_section == 1:
+      final_addr = TEXT_ADDR + sym_value
+    else:
+      if sym_section == 2:
+        final_addr = DATA_ADDR + sym_value
+      else:
+        if sym_section == 3:
+          # bss follows data, sym_value already includes data offset
+          final_addr = DATA_ADDR + sym_value
+
+    # Read current value at relocation site (addend)
+    var addend: int32 = read_u32(g_text, offset)
+
+    # Apply relocation
+    if rtype == R_386_32:
+      # S + A
+      var result: int32 = final_addr + addend
+      write_u32(g_text, offset, result)
+    else:
+      if rtype == R_386_PC32:
+        # S + A - P
+        var place: int32 = TEXT_ADDR + offset
+        var result: int32 = final_addr + addend - place
+        write_u32(g_text, offset, result)
+
+    i = i + 1
+
+  return 0
+
+# Write ELF executable header
+proc write_elf_header() =
+  var hdr: ptr uint8 = g_output
+
+  # ELF magic
+  hdr[0] = cast[uint8](0x7F)
+  hdr[1] = cast[uint8](0x45)  # 'E'
+  hdr[2] = cast[uint8](0x4C)  # 'L'
+  hdr[3] = cast[uint8](0x46)  # 'F'
+
+  # ELF32, little-endian, version 1
+  hdr[4] = cast[uint8](1)     # 32-bit
+  hdr[5] = cast[uint8](1)     # Little-endian
+  hdr[6] = cast[uint8](1)     # ELF version
+
+  # Pad to 16
+  var i: int32 = 7
+  while i < 16:
+    hdr[i] = cast[uint8](0)
+    i = i + 1
+
+  # Type: EXEC
+  write_u16(hdr, 16, ET_EXEC)
+  # Machine: 386
+  write_u16(hdr, 18, EM_386)
+  # Version
+  write_u32(hdr, 20, 1)
+  # Entry point
+  write_u32(hdr, 24, TEXT_ADDR + g_entry_point)
+  # Program header offset (right after ELF header)
+  write_u32(hdr, 28, 52)
+  # Section header offset (0 for minimal executable)
+  write_u32(hdr, 32, 0)
+  # Flags
+  write_u32(hdr, 36, 0)
+  # ELF header size
+  write_u16(hdr, 40, 52)
+  # Program header entry size
+  write_u16(hdr, 42, 32)
+  # Number of program headers
+  write_u16(hdr, 44, 3)
+  # Section header entry size
+  write_u16(hdr, 46, 0)
+  # Number of section headers
+  write_u16(hdr, 48, 0)
+  # Section name string table index
+  write_u16(hdr, 50, 0)
+
+  g_output_len = 52
+
+# Write program headers
+proc write_program_headers() =
+  # Calculate file offsets
+  var hdr_size: int32 = 52 + 96  # ELF header + 3 program headers
+  var text_file_off: int32 = 0x1000  # Page-aligned
+  var data_file_off: int32 = 0x2000  # Page-aligned
+
+  var phdr: ptr uint8 = cast[ptr uint8](cast[int32](g_output) + 52)
+
+  # Program header 1: ELF headers (read-only)
+  write_u32(phdr, 0, PT_LOAD)      # Type
+  write_u32(phdr, 4, 0)            # File offset
+  write_u32(phdr, 8, BASE_ADDR)    # Virtual address
+  write_u32(phdr, 12, BASE_ADDR)   # Physical address
+  write_u32(phdr, 16, hdr_size)    # File size
+  write_u32(phdr, 20, hdr_size)    # Memory size
+  write_u32(phdr, 24, 4)           # Flags: R
+  write_u32(phdr, 28, 0x1000)      # Alignment
+
+  # Program header 2: .text (read + execute)
+  phdr = cast[ptr uint8](cast[int32](g_output) + 52 + 32)
+  write_u32(phdr, 0, PT_LOAD)
+  write_u32(phdr, 4, text_file_off)
+  write_u32(phdr, 8, TEXT_ADDR)
+  write_u32(phdr, 12, TEXT_ADDR)
+  write_u32(phdr, 16, g_text_len)
+  write_u32(phdr, 20, g_text_len)
+  write_u32(phdr, 24, 5)           # Flags: R+X
+  write_u32(phdr, 28, 0x1000)
+
+  # Program header 3: .data + .bss (read + write)
+  phdr = cast[ptr uint8](cast[int32](g_output) + 52 + 64)
+  write_u32(phdr, 0, PT_LOAD)
+  write_u32(phdr, 4, data_file_off)
+  write_u32(phdr, 8, DATA_ADDR)
+  write_u32(phdr, 12, DATA_ADDR)
+  write_u32(phdr, 16, g_data_len)
+  write_u32(phdr, 20, g_data_len + g_bss_len)
+  write_u32(phdr, 24, 6)           # Flags: R+W
+  write_u32(phdr, 28, 0x1000)
+
+  g_output_len = 52 + 96
+
+# Write output file
+proc write_output(filename: ptr uint8): int32 =
+  # Write ELF header and program headers
+  write_elf_header()
+  write_program_headers()
+
+  # Pad to text section offset (0x1000)
+  while g_output_len < 0x1000:
+    g_output[g_output_len] = cast[uint8](0)
+    g_output_len = g_output_len + 1
+
+  # Write .text section
+  memcpy(cast[ptr uint8](cast[int32](g_output) + g_output_len), g_text, g_text_len)
+  g_output_len = g_output_len + g_text_len
+
+  # Pad to data section offset (0x2000)
+  while g_output_len < 0x2000:
+    g_output[g_output_len] = cast[uint8](0)
+    g_output_len = g_output_len + 1
+
+  # Write .data section
+  memcpy(cast[ptr uint8](cast[int32](g_output) + g_output_len), g_data, g_data_len)
+  g_output_len = g_output_len + g_data_len
+
+  # Open output file
+  var fd: int32 = syscall3(SYS_open, cast[int32](filename), O_WRONLY + O_CREAT + O_TRUNC, 493)  # 0755
+  if fd < 0:
+    print_err(cast[ptr uint8]("Error: cannot create output file\n"))
+    return 1
+
+  # Write
+  discard syscall3(SYS_write, fd, cast[int32](g_output), g_output_len)
+  discard syscall1(SYS_close, fd)
+
+  return 0
+
+proc main(): int32 =
+  println(cast[ptr uint8]("bhlink - Brainhair Linker v0.1"))
+
+  var argc: int32 = get_argc()
+  if argc < 3:
+    println(cast[ptr uint8]("Usage: bhlink input.o [...] -o output"))
+    return 1
+
+  # Allocate buffers
+  g_output = alloc(1048576)       # 1MB output buffer
+  g_output_cap = 1048576
+  g_text = alloc(262144)          # 256KB text section
+  g_data = alloc(262144)          # 256KB data section
+  g_sym_names = alloc(65536)      # 64KB symbol names
+  g_sym_values = cast[ptr int32](alloc(MAX_SYMBOLS * 4))
+  g_sym_sections = cast[ptr int32](alloc(MAX_SYMBOLS * 4))
+  g_sym_offsets = cast[ptr int32](alloc(MAX_SYMBOLS * 4))
+  g_reloc_offsets = cast[ptr int32](alloc(MAX_RELOCS * 4))
+  g_reloc_types = cast[ptr int32](alloc(MAX_RELOCS * 4))
+  g_reloc_syms = cast[ptr int32](alloc(MAX_RELOCS * 4))
+
+  # Find -o argument
+  var output_file: ptr uint8 = cast[ptr uint8](0)
+  var i: int32 = 1
+  while i < argc:
+    var arg: ptr uint8 = get_argv(i)
+    if arg[0] == cast[uint8](45) and arg[1] == cast[uint8](111):  # "-o"
+      if i + 1 < argc:
+        output_file = get_argv(i + 1)
+      i = i + 2
+    else:
+      i = i + 1
+
+  if output_file == cast[ptr uint8](0):
+    print_err(cast[ptr uint8]("Error: no output file specified (-o)\n"))
+    return 1
+
+  print(cast[ptr uint8]("  Output: "))
+  println(output_file)
+
+  # Process input files
+  var text_offset: int32 = 0
+  var data_offset: int32 = 0
+  i = 1
+  while i < argc:
+    var arg: ptr uint8 = get_argv(i)
+    if arg[0] == cast[uint8](45) and arg[1] == cast[uint8](111):  # "-o"
+      i = i + 2
+      continue
+
+    # Read input file
+    print(cast[ptr uint8]("  Reading "))
+    println(arg)
+
+    var fd: int32 = syscall3(SYS_open, cast[int32](arg), O_RDONLY, 0)
+    if fd < 0:
+      print_err(cast[ptr uint8]("Error: cannot open file: "))
+      print_err(arg)
+      print_err(cast[ptr uint8]("\n"))
+      return 1
+
+    var file_buf: ptr uint8 = alloc(262144)
+    var file_len: int32 = 0
+    var n: int32 = syscall3(SYS_read, fd, cast[int32](file_buf), 262144)
+    while n > 0:
+      file_len = file_len + n
+      n = syscall3(SYS_read, fd, cast[int32](file_buf) + file_len, 262144 - file_len)
+    discard syscall1(SYS_close, fd)
+
+    # Parse and merge
+    if parse_object_file(arg, file_buf, file_len, text_offset, data_offset) != 0:
+      return 1
+
+    # Update offsets for next file
+    text_offset = g_text_len
+    data_offset = g_data_len
+
+    i = i + 1
+
+  print(cast[ptr uint8]("  Symbols: "))
+  print_num(g_sym_count)
+  println(cast[ptr uint8](""))
+
+  print(cast[ptr uint8]("  Relocations: "))
+  print_num(g_reloc_count)
+  println(cast[ptr uint8](""))
+
+  # Apply relocations
+  if apply_relocations() != 0:
+    return 1
+
+  print(cast[ptr uint8]("  Text: "))
+  print_num(g_text_len)
+  println(cast[ptr uint8](" bytes"))
+
+  print(cast[ptr uint8]("  Data: "))
+  print_num(g_data_len)
+  println(cast[ptr uint8](" bytes"))
+
+  print(cast[ptr uint8]("  BSS: "))
+  print_num(g_bss_len)
+  println(cast[ptr uint8](" bytes"))
+
+  print(cast[ptr uint8]("  Entry: "))
+  print_hex(TEXT_ADDR + g_entry_point)
+  println(cast[ptr uint8](""))
+
+  # Write output
+  if write_output(output_file) != 0:
+    return 1
+
+  println(cast[ptr uint8]("Done."))
+  return 0

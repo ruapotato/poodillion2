@@ -5383,7 +5383,7 @@ encode_lea_reg_sym_return:
     pop ebp
     ret
     
-encode_mov_reg_sym:
+encode_mov_reg_mem_sym:
     push ebp
     mov ebp, esp
     mov eax, 139
@@ -5415,7 +5415,38 @@ encode_mov_reg_sym:
     push eax
     call emit_dword
     add esp, 4
-encode_mov_reg_sym_return:
+encode_mov_reg_mem_sym_return:
+    mov esp, ebp
+    pop ebp
+    ret
+    
+encode_mov_reg_imm_sym:
+    push ebp
+    mov ebp, esp
+    mov eax, 184
+    push eax
+    mov eax, [ebp+8]
+    mov ebx, eax
+    pop eax
+    add eax, ebx
+    push eax
+    call emit_byte
+    add esp, 4
+    mov eax, 0
+    push eax
+    mov eax, 1
+    push eax
+    mov eax, [ebp+12]
+    push eax
+    mov eax, [rel g_text_len]
+    push eax
+    call add_reloc
+    add esp, 16
+    mov eax, 0
+    push eax
+    call emit_dword
+    add esp, 4
+encode_mov_reg_imm_sym_return:
     mov esp, ebp
     pop ebp
     ret
@@ -5490,6 +5521,32 @@ encode_push_sym:
     call emit_dword
     add esp, 4
 encode_push_sym_return:
+    mov esp, ebp
+    pop ebp
+    ret
+    
+encode_push_imm_sym:
+    push ebp
+    mov ebp, esp
+    mov eax, 104
+    push eax
+    call emit_byte
+    add esp, 4
+    mov eax, 0
+    push eax
+    mov eax, 1
+    push eax
+    mov eax, [ebp+8]
+    push eax
+    mov eax, [rel g_text_len]
+    push eax
+    call add_reloc
+    add esp, 16
+    mov eax, 0
+    push eax
+    call emit_dword
+    add esp, 4
+encode_push_imm_sym_return:
     mov esp, ebp
     pop ebp
     ret
@@ -6962,7 +7019,7 @@ endif340:
     jmp endif342
 else343:
 endif342:
-    mov eax, 4
+    mov eax, 8
     mov [rel g_op_type], eax
 parse_operand_return:
     mov esp, ebp
@@ -7945,7 +8002,7 @@ else429:
     push eax
     mov eax, [ebp-29]
     push eax
-    call encode_mov_reg_sym
+    call encode_mov_reg_mem_sym
     add esp, 8
     jmp endif430
 else431:
@@ -7995,6 +8052,25 @@ else433:
     add esp, 20
     jmp endif434
 else435:
+    mov eax, [rel g_op_type]
+    push eax
+    mov eax, 8
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else437
+    mov eax, [rel g_op_sym]
+    push eax
+    mov eax, [ebp-29]
+    push eax
+    call encode_mov_reg_imm_sym
+    add esp, 8
+    jmp endif436
+else437:
+endif436:
 endif434:
 endif432:
 endif430:
@@ -8013,7 +8089,7 @@ else421:
     sete al
     movzx eax, al
     test eax, eax
-    jz else437
+    jz else439
     mov eax, [ebp-49]
     push eax
     mov eax, 1
@@ -8023,24 +8099,24 @@ else421:
     sete al
     movzx eax, al
     test eax, eax
-    jz else439
+    jz else441
     mov eax, [rel g_op_reg]
     push eax
     mov eax, [ebp-29]
     push eax
     call encode_mov_mem_reg8
     add esp, 8
-    jmp endif438
-else439:
+    jmp endif440
+else441:
     mov eax, [rel g_op_reg]
     push eax
     mov eax, [ebp-29]
     push eax
     call encode_mov_mem_reg
     add esp, 8
-endif438:
-    jmp endif436
-else437:
+endif440:
+    jmp endif438
+else439:
     mov eax, [ebp-25]
     push eax
     mov eax, 3
@@ -8050,7 +8126,7 @@ else437:
     sete al
     movzx eax, al
     test eax, eax
-    jz else441
+    jz else443
     mov eax, [rel g_op_reg]
     push eax
     mov eax, [ebp-33]
@@ -8059,8 +8135,8 @@ else437:
     push eax
     call encode_mov_mem_disp_reg
     add esp, 12
-    jmp endif440
-else441:
+    jmp endif442
+else443:
     mov eax, [ebp-25]
     push eax
     mov eax, 4
@@ -8070,15 +8146,15 @@ else441:
     sete al
     movzx eax, al
     test eax, eax
-    jz else443
+    jz else445
     mov eax, [rel g_op_reg]
     push eax
     mov eax, [ebp-37]
     push eax
     call encode_mov_sym_reg
     add esp, 8
-    jmp endif442
-else443:
+    jmp endif444
+else445:
     mov eax, [ebp-25]
     push eax
     mov eax, 5
@@ -8088,7 +8164,7 @@ else443:
     sete al
     movzx eax, al
     test eax, eax
-    jz else445
+    jz else447
     mov eax, [rel g_op_reg]
     push eax
     mov eax, [ebp-45]
@@ -8099,8 +8175,8 @@ else443:
     push eax
     call encode_mov_sib_reg
     add esp, 16
-    jmp endif444
-else445:
+    jmp endif446
+else447:
     mov eax, [ebp-25]
     push eax
     mov eax, 6
@@ -8110,7 +8186,7 @@ else445:
     sete al
     movzx eax, al
     test eax, eax
-    jz else447
+    jz else449
     mov eax, [rel g_op_reg]
     push eax
     mov eax, [ebp-33]
@@ -8123,13 +8199,13 @@ else445:
     push eax
     call encode_mov_sib_disp_reg
     add esp, 20
-    jmp endif446
-else447:
+    jmp endif448
+else449:
+endif448:
 endif446:
 endif444:
 endif442:
-endif440:
-endif436:
+endif438:
 endif420:
     call skip_line
     jmp parse_line_pass2_return
@@ -8150,7 +8226,7 @@ endif418:
     sete al
     movzx eax, al
     test eax, eax
-    jz else449
+    jz else451
     call parse_operand
     mov eax, [rel g_op_type]
     push eax
@@ -8161,13 +8237,13 @@ endif418:
     sete al
     movzx eax, al
     test eax, eax
-    jz else451
+    jz else453
     mov eax, [rel g_op_reg]
     push eax
     call encode_push_reg
     add esp, 4
-    jmp endif450
-else451:
+    jmp endif452
+else453:
     mov eax, [rel g_op_type]
     push eax
     mov eax, 1
@@ -8177,13 +8253,13 @@ else451:
     sete al
     movzx eax, al
     test eax, eax
-    jz else453
+    jz else455
     mov eax, [rel g_op_disp]
     push eax
     call encode_push_imm
     add esp, 4
-    jmp endif452
-else453:
+    jmp endif454
+else455:
     mov eax, [rel g_op_type]
     push eax
     mov eax, 4
@@ -8193,21 +8269,38 @@ else453:
     sete al
     movzx eax, al
     test eax, eax
-    jz else455
+    jz else457
     mov eax, [rel g_op_sym]
     push eax
     call encode_push_sym
     add esp, 4
-    jmp endif454
-else455:
+    jmp endif456
+else457:
+    mov eax, [rel g_op_type]
+    push eax
+    mov eax, 8
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else459
+    mov eax, [rel g_op_sym]
+    push eax
+    call encode_push_imm_sym
+    add esp, 4
+    jmp endif458
+else459:
+endif458:
+endif456:
 endif454:
 endif452:
-endif450:
     call skip_line
     jmp parse_line_pass2_return
-    jmp endif448
-else449:
-endif448:
+    jmp endif450
+else451:
+endif450:
     lea eax, [rel str_42]
     push eax
     mov eax, [rel g_token_buf]
@@ -8222,7 +8315,7 @@ endif448:
     sete al
     movzx eax, al
     test eax, eax
-    jz else457
+    jz else461
     call parse_operand
     mov eax, [rel g_op_reg]
     push eax
@@ -8230,9 +8323,9 @@ endif448:
     add esp, 4
     call skip_line
     jmp parse_line_pass2_return
-    jmp endif456
-else457:
-endif456:
+    jmp endif460
+else461:
+endif460:
     lea eax, [rel str_43]
     push eax
     mov eax, [rel g_token_buf]
@@ -8247,7 +8340,7 @@ endif456:
     sete al
     movzx eax, al
     test eax, eax
-    jz else459
+    jz else463
     call parse_operand
     mov eax, [rel g_op_type]
     push eax
@@ -8257,20 +8350,40 @@ endif456:
     cmp eax, ebx
     sete al
     movzx eax, al
+    push eax
+    mov eax, [rel g_op_type]
+    push eax
+    mov eax, 8
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    mov ebx, eax
+    pop eax
     test eax, eax
-    jz else461
+    jnz or_short466
+    test ebx, ebx
+    jnz or_short466
+    xor eax, eax
+    jmp or_end467
+or_short466:
+    mov eax, 1
+or_end467:
+    test eax, eax
+    jz else465
     mov eax, [rel g_op_sym]
     push eax
     call encode_call_rel
     add esp, 4
-    jmp endif460
-else461:
-endif460:
+    jmp endif464
+else465:
+endif464:
     call skip_line
     jmp parse_line_pass2_return
-    jmp endif458
-else459:
-endif458:
+    jmp endif462
+else463:
+endif462:
     lea eax, [rel str_44]
     push eax
     mov eax, [rel g_token_buf]
@@ -8285,13 +8398,13 @@ endif458:
     sete al
     movzx eax, al
     test eax, eax
-    jz else463
+    jz else469
     call encode_ret
     call skip_line
     jmp parse_line_pass2_return
-    jmp endif462
-else463:
-endif462:
+    jmp endif468
+else469:
+endif468:
     lea eax, [rel str_45]
     push eax
     mov eax, [rel g_token_buf]
@@ -8306,7 +8419,7 @@ endif462:
     sete al
     movzx eax, al
     test eax, eax
-    jz else465
+    jz else471
     call parse_operand
     mov eax, [rel g_op_reg]
     mov [ebp-53], eax
@@ -8321,109 +8434,28 @@ endif462:
     sete al
     movzx eax, al
     test eax, eax
-    jz else467
+    jz else473
     mov eax, [rel g_op_reg]
     push eax
     mov eax, [ebp-53]
     push eax
     call encode_add_reg_reg
     add esp, 8
-    jmp endif466
-else467:
+    jmp endif472
+else473:
     mov eax, [rel g_op_disp]
     push eax
     mov eax, [ebp-53]
     push eax
     call encode_add_reg_imm
     add esp, 8
-endif466:
+endif472:
     call skip_line
     jmp parse_line_pass2_return
-    jmp endif464
-else465:
-endif464:
-    lea eax, [rel str_46]
-    push eax
-    mov eax, [rel g_token_buf]
-    push eax
-    call strcmp
-    add esp, 8
-    push eax
-    mov eax, 0
-    mov ebx, eax
-    pop eax
-    cmp eax, ebx
-    sete al
-    movzx eax, al
-    test eax, eax
-    jz else469
-    call parse_operand
-    mov eax, [rel g_op_reg]
-    mov [ebp-57], eax
-    call expect_comma
-    call parse_operand
-    mov eax, [rel g_op_type]
-    push eax
-    mov eax, 0
-    mov ebx, eax
-    pop eax
-    cmp eax, ebx
-    sete al
-    movzx eax, al
-    test eax, eax
-    jz else471
-    mov eax, [rel g_op_reg]
-    push eax
-    mov eax, [ebp-57]
-    push eax
-    call encode_sub_reg_reg
-    add esp, 8
     jmp endif470
 else471:
-    mov eax, [rel g_op_disp]
-    push eax
-    mov eax, [ebp-57]
-    push eax
-    call encode_sub_reg_imm
-    add esp, 8
 endif470:
-    call skip_line
-    jmp parse_line_pass2_return
-    jmp endif468
-else469:
-endif468:
-    lea eax, [rel str_47]
-    push eax
-    mov eax, [rel g_token_buf]
-    push eax
-    call strcmp
-    add esp, 8
-    push eax
-    mov eax, 0
-    mov ebx, eax
-    pop eax
-    cmp eax, ebx
-    sete al
-    movzx eax, al
-    test eax, eax
-    jz else473
-    call parse_operand
-    mov eax, [rel g_op_reg]
-    mov [ebp-61], eax
-    call expect_comma
-    call parse_operand
-    mov eax, [rel g_op_reg]
-    push eax
-    mov eax, [ebp-61]
-    push eax
-    call encode_xor_reg_reg
-    add esp, 8
-    call skip_line
-    jmp parse_line_pass2_return
-    jmp endif472
-else473:
-endif472:
-    lea eax, [rel str_48]
+    lea eax, [rel str_46]
     push eax
     mov eax, [rel g_token_buf]
     push eax
@@ -8440,26 +8472,10 @@ endif472:
     jz else475
     call parse_operand
     mov eax, [rel g_op_reg]
-    mov [ebp-65], eax
+    mov [ebp-57], eax
     call expect_comma
     call parse_operand
-    mov eax, [rel g_op_reg]
-    push eax
-    mov eax, [ebp-65]
-    push eax
-    call encode_and_reg_reg
-    add esp, 8
-    call skip_line
-    jmp parse_line_pass2_return
-    jmp endif474
-else475:
-endif474:
-    lea eax, [rel str_49]
-    push eax
-    mov eax, [rel g_token_buf]
-    push eax
-    call strcmp
-    add esp, 8
+    mov eax, [rel g_op_type]
     push eax
     mov eax, 0
     mov ebx, eax
@@ -8469,23 +8485,27 @@ endif474:
     movzx eax, al
     test eax, eax
     jz else477
-    call parse_operand
-    mov eax, [rel g_op_reg]
-    mov [ebp-69], eax
-    call expect_comma
-    call parse_operand
     mov eax, [rel g_op_reg]
     push eax
-    mov eax, [ebp-69]
+    mov eax, [ebp-57]
     push eax
-    call encode_or_reg_reg
+    call encode_sub_reg_reg
     add esp, 8
-    call skip_line
-    jmp parse_line_pass2_return
     jmp endif476
 else477:
+    mov eax, [rel g_op_disp]
+    push eax
+    mov eax, [ebp-57]
+    push eax
+    call encode_sub_reg_imm
+    add esp, 8
 endif476:
-    lea eax, [rel str_50]
+    call skip_line
+    jmp parse_line_pass2_return
+    jmp endif474
+else475:
+endif474:
+    lea eax, [rel str_47]
     push eax
     mov eax, [rel g_token_buf]
     push eax
@@ -8502,10 +8522,26 @@ endif476:
     jz else479
     call parse_operand
     mov eax, [rel g_op_reg]
-    mov [ebp-73], eax
+    mov [ebp-61], eax
     call expect_comma
     call parse_operand
-    mov eax, [rel g_op_type]
+    mov eax, [rel g_op_reg]
+    push eax
+    mov eax, [ebp-61]
+    push eax
+    call encode_xor_reg_reg
+    add esp, 8
+    call skip_line
+    jmp parse_line_pass2_return
+    jmp endif478
+else479:
+endif478:
+    lea eax, [rel str_48]
+    push eax
+    mov eax, [rel g_token_buf]
+    push eax
+    call strcmp
+    add esp, 8
     push eax
     mov eax, 0
     mov ebx, eax
@@ -8515,27 +8551,23 @@ endif476:
     movzx eax, al
     test eax, eax
     jz else481
+    call parse_operand
+    mov eax, [rel g_op_reg]
+    mov [ebp-65], eax
+    call expect_comma
+    call parse_operand
     mov eax, [rel g_op_reg]
     push eax
-    mov eax, [ebp-73]
+    mov eax, [ebp-65]
     push eax
-    call encode_cmp_reg_reg
+    call encode_and_reg_reg
     add esp, 8
-    jmp endif480
-else481:
-    mov eax, [rel g_op_disp]
-    push eax
-    mov eax, [ebp-73]
-    push eax
-    call encode_cmp_reg_imm
-    add esp, 8
-endif480:
     call skip_line
     jmp parse_line_pass2_return
-    jmp endif478
-else479:
-endif478:
-    lea eax, [rel str_51]
+    jmp endif480
+else481:
+endif480:
+    lea eax, [rel str_49]
     push eax
     mov eax, [rel g_token_buf]
     push eax
@@ -8552,21 +8584,21 @@ endif478:
     jz else483
     call parse_operand
     mov eax, [rel g_op_reg]
-    mov [ebp-77], eax
+    mov [ebp-69], eax
     call expect_comma
     call parse_operand
     mov eax, [rel g_op_reg]
     push eax
-    mov eax, [ebp-77]
+    mov eax, [ebp-69]
     push eax
-    call encode_test_reg_reg
+    call encode_or_reg_reg
     add esp, 8
     call skip_line
     jmp parse_line_pass2_return
     jmp endif482
 else483:
 endif482:
-    lea eax, [rel str_52]
+    lea eax, [rel str_50]
     push eax
     mov eax, [rel g_token_buf]
     push eax
@@ -8583,6 +8615,87 @@ endif482:
     jz else485
     call parse_operand
     mov eax, [rel g_op_reg]
+    mov [ebp-73], eax
+    call expect_comma
+    call parse_operand
+    mov eax, [rel g_op_type]
+    push eax
+    mov eax, 0
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else487
+    mov eax, [rel g_op_reg]
+    push eax
+    mov eax, [ebp-73]
+    push eax
+    call encode_cmp_reg_reg
+    add esp, 8
+    jmp endif486
+else487:
+    mov eax, [rel g_op_disp]
+    push eax
+    mov eax, [ebp-73]
+    push eax
+    call encode_cmp_reg_imm
+    add esp, 8
+endif486:
+    call skip_line
+    jmp parse_line_pass2_return
+    jmp endif484
+else485:
+endif484:
+    lea eax, [rel str_51]
+    push eax
+    mov eax, [rel g_token_buf]
+    push eax
+    call strcmp
+    add esp, 8
+    push eax
+    mov eax, 0
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else489
+    call parse_operand
+    mov eax, [rel g_op_reg]
+    mov [ebp-77], eax
+    call expect_comma
+    call parse_operand
+    mov eax, [rel g_op_reg]
+    push eax
+    mov eax, [ebp-77]
+    push eax
+    call encode_test_reg_reg
+    add esp, 8
+    call skip_line
+    jmp parse_line_pass2_return
+    jmp endif488
+else489:
+endif488:
+    lea eax, [rel str_52]
+    push eax
+    mov eax, [rel g_token_buf]
+    push eax
+    call strcmp
+    add esp, 8
+    push eax
+    mov eax, 0
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else491
+    call parse_operand
+    mov eax, [rel g_op_reg]
     mov [ebp-81], eax
     call expect_comma
     call parse_operand
@@ -8595,7 +8708,7 @@ endif482:
     sete al
     movzx eax, al
     test eax, eax
-    jz else487
+    jz else493
     mov eax, 0
     push eax
     mov eax, [rel g_op_reg]
@@ -8604,8 +8717,8 @@ endif482:
     push eax
     call encode_lea_reg_mem_disp
     add esp, 12
-    jmp endif486
-else487:
+    jmp endif492
+else493:
     mov eax, [rel g_op_type]
     push eax
     mov eax, 3
@@ -8615,7 +8728,7 @@ else487:
     sete al
     movzx eax, al
     test eax, eax
-    jz else489
+    jz else495
     mov eax, [rel g_op_disp]
     push eax
     mov eax, [rel g_op_reg]
@@ -8624,8 +8737,8 @@ else487:
     push eax
     call encode_lea_reg_mem_disp
     add esp, 12
-    jmp endif488
-else489:
+    jmp endif494
+else495:
     mov eax, [rel g_op_type]
     push eax
     mov eax, 4
@@ -8635,15 +8748,15 @@ else489:
     sete al
     movzx eax, al
     test eax, eax
-    jz else491
+    jz else497
     mov eax, [rel g_op_sym]
     push eax
     mov eax, [ebp-81]
     push eax
     call encode_lea_reg_sym
     add esp, 8
-    jmp endif490
-else491:
+    jmp endif496
+else497:
     mov eax, [rel g_op_type]
     push eax
     mov eax, 5
@@ -8653,7 +8766,7 @@ else491:
     sete al
     movzx eax, al
     test eax, eax
-    jz else493
+    jz else499
     mov eax, [rel g_op_scale]
     push eax
     mov eax, [rel g_op_index]
@@ -8664,8 +8777,8 @@ else491:
     push eax
     call encode_lea_reg_sib
     add esp, 16
-    jmp endif492
-else493:
+    jmp endif498
+else499:
     mov eax, [rel g_op_type]
     push eax
     mov eax, 6
@@ -8675,7 +8788,7 @@ else493:
     sete al
     movzx eax, al
     test eax, eax
-    jz else495
+    jz else501
     mov eax, [rel g_op_disp]
     push eax
     mov eax, [rel g_op_scale]
@@ -8688,18 +8801,18 @@ else493:
     push eax
     call encode_lea_reg_sib_disp
     add esp, 20
-    jmp endif494
-else495:
+    jmp endif500
+else501:
+endif500:
+endif498:
+endif496:
 endif494:
 endif492:
-endif490:
-endif488:
-endif486:
     call skip_line
     jmp parse_line_pass2_return
-    jmp endif484
-else485:
-endif484:
+    jmp endif490
+else491:
+endif490:
     lea eax, [rel str_53]
     push eax
     mov eax, [rel g_token_buf]
@@ -8714,7 +8827,7 @@ endif484:
     sete al
     movzx eax, al
     test eax, eax
-    jz else497
+    jz else503
     call skip_whitespace
     call read_number
     mov [ebp-85], eax
@@ -8724,85 +8837,10 @@ endif484:
     add esp, 4
     call skip_line
     jmp parse_line_pass2_return
-    jmp endif496
-else497:
-endif496:
-    lea eax, [rel str_54]
-    push eax
-    mov eax, [rel g_token_buf]
-    push eax
-    call strcmp
-    add esp, 8
-    push eax
-    mov eax, 0
-    mov ebx, eax
-    pop eax
-    cmp eax, ebx
-    sete al
-    movzx eax, al
-    test eax, eax
-    jz else499
-    call parse_operand
-    mov eax, [rel g_op_sym]
-    push eax
-    call encode_jmp_rel
-    add esp, 4
-    call skip_line
-    jmp parse_line_pass2_return
-    jmp endif498
-else499:
-endif498:
-    lea eax, [rel str_55]
-    push eax
-    mov eax, [rel g_token_buf]
-    push eax
-    call strcmp
-    add esp, 8
-    push eax
-    mov eax, 0
-    mov ebx, eax
-    pop eax
-    cmp eax, ebx
-    sete al
-    movzx eax, al
-    test eax, eax
-    jz else501
-    call parse_operand
-    mov eax, [rel g_op_sym]
-    push eax
-    call encode_je_rel
-    add esp, 4
-    call skip_line
-    jmp parse_line_pass2_return
-    jmp endif500
-else501:
-endif500:
-    lea eax, [rel str_56]
-    push eax
-    mov eax, [rel g_token_buf]
-    push eax
-    call strcmp
-    add esp, 8
-    push eax
-    mov eax, 0
-    mov ebx, eax
-    pop eax
-    cmp eax, ebx
-    sete al
-    movzx eax, al
-    test eax, eax
-    jz else503
-    call parse_operand
-    mov eax, [rel g_op_sym]
-    push eax
-    call encode_jz_rel
-    add esp, 4
-    call skip_line
-    jmp parse_line_pass2_return
     jmp endif502
 else503:
 endif502:
-    lea eax, [rel str_57]
+    lea eax, [rel str_54]
     push eax
     mov eax, [rel g_token_buf]
     push eax
@@ -8820,14 +8858,14 @@ endif502:
     call parse_operand
     mov eax, [rel g_op_sym]
     push eax
-    call encode_jne_rel
+    call encode_jmp_rel
     add esp, 4
     call skip_line
     jmp parse_line_pass2_return
     jmp endif504
 else505:
 endif504:
-    lea eax, [rel str_58]
+    lea eax, [rel str_55]
     push eax
     mov eax, [rel g_token_buf]
     push eax
@@ -8845,14 +8883,14 @@ endif504:
     call parse_operand
     mov eax, [rel g_op_sym]
     push eax
-    call encode_jnz_rel
+    call encode_je_rel
     add esp, 4
     call skip_line
     jmp parse_line_pass2_return
     jmp endif506
 else507:
 endif506:
-    lea eax, [rel str_59]
+    lea eax, [rel str_56]
     push eax
     mov eax, [rel g_token_buf]
     push eax
@@ -8870,14 +8908,14 @@ endif506:
     call parse_operand
     mov eax, [rel g_op_sym]
     push eax
-    call encode_jl_rel
+    call encode_jz_rel
     add esp, 4
     call skip_line
     jmp parse_line_pass2_return
     jmp endif508
 else509:
 endif508:
-    lea eax, [rel str_60]
+    lea eax, [rel str_57]
     push eax
     mov eax, [rel g_token_buf]
     push eax
@@ -8895,14 +8933,14 @@ endif508:
     call parse_operand
     mov eax, [rel g_op_sym]
     push eax
-    call encode_jg_rel
+    call encode_jne_rel
     add esp, 4
     call skip_line
     jmp parse_line_pass2_return
     jmp endif510
 else511:
 endif510:
-    lea eax, [rel str_61]
+    lea eax, [rel str_58]
     push eax
     mov eax, [rel g_token_buf]
     push eax
@@ -8920,14 +8958,14 @@ endif510:
     call parse_operand
     mov eax, [rel g_op_sym]
     push eax
-    call encode_jle_rel
+    call encode_jnz_rel
     add esp, 4
     call skip_line
     jmp parse_line_pass2_return
     jmp endif512
 else513:
 endif512:
-    lea eax, [rel str_62]
+    lea eax, [rel str_59]
     push eax
     mov eax, [rel g_token_buf]
     push eax
@@ -8945,14 +8983,14 @@ endif512:
     call parse_operand
     mov eax, [rel g_op_sym]
     push eax
-    call encode_jge_rel
+    call encode_jl_rel
     add esp, 4
     call skip_line
     jmp parse_line_pass2_return
     jmp endif514
 else515:
 endif514:
-    lea eax, [rel str_63]
+    lea eax, [rel str_60]
     push eax
     mov eax, [rel g_token_buf]
     push eax
@@ -8968,16 +9006,16 @@ endif514:
     test eax, eax
     jz else517
     call parse_operand
-    mov eax, [rel g_op_reg]
+    mov eax, [rel g_op_sym]
     push eax
-    call encode_inc_reg
+    call encode_jg_rel
     add esp, 4
     call skip_line
     jmp parse_line_pass2_return
     jmp endif516
 else517:
 endif516:
-    lea eax, [rel str_64]
+    lea eax, [rel str_61]
     push eax
     mov eax, [rel g_token_buf]
     push eax
@@ -8993,16 +9031,16 @@ endif516:
     test eax, eax
     jz else519
     call parse_operand
-    mov eax, [rel g_op_reg]
+    mov eax, [rel g_op_sym]
     push eax
-    call encode_dec_reg
+    call encode_jle_rel
     add esp, 4
     call skip_line
     jmp parse_line_pass2_return
     jmp endif518
 else519:
 endif518:
-    lea eax, [rel str_65]
+    lea eax, [rel str_62]
     push eax
     mov eax, [rel g_token_buf]
     push eax
@@ -9018,16 +9056,16 @@ endif518:
     test eax, eax
     jz else521
     call parse_operand
-    mov eax, [rel g_op_reg]
+    mov eax, [rel g_op_sym]
     push eax
-    call encode_neg_reg
+    call encode_jge_rel
     add esp, 4
     call skip_line
     jmp parse_line_pass2_return
     jmp endif520
 else521:
 endif520:
-    lea eax, [rel str_66]
+    lea eax, [rel str_63]
     push eax
     mov eax, [rel g_token_buf]
     push eax
@@ -9045,14 +9083,14 @@ endif520:
     call parse_operand
     mov eax, [rel g_op_reg]
     push eax
-    call encode_not_reg
+    call encode_inc_reg
     add esp, 4
     call skip_line
     jmp parse_line_pass2_return
     jmp endif522
 else523:
 endif522:
-    lea eax, [rel str_67]
+    lea eax, [rel str_64]
     push eax
     mov eax, [rel g_token_buf]
     push eax
@@ -9069,21 +9107,15 @@ endif522:
     jz else525
     call parse_operand
     mov eax, [rel g_op_reg]
-    mov [ebp-89], eax
-    call expect_comma
-    call parse_operand
-    mov eax, [rel g_op_reg]
     push eax
-    mov eax, [ebp-89]
-    push eax
-    call encode_imul_reg_reg
-    add esp, 8
+    call encode_dec_reg
+    add esp, 4
     call skip_line
     jmp parse_line_pass2_return
     jmp endif524
 else525:
 endif524:
-    lea eax, [rel str_68]
+    lea eax, [rel str_65]
     push eax
     mov eax, [rel g_token_buf]
     push eax
@@ -9101,14 +9133,14 @@ endif524:
     call parse_operand
     mov eax, [rel g_op_reg]
     push eax
-    call encode_idiv_reg
+    call encode_neg_reg
     add esp, 4
     call skip_line
     jmp parse_line_pass2_return
     jmp endif526
 else527:
 endif526:
-    lea eax, [rel str_69]
+    lea eax, [rel str_66]
     push eax
     mov eax, [rel g_token_buf]
     push eax
@@ -9123,13 +9155,17 @@ endif526:
     movzx eax, al
     test eax, eax
     jz else529
-    call encode_cdq
+    call parse_operand
+    mov eax, [rel g_op_reg]
+    push eax
+    call encode_not_reg
+    add esp, 4
     call skip_line
     jmp parse_line_pass2_return
     jmp endif528
 else529:
 endif528:
-    lea eax, [rel str_70]
+    lea eax, [rel str_67]
     push eax
     mov eax, [rel g_token_buf]
     push eax
@@ -9144,13 +9180,23 @@ endif528:
     movzx eax, al
     test eax, eax
     jz else531
-    call encode_nop
+    call parse_operand
+    mov eax, [rel g_op_reg]
+    mov [ebp-89], eax
+    call expect_comma
+    call parse_operand
+    mov eax, [rel g_op_reg]
+    push eax
+    mov eax, [ebp-89]
+    push eax
+    call encode_imul_reg_reg
+    add esp, 8
     call skip_line
     jmp parse_line_pass2_return
     jmp endif530
 else531:
 endif530:
-    lea eax, [rel str_71]
+    lea eax, [rel str_68]
     push eax
     mov eax, [rel g_token_buf]
     push eax
@@ -9165,15 +9211,17 @@ endif530:
     movzx eax, al
     test eax, eax
     jz else533
-    call encode_setne_al
-    call skip_whitespace
-    call read_ident
+    call parse_operand
+    mov eax, [rel g_op_reg]
+    push eax
+    call encode_idiv_reg
+    add esp, 4
     call skip_line
     jmp parse_line_pass2_return
     jmp endif532
 else533:
 endif532:
-    lea eax, [rel str_72]
+    lea eax, [rel str_69]
     push eax
     mov eax, [rel g_token_buf]
     push eax
@@ -9188,15 +9236,13 @@ endif532:
     movzx eax, al
     test eax, eax
     jz else535
-    call encode_sete_al
-    call skip_whitespace
-    call read_ident
+    call encode_cdq
     call skip_line
     jmp parse_line_pass2_return
     jmp endif534
 else535:
 endif534:
-    lea eax, [rel str_73]
+    lea eax, [rel str_70]
     push eax
     mov eax, [rel g_token_buf]
     push eax
@@ -9211,15 +9257,13 @@ endif534:
     movzx eax, al
     test eax, eax
     jz else537
-    call encode_setl_al
-    call skip_whitespace
-    call read_ident
+    call encode_nop
     call skip_line
     jmp parse_line_pass2_return
     jmp endif536
 else537:
 endif536:
-    lea eax, [rel str_74]
+    lea eax, [rel str_71]
     push eax
     mov eax, [rel g_token_buf]
     push eax
@@ -9234,7 +9278,7 @@ endif536:
     movzx eax, al
     test eax, eax
     jz else539
-    call encode_setg_al
+    call encode_setne_al
     call skip_whitespace
     call read_ident
     call skip_line
@@ -9242,7 +9286,7 @@ endif536:
     jmp endif538
 else539:
 endif538:
-    lea eax, [rel str_75]
+    lea eax, [rel str_72]
     push eax
     mov eax, [rel g_token_buf]
     push eax
@@ -9257,7 +9301,7 @@ endif538:
     movzx eax, al
     test eax, eax
     jz else541
-    call encode_setle_al
+    call encode_sete_al
     call skip_whitespace
     call read_ident
     call skip_line
@@ -9265,7 +9309,7 @@ endif538:
     jmp endif540
 else541:
 endif540:
-    lea eax, [rel str_76]
+    lea eax, [rel str_73]
     push eax
     mov eax, [rel g_token_buf]
     push eax
@@ -9280,7 +9324,7 @@ endif540:
     movzx eax, al
     test eax, eax
     jz else543
-    call encode_setge_al
+    call encode_setl_al
     call skip_whitespace
     call read_ident
     call skip_line
@@ -9288,7 +9332,7 @@ endif540:
     jmp endif542
 else543:
 endif542:
-    lea eax, [rel str_77]
+    lea eax, [rel str_74]
     push eax
     mov eax, [rel g_token_buf]
     push eax
@@ -9303,6 +9347,75 @@ endif542:
     movzx eax, al
     test eax, eax
     jz else545
+    call encode_setg_al
+    call skip_whitespace
+    call read_ident
+    call skip_line
+    jmp parse_line_pass2_return
+    jmp endif544
+else545:
+endif544:
+    lea eax, [rel str_75]
+    push eax
+    mov eax, [rel g_token_buf]
+    push eax
+    call strcmp
+    add esp, 8
+    push eax
+    mov eax, 0
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else547
+    call encode_setle_al
+    call skip_whitespace
+    call read_ident
+    call skip_line
+    jmp parse_line_pass2_return
+    jmp endif546
+else547:
+endif546:
+    lea eax, [rel str_76]
+    push eax
+    mov eax, [rel g_token_buf]
+    push eax
+    call strcmp
+    add esp, 8
+    push eax
+    mov eax, 0
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else549
+    call encode_setge_al
+    call skip_whitespace
+    call read_ident
+    call skip_line
+    jmp parse_line_pass2_return
+    jmp endif548
+else549:
+endif548:
+    lea eax, [rel str_77]
+    push eax
+    mov eax, [rel g_token_buf]
+    push eax
+    call strcmp
+    add esp, 8
+    push eax
+    mov eax, 0
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else551
     call parse_operand
     mov eax, [rel g_op_reg]
     mov [ebp-93], eax
@@ -9321,12 +9434,12 @@ endif542:
     sete al
     movzx eax, al
     test eax, eax
-    jz else547
+    jz else553
     call read_ident
     call skip_whitespace
-    jmp endif546
-else547:
-endif546:
+    jmp endif552
+else553:
+endif552:
     call parse_operand
     mov eax, [rel g_op_type]
     push eax
@@ -9337,15 +9450,15 @@ endif546:
     sete al
     movzx eax, al
     test eax, eax
-    jz else549
+    jz else555
     mov eax, [rel g_op_reg]
     push eax
     mov eax, [ebp-93]
     push eax
     call encode_movzx_reg_reg8
     add esp, 8
-    jmp endif548
-else549:
+    jmp endif554
+else555:
     mov eax, [rel g_op_type]
     push eax
     mov eax, 2
@@ -9355,15 +9468,15 @@ else549:
     sete al
     movzx eax, al
     test eax, eax
-    jz else551
+    jz else557
     mov eax, [rel g_op_reg]
     push eax
     mov eax, [ebp-93]
     push eax
     call encode_movzx_reg_byte
     add esp, 8
-    jmp endif550
-else551:
+    jmp endif556
+else557:
     mov eax, [rel g_op_type]
     push eax
     mov eax, 3
@@ -9373,7 +9486,7 @@ else551:
     sete al
     movzx eax, al
     test eax, eax
-    jz else553
+    jz else559
     mov eax, [rel g_op_disp]
     push eax
     mov eax, [rel g_op_reg]
@@ -9382,16 +9495,16 @@ else551:
     push eax
     call encode_movzx_reg_byte_disp
     add esp, 12
-    jmp endif552
-else553:
-endif552:
-endif550:
-endif548:
+    jmp endif558
+else559:
+endif558:
+endif556:
+endif554:
     call skip_line
     jmp parse_line_pass2_return
-    jmp endif544
-else545:
-endif544:
+    jmp endif550
+else551:
+endif550:
     lea eax, [rel str_78]
     push eax
     mov eax, [rel g_token_buf]
@@ -9406,7 +9519,7 @@ endif544:
     sete al
     movzx eax, al
     test eax, eax
-    jz else555
+    jz else561
     call parse_operand
     mov eax, [rel g_op_reg]
     mov [ebp-97], eax
@@ -9420,9 +9533,9 @@ endif544:
     add esp, 8
     call skip_line
     jmp parse_line_pass2_return
-    jmp endif554
-else555:
-endif554:
+    jmp endif560
+else561:
+endif560:
     lea eax, [rel str_79]
     push eax
     mov eax, [rel g_token_buf]
@@ -9437,7 +9550,7 @@ endif554:
     sete al
     movzx eax, al
     test eax, eax
-    jz else557
+    jz else563
     call parse_operand
     mov eax, [rel g_op_reg]
     mov [ebp-101], eax
@@ -9451,9 +9564,9 @@ endif554:
     add esp, 8
     call skip_line
     jmp parse_line_pass2_return
-    jmp endif556
-else557:
-endif556:
+    jmp endif562
+else563:
+endif562:
     call skip_line
 parse_line_pass2_return:
     mov esp, ebp
@@ -9494,20 +9607,20 @@ write_elf_object:
     setl al
     movzx eax, al
     test eax, eax
-    jz else559
+    jz else565
     mov eax, 1
     neg eax
     jmp write_elf_object_return
-    jmp endif558
-else559:
-endif558:
+    jmp endif564
+else565:
+endif564:
     mov eax, 54
     mov [ebp-8], eax
     mov eax, 1
     mov [ebp-12], eax
     mov eax, 0
     mov [ebp-16], eax
-while_start560:
+while_start566:
     mov eax, [ebp-16]
     push eax
     mov eax, [rel g_sym_count]
@@ -9517,7 +9630,7 @@ while_start560:
     setl al
     movzx eax, al
     test eax, eax
-    jz while_end561
+    jz while_end567
     mov eax, [rel g_symbols]
     push eax
     mov eax, [ebp-16]
@@ -9561,8 +9674,8 @@ while_start560:
     pop eax
     add eax, ebx
     mov [ebp-16], eax
-    jmp while_start560
-while_end561:
+    jmp while_start566
+while_end567:
     mov eax, [rel g_sym_count]
     push eax
     mov eax, 1
@@ -9597,12 +9710,12 @@ while_end561:
     setg al
     movzx eax, al
     test eax, eax
-    jz else563
+    jz else569
     mov eax, 8
     mov [ebp-48], eax
-    jmp endif562
-else563:
-endif562:
+    jmp endif568
+else569:
+endif568:
     mov eax, [ebp-40]
     mov [ebp-52], eax
     mov eax, [ebp-52]
@@ -9867,7 +9980,7 @@ endif562:
     setg al
     movzx eax, al
     test eax, eax
-    jz else565
+    jz else571
     mov eax, [rel g_text_len]
     push eax
     mov eax, [rel g_text]
@@ -9878,9 +9991,9 @@ endif562:
     push eax
     call syscall3
     add esp, 16
-    jmp endif564
-else565:
-endif564:
+    jmp endif570
+else571:
+endif570:
     mov eax, [rel g_data_len]
     push eax
     mov eax, 0
@@ -9890,7 +10003,7 @@ endif564:
     setg al
     movzx eax, al
     test eax, eax
-    jz else567
+    jz else573
     mov eax, [rel g_data_len]
     push eax
     mov eax, [rel g_data]
@@ -9901,9 +10014,9 @@ endif564:
     push eax
     call syscall3
     add esp, 16
-    jmp endif566
-else567:
-endif566:
+    jmp endif572
+else573:
+endif572:
     mov eax, 0
     push eax
     mov eax, 0
@@ -9916,7 +10029,7 @@ endif566:
     mov [ebp-4232], eax
     mov eax, 0
     mov [ebp-16], eax
-while_start568:
+while_start574:
     mov eax, [ebp-16]
     push eax
     mov eax, [rel g_sym_count]
@@ -9926,7 +10039,7 @@ while_start568:
     setl al
     movzx eax, al
     test eax, eax
-    jz while_end569
+    jz while_end575
     mov eax, [rel g_symbols]
     push eax
     mov eax, [ebp-16]
@@ -10006,8 +10119,8 @@ while_start568:
     pop eax
     add eax, ebx
     mov [ebp-16], eax
-    jmp while_start568
-while_end569:
+    jmp while_start574
+while_end575:
     mov eax, [ebp-4232]
     push eax
     lea eax, [ebp-4228]
@@ -10034,7 +10147,7 @@ while_end569:
     mov [ebp-37032], eax
     mov eax, 0
     mov [ebp-16], eax
-while_start570:
+while_start576:
     mov eax, [ebp-16]
     push eax
     mov eax, [rel g_sym_count]
@@ -10044,7 +10157,7 @@ while_start570:
     setl al
     movzx eax, al
     test eax, eax
-    jz while_end571
+    jz while_end577
     mov eax, [rel g_symbols]
     push eax
     mov eax, [ebp-16]
@@ -10080,7 +10193,7 @@ while_start570:
     sete al
     movzx eax, al
     test eax, eax
-    jz else573
+    jz else579
     mov eax, [ebp-37036]
     push eax
     mov eax, 16
@@ -10184,11 +10297,11 @@ while_start570:
     sete al
     movzx eax, al
     test eax, eax
-    jz else575
+    jz else581
     mov eax, 1
     mov [ebp-37080], eax
-    jmp endif574
-else575:
+    jmp endif580
+else581:
     mov eax, [ebp-37068]
     push eax
     mov eax, 2
@@ -10198,11 +10311,11 @@ else575:
     sete al
     movzx eax, al
     test eax, eax
-    jz else577
+    jz else583
     mov eax, 2
     mov [ebp-37080], eax
-    jmp endif576
-else577:
+    jmp endif582
+else583:
     mov eax, [ebp-37068]
     push eax
     mov eax, 3
@@ -10212,14 +10325,14 @@ else577:
     sete al
     movzx eax, al
     test eax, eax
-    jz else579
+    jz else585
     mov eax, 3
     mov [ebp-37080], eax
-    jmp endif578
-else579:
-endif578:
-endif576:
-endif574:
+    jmp endif584
+else585:
+endif584:
+endif582:
+endif580:
     mov eax, [ebp-37080]
     push eax
     mov eax, 255
@@ -10299,9 +10412,9 @@ endif574:
     pop eax
     add eax, ebx
     mov [ebp-37032], eax
-    jmp endif572
-else573:
-endif572:
+    jmp endif578
+else579:
+endif578:
     mov eax, [ebp-16]
     push eax
     mov eax, 1
@@ -10309,11 +10422,11 @@ endif572:
     pop eax
     add eax, ebx
     mov [ebp-16], eax
-    jmp while_start570
-while_end571:
+    jmp while_start576
+while_end577:
     mov eax, 0
     mov [ebp-16], eax
-while_start580:
+while_start586:
     mov eax, [ebp-16]
     push eax
     mov eax, [rel g_sym_count]
@@ -10323,7 +10436,7 @@ while_start580:
     setl al
     movzx eax, al
     test eax, eax
-    jz while_end581
+    jz while_end587
     mov eax, [rel g_symbols]
     push eax
     mov eax, [ebp-16]
@@ -10370,16 +10483,16 @@ while_start580:
     mov ebx, eax
     pop eax
     test eax, eax
-    jnz or_short584
+    jnz or_short590
     test ebx, ebx
-    jnz or_short584
+    jnz or_short590
     xor eax, eax
-    jmp or_end585
-or_short584:
+    jmp or_end591
+or_short590:
     mov eax, 1
-or_end585:
+or_end591:
     test eax, eax
-    jz else583
+    jz else589
     mov eax, [ebp-37088]
     push eax
     mov eax, 16
@@ -10483,11 +10596,11 @@ or_end585:
     sete al
     movzx eax, al
     test eax, eax
-    jz else587
+    jz else593
     mov eax, 1
     mov [ebp-37132], eax
-    jmp endif586
-else587:
+    jmp endif592
+else593:
     mov eax, [ebp-37120]
     push eax
     mov eax, 2
@@ -10497,11 +10610,11 @@ else587:
     sete al
     movzx eax, al
     test eax, eax
-    jz else589
+    jz else595
     mov eax, 2
     mov [ebp-37132], eax
-    jmp endif588
-else589:
+    jmp endif594
+else595:
     mov eax, [ebp-37120]
     push eax
     mov eax, 3
@@ -10511,14 +10624,14 @@ else589:
     sete al
     movzx eax, al
     test eax, eax
-    jz else591
+    jz else597
     mov eax, 3
     mov [ebp-37132], eax
-    jmp endif590
-else591:
-endif590:
-endif588:
-endif586:
+    jmp endif596
+else597:
+endif596:
+endif594:
+endif592:
     mov eax, [ebp-37132]
     push eax
     mov eax, 255
@@ -10591,9 +10704,9 @@ endif586:
     pop eax
     add eax, ebx
     mov [ebp-37032], eax
-    jmp endif582
-else583:
-endif582:
+    jmp endif588
+else589:
+endif588:
     mov eax, [ebp-16]
     push eax
     mov eax, 1
@@ -10601,8 +10714,8 @@ endif582:
     pop eax
     add eax, ebx
     mov [ebp-16], eax
-    jmp while_start580
-while_end581:
+    jmp while_start586
+while_end587:
     mov eax, [ebp-37028]
     mov [ebp-37140], eax
     mov eax, [ebp-32]
@@ -11066,12 +11179,12 @@ while_end581:
     setg al
     movzx eax, al
     test eax, eax
-    jz else593
+    jz else599
     mov eax, 0
     mov [ebp-45400], eax
     mov eax, 0
     mov [ebp-16], eax
-while_start594:
+while_start600:
     mov eax, [ebp-16]
     push eax
     mov eax, [rel g_reloc_count]
@@ -11081,7 +11194,7 @@ while_start594:
     setl al
     movzx eax, al
     test eax, eax
-    jz while_end595
+    jz while_end601
     mov eax, [rel g_relocs]
     push eax
     mov eax, [ebp-16]
@@ -11205,8 +11318,8 @@ while_start594:
     pop eax
     add eax, ebx
     mov [ebp-16], eax
-    jmp while_start594
-while_end595:
+    jmp while_start600
+while_end601:
     mov eax, [ebp-45400]
     push eax
     lea eax, [ebp-45396]
@@ -11217,9 +11330,9 @@ while_end595:
     push eax
     call syscall3
     add esp, 16
-    jmp endif592
-else593:
-endif592:
+    jmp endif598
+else599:
+endif598:
     mov eax, [ebp-76]
     push eax
     mov eax, [ebp-72]
@@ -11241,7 +11354,7 @@ endif592:
     setg al
     movzx eax, al
     test eax, eax
-    jz else597
+    jz else603
     mov eax, 4
     push eax
     mov eax, 0
@@ -11260,9 +11373,9 @@ endif592:
     push eax
     call syscall3
     add esp, 16
-    jmp endif596
-else597:
-endif596:
+    jmp endif602
+else603:
+endif602:
     mov eax, 320
     push eax
     mov eax, 0
@@ -11882,7 +11995,7 @@ endif596:
     setg al
     movzx eax, al
     test eax, eax
-    jz else599
+    jz else605
     lea eax, [ebp-45768]
     push eax
     mov eax, 280
@@ -11980,9 +12093,9 @@ endif596:
     add eax, ebx
     pop ebx
     mov [eax], ebx
-    jmp endif598
-else599:
-endif598:
+    jmp endif604
+else605:
+endif604:
     mov eax, [ebp-48]
     push eax
     mov eax, 40
@@ -12030,16 +12143,16 @@ main:
     setl al
     movzx eax, al
     test eax, eax
-    jz else601
+    jz else607
     lea eax, [rel str_81]
     push eax
     call println
     add esp, 4
     mov eax, 1
     jmp main_return
-    jmp endif600
-else601:
-endif600:
+    jmp endif606
+else607:
+endif606:
     mov eax, 1
     push eax
     call get_argv
@@ -12159,16 +12272,16 @@ endif600:
     setl al
     movzx eax, al
     test eax, eax
-    jz else603
+    jz else609
     lea eax, [rel str_83]
     push eax
     call print_err
     add esp, 4
     mov eax, 1
     jmp main_return
-    jmp endif602
-else603:
-endif602:
+    jmp endif608
+else609:
+endif608:
     mov eax, 0
     mov [rel g_source_len], eax
     mov eax, 262144
@@ -12182,7 +12295,7 @@ endif602:
     call syscall3
     add esp, 16
     mov [ebp-28], eax
-while_start604:
+while_start610:
     mov eax, [ebp-28]
     push eax
     mov eax, 0
@@ -12192,7 +12305,7 @@ while_start604:
     setg al
     movzx eax, al
     test eax, eax
-    jz while_end605
+    jz while_end611
     mov eax, [rel g_source_len]
     push eax
     mov eax, [ebp-28]
@@ -12221,8 +12334,8 @@ while_start604:
     call syscall3
     add esp, 16
     mov [ebp-28], eax
-    jmp while_start604
-while_end605:
+    jmp while_start610
+while_end611:
     mov eax, [ebp-24]
     push eax
     mov eax, 6
@@ -12247,83 +12360,6 @@ while_end605:
     add esp, 4
     mov eax, 0
     mov [rel g_pos], eax
-while_start606:
-    mov eax, [rel g_pos]
-    push eax
-    mov eax, [rel g_source_len]
-    mov ebx, eax
-    pop eax
-    cmp eax, ebx
-    setl al
-    movzx eax, al
-    push eax
-    mov eax, [rel g_error]
-    push eax
-    mov eax, 0
-    mov ebx, eax
-    pop eax
-    cmp eax, ebx
-    sete al
-    movzx eax, al
-    mov ebx, eax
-    pop eax
-    test eax, eax
-    jz and_short608
-    test ebx, ebx
-    jz and_short608
-    mov eax, 1
-    jmp and_end609
-and_short608:
-    xor eax, eax
-and_end609:
-    test eax, eax
-    jz while_end607
-    call parse_line_pass1
-    jmp while_start606
-while_end607:
-    lea eax, [rel str_87]
-    push eax
-    call print
-    add esp, 4
-    mov eax, [rel g_sym_count]
-    push eax
-    call print_num
-    add esp, 4
-    lea eax, [rel str_88]
-    push eax
-    call println
-    add esp, 4
-    mov eax, [rel g_error]
-    push eax
-    mov eax, 0
-    mov ebx, eax
-    pop eax
-    cmp eax, ebx
-    setne al
-    movzx eax, al
-    test eax, eax
-    jz else611
-    mov eax, 1
-    jmp main_return
-    jmp endif610
-else611:
-endif610:
-    mov eax, 0
-    mov [rel g_pos], eax
-    mov eax, 1
-    mov [rel g_line], eax
-    mov eax, 1
-    mov [rel g_current_section], eax
-    mov eax, 0
-    mov [rel g_text_len], eax
-    mov eax, 0
-    mov [rel g_data_len], eax
-    mov eax, 0
-    mov [rel g_bss_len], eax
-    lea eax, [rel str_89]
-    push eax
-    call println
-    add esp, 4
 while_start612:
     mov eax, [rel g_pos]
     push eax
@@ -12355,9 +12391,21 @@ and_short614:
 and_end615:
     test eax, eax
     jz while_end613
-    call parse_line_pass2
+    call parse_line_pass1
     jmp while_start612
 while_end613:
+    lea eax, [rel str_87]
+    push eax
+    call print
+    add esp, 4
+    mov eax, [rel g_sym_count]
+    push eax
+    call print_num
+    add esp, 4
+    lea eax, [rel str_88]
+    push eax
+    call println
+    add esp, 4
     mov eax, [rel g_error]
     push eax
     mov eax, 0
@@ -12373,6 +12421,71 @@ while_end613:
     jmp endif616
 else617:
 endif616:
+    mov eax, 0
+    mov [rel g_pos], eax
+    mov eax, 1
+    mov [rel g_line], eax
+    mov eax, 1
+    mov [rel g_current_section], eax
+    mov eax, 0
+    mov [rel g_text_len], eax
+    mov eax, 0
+    mov [rel g_data_len], eax
+    mov eax, 0
+    mov [rel g_bss_len], eax
+    lea eax, [rel str_89]
+    push eax
+    call println
+    add esp, 4
+while_start618:
+    mov eax, [rel g_pos]
+    push eax
+    mov eax, [rel g_source_len]
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    setl al
+    movzx eax, al
+    push eax
+    mov eax, [rel g_error]
+    push eax
+    mov eax, 0
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    mov ebx, eax
+    pop eax
+    test eax, eax
+    jz and_short620
+    test ebx, ebx
+    jz and_short620
+    mov eax, 1
+    jmp and_end621
+and_short620:
+    xor eax, eax
+and_end621:
+    test eax, eax
+    jz while_end619
+    call parse_line_pass2
+    jmp while_start618
+while_end619:
+    mov eax, [rel g_error]
+    push eax
+    mov eax, 0
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    setne al
+    movzx eax, al
+    test eax, eax
+    jz else623
+    mov eax, 1
+    jmp main_return
+    jmp endif622
+else623:
+endif622:
     lea eax, [rel str_90]
     push eax
     call print
@@ -12427,16 +12540,16 @@ endif616:
     setne al
     movzx eax, al
     test eax, eax
-    jz else619
+    jz else625
     lea eax, [rel str_97]
     push eax
     call print_err
     add esp, 4
     mov eax, 1
     jmp main_return
-    jmp endif618
-else619:
-endif618:
+    jmp endif624
+else625:
+endif624:
     lea eax, [rel str_98]
     push eax
     call print

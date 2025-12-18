@@ -907,10 +907,16 @@ proc encode_lea_reg_sym(dst: int32, sym_idx: int32) =
   add_reloc(g_text_len, sym_idx, R_386_32, 0)
   emit_dword(0)
 
-# Encode mov reg, [sym]
-proc encode_mov_reg_sym(dst: int32, sym_idx: int32) =
+# Encode mov reg, [sym] (memory access via symbol)
+proc encode_mov_reg_mem_sym(dst: int32, sym_idx: int32) =
   emit_byte(cast[uint8](0x8B))
   emit_byte(modrm(0, dst, 5))
+  add_reloc(g_text_len, sym_idx, R_386_32, 0)
+  emit_dword(0)
+
+# Encode mov reg, sym (load symbol address as immediate)
+proc encode_mov_reg_imm_sym(dst: int32, sym_idx: int32) =
+  emit_byte(cast[uint8](0xB8 + dst))  # B8+reg for mov reg, imm32
   add_reloc(g_text_len, sym_idx, R_386_32, 0)
   emit_dword(0)
 
@@ -921,10 +927,16 @@ proc encode_mov_sym_reg(sym_idx: int32, src: int32) =
   add_reloc(g_text_len, sym_idx, R_386_32, 0)
   emit_dword(0)
 
-# Encode push [sym]
+# Encode push [sym] (push value from memory)
 proc encode_push_sym(sym_idx: int32) =
   emit_byte(cast[uint8](0xFF))
   emit_byte(modrm(0, 6, 5))  # /6 for push
+  add_reloc(g_text_len, sym_idx, R_386_32, 0)
+  emit_dword(0)
+
+# Encode push sym (push symbol address as immediate)
+proc encode_push_imm_sym(sym_idx: int32) =
+  emit_byte(cast[uint8](0x68))  # push imm32
   add_reloc(g_text_len, sym_idx, R_386_32, 0)
   emit_dword(0)
 
@@ -1201,14 +1213,14 @@ proc parse_operand() =
     g_op_type = 0  # register
     return
 
-  # Must be a symbol
+  # Must be a symbol (bare symbol = load address, type 8)
   g_op_sym = find_symbol(g_token_buf)
   if g_op_sym < 0:
     # Create undefined symbol
     var name: ptr uint8 = cast[ptr uint8](cast[int32](g_data) + g_data_cap - 1024 - g_sym_count * 64)
     strcpy(name, g_token_buf)
     g_op_sym = add_symbol(name, 0, SYM_UNDEFINED, SYM_EXTERN)
-  g_op_type = 4  # symbol
+  g_op_type = 8  # symbol address (bare symbol, load address as imm32)
 
 proc expect_comma() =
   skip_whitespace()
@@ -1365,14 +1377,17 @@ proc parse_line_pass2() =
             if g_op_type == 3:  # src is [reg+disp]
               encode_mov_reg_mem_disp(dst_reg, g_op_reg, g_op_disp)
             else:
-              if g_op_type == 4:  # src is symbol
-                encode_mov_reg_sym(dst_reg, g_op_sym)
+              if g_op_type == 4:  # src is [symbol] (memory access)
+                encode_mov_reg_mem_sym(dst_reg, g_op_sym)
               else:
                 if g_op_type == 5:  # src is [base+index*scale]
                   encode_mov_reg_sib(dst_reg, g_op_reg, g_op_index, g_op_scale)
                 else:
                   if g_op_type == 6:  # src is [base+index*scale+disp]
                     encode_mov_reg_sib_disp(dst_reg, g_op_reg, g_op_index, g_op_scale, g_op_disp)
+                  else:
+                    if g_op_type == 8:  # src is symbol address (load addr as imm)
+                      encode_mov_reg_imm_sym(dst_reg, g_op_sym)
     else:
       if dst_type == 2:  # dst is [reg]
         if dst_size == 1:
@@ -1404,6 +1419,10 @@ proc parse_line_pass2() =
       else:
         if g_op_type == 4:
           encode_push_sym(g_op_sym)
+        else:
+          if g_op_type == 8:
+            # push sym - push symbol address as immediate
+            encode_push_imm_sym(g_op_sym)
     skip_line()
     return
 
@@ -1415,7 +1434,7 @@ proc parse_line_pass2() =
 
   if strcmp(g_token_buf, cast[ptr uint8]("call")) == 0:
     parse_operand()
-    if g_op_type == 4:
+    if g_op_type == 4 or g_op_type == 8:
       encode_call_rel(g_op_sym)
     skip_line()
     return
