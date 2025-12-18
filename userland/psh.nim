@@ -15,7 +15,7 @@ const SYS_chdir: int32 = 12
 const SYS_getcwd: int32 = 183
 const SYS_open: int32 = 5
 const SYS_readlink: int32 = 89
-const SYS_access: int32 = 21
+const SYS_access: int32 = 33
 
 const STDIN: int32 = 0
 const STDOUT: int32 = 1
