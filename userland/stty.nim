@@ -1,0 +1,200 @@
+# stty - Set terminal settings
+# Usage: stty [OPTIONS]
+#   stty          - Show current settings
+#   stty sane     - Reset to sane defaults
+#   stty raw      - Enable raw mode
+#   stty -raw     - Disable raw mode
+#   stty echo     - Enable echo
+#   stty -echo    - Disable echo
+# Uses SYS_ioctl (54) with TCGETS/TCSETS
+
+const SYS_write: int32 = 4
+const SYS_exit: int32 = 1
+const SYS_brk: int32 = 45
+const SYS_ioctl: int32 = 54
+
+const STDIN: int32 = 0
+const STDOUT: int32 = 1
+const STDERR: int32 = 2
+
+# ioctl commands for terminal control
+const TCGETS: int32 = 0x5401    # Get terminal attributes
+const TCSETS: int32 = 0x5402    # Set terminal attributes
+
+# termios flags (c_lflag - local flags)
+const ECHO: int32 = 0x0008      # Enable echo
+const ICANON: int32 = 0x0002    # Canonical mode (line buffering)
+const ISIG: int32 = 0x0001      # Enable signals
+
+# termios flags (c_iflag - input flags)
+const ICRNL: int32 = 0x0100     # Map CR to NL on input
+const IXON: int32 = 0x0400      # Enable XON/XOFF flow control
+
+# termios flags (c_oflag - output flags)
+const OPOST: int32 = 0x0001     # Enable output processing
+
+extern proc syscall1(num: int32, arg1: int32): int32
+extern proc syscall3(num: int32, arg1: int32, arg2: int32, arg3: int32): int32
+extern proc get_argc(): int32
+extern proc get_argv(i: int32): ptr uint8
+
+proc strlen(s: ptr uint8): int32 =
+  var len: int32 = 0
+  while s[len] != cast[uint8](0):
+    len = len + 1
+  return len
+
+proc print(msg: ptr uint8) =
+  var len: int32 = strlen(msg)
+  discard syscall3(SYS_write, STDOUT, cast[int32](msg), len)
+
+proc print_err(msg: ptr uint8) =
+  var len: int32 = strlen(msg)
+  discard syscall3(SYS_write, STDERR, cast[int32](msg), len)
+
+proc strcmp(s1: ptr uint8, s2: ptr uint8): int32 =
+  var i: int32 = 0
+  while s1[i] != cast[uint8](0):
+    if s2[i] == cast[uint8](0):
+      return 1
+    if s1[i] != s2[i]:
+      var diff: int32 = cast[int32](s1[i]) - cast[int32](s2[i])
+      return diff
+    i = i + 1
+  if s2[i] != cast[uint8](0):
+    return -1
+  return 0
+
+proc print_hex(val: int32) =
+  var hex_chars: ptr uint8 = cast[ptr uint8]("0123456789abcdef")
+  var buf: ptr uint8
+
+  # Allocate buffer for hex string
+  var old_brk: int32 = syscall1(SYS_brk, 0)
+  var new_brk: int32 = old_brk + 16
+  discard syscall1(SYS_brk, new_brk)
+  buf = cast[ptr uint8](old_brk)
+
+  var i: int32 = 0
+  var v: int32 = val
+
+  # Convert to hex (8 digits)
+  var j: int32 = 7
+  while j >= 0:
+    var digit: int32 = v % 16
+    buf[j] = hex_chars[digit]
+    v = v / 16
+    j = j - 1
+
+  buf[8] = cast[uint8](0)
+  print(buf)
+
+proc show_settings(termios: ptr int32) =
+  # Print current settings in a simple format
+  print(cast[ptr uint8]("speed 38400 baud; line = 0;\n"))
+
+  var lflag: int32 = termios[3]
+
+  # Check echo
+  var has_echo: int32 = lflag & ECHO
+  if has_echo != 0:
+    print(cast[ptr uint8]("echo "))
+  if has_echo == 0:
+    print(cast[ptr uint8]("-echo "))
+
+  # Check canonical
+  var has_canon: int32 = lflag & ICANON
+  if has_canon != 0:
+    print(cast[ptr uint8]("icanon "))
+  if has_canon == 0:
+    print(cast[ptr uint8]("-icanon "))
+
+  # Check signals
+  var has_sig: int32 = lflag & ISIG
+  if has_sig != 0:
+    print(cast[ptr uint8]("isig"))
+  if has_sig == 0:
+    print(cast[ptr uint8]("-isig"))
+
+  print(cast[ptr uint8]("\n"))
+
+proc main() =
+  # Allocate memory for termios structure (60 bytes)
+  # termios struct: c_iflag, c_oflag, c_cflag, c_lflag (4 bytes each)
+  # + c_line (1 byte) + c_cc[32] (32 bytes) = ~40 bytes, round to 60
+  var old_brk: int32 = syscall1(SYS_brk, 0)
+  var new_brk: int32 = old_brk + 256
+  discard syscall1(SYS_brk, new_brk)
+
+  var termios: ptr int32 = cast[ptr int32](old_brk)
+
+  # Get current terminal attributes
+  var ret: int32 = syscall3(SYS_ioctl, STDIN, TCGETS, cast[int32](termios))
+
+  if ret < 0:
+    print_err(cast[ptr uint8]("stty: standard input: not a terminal\n"))
+    discard syscall1(SYS_exit, 1)
+
+  var argc: int32 = get_argc()
+
+  # No arguments - show settings
+  if argc == 1:
+    show_settings(termios)
+    discard syscall1(SYS_exit, 0)
+
+  # Process arguments
+  var i: int32 = 1
+  var modified: int32 = 0
+
+  while i < argc:
+    var arg: ptr uint8 = get_argv(i)
+
+    # sane - reset to sane defaults
+    var cmp_sane: int32 = strcmp(arg, cast[ptr uint8]("sane"))
+    if cmp_sane == 0:
+      # Enable: echo, canonical, signals, output processing
+      termios[3] = termios[3] | ECHO | ICANON | ISIG
+      termios[0] = termios[0] | ICRNL | IXON
+      termios[1] = termios[1] | OPOST
+      modified = 1
+
+    # raw - enable raw mode
+    var cmp_raw: int32 = strcmp(arg, cast[ptr uint8]("raw"))
+    if cmp_raw == 0:
+      # Disable canonical mode and echo
+      termios[3] = termios[3] & (ICANON ^ -1)
+      termios[3] = termios[3] & (ECHO ^ -1)
+      termios[3] = termios[3] & (ISIG ^ -1)
+      termios[0] = termios[0] & (ICRNL ^ -1)
+      termios[1] = termios[1] & (OPOST ^ -1)
+      modified = 1
+
+    # -raw - disable raw mode (back to cooked)
+    var cmp_nraw: int32 = strcmp(arg, cast[ptr uint8]("-raw"))
+    if cmp_nraw == 0:
+      # Enable canonical mode
+      termios[3] = termios[3] | ICANON
+      modified = 1
+
+    # echo - enable echo
+    var cmp_echo: int32 = strcmp(arg, cast[ptr uint8]("echo"))
+    if cmp_echo == 0:
+      termios[3] = termios[3] | ECHO
+      modified = 1
+
+    # -echo - disable echo
+    var cmp_necho: int32 = strcmp(arg, cast[ptr uint8]("-echo"))
+    if cmp_necho == 0:
+      termios[3] = termios[3] & (ECHO ^ -1)
+      modified = 1
+
+    i = i + 1
+
+  # Apply changes if modified
+  if modified != 0:
+    ret = syscall3(SYS_ioctl, STDIN, TCSETS, cast[int32](termios))
+    if ret < 0:
+      print_err(cast[ptr uint8]("stty: failed to set terminal attributes\n"))
+      discard syscall1(SYS_exit, 1)
+
+  discard syscall1(SYS_exit, 0)

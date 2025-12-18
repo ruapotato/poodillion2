@@ -1,0 +1,185 @@
+# ptx - Produce permuted index
+# Usage: ptx [FILE]
+# Simplified version: list words with context
+# Output: word CONTEXT
+
+const SYS_read: int32 = 3
+const SYS_write: int32 = 4
+const SYS_open: int32 = 5
+const SYS_close: int32 = 6
+const SYS_exit: int32 = 1
+const SYS_brk: int32 = 45
+
+const STDIN: int32 = 0
+const STDOUT: int32 = 1
+const STDERR: int32 = 2
+
+const O_RDONLY: int32 = 0
+
+extern proc syscall1(num: int32, arg1: int32): int32
+extern proc syscall2(num: int32, arg1: int32, arg2: int32): int32
+extern proc syscall3(num: int32, arg1: int32, arg2: int32, arg3: int32): int32
+extern proc get_argc(): int32
+extern proc get_argv(i: int32): ptr uint8
+
+proc strlen(s: ptr uint8): int32 =
+  var i: int32 = 0
+  while s[i] != cast[uint8](0):
+    i = i + 1
+  return i
+
+proc print(msg: ptr uint8) =
+  var len: int32 = strlen(msg)
+  discard syscall3(SYS_write, STDOUT, cast[int32](msg), len)
+
+proc print_err(msg: ptr uint8) =
+  var len: int32 = strlen(msg)
+  discard syscall3(SYS_write, STDERR, cast[int32](msg), len)
+
+# Check if character is whitespace
+proc is_whitespace(c: uint8): int32 =
+  if c == cast[uint8](32):  # space
+    return 1
+  if c == cast[uint8](9):   # tab
+    return 1
+  if c == cast[uint8](10):  # newline
+    return 1
+  if c == cast[uint8](13):  # carriage return
+    return 1
+  return 0
+
+# Check if character is alphanumeric or punctuation (not whitespace)
+proc is_word_char(c: uint8): int32 =
+  # Letters, digits, and some punctuation
+  if c >= cast[uint8](48) and c <= cast[uint8](57):  # 0-9
+    return 1
+  if c >= cast[uint8](65) and c <= cast[uint8](90):  # A-Z
+    return 1
+  if c >= cast[uint8](97) and c <= cast[uint8](122): # a-z
+    return 1
+  if c == cast[uint8](45):  # hyphen
+    return 1
+  if c == cast[uint8](39):  # apostrophe
+    return 1
+  return 0
+
+# Print word with context
+proc print_word_with_context(word: ptr uint8, word_len: int32, line: ptr uint8, line_len: int32) =
+  # Print word (left-aligned, 20 chars)
+  discard syscall3(SYS_write, STDOUT, cast[int32](word), word_len)
+
+  var padding: int32 = 20 - word_len
+  if padding < 0:
+    padding = 0
+
+  var i: int32 = 0
+  while i < padding:
+    discard syscall3(SYS_write, STDOUT, cast[int32](" "), 1)
+    i = i + 1
+
+  # Print context (up to 60 chars)
+  var context_len: int32 = line_len
+  if context_len > 60:
+    context_len = 60
+
+  discard syscall3(SYS_write, STDOUT, cast[int32](line), context_len)
+  discard syscall3(SYS_write, STDOUT, cast[int32]("\n"), 1)
+
+# Extract words from line and print with context
+proc process_line(line: ptr uint8, line_len: int32) =
+  var i: int32 = 0
+  var word_start: int32 = -1
+  var word_len: int32 = 0
+
+  var old_brk: int32 = syscall1(SYS_brk, 0)
+  var new_brk: int32 = old_brk + 256
+  discard syscall1(SYS_brk, new_brk)
+  var word_buf: ptr uint8 = cast[ptr uint8](old_brk)
+
+  while i <= line_len:
+    var c: uint8 = cast[uint8](0)
+    if i < line_len:
+      c = line[i]
+
+    if is_word_char(c) != 0:
+      if word_start < 0:
+        word_start = i
+        word_len = 0
+
+      if word_len < 255:
+        word_buf[word_len] = c
+        word_len = word_len + 1
+    else:
+      # End of word
+      if word_start >= 0:
+        # Ignore very short words (1 or 2 chars)
+        if word_len >= 3:
+          word_buf[word_len] = cast[uint8](0)
+          print_word_with_context(word_buf, word_len, line, line_len)
+
+        word_start = -1
+        word_len = 0
+
+    i = i + 1
+
+proc main() =
+  var argc: int32 = get_argc()
+  var fd: int32 = STDIN
+  var filename: ptr uint8 = cast[ptr uint8](0)
+
+  # Parse arguments
+  var i: int32 = 1
+  while i < argc:
+    var arg: ptr uint8 = get_argv(i)
+    filename = arg
+    i = i + 1
+
+  # Open file if provided
+  if filename != cast[ptr uint8](0):
+    fd = syscall2(SYS_open, cast[int32](filename), O_RDONLY)
+    if fd < 0:
+      print_err(cast[ptr uint8]("ptx: cannot open file\n"))
+      discard syscall1(SYS_exit, 1)
+
+  # Allocate buffers
+  var old_brk: int32 = syscall1(SYS_brk, 0)
+  var new_brk: int32 = old_brk + 8192
+  discard syscall1(SYS_brk, new_brk)
+  var buffer: ptr uint8 = cast[ptr uint8](old_brk)
+  var line_buf: ptr uint8 = cast[ptr uint8](old_brk + 4096)
+
+  var line_pos: int32 = 0
+
+  var running: int32 = 1
+  while running != 0:
+    var n: int32 = syscall3(SYS_read, fd, cast[int32](buffer), 4096)
+    if n <= 0:
+      # Process last line if any
+      if line_pos > 0:
+        line_buf[line_pos] = cast[uint8](0)
+        process_line(line_buf, line_pos)
+
+      running = 0
+      break
+
+    var j: int32 = 0
+    while j < n:
+      var c: uint8 = buffer[j]
+
+      if c == cast[uint8](10):  # newline
+        # Process complete line
+        line_buf[line_pos] = cast[uint8](0)
+        process_line(line_buf, line_pos)
+        line_pos = 0
+      else:
+        # Add to line buffer
+        if line_pos < 4095:
+          line_buf[line_pos] = c
+          line_pos = line_pos + 1
+
+      j = j + 1
+
+  if fd != STDIN:
+    discard syscall1(SYS_close, fd)
+
+  discard syscall1(SYS_exit, 0)

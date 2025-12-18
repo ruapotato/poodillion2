@@ -434,7 +434,7 @@ DATA_UTILS = $(BIN_DIR)/ps $(BIN_DIR)/inspect $(BIN_DIR)/where $(BIN_DIR)/count 
 GRAPHICS_UTILS = $(BIN_DIR)/fbinfo $(BIN_DIR)/clear $(BIN_DIR)/demo $(BIN_DIR)/pixel $(BIN_DIR)/line $(BIN_DIR)/rect $(BIN_DIR)/circle
 
 # File manipulation utilities (new)
-FILE_UTILS = $(BIN_DIR)/rm $(BIN_DIR)/mkdir $(BIN_DIR)/rmdir $(BIN_DIR)/mv $(BIN_DIR)/touch $(BIN_DIR)/cp
+FILE_UTILS = $(BIN_DIR)/rm $(BIN_DIR)/mkdir $(BIN_DIR)/rmdir $(BIN_DIR)/mv $(BIN_DIR)/touch $(BIN_DIR)/cp $(BIN_DIR)/mkfifo $(BIN_DIR)/mknod $(BIN_DIR)/link $(BIN_DIR)/unlink $(BIN_DIR)/truncate $(BIN_DIR)/realpath
 
 # Text processing utilities (new)
 TEXT_UTILS = $(BIN_DIR)/wc $(BIN_DIR)/tee $(BIN_DIR)/rev $(BIN_DIR)/yes $(BIN_DIR)/seq $(BIN_DIR)/cut $(BIN_DIR)/uniq $(BIN_DIR)/tr $(BIN_DIR)/basename $(BIN_DIR)/dirname $(BIN_DIR)/ed
@@ -461,7 +461,10 @@ SEARCH_UTILS = $(BIN_DIR)/find $(BIN_DIR)/od $(BIN_DIR)/strings
 TIME_PERM_UTILS = $(BIN_DIR)/date $(BIN_DIR)/chmod $(BIN_DIR)/chown $(BIN_DIR)/chgrp $(BIN_DIR)/pwd
 
 # Shell scripting utilities
-SHELL_SCRIPT_UTILS = $(BIN_DIR)/test $(BIN_DIR)/expr $(BIN_DIR)/which $(BIN_DIR)/xargs $(BIN_DIR)/env
+SHELL_SCRIPT_UTILS = $(BIN_DIR)/test $(BIN_DIR)/expr $(BIN_DIR)/which $(BIN_DIR)/xargs $(BIN_DIR)/env $(BIN_DIR)/getopt
+
+# POSIX compliance utilities
+POSIX_UTILS = $(BIN_DIR)/install $(BIN_DIR)/tsort $(BIN_DIR)/pathchk $(BIN_DIR)/mktemp $(BIN_DIR)/dircolors
 
 # Diff/comparison utilities
 DIFF_UTILS = $(BIN_DIR)/cmp $(BIN_DIR)/comm $(BIN_DIR)/diff
@@ -475,8 +478,14 @@ MATH_UTILS = $(BIN_DIR)/factor $(BIN_DIR)/bc $(BIN_DIR)/sum $(BIN_DIR)/cksum $(B
 # Shell
 SHELL_UTILS = $(BIN_DIR)/psh
 
+# Terminal and I/O utilities
+
+# Text display/formatting utilities
+DISPLAY_UTILS = $(BIN_DIR)/pr $(BIN_DIR)/xxd $(BIN_DIR)/look $(BIN_DIR)/csplit $(BIN_DIR)/ptx
+TERMINAL_UTILS = $(BIN_DIR)/stty $(BIN_DIR)/tput $(BIN_DIR)/reset $(BIN_DIR)/mesg $(BIN_DIR)/script
+
 # All utilities
-ALL_UTILS = $(CORE_UTILS) $(DATA_UTILS) $(GRAPHICS_UTILS) $(FILE_UTILS) $(TEXT_UTILS) $(ADVANCED_TEXT_UTILS) $(STRING_UTILS) $(SYSINFO_UTILS) $(PROC_UTILS) $(DISK_UTILS) $(SEARCH_UTILS) $(TIME_PERM_UTILS) $(SHELL_SCRIPT_UTILS) $(MATH_UTILS) $(DIFF_UTILS) $(ARCHIVE_UTILS) $(SHELL_UTILS)
+ALL_UTILS = $(CORE_UTILS) $(DATA_UTILS) $(GRAPHICS_UTILS) $(FILE_UTILS) $(TEXT_UTILS) $(ADVANCED_TEXT_UTILS) $(STRING_UTILS) $(DISPLAY_UTILS) $(SYSINFO_UTILS) $(PROC_UTILS) $(DISK_UTILS) $(SEARCH_UTILS) $(TIME_PERM_UTILS) $(SHELL_SCRIPT_UTILS) $(POSIX_UTILS) $(MATH_UTILS) $(DIFF_UTILS) $(ARCHIVE_UTILS) $(SHELL_UTILS) $(TERMINAL_UTILS)
 
 # Build all userland utilities
 .PHONY: userland
@@ -525,8 +534,16 @@ userland: $(ALL_UTILS)
 	@echo "Shell:"
 	@ls -lh $(SHELL_UTILS) 2>/dev/null || true
 	@echo ""
-	@echo "String/formatting utilities:"
+	@echo ""
+	@echo "Text display/formatting utilities:"
+	@ls -lh $(DISPLAY_UTILS) 2>/dev/null || true
+	@echo ""
 	@ls -lh $(STRING_UTILS) 2>/dev/null || true
+	@echo "POSIX compliance utilities:"
+	@ls -lh $(POSIX_UTILS) 2>/dev/null || true
+	@echo ""
+	@echo "Terminal and I/O utilities:"
+	@ls -lh $(TERMINAL_UTILS) 2>/dev/null || true
 
 # Build file utilities
 .PHONY: file-utils
@@ -547,8 +564,12 @@ advanced-text-utils: $(ADVANCED_TEXT_UTILS)
 # Build string/formatting utilities
 .PHONY: string-utils
 string-utils: $(STRING_UTILS)
-	@echo "✓ String/formatting utilities built!"
-	@ls -lh $(STRING_UTILS) 2>/dev/null || true
+
+# Build text display/formatting utilities
+.PHONY: display-utils
+display-utils: $(DISPLAY_UTILS)
+	@echo "✓ Text display/formatting utilities built!"
+	@ls -lh $(DISPLAY_UTILS) 2>/dev/null || true
 
 # Build system info utilities
 .PHONY: sysinfo-utils
@@ -598,6 +619,18 @@ archive-utils: $(ARCHIVE_UTILS)
 diff-utils: $(DIFF_UTILS)
 	@echo "✓ Diff/comparison utilities built!"
 	@ls -lh $(DIFF_UTILS) 2>/dev/null || true
+
+# Build POSIX utilities
+.PHONY: posix-utils
+posix-utils: $(POSIX_UTILS)
+	@echo "✓ POSIX compliance utilities built!"
+	@ls -lh $(POSIX_UTILS) 2>/dev/null || true
+
+# Build terminal utilities
+.PHONY: terminal-utils
+terminal-utils: $(TERMINAL_UTILS)
+	@echo "✓ Terminal and I/O utilities built!"
+	@ls -lh $(TERMINAL_UTILS) 2>/dev/null || true
 
 # Graphics utilities target
 .PHONY: graphics

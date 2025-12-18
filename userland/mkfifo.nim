@@ -1,0 +1,57 @@
+# mkfifo - Create named pipe (FIFO)
+# Usage: mkfifo name
+
+const SYS_write: int32 = 4
+const SYS_exit: int32 = 1
+const SYS_mknod: int32 = 14
+
+const STDOUT: int32 = 1
+const STDERR: int32 = 2
+
+# File mode bits
+const S_IFIFO: int32 = 4096      # 0010000 (octal) - FIFO/named pipe
+const S_IRUSR: int32 = 256       # 0400 - user read
+const S_IWUSR: int32 = 128       # 0200 - user write
+const S_IRGRP: int32 = 32        # 0040 - group read
+const S_IWGRP: int32 = 16        # 0020 - group write
+const S_IROTH: int32 = 4         # 0004 - others read
+const S_IWOTH: int32 = 2         # 0002 - others write
+
+extern proc syscall1(num: int32, arg1: int32): int32
+extern proc syscall2(num: int32, arg1: int32, arg2: int32): int32
+extern proc syscall3(num: int32, arg1: int32, arg2: int32, arg3: int32): int32
+extern proc get_argc(): int32
+extern proc get_argv(index: int32): ptr uint8
+
+proc strlen(s: ptr uint8): int32 =
+  var i: int32 = 0
+  while s[i] != cast[uint8](0):
+    i = i + 1
+  return i
+
+proc print_err(msg: ptr uint8) =
+  var len: int32 = strlen(msg)
+  discard syscall3(SYS_write, STDERR, cast[int32](msg), len)
+
+proc main() =
+  var argc: int32 = get_argc()
+
+  if argc < 2:
+    print_err(cast[ptr uint8]("Usage: mkfifo name\n"))
+    discard syscall1(SYS_exit, 1)
+
+  var name: ptr uint8 = get_argv(1)
+
+  # Create FIFO with mode 0666 (S_IFIFO | rw-rw-rw-)
+  var mode: int32 = S_IFIFO | S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH
+  var dev: int32 = 0  # Device number is ignored for FIFOs
+
+  var result: int32 = syscall3(SYS_mknod, cast[int32](name), mode, dev)
+
+  if result < 0:
+    print_err(cast[ptr uint8]("mkfifo: cannot create FIFO '"))
+    print_err(name)
+    print_err(cast[ptr uint8]("'\n"))
+    discard syscall1(SYS_exit, 1)
+
+  discard syscall1(SYS_exit, 0)

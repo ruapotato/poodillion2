@@ -1,0 +1,141 @@
+# look - Display lines beginning with prefix
+# Usage: look PREFIX [FILE]
+# Binary search in sorted file
+# Default file: /usr/share/dict/words
+# Print all matching lines
+
+const SYS_read: int32 = 3
+const SYS_write: int32 = 4
+const SYS_open: int32 = 5
+const SYS_close: int32 = 6
+const SYS_exit: int32 = 1
+const SYS_brk: int32 = 45
+const SYS_lseek: int32 = 19
+
+const STDIN: int32 = 0
+const STDOUT: int32 = 1
+const STDERR: int32 = 2
+
+const O_RDONLY: int32 = 0
+
+const SEEK_SET: int32 = 0
+const SEEK_CUR: int32 = 1
+const SEEK_END: int32 = 2
+
+extern proc syscall1(num: int32, arg1: int32): int32
+extern proc syscall2(num: int32, arg1: int32, arg2: int32): int32
+extern proc syscall3(num: int32, arg1: int32, arg2: int32, arg3: int32): int32
+extern proc get_argc(): int32
+extern proc get_argv(i: int32): ptr uint8
+
+proc strlen(s: ptr uint8): int32 =
+  var i: int32 = 0
+  while s[i] != cast[uint8](0):
+    i = i + 1
+  return i
+
+proc print(msg: ptr uint8) =
+  var len: int32 = strlen(msg)
+  discard syscall3(SYS_write, STDOUT, cast[int32](msg), len)
+
+proc print_err(msg: ptr uint8) =
+  var len: int32 = strlen(msg)
+  discard syscall3(SYS_write, STDERR, cast[int32](msg), len)
+
+# Check if string starts with prefix
+proc starts_with(line: ptr uint8, prefix: ptr uint8): int32 =
+  var i: int32 = 0
+  while prefix[i] != cast[uint8](0):
+    if line[i] != prefix[i]:
+      return 0
+    i = i + 1
+  return 1
+
+# Compare strings for sorting (returns: <0 if s1<s2, 0 if equal, >0 if s1>s2)
+proc strcmp_prefix(s1: ptr uint8, s2: ptr uint8, len: int32): int32 =
+  var i: int32 = 0
+  while i < len:
+    if s2[i] == cast[uint8](0):
+      return 1  # s1 > s2
+    if s1[i] < s2[i]:
+      return -1
+    if s1[i] > s2[i]:
+      return 1
+    i = i + 1
+  return 0
+
+# Simple linear search through file (binary search would need file size)
+proc search_file(fd: int32, prefix: ptr uint8) =
+  var old_brk: int32 = syscall1(SYS_brk, 0)
+  var new_brk: int32 = old_brk + 8192
+  discard syscall1(SYS_brk, new_brk)
+  var buffer: ptr uint8 = cast[ptr uint8](old_brk)
+  var line_buf: ptr uint8 = cast[ptr uint8](old_brk + 4096)
+
+  var running: int32 = 1
+  var line_pos: int32 = 0
+  var found_any: int32 = 0
+  var prefix_len: int32 = strlen(prefix)
+
+  while running != 0:
+    var n: int32 = syscall3(SYS_read, fd, cast[int32](buffer), 4096)
+    if n <= 0:
+      running = 0
+      break
+
+    var i: int32 = 0
+    while i < n:
+      var c: uint8 = buffer[i]
+
+      if c == cast[uint8](10):  # newline
+        # Check if line starts with prefix
+        line_buf[line_pos] = cast[uint8](0)
+        if starts_with(line_buf, prefix) != 0:
+          # Print the line
+          discard syscall3(SYS_write, STDOUT, cast[int32](line_buf), line_pos)
+          discard syscall3(SYS_write, STDOUT, cast[int32]("\n"), 1)
+          found_any = 1
+
+        line_pos = 0
+      else:
+        # Add to line buffer
+        if line_pos < 4095:
+          line_buf[line_pos] = c
+          line_pos = line_pos + 1
+
+      i = i + 1
+
+  # Handle last line if no trailing newline
+  if line_pos > 0:
+    line_buf[line_pos] = cast[uint8](0)
+    if starts_with(line_buf, prefix) != 0:
+      discard syscall3(SYS_write, STDOUT, cast[int32](line_buf), line_pos)
+      discard syscall3(SYS_write, STDOUT, cast[int32]("\n"), 1)
+
+proc main() =
+  var argc: int32 = get_argc()
+
+  if argc < 2:
+    print_err(cast[ptr uint8]("Usage: look PREFIX [FILE]\n"))
+    discard syscall1(SYS_exit, 1)
+
+  var prefix: ptr uint8 = get_argv(1)
+  var filename: ptr uint8 = cast[ptr uint8](0)
+
+  if argc >= 3:
+    filename = get_argv(2)
+  else:
+    # Default to /usr/share/dict/words
+    filename = cast[ptr uint8]("/usr/share/dict/words")
+
+  # Open file
+  var fd: int32 = syscall2(SYS_open, cast[int32](filename), O_RDONLY)
+  if fd < 0:
+    print_err(cast[ptr uint8]("look: cannot open file\n"))
+    discard syscall1(SYS_exit, 1)
+
+  # Search for matching lines
+  search_file(fd, prefix)
+
+  discard syscall1(SYS_close, fd)
+  discard syscall1(SYS_exit, 0)
