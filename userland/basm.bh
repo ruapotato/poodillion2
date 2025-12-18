@@ -492,6 +492,19 @@ proc encode_mov_mem_reg(base: int32, src: int32) =
     else:
       emit_byte(modrm(0, src, base))
 
+# Encode mov byte [reg], reg8
+proc encode_mov_mem_reg8(base: int32, src: int32) =
+  emit_byte(cast[uint8](0x88))  # MOV r/m8, r8
+  if base == REG_EBP:
+    emit_byte(modrm(1, src, base))
+    emit_byte(cast[uint8](0))
+  else:
+    if base == REG_ESP:
+      emit_byte(modrm(0, src, 4))
+      emit_byte(cast[uint8](0x24))
+    else:
+      emit_byte(modrm(0, src, base))
+
 # Encode mov [reg+disp], reg
 proc encode_mov_mem_disp_reg(base: int32, disp: int32, src: int32) =
   emit_byte(cast[uint8](0x89))  # MOV r/m32, r32
@@ -527,7 +540,7 @@ proc encode_pop_reg(reg: int32) =
 proc encode_call_rel(sym_idx: int32) =
   emit_byte(cast[uint8](0xE8))
   add_reloc(g_text_len, sym_idx, R_386_PC32, -4)
-  emit_dword(0)
+  emit_dword(-4)  # Addend goes in instruction for REL-style relocations
 
 # Encode ret
 proc encode_ret() =
@@ -596,6 +609,92 @@ proc encode_lea_reg_mem_disp(dst: int32, base: int32, disp: int32) =
       emit_byte(modrm(2, dst, base))
     emit_dword(disp)
 
+# Compute SIB byte: scale*64 + index*8 + base
+proc make_sib(scale: int32, idx: int32, base: int32): int32 =
+  var ss: int32 = 0
+  if scale == 1:
+    ss = 0
+  else:
+    if scale == 2:
+      ss = 1
+    else:
+      if scale == 4:
+        ss = 2
+      else:
+        if scale == 8:
+          ss = 3
+  return (ss * 64) + (idx * 8) + base
+
+# Encode lea reg, [base + index*scale]
+proc encode_lea_reg_sib(dst: int32, base: int32, idx: int32, scale: int32) =
+  emit_byte(cast[uint8](0x8D))
+  if base == REG_EBP:
+    # [ebp + index*scale] needs disp8=0
+    emit_byte(modrm(1, dst, 4))  # mod=01, r/m=4 (SIB follows)
+    emit_byte(cast[uint8](make_sib(scale, idx, base)))
+    emit_byte(cast[uint8](0))   # disp8 = 0
+  else:
+    emit_byte(modrm(0, dst, 4))  # mod=00, r/m=4 (SIB follows)
+    emit_byte(cast[uint8](make_sib(scale, idx, base)))
+
+# Encode lea reg, [base + index*scale + disp]
+proc encode_lea_reg_sib_disp(dst: int32, base: int32, idx: int32, scale: int32, disp: int32) =
+  emit_byte(cast[uint8](0x8D))
+  if disp >= -128 and disp <= 127:
+    emit_byte(modrm(1, dst, 4))  # mod=01, r/m=4 (SIB follows)
+    emit_byte(cast[uint8](make_sib(scale, idx, base)))
+    emit_byte(cast[uint8](disp & 255))
+  else:
+    emit_byte(modrm(2, dst, 4))  # mod=10, r/m=4 (SIB follows)
+    emit_byte(cast[uint8](make_sib(scale, idx, base)))
+    emit_dword(disp)
+
+# Encode mov reg, [base + index*scale]
+proc encode_mov_reg_sib(dst: int32, base: int32, idx: int32, scale: int32) =
+  emit_byte(cast[uint8](0x8B))
+  if base == REG_EBP:
+    emit_byte(modrm(1, dst, 4))
+    emit_byte(cast[uint8](make_sib(scale, idx, base)))
+    emit_byte(cast[uint8](0))
+  else:
+    emit_byte(modrm(0, dst, 4))
+    emit_byte(cast[uint8](make_sib(scale, idx, base)))
+
+# Encode mov reg, [base + index*scale + disp]
+proc encode_mov_reg_sib_disp(dst: int32, base: int32, idx: int32, scale: int32, disp: int32) =
+  emit_byte(cast[uint8](0x8B))
+  if disp >= -128 and disp <= 127:
+    emit_byte(modrm(1, dst, 4))
+    emit_byte(cast[uint8](make_sib(scale, idx, base)))
+    emit_byte(cast[uint8](disp & 255))
+  else:
+    emit_byte(modrm(2, dst, 4))
+    emit_byte(cast[uint8](make_sib(scale, idx, base)))
+    emit_dword(disp)
+
+# Encode mov [base + index*scale], reg
+proc encode_mov_sib_reg(base: int32, idx: int32, scale: int32, src: int32) =
+  emit_byte(cast[uint8](0x89))
+  if base == REG_EBP:
+    emit_byte(modrm(1, src, 4))
+    emit_byte(cast[uint8](make_sib(scale, idx, base)))
+    emit_byte(cast[uint8](0))
+  else:
+    emit_byte(modrm(0, src, 4))
+    emit_byte(cast[uint8](make_sib(scale, idx, base)))
+
+# Encode mov [base + index*scale + disp], reg
+proc encode_mov_sib_disp_reg(base: int32, idx: int32, scale: int32, disp: int32, src: int32) =
+  emit_byte(cast[uint8](0x89))
+  if disp >= -128 and disp <= 127:
+    emit_byte(modrm(1, src, 4))
+    emit_byte(cast[uint8](make_sib(scale, idx, base)))
+    emit_byte(cast[uint8](disp & 255))
+  else:
+    emit_byte(modrm(2, src, 4))
+    emit_byte(cast[uint8](make_sib(scale, idx, base)))
+    emit_dword(disp)
+
 # Encode xor reg, reg
 proc encode_xor_reg_reg(dst: int32, src: int32) =
   emit_byte(cast[uint8](0x31))
@@ -625,43 +724,43 @@ proc encode_cmp_reg_imm(dst: int32, imm: int32) =
 proc encode_jmp_rel(sym_idx: int32) =
   emit_byte(cast[uint8](0xE9))
   add_reloc(g_text_len, sym_idx, R_386_PC32, -4)
-  emit_dword(0)
+  emit_dword(-4)  # Addend for REL-style relocations
 
 proc encode_je_rel(sym_idx: int32) =
   emit_byte(cast[uint8](0x0F))
   emit_byte(cast[uint8](0x84))
   add_reloc(g_text_len, sym_idx, R_386_PC32, -4)
-  emit_dword(0)
+  emit_dword(-4)
 
 proc encode_jne_rel(sym_idx: int32) =
   emit_byte(cast[uint8](0x0F))
   emit_byte(cast[uint8](0x85))
   add_reloc(g_text_len, sym_idx, R_386_PC32, -4)
-  emit_dword(0)
+  emit_dword(-4)
 
 proc encode_jl_rel(sym_idx: int32) =
   emit_byte(cast[uint8](0x0F))
   emit_byte(cast[uint8](0x8C))
   add_reloc(g_text_len, sym_idx, R_386_PC32, -4)
-  emit_dword(0)
+  emit_dword(-4)
 
 proc encode_jg_rel(sym_idx: int32) =
   emit_byte(cast[uint8](0x0F))
   emit_byte(cast[uint8](0x8F))
   add_reloc(g_text_len, sym_idx, R_386_PC32, -4)
-  emit_dword(0)
+  emit_dword(-4)
 
 proc encode_jle_rel(sym_idx: int32) =
   emit_byte(cast[uint8](0x0F))
   emit_byte(cast[uint8](0x8E))
   add_reloc(g_text_len, sym_idx, R_386_PC32, -4)
-  emit_dword(0)
+  emit_dword(-4)
 
 proc encode_jge_rel(sym_idx: int32) =
   emit_byte(cast[uint8](0x0F))
   emit_byte(cast[uint8](0x8D))
   add_reloc(g_text_len, sym_idx, R_386_PC32, -4)
-  emit_dword(0)
+  emit_dword(-4)
 
 proc encode_jz_rel(sym_idx: int32) =
   encode_je_rel(sym_idx)
@@ -927,13 +1026,18 @@ proc parse_line_pass1() =
 
 # Parse operand - returns type and value
 # Type: 0=register, 1=immediate, 2=memory [reg], 3=memory [reg+disp], 4=symbol
+#       5=memory [base+index*scale], 6=memory [base+index*scale+disp]
 var g_op_type: int32
 var g_op_reg: int32
 var g_op_disp: int32
 var g_op_sym: int32
+var g_op_index: int32   # index register for SIB addressing
+var g_op_scale: int32   # scale factor (1, 2, 4, 8) for SIB addressing
+var g_op_size: int32    # size prefix: 0=default, 1=byte, 2=word, 4=dword
 
 proc parse_operand() =
   skip_whitespace()
+  g_op_size = 0  # Reset size prefix
 
   # Check for immediate
   if g_source[g_pos] == cast[uint8](45) or is_digit(g_source[g_pos]) == 1:
@@ -969,6 +1073,8 @@ proc parse_operand() =
         else:
           # Not a size prefix, restore position
           g_pos = save_pos
+
+  g_op_size = size_prefix  # Store size prefix for encoder
 
   # Check for memory access
   if g_source[g_pos] == cast[uint8](91):  # '['
@@ -1008,8 +1114,11 @@ proc parse_operand() =
       return
 
     skip_whitespace()
+    g_op_index = -1
+    g_op_scale = 1
+    g_op_disp = 0
 
-    # Check for displacement
+    # Check for + or - (could be index*scale or displacement)
     if g_source[g_pos] == cast[uint8](43) or g_source[g_pos] == cast[uint8](45):
       var neg: int32 = 0
       if g_source[g_pos] == cast[uint8](45):
@@ -1017,21 +1126,68 @@ proc parse_operand() =
       g_pos = g_pos + 1
       skip_whitespace()
 
-      # Check if displacement is a symbol or number
+      # Check if it's a digit (displacement) or identifier (index register)
       if is_digit(g_source[g_pos]) == 1:
         g_op_disp = read_number()
         if neg == 1:
           g_op_disp = 0 - g_op_disp
         g_op_type = 3  # [reg+disp]
+        skip_whitespace()
+        # Check for additional index*scale after displacement: [base + disp + index*scale]
+        if g_source[g_pos] == cast[uint8](43) or g_source[g_pos] == cast[uint8](45):
+          var neg2: int32 = 0
+          if g_source[g_pos] == cast[uint8](45):
+            neg2 = 1
+          g_pos = g_pos + 1
+          skip_whitespace()
+          if is_alpha(g_source[g_pos]) == 1:
+            read_ident()
+            var idx_reg: int32 = parse_register(g_token_buf)
+            if idx_reg >= 0:
+              g_op_index = idx_reg
+              skip_whitespace()
+              if g_source[g_pos] == cast[uint8](42):  # '*'
+                g_pos = g_pos + 1
+                skip_whitespace()
+                g_op_scale = read_number()
+              else:
+                g_op_scale = 1
+              g_op_type = 6  # [base + disp + index*scale]
       else:
-        # Could be reg*scale - just parse as number for now
-        g_op_disp = read_number()
-        if neg == 1:
-          g_op_disp = 0 - g_op_disp
-        g_op_type = 3
+        # Could be index*scale pattern
+        read_ident()
+        var idx_reg: int32 = parse_register(g_token_buf)
+        if idx_reg >= 0:
+          g_op_index = idx_reg
+          skip_whitespace()
+          # Check for *scale
+          if g_source[g_pos] == cast[uint8](42):  # '*'
+            g_pos = g_pos + 1
+            skip_whitespace()
+            g_op_scale = read_number()
+          else:
+            g_op_scale = 1
+
+          skip_whitespace()
+          # Check for additional displacement
+          if g_source[g_pos] == cast[uint8](43) or g_source[g_pos] == cast[uint8](45):
+            var neg2: int32 = 0
+            if g_source[g_pos] == cast[uint8](45):
+              neg2 = 1
+            g_pos = g_pos + 1
+            skip_whitespace()
+            g_op_disp = read_number()
+            if neg2 == 1:
+              g_op_disp = 0 - g_op_disp
+            g_op_type = 6  # [base + index*scale + disp]
+          else:
+            g_op_type = 5  # [base + index*scale]
+        else:
+          # Not a register, treat as displacement (error fallback)
+          g_op_type = 3
+          g_op_disp = 0
     else:
       g_op_type = 2  # [reg]
-      g_op_disp = 0
 
     skip_whitespace()
     if g_source[g_pos] == cast[uint8](93):  # ']'
@@ -1190,6 +1346,9 @@ proc parse_line_pass2() =
     var dst_reg: int32 = g_op_reg
     var dst_disp: int32 = g_op_disp
     var dst_sym: int32 = g_op_sym
+    var dst_index: int32 = g_op_index
+    var dst_scale: int32 = g_op_scale
+    var dst_size: int32 = g_op_size
     expect_comma()
     parse_operand()
 
@@ -1208,15 +1367,30 @@ proc parse_line_pass2() =
             else:
               if g_op_type == 4:  # src is symbol
                 encode_mov_reg_sym(dst_reg, g_op_sym)
+              else:
+                if g_op_type == 5:  # src is [base+index*scale]
+                  encode_mov_reg_sib(dst_reg, g_op_reg, g_op_index, g_op_scale)
+                else:
+                  if g_op_type == 6:  # src is [base+index*scale+disp]
+                    encode_mov_reg_sib_disp(dst_reg, g_op_reg, g_op_index, g_op_scale, g_op_disp)
     else:
       if dst_type == 2:  # dst is [reg]
-        encode_mov_mem_reg(dst_reg, g_op_reg)
+        if dst_size == 1:
+          encode_mov_mem_reg8(dst_reg, g_op_reg)
+        else:
+          encode_mov_mem_reg(dst_reg, g_op_reg)
       else:
         if dst_type == 3:  # dst is [reg+disp]
           encode_mov_mem_disp_reg(dst_reg, dst_disp, g_op_reg)
         else:
           if dst_type == 4:  # dst is symbol
             encode_mov_sym_reg(dst_sym, g_op_reg)
+          else:
+            if dst_type == 5:  # dst is [base+index*scale]
+              encode_mov_sib_reg(dst_reg, dst_index, dst_scale, g_op_reg)
+            else:
+              if dst_type == 6:  # dst is [base+index*scale+disp]
+                encode_mov_sib_disp_reg(dst_reg, dst_index, dst_scale, dst_disp, g_op_reg)
     skip_line()
     return
 
@@ -1328,11 +1502,21 @@ proc parse_line_pass2() =
     var dst_reg: int32 = g_op_reg
     expect_comma()
     parse_operand()
-    if g_op_type == 3:
-      encode_lea_reg_mem_disp(dst_reg, g_op_reg, g_op_disp)
+    if g_op_type == 2:
+      # lea reg, [base] - same as mov reg, base but with 0 displacement
+      encode_lea_reg_mem_disp(dst_reg, g_op_reg, 0)
     else:
-      if g_op_type == 4:
-        encode_lea_reg_sym(dst_reg, g_op_sym)
+      if g_op_type == 3:
+        encode_lea_reg_mem_disp(dst_reg, g_op_reg, g_op_disp)
+      else:
+        if g_op_type == 4:
+          encode_lea_reg_sym(dst_reg, g_op_sym)
+        else:
+          if g_op_type == 5:
+            encode_lea_reg_sib(dst_reg, g_op_reg, g_op_index, g_op_scale)
+          else:
+            if g_op_type == 6:
+              encode_lea_reg_sib_disp(dst_reg, g_op_reg, g_op_index, g_op_scale, g_op_disp)
     skip_line()
     return
 
