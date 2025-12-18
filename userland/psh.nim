@@ -758,19 +758,24 @@ proc main() =
     # Build prompt with current directory (but keep it simple for now)
     print(cast[ptr uint8]("psh> "))
 
-    # Read command
-    var n: int32 = syscall3(SYS_read, STDIN, cast[int32](input), 1024)
-    if n <= 0:
-      running = 0
+    # Read command character by character until newline or EOF
+    var n: int32 = 0
+    var c_buf: uint8 = cast[uint8](0)
+    while n < 1000:
+      var r: int32 = syscall3(SYS_read, STDIN, cast[int32](addr(c_buf)), 1)
+      if r <= 0:
+        # EOF
+        if n == 0:
+          running = 0
+        break
+      if c_buf == cast[uint8](10):
+        # Newline - end of line
+        break
+      input[n] = c_buf
+      n = n + 1
+    input[n] = cast[uint8](0)
 
     if running != 0:
-      # Remove trailing newline
-      if n > 0:
-        if input[n - 1] == cast[uint8](10):
-          input[n - 1] = cast[uint8](0)
-          n = n - 1
-        else:
-          input[n] = cast[uint8](0)
 
       # Check for empty input
       if n > 0:
