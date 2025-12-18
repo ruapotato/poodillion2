@@ -20,6 +20,7 @@ from codegen_llvm import LLVMCodeGen
 from type_checker import TypeChecker
 from ownership import OwnershipChecker
 from lifetimes import LifetimeChecker
+from generics import monomorphize
 
 class Compiler:
     def __init__(self, source_file: str, output_file: str = None, kernel_mode: bool = False,
@@ -53,14 +54,24 @@ class Compiler:
         print(f"        Generated {len(tokens)} tokens")
 
         # 3. Parse
-        print("  [2/5] Parsing...")
+        print("  [2/8] Parsing...")
         parser = Parser(tokens)
         ast = parser.parse()
         print(f"        Generated AST with {len(ast.declarations)} declarations")
 
-        # 4. Type checking (optional)
+        # 4. Monomorphization (instantiate generic functions/types)
+        print("  [3/8] Monomorphizing generics...")
+        ast = monomorphize(ast)
+        generic_count = sum(1 for d in ast.declarations
+                          if hasattr(d, 'name') and '$' in getattr(d, 'name', ''))
+        if generic_count > 0:
+            print(f"        Generated {generic_count} generic instantiation(s)")
+        else:
+            print("        No generic instantiations needed")
+
+        # 5. Type checking (optional)
         if self.check_types:
-            print("  [3/7] Type checking...")
+            print("  [4/8] Type checking...")
             checker = TypeChecker()
             errors = checker.check(ast)
             if errors:
@@ -72,11 +83,11 @@ class Compiler:
             else:
                 print("        No type errors found")
         else:
-            print("  [3/7] Type checking... (skipped)")
+            print("  [4/8] Type checking... (skipped)")
 
-        # 5. Ownership checking (optional)
+        # 6. Ownership checking (optional)
         if self.check_ownership:
-            print("  [4/7] Ownership checking...")
+            print("  [5/8] Ownership checking...")
             ownership_checker = OwnershipChecker()
             ownership_errors = ownership_checker.check(ast)
             if ownership_errors:
@@ -88,11 +99,11 @@ class Compiler:
             else:
                 print("        No ownership errors found")
         else:
-            print("  [4/7] Ownership checking... (skipped)")
+            print("  [5/8] Ownership checking... (skipped)")
 
-        # 6. Lifetime checking (optional)
+        # 7. Lifetime checking (optional)
         if self.check_lifetimes:
-            print("  [5/7] Lifetime checking...")
+            print("  [6/8] Lifetime checking...")
             lifetime_checker = LifetimeChecker()
             lifetime_errors = lifetime_checker.check(ast)
             if lifetime_errors:
@@ -104,11 +115,11 @@ class Compiler:
             else:
                 print("        No lifetime errors found")
         else:
-            print("  [5/7] Lifetime checking... (skipped)")
+            print("  [6/8] Lifetime checking... (skipped)")
 
-        # 7. Code generation
+        # 8. Code generation
         if self.use_llvm:
-            print("  [6/7] Generating LLVM IR...")
+            print("  [7/8] Generating LLVM IR...")
             codegen = LLVMCodeGen()
             llvm_code = codegen.generate(ast)
 
@@ -117,8 +128,8 @@ class Compiler:
                 f.write(llvm_code)
             print(f"        Wrote {self.ll_file}")
 
-            # 8. Compile LLVM IR to object file
-            print("  [7/7] Compiling LLVM IR...")
+            # 9. Compile LLVM IR to object file
+            print("  [8/8] Compiling LLVM IR...")
             try:
                 subprocess.run([
                     'clang',
@@ -136,7 +147,7 @@ class Compiler:
                 print("ERROR: clang not found! Install with: sudo apt install clang")
                 return False
         else:
-            print("  [6/7] Generating x86 assembly...")
+            print("  [7/8] Generating x86 assembly...")
             codegen = X86CodeGen(kernel_mode=self.kernel_mode)
             asm_code = codegen.generate(ast)
 
@@ -145,8 +156,8 @@ class Compiler:
                 f.write(asm_code)
             print(f"        Wrote {self.asm_file}")
 
-            # 8. Assemble with NASM
-            print("  [7/7] Assembling...")
+            # 9. Assemble with NASM
+            print("  [8/8] Assembling...")
             try:
                 subprocess.run([
                     'nasm',
@@ -163,9 +174,9 @@ class Compiler:
                 print("ERROR: nasm not found! Install with: sudo apt install nasm")
                 return False
 
-        # 9. Link (for standalone binary - skip in kernel mode)
+        # 10. Link (for standalone binary - skip in kernel mode)
         if not self.kernel_mode:
-            print("  [8/8] Linking...")
+            print("  [9/9] Linking...")
             try:
                 subprocess.run([
                     'ld',
@@ -276,6 +287,9 @@ def main():
 
         parser = Parser(tokens)
         ast = parser.parse()
+
+        # Monomorphize generics
+        ast = monomorphize(ast)
 
         if emit_llvm or use_llvm:
             codegen = LLVMCodeGen()
