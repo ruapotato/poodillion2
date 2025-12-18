@@ -1,0 +1,456 @@
+# ed - standard Unix line editor
+# Part of PoodillionOS text utilities
+# Classic line-oriented text editor
+
+const SYS_read: int32 = 3
+const SYS_write: int32 = 4
+const SYS_open: int32 = 5
+const SYS_close: int32 = 6
+const SYS_exit: int32 = 1
+const SYS_brk: int32 = 45
+
+const STDIN: int32 = 0
+const STDOUT: int32 = 1
+const STDERR: int32 = 2
+
+const O_RDONLY: int32 = 0
+const O_WRONLY: int32 = 1
+const O_CREAT: int32 = 64
+const O_TRUNC: int32 = 512
+
+const S_IRUSR: int32 = 256
+const S_IWUSR: int32 = 128
+const S_IRGRP: int32 = 32
+const S_IROTH: int32 = 4
+
+extern proc syscall1(num: int32, arg1: int32): int32
+extern proc syscall2(num: int32, arg1: int32, arg2: int32): int32
+extern proc syscall3(num: int32, arg1: int32, arg2: int32, arg3: int32): int32
+
+# Global state (scalars only - no pointers!)
+var current_line: int32
+var total_lines: int32
+var buffer_used: int32
+var modified: int32
+
+# Helper functions
+proc strlen(s: ptr uint8): int32 =
+  var i: int32 = 0
+  while s[i] != cast[uint8](0):
+    i = i + 1
+  return i
+
+proc print(msg: ptr uint8) =
+  var len: int32 = strlen(msg)
+  discard syscall3(SYS_write, STDOUT, cast[int32](msg), len)
+
+proc print_err(msg: ptr uint8) =
+  var len: int32 = strlen(msg)
+  discard syscall3(SYS_write, STDERR, cast[int32](msg), len)
+
+proc print_int(n: int32, temp_buf: ptr uint8) =
+  if n == 0:
+    discard syscall3(SYS_write, STDOUT, cast[int32]("0"), 1)
+    return
+
+  var num: int32 = n
+  var i: int32 = 0
+
+  while num > 0:
+    var digit: int32 = num % 10
+    temp_buf[i] = cast[uint8](48 + digit)
+    num = num / 10
+    i = i + 1
+
+  var j: int32 = i - 1
+  while j >= 0:
+    discard syscall3(SYS_write, STDOUT, cast[int32](temp_buf + j), 1)
+    j = j - 1
+
+proc parse_int(s: ptr uint8): int32 =
+  var result: int32 = 0
+  var i: int32 = 0
+  while s[i] >= cast[uint8](48):
+    if s[i] <= cast[uint8](57):
+      result = result * 10 + cast[int32](s[i]) - 48
+      i = i + 1
+    else:
+      break
+  return result
+
+# Get pointer to a specific line
+proc get_line(text_buffer: ptr uint8, line_ptrs: ptr int32, line_num: int32): ptr uint8 =
+  if line_num < 1:
+    return cast[ptr uint8](0)
+  if line_num > total_lines:
+    return cast[ptr uint8](0)
+  return text_buffer + line_ptrs[line_num - 1]
+
+# Print a line
+proc print_line(text_buffer: ptr uint8, line_ptrs: ptr int32, line_num: int32, show_num: int32, temp_buf: ptr uint8) =
+  if line_num < 1:
+    print_err("?\n")
+    return
+  if line_num > total_lines:
+    print_err("?\n")
+    return
+
+  if show_num != 0:
+    print_int(line_num, temp_buf)
+    discard syscall3(SYS_write, STDOUT, cast[int32]("\t"), 1)
+
+  var line_ptr: ptr uint8 = get_line(text_buffer, line_ptrs, line_num)
+  if line_ptr == cast[ptr uint8](0):
+    print_err("?\n")
+    return
+
+  var i: int32 = 0
+  while line_ptr[i] != cast[uint8](0):
+    discard syscall3(SYS_write, STDOUT, cast[int32](line_ptr + i), 1)
+    if line_ptr[i] == cast[uint8](10):
+      break
+    i = i + 1
+
+  if line_ptr[i] != cast[uint8](10):
+    discard syscall3(SYS_write, STDOUT, cast[int32]("\n"), 1)
+
+# Save buffer to file
+proc save_file(text_buffer: ptr uint8, line_ptrs: ptr int32, fname: ptr uint8): int32 =
+  var mode: int32 = S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH
+  var fd: int32 = syscall3(SYS_open, cast[int32](fname), O_WRONLY | O_CREAT | O_TRUNC, mode)
+  if fd < 0:
+    print_err("?\n")
+    return 0
+
+  var bytes_written: int32 = 0
+  var line_num: int32 = 1
+
+  while line_num <= total_lines:
+    var line_ptr: ptr uint8 = get_line(text_buffer, line_ptrs, line_num)
+    var i: int32 = 0
+    while line_ptr[i] != cast[uint8](0):
+      var n: int32 = syscall3(SYS_write, fd, cast[int32](line_ptr + i), 1)
+      if n > 0:
+        bytes_written = bytes_written + n
+      i = i + 1
+      if line_ptr[i - 1] == cast[uint8](10):
+        break
+
+    # Add newline if not present
+    if i > 0:
+      if line_ptr[i - 1] != cast[uint8](10):
+        var n: int32 = syscall3(SYS_write, fd, cast[int32]("\n"), 1)
+        if n > 0:
+          bytes_written = bytes_written + n
+
+    line_num = line_num + 1
+
+  discard syscall1(SYS_close, fd)
+  modified = 0
+  return bytes_written
+
+# Insert line after current position
+proc insert_line(text_buffer: ptr uint8, line_ptrs: ptr int32, text: ptr uint8, text_len: int32, after_line: int32) =
+  if buffer_used + text_len + 2 > 65536:
+    print_err("Buffer full\n")
+    return
+
+  if total_lines >= 2000:
+    print_err("Too many lines\n")
+    return
+
+  # Copy text to buffer
+  var new_pos: int32 = buffer_used
+  var i: int32 = 0
+  while i < text_len:
+    text_buffer[new_pos + i] = text[i]
+    i = i + 1
+
+  # Add newline if not present
+  if text_len > 0:
+    if text[text_len - 1] != cast[uint8](10):
+      text_buffer[new_pos + text_len] = cast[uint8](10)
+      text_len = text_len + 1
+
+  text_buffer[new_pos + text_len] = cast[uint8](0)
+
+  # Shift line pointers down to make room
+  var j: int32 = total_lines
+  while j > after_line:
+    line_ptrs[j] = line_ptrs[j - 1]
+    j = j - 1
+
+  # Insert new line pointer
+  line_ptrs[after_line] = new_pos
+  total_lines = total_lines + 1
+  buffer_used = buffer_used + text_len + 1
+  modified = 1
+
+# Delete a line
+proc delete_line(line_ptrs: ptr int32, line_num: int32) =
+  if line_num < 1:
+    print_err("?\n")
+    return
+  if line_num > total_lines:
+    print_err("?\n")
+    return
+
+  # Shift line pointers up
+  var i: int32 = line_num - 1
+  while i < total_lines - 1:
+    line_ptrs[i] = line_ptrs[i + 1]
+    i = i + 1
+
+  total_lines = total_lines - 1
+  if current_line > total_lines:
+    current_line = total_lines
+  if current_line < 1:
+    if total_lines > 0:
+      current_line = 1
+  modified = 1
+
+# Append mode - read lines until '.'
+proc append_mode(text_buffer: ptr uint8, line_ptrs: ptr int32, input_buffer: ptr uint8, after_line: int32) =
+  var insert_pos: int32 = after_line
+
+  while 1 != 0:
+    var input_len: int32 = 0
+    var c: uint8
+
+    # Read one line
+    while 1 != 0:
+      var n: int32 = syscall3(SYS_read, STDIN, cast[int32](addr(c)), 1)
+      if n <= 0:
+        return
+
+      if c == cast[uint8](10):
+        input_buffer[input_len] = c
+        input_len = input_len + 1
+        break
+
+      input_buffer[input_len] = c
+      input_len = input_len + 1
+
+      if input_len >= 4095:
+        break
+
+    # Check for terminator '.'
+    if input_len == 2:
+      if input_buffer[0] == cast[uint8](46):
+        if input_buffer[1] == cast[uint8](10):
+          return
+
+    # Insert the line
+    input_buffer[input_len] = cast[uint8](0)
+    insert_line(text_buffer, line_ptrs, input_buffer, input_len, insert_pos)
+    insert_pos = insert_pos + 1
+    current_line = insert_pos
+
+# Read command line
+proc read_command(cmd_buffer: ptr uint8, max_len: int32): int32 =
+  var len: int32 = 0
+  var c: uint8
+
+  while 1 != 0:
+    var n: int32 = syscall3(SYS_read, STDIN, cast[int32](addr(c)), 1)
+    if n <= 0:
+      return -1
+
+    if c == cast[uint8](10):
+      cmd_buffer[len] = cast[uint8](0)
+      return len
+
+    cmd_buffer[len] = c
+    len = len + 1
+
+    if len >= max_len - 1:
+      cmd_buffer[len] = cast[uint8](0)
+      return len
+
+  return len
+
+# Process command
+proc process_command(text_buffer: ptr uint8, line_ptrs: ptr int32, cmd_buffer: ptr uint8, temp_buf: ptr uint8, filename: ptr uint8, cmd_len: int32): int32 =
+  if cmd_len == 0:
+    # No command - print current line
+    if current_line > 0:
+      if current_line <= total_lines:
+        print_line(text_buffer, line_ptrs, current_line, 0, temp_buf)
+      else:
+        print_err("?\n")
+    else:
+      print_err("?\n")
+    return 1
+
+  # Parse address (if numeric)
+  if cmd_buffer[0] >= cast[uint8](48):
+    if cmd_buffer[0] <= cast[uint8](57):
+      var line_num: int32 = parse_int(cmd_buffer)
+      if line_num > 0:
+        if line_num <= total_lines:
+          current_line = line_num
+          # Check for command after number
+          var i: int32 = 0
+          while cmd_buffer[i] >= cast[uint8](48):
+            if cmd_buffer[i] <= cast[uint8](57):
+              i = i + 1
+            else:
+              break
+
+          if cmd_buffer[i] == cast[uint8](0):
+            # Just a line number - print it
+            print_line(text_buffer, line_ptrs, current_line, 0, temp_buf)
+            return 1
+
+          # Process command after number
+          var subcmd: ptr uint8 = cmd_buffer + i
+          if subcmd[0] == cast[uint8](112):  # 'p'
+            print_line(text_buffer, line_ptrs, current_line, 0, temp_buf)
+            return 1
+          if subcmd[0] == cast[uint8](110):  # 'n'
+            print_line(text_buffer, line_ptrs, current_line, 1, temp_buf)
+            return 1
+          if subcmd[0] == cast[uint8](100):  # 'd'
+            delete_line(line_ptrs, current_line)
+            return 1
+        else:
+          print_err("?\n")
+          return 1
+
+  # $ - last line
+  if cmd_buffer[0] == cast[uint8](36):  # '$'
+    current_line = total_lines
+    if cmd_buffer[1] == cast[uint8](0):
+      print_line(text_buffer, line_ptrs, current_line, 0, temp_buf)
+      return 1
+    if cmd_buffer[1] == cast[uint8](112):  # 'p'
+      print_line(text_buffer, line_ptrs, current_line, 0, temp_buf)
+      return 1
+    if cmd_buffer[1] == cast[uint8](110):  # 'n'
+      print_line(text_buffer, line_ptrs, current_line, 1, temp_buf)
+      return 1
+    if cmd_buffer[1] == cast[uint8](100):  # 'd'
+      delete_line(line_ptrs, current_line)
+      return 1
+
+  # p - print current line
+  if cmd_buffer[0] == cast[uint8](112):  # 'p'
+    print_line(text_buffer, line_ptrs, current_line, 0, temp_buf)
+    return 1
+
+  # n - print with line number
+  if cmd_buffer[0] == cast[uint8](110):  # 'n'
+    print_line(text_buffer, line_ptrs, current_line, 1, temp_buf)
+    return 1
+
+  # a - append after current line
+  if cmd_buffer[0] == cast[uint8](97):  # 'a'
+    append_mode(text_buffer, line_ptrs, temp_buf, current_line)
+    return 1
+
+  # i - insert before current line
+  if cmd_buffer[0] == cast[uint8](105):  # 'i'
+    var insert_pos: int32 = current_line - 1
+    if insert_pos < 0:
+      insert_pos = 0
+    append_mode(text_buffer, line_ptrs, temp_buf, insert_pos)
+    return 1
+
+  # d - delete current line
+  if cmd_buffer[0] == cast[uint8](100):  # 'd'
+    delete_line(line_ptrs, current_line)
+    return 1
+
+  # c - change (delete and insert)
+  if cmd_buffer[0] == cast[uint8](99):  # 'c'
+    var save_line: int32 = current_line
+    delete_line(line_ptrs, current_line)
+    var insert_pos: int32 = save_line - 1
+    if insert_pos < 0:
+      insert_pos = 0
+    append_mode(text_buffer, line_ptrs, temp_buf, insert_pos)
+    return 1
+
+  # w - write file
+  if cmd_buffer[0] == cast[uint8](119):  # 'w'
+    var fname: ptr uint8 = filename
+
+    # Check for filename after w
+    if cmd_buffer[1] == cast[uint8](32):  # space
+      fname = cmd_buffer + 2
+
+    if fname == cast[ptr uint8](0):
+      print_err("?\n")
+      return 1
+
+    if fname[0] == cast[uint8](0):
+      fname = filename
+
+    if fname[0] == cast[uint8](0):
+      print_err("?\n")
+      return 1
+
+    var bytes: int32 = save_file(text_buffer, line_ptrs, fname)
+    print_int(bytes, temp_buf)
+    discard syscall3(SYS_write, STDOUT, cast[int32]("\n"), 1)
+    return 1
+
+  # q - quit
+  if cmd_buffer[0] == cast[uint8](113):  # 'q'
+    if modified != 0:
+      print_err("?\n")
+      modified = 0  # Allow next q to quit
+      return 1
+    return 0
+
+  # ,p - print all lines
+  if cmd_buffer[0] == cast[uint8](44):  # ','
+    if cmd_buffer[1] == cast[uint8](112):  # 'p'
+      var i: int32 = 1
+      while i <= total_lines:
+        print_line(text_buffer, line_ptrs, i, 0, temp_buf)
+        i = i + 1
+      return 1
+
+  # Unknown command
+  print_err("?\n")
+  return 1
+
+proc main() =
+  # Allocate ALL memory upfront
+  var initial_brk: int32 = syscall1(SYS_brk, 0)
+  var total_mem: int32 = initial_brk + 77952  # ~76KB total
+  discard syscall1(SYS_brk, total_mem)
+
+  # Memory layout (all as local variables - pass to functions):
+  # initial_brk + 0:     text_buffer (65536 bytes = 64KB)
+  # initial_brk + 65536: line_ptrs (8000 bytes = 2000 lines * 4)
+  # initial_brk + 73536: filename (256 bytes)
+  # initial_brk + 73792: cmd_buffer (4096 bytes = 4KB)
+  # initial_brk + 77888: temp_buf (64 bytes for print_int)
+
+  var text_buffer: ptr uint8 = cast[ptr uint8](initial_brk)
+  var line_ptrs: ptr int32 = cast[ptr int32](initial_brk + 65536)
+  var filename: ptr uint8 = cast[ptr uint8](initial_brk + 73536)
+  var cmd_buffer: ptr uint8 = cast[ptr uint8](initial_brk + 73792)
+  var temp_buf: ptr uint8 = cast[ptr uint8](initial_brk + 77888)
+
+  filename[0] = cast[uint8](0)
+
+  # Initialize
+  line_ptrs[0] = 0
+  total_lines = 0
+  current_line = 0
+  buffer_used = 0
+  modified = 0
+
+  # Main command loop
+  var running: int32 = 1
+  while running != 0:
+    var cmd_len: int32 = read_command(cmd_buffer, 1024)
+    if cmd_len < 0:
+      break
+
+    running = process_command(text_buffer, line_ptrs, cmd_buffer, temp_buf, filename, cmd_len)
+
+  discard syscall1(SYS_exit, 0)

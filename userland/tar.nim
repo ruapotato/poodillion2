@@ -1,0 +1,393 @@
+# tar - Tape Archive utility (simplified)
+# Usage:
+#   tar -c file1 file2 ... > archive.tar  (create archive)
+#   tar -t < archive.tar                  (list contents)
+#   tar -x < archive.tar                  (extract files)
+
+const SYS_read: int32 = 3
+const SYS_write: int32 = 4
+const SYS_open: int32 = 5
+const SYS_close: int32 = 6
+const SYS_exit: int32 = 1
+const SYS_brk: int32 = 45
+const SYS_lstat64: int32 = 196
+const SYS_creat: int32 = 8
+
+const STDIN: int32 = 0
+const STDOUT: int32 = 1
+const STDERR: int32 = 2
+
+const O_RDONLY: int32 = 0
+const O_WRONLY: int32 = 1
+const O_CREAT: int32 = 64
+const O_TRUNC: int32 = 512
+
+# File mode bits
+const S_IFMT: int32 = 61440
+const S_IFREG: int32 = 32768
+const S_IFDIR: int32 = 16384
+
+# TAR constants
+const TAR_BLOCK_SIZE: int32 = 512
+const TAR_NAME_SIZE: int32 = 100
+
+extern proc syscall1(num: int32, arg1: int32): int32
+extern proc syscall2(num: int32, arg1: int32, arg2: int32): int32
+extern proc syscall3(num: int32, arg1: int32, arg2: int32, arg3: int32): int32
+extern proc get_argc(): int32
+extern proc get_argv(i: int32): ptr uint8
+
+proc strlen(s: ptr uint8): int32 =
+  var i: int32 = 0
+  while s[i] != cast[uint8](0):
+    i = i + 1
+  return i
+
+proc print(msg: ptr uint8) =
+  var len: int32 = strlen(msg)
+  discard syscall3(SYS_write, STDOUT, cast[int32](msg), len)
+
+proc print_err(msg: ptr uint8) =
+  var len: int32 = strlen(msg)
+  discard syscall3(SYS_write, STDERR, cast[int32](msg), len)
+
+proc strcmp(a: ptr uint8, b: ptr uint8): int32 =
+  var i: int32 = 0
+  while a[i] != cast[uint8](0) and b[i] != cast[uint8](0):
+    if a[i] != b[i]:
+      return cast[int32](a[i]) - cast[int32](b[i])
+    i = i + 1
+  return cast[int32](a[i]) - cast[int32](b[i])
+
+proc memset(p: ptr uint8, value: uint8, size: int32) =
+  var i: int32 = 0
+  while i < size:
+    p[i] = value
+    i = i + 1
+
+proc memcpy(dest: ptr uint8, src: ptr uint8, size: int32) =
+  var i: int32 = 0
+  while i < size:
+    dest[i] = src[i]
+    i = i + 1
+
+# Convert number to octal string (right-aligned, null-terminated)
+proc write_octal(buf: ptr uint8, value: int32, size: int32) =
+  memset(buf, cast[uint8](48), size)
+  buf[size - 1] = cast[uint8](0)
+
+  var v: int32 = value
+  var pos: int32 = size - 2
+
+  while v > 0 and pos >= 0:
+    buf[pos] = cast[uint8](48 + (v & 7))
+    v = v >> 3
+    pos = pos - 1
+
+# Parse octal string to number
+proc parse_octal(buf: ptr uint8, size: int32): int32 =
+  var result: int32 = 0
+  var i: int32 = 0
+
+  while i < size and buf[i] != cast[uint8](0):
+    if buf[i] >= cast[uint8](48) and buf[i] <= cast[uint8](55):
+      result = (result << 3) | (cast[int32](buf[i]) - 48)
+    i = i + 1
+
+  return result
+
+# Calculate checksum for TAR header
+proc calc_checksum(header: ptr uint8): int32 =
+  var sum: int32 = 0
+  var i: int32 = 0
+
+  # Treat checksum field as spaces for calculation
+  while i < TAR_BLOCK_SIZE:
+    if i >= 148 and i < 156:
+      sum = sum + 32
+    else:
+      sum = sum + cast[int32](header[i])
+    i = i + 1
+
+  return sum
+
+# Create TAR header for a file
+proc create_header(header: ptr uint8, filename: ptr uint8, size: int32, mode: int32, typeflag: uint8) =
+  memset(header, cast[uint8](0), TAR_BLOCK_SIZE)
+
+  # Copy filename (max 100 bytes)
+  var namelen: int32 = strlen(filename)
+  if namelen > TAR_NAME_SIZE - 1:
+    namelen = TAR_NAME_SIZE - 1
+  memcpy(header, filename, namelen)
+
+  # mode: offset 100, 8 bytes
+  write_octal(cast[ptr uint8](cast[int32](header) + 100), mode, 8)
+
+  # uid: offset 108, 8 bytes
+  write_octal(cast[ptr uint8](cast[int32](header) + 108), 0, 8)
+
+  # gid: offset 116, 8 bytes
+  write_octal(cast[ptr uint8](cast[int32](header) + 116), 0, 8)
+
+  # size: offset 124, 12 bytes
+  write_octal(cast[ptr uint8](cast[int32](header) + 124), size, 12)
+
+  # mtime: offset 136, 12 bytes (use 0 for simplicity)
+  write_octal(cast[ptr uint8](cast[int32](header) + 136), 0, 12)
+
+  # checksum: offset 148, 8 bytes (fill with spaces first)
+  memset(cast[ptr uint8](cast[int32](header) + 148), cast[uint8](32), 8)
+
+  # typeflag: offset 156, 1 byte
+  header[156] = typeflag
+
+  # Calculate and write checksum
+  var chksum: int32 = calc_checksum(header)
+  write_octal(cast[ptr uint8](cast[int32](header) + 148), chksum, 7)
+  header[155] = cast[uint8](0)
+
+# Create archive mode
+proc tar_create(start_arg: int32) =
+  var argc: int32 = get_argc()
+
+  # Allocate memory
+  var old_brk: int32 = syscall1(SYS_brk, 0)
+  var new_brk: int32 = old_brk + 65536
+  discard syscall1(SYS_brk, new_brk)
+
+  var header: ptr uint8 = cast[ptr uint8](old_brk)
+  var buffer: ptr uint8 = cast[ptr uint8](old_brk + TAR_BLOCK_SIZE)
+  var stat_buf: ptr uint8 = cast[ptr uint8](old_brk + 8192)
+
+  # Process each file
+  var arg_idx: int32 = start_arg
+  while arg_idx < argc:
+    var filename: ptr uint8 = get_argv(arg_idx)
+
+    # Get file stats
+    var ret: int32 = syscall2(SYS_lstat64, cast[int32](filename), cast[int32](stat_buf))
+    if ret >= 0:
+      # Parse stat64 structure (32-bit x86)
+      # st_mode at offset 16, st_size at offset 44
+      var mode_ptr: ptr uint32 = cast[ptr uint32](cast[int32](stat_buf) + 16)
+      var size_ptr: ptr int32 = cast[ptr int32](cast[int32](stat_buf) + 44)
+      var mode: int32 = cast[int32](mode_ptr[0])
+      var size: int32 = size_ptr[0]
+      var file_type: int32 = mode & S_IFMT
+
+      # Determine typeflag
+      var typeflag: uint8 = cast[uint8](48)  # '0' = regular file
+      if file_type == S_IFDIR:
+        typeflag = cast[uint8](53)  # '5' = directory
+        size = 0
+
+      # Only process regular files and directories
+      if file_type == S_IFREG or file_type == S_IFDIR:
+        # Create header
+        create_header(header, filename, size, mode & 4095, typeflag)
+
+        # Write header to stdout
+        discard syscall3(SYS_write, STDOUT, cast[int32](header), TAR_BLOCK_SIZE)
+
+        # Write file data if regular file
+        if file_type == S_IFREG and size > 0:
+          var fd: int32 = syscall3(SYS_open, cast[int32](filename), O_RDONLY, 0)
+          if fd >= 0:
+            var remaining: int32 = size
+            while remaining > 0:
+              var to_read: int32 = 4096
+              if to_read > remaining:
+                to_read = remaining
+
+              var n: int32 = syscall3(SYS_read, fd, cast[int32](buffer), to_read)
+              if n <= 0:
+                remaining = 0
+              else:
+                discard syscall3(SYS_write, STDOUT, cast[int32](buffer), n)
+                remaining = remaining - n
+
+            # Pad to 512-byte boundary
+            var padding: int32 = TAR_BLOCK_SIZE - (size % TAR_BLOCK_SIZE)
+            if padding != TAR_BLOCK_SIZE:
+              memset(buffer, cast[uint8](0), padding)
+              discard syscall3(SYS_write, STDOUT, cast[int32](buffer), padding)
+
+            discard syscall1(SYS_close, fd)
+
+    arg_idx = arg_idx + 1
+
+  # Write two zero blocks to mark end of archive
+  memset(header, cast[uint8](0), TAR_BLOCK_SIZE)
+  discard syscall3(SYS_write, STDOUT, cast[int32](header), TAR_BLOCK_SIZE)
+  discard syscall3(SYS_write, STDOUT, cast[int32](header), TAR_BLOCK_SIZE)
+
+# List archive contents
+proc tar_list() =
+  # Allocate memory
+  var old_brk: int32 = syscall1(SYS_brk, 0)
+  var new_brk: int32 = old_brk + 8192
+  discard syscall1(SYS_brk, new_brk)
+
+  var header: ptr uint8 = cast[ptr uint8](old_brk)
+  var buffer: ptr uint8 = cast[ptr uint8](old_brk + TAR_BLOCK_SIZE)
+
+  var running: int32 = 1
+  while running != 0:
+    # Read header
+    var n: int32 = syscall3(SYS_read, STDIN, cast[int32](header), TAR_BLOCK_SIZE)
+    if n != TAR_BLOCK_SIZE:
+      running = 0
+    else:
+      # Check if empty block (end of archive)
+      var is_zero: int32 = 1
+      var i: int32 = 0
+      while i < TAR_BLOCK_SIZE:
+        if header[i] != cast[uint8](0):
+          is_zero = 0
+        i = i + 1
+
+      if is_zero != 0:
+        running = 0
+      else:
+        # Print filename
+        var name: ptr uint8 = header
+        print(name)
+        discard syscall3(SYS_write, STDOUT, cast[int32]("\n"), 1)
+
+        # Get file size
+        var size_field: ptr uint8 = cast[ptr uint8](cast[int32](header) + 124)
+        var size: int32 = parse_octal(size_field, 12)
+
+        # Skip file data
+        var remaining: int32 = size
+        while remaining > 0:
+          var to_read: int32 = 4096
+          if to_read > remaining:
+            to_read = remaining
+
+          n = syscall3(SYS_read, STDIN, cast[int32](buffer), to_read)
+          if n <= 0:
+            remaining = 0
+          else:
+            remaining = remaining - n
+
+        # Skip padding
+        var padding: int32 = TAR_BLOCK_SIZE - (size % TAR_BLOCK_SIZE)
+        if padding != TAR_BLOCK_SIZE:
+          discard syscall3(SYS_read, STDIN, cast[int32](buffer), padding)
+
+# Extract archive
+proc tar_extract() =
+  # Allocate memory
+  var old_brk: int32 = syscall1(SYS_brk, 0)
+  var new_brk: int32 = old_brk + 8192
+  discard syscall1(SYS_brk, new_brk)
+
+  var header: ptr uint8 = cast[ptr uint8](old_brk)
+  var buffer: ptr uint8 = cast[ptr uint8](old_brk + TAR_BLOCK_SIZE)
+
+  var running: int32 = 1
+  while running != 0:
+    # Read header
+    var n: int32 = syscall3(SYS_read, STDIN, cast[int32](header), TAR_BLOCK_SIZE)
+    if n != TAR_BLOCK_SIZE:
+      running = 0
+    else:
+      # Check if empty block (end of archive)
+      var is_zero: int32 = 1
+      var i: int32 = 0
+      while i < TAR_BLOCK_SIZE:
+        if header[i] != cast[uint8](0):
+          is_zero = 0
+        i = i + 1
+
+      if is_zero != 0:
+        running = 0
+      else:
+        # Get filename
+        var filename: ptr uint8 = header
+
+        # Get file size
+        var size_field: ptr uint8 = cast[ptr uint8](cast[int32](header) + 124)
+        var size: int32 = parse_octal(size_field, 12)
+
+        # Get mode
+        var mode_field: ptr uint8 = cast[ptr uint8](cast[int32](header) + 100)
+        var mode: int32 = parse_octal(mode_field, 8)
+
+        # Get typeflag
+        var typeflag: uint8 = header[156]
+
+        # Create file
+        if typeflag == cast[uint8](48):  # Regular file
+          var fd: int32 = syscall3(SYS_creat, cast[int32](filename), mode)
+          if fd < 0:
+            print_err(cast[ptr uint8]("tar: cannot create "))
+            print_err(filename)
+            discard syscall3(SYS_write, STDERR, cast[int32]("\n"), 1)
+          else:
+            # Write file data
+            var remaining: int32 = size
+            while remaining > 0:
+              var to_read: int32 = 4096
+              if to_read > remaining:
+                to_read = remaining
+
+              n = syscall3(SYS_read, STDIN, cast[int32](buffer), to_read)
+              if n <= 0:
+                remaining = 0
+              else:
+                discard syscall3(SYS_write, fd, cast[int32](buffer), n)
+                remaining = remaining - n
+
+            discard syscall1(SYS_close, fd)
+
+          # Skip padding
+          var padding: int32 = TAR_BLOCK_SIZE - (size % TAR_BLOCK_SIZE)
+          if padding != TAR_BLOCK_SIZE:
+            discard syscall3(SYS_read, STDIN, cast[int32](buffer), padding)
+        else:
+          # Skip file data for non-regular files
+          var remaining: int32 = size
+          while remaining > 0:
+            var to_read: int32 = 4096
+            if to_read > remaining:
+              to_read = remaining
+
+            n = syscall3(SYS_read, STDIN, cast[int32](buffer), to_read)
+            if n <= 0:
+              remaining = 0
+            else:
+              remaining = remaining - n
+
+          # Skip padding
+          var padding: int32 = TAR_BLOCK_SIZE - (size % TAR_BLOCK_SIZE)
+          if padding != TAR_BLOCK_SIZE:
+            discard syscall3(SYS_read, STDIN, cast[int32](buffer), padding)
+
+proc main() =
+  var argc: int32 = get_argc()
+
+  if argc < 2:
+    print_err(cast[ptr uint8]("Usage: tar -c file1 file2 ... > archive.tar\n"))
+    print_err(cast[ptr uint8]("       tar -t < archive.tar\n"))
+    print_err(cast[ptr uint8]("       tar -x < archive.tar\n"))
+    discard syscall1(SYS_exit, 1)
+
+  var mode: ptr uint8 = get_argv(1)
+
+  # Check mode
+  if strcmp(mode, cast[ptr uint8]("-c")) == 0:
+    tar_create(2)
+  else:
+    if strcmp(mode, cast[ptr uint8]("-t")) == 0:
+      tar_list()
+    else:
+      if strcmp(mode, cast[ptr uint8]("-x")) == 0:
+        tar_extract()
+      else:
+        print_err(cast[ptr uint8]("tar: invalid option\n"))
+        discard syscall1(SYS_exit, 1)
+
+  discard syscall1(SYS_exit, 0)

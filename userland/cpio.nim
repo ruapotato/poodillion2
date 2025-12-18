@@ -1,0 +1,410 @@
+# cpio - Copy in/out archive utility (newc format)
+# Usage:
+#   find . | cpio -o > archive.cpio  (create archive)
+#   cpio -i < archive.cpio           (extract files)
+#   cpio -t < archive.cpio           (list contents)
+
+const SYS_read: int32 = 3
+const SYS_write: int32 = 4
+const SYS_open: int32 = 5
+const SYS_close: int32 = 6
+const SYS_exit: int32 = 1
+const SYS_brk: int32 = 45
+const SYS_lstat64: int32 = 196
+const SYS_creat: int32 = 8
+
+const STDIN: int32 = 0
+const STDOUT: int32 = 1
+const STDERR: int32 = 2
+
+const O_RDONLY: int32 = 0
+
+# File mode bits
+const S_IFMT: int32 = 61440
+const S_IFREG: int32 = 32768
+
+extern proc syscall1(num: int32, arg1: int32): int32
+extern proc syscall2(num: int32, arg1: int32, arg2: int32): int32
+extern proc syscall3(num: int32, arg1: int32, arg2: int32, arg3: int32): int32
+extern proc get_argc(): int32
+extern proc get_argv(i: int32): ptr uint8
+
+proc strlen(s: ptr uint8): int32 =
+  var i: int32 = 0
+  while s[i] != cast[uint8](0):
+    i = i + 1
+  return i
+
+proc print(msg: ptr uint8) =
+  var len: int32 = strlen(msg)
+  discard syscall3(SYS_write, STDOUT, cast[int32](msg), len)
+
+proc print_err(msg: ptr uint8) =
+  var len: int32 = strlen(msg)
+  discard syscall3(SYS_write, STDERR, cast[int32](msg), len)
+
+proc strcmp(a: ptr uint8, b: ptr uint8): int32 =
+  var i: int32 = 0
+  while a[i] != cast[uint8](0) and b[i] != cast[uint8](0):
+    if a[i] != b[i]:
+      return cast[int32](a[i]) - cast[int32](b[i])
+    i = i + 1
+  return cast[int32](a[i]) - cast[int32](b[i])
+
+proc memset(p: ptr uint8, value: uint8, size: int32) =
+  var i: int32 = 0
+  while i < size:
+    p[i] = value
+    i = i + 1
+
+proc memcpy(dest: ptr uint8, src: ptr uint8, size: int32) =
+  var i: int32 = 0
+  while i < size:
+    dest[i] = src[i]
+    i = i + 1
+
+# Write hex digit
+proc write_hex_digit(n: int32): uint8 =
+  if n < 10:
+    return cast[uint8](48 + n)
+  else:
+    return cast[uint8](97 + n - 10)
+
+# Write 8-digit hex number
+proc write_hex8(buf: ptr uint8, value: int32) =
+  var v: int32 = value
+  var i: int32 = 7
+  while i >= 0:
+    buf[i] = write_hex_digit(v & 15)
+    v = v >> 4
+    i = i - 1
+
+# Parse hex digit
+proc parse_hex_digit(c: uint8): int32 =
+  if c >= cast[uint8](48) and c <= cast[uint8](57):
+    return cast[int32](c) - 48
+  if c >= cast[uint8](97) and c <= cast[uint8](102):
+    return cast[int32](c) - 97 + 10
+  if c >= cast[uint8](65) and c <= cast[uint8](70):
+    return cast[int32](c) - 65 + 10
+  return 0
+
+# Parse 8-digit hex number
+proc parse_hex8(buf: ptr uint8): int32 =
+  var result: int32 = 0
+  var i: int32 = 0
+  while i < 8:
+    result = (result << 4) | parse_hex_digit(buf[i])
+    i = i + 1
+  return result
+
+# Create CPIO newc header
+proc write_cpio_header(filename: ptr uint8, filesize: int32, mode: int32, ino: int32) =
+  # Allocate header buffer
+  var old_brk: int32 = syscall1(SYS_brk, 0)
+  var new_brk: int32 = old_brk + 256
+  discard syscall1(SYS_brk, new_brk)
+  var header: ptr uint8 = cast[ptr uint8](old_brk)
+
+  # Magic: "070701" (6 bytes)
+  header[0] = cast[uint8](48)
+  header[1] = cast[uint8](55)
+  header[2] = cast[uint8](48)
+  header[3] = cast[uint8](55)
+  header[4] = cast[uint8](48)
+  header[5] = cast[uint8](49)
+
+  # inode (8 hex digits)
+  write_hex8(cast[ptr uint8](cast[int32](header) + 6), ino)
+
+  # mode (8 hex digits)
+  write_hex8(cast[ptr uint8](cast[int32](header) + 14), mode)
+
+  # uid (8 hex digits)
+  write_hex8(cast[ptr uint8](cast[int32](header) + 22), 0)
+
+  # gid (8 hex digits)
+  write_hex8(cast[ptr uint8](cast[int32](header) + 30), 0)
+
+  # nlink (8 hex digits)
+  write_hex8(cast[ptr uint8](cast[int32](header) + 38), 1)
+
+  # mtime (8 hex digits)
+  write_hex8(cast[ptr uint8](cast[int32](header) + 46), 0)
+
+  # filesize (8 hex digits)
+  write_hex8(cast[ptr uint8](cast[int32](header) + 54), filesize)
+
+  # devmajor (8 hex digits)
+  write_hex8(cast[ptr uint8](cast[int32](header) + 62), 0)
+
+  # devminor (8 hex digits)
+  write_hex8(cast[ptr uint8](cast[int32](header) + 70), 0)
+
+  # rdevmajor (8 hex digits)
+  write_hex8(cast[ptr uint8](cast[int32](header) + 78), 0)
+
+  # rdevminor (8 hex digits)
+  write_hex8(cast[ptr uint8](cast[int32](header) + 86), 0)
+
+  # namesize (8 hex digits, includes null terminator)
+  var namesize: int32 = strlen(filename) + 1
+  write_hex8(cast[ptr uint8](cast[int32](header) + 94), namesize)
+
+  # check (8 hex digits)
+  write_hex8(cast[ptr uint8](cast[int32](header) + 102), 0)
+
+  # Write header (110 bytes)
+  discard syscall3(SYS_write, STDOUT, cast[int32](header), 110)
+
+  # Write filename + null terminator
+  discard syscall3(SYS_write, STDOUT, cast[int32](filename), namesize)
+
+  # Pad to 4-byte boundary
+  var total: int32 = 110 + namesize
+  var padding: int32 = (4 - (total % 4)) % 4
+  if padding > 0:
+    var pad_buf: ptr uint8 = cast[ptr uint8](old_brk + 128)
+    memset(pad_buf, cast[uint8](0), padding)
+    discard syscall3(SYS_write, STDOUT, cast[int32](pad_buf), padding)
+
+# Create archive from stdin (list of filenames)
+proc cpio_create() =
+  # Allocate memory
+  var old_brk: int32 = syscall1(SYS_brk, 0)
+  var new_brk: int32 = old_brk + 16384
+  discard syscall1(SYS_brk, new_brk)
+
+  var line_buf: ptr uint8 = cast[ptr uint8](old_brk)
+  var read_buf: ptr uint8 = cast[ptr uint8](old_brk + 4096)
+  var stat_buf: ptr uint8 = cast[ptr uint8](old_brk + 8192)
+
+  var file_counter: int32 = 1
+
+  # Read filenames from stdin
+  var line_pos: int32 = 0
+  var running: int32 = 1
+
+  while running != 0:
+    var n: int32 = syscall3(SYS_read, STDIN, cast[int32](read_buf), 4096)
+    if n <= 0:
+      running = 0
+    else:
+      var i: int32 = 0
+      while i < n:
+        var ch: uint8 = read_buf[i]
+        if ch == cast[uint8](10):  # newline
+          line_buf[line_pos] = cast[uint8](0)
+
+          # Process this file
+          if line_pos > 0:
+            # Get file stats
+            var ret: int32 = syscall2(SYS_lstat64, cast[int32](line_buf), cast[int32](stat_buf))
+            if ret == 0:
+              # stat64 structure (32-bit x86): mode at 16, size at 44, ino at 12
+              var mode_ptr: ptr uint32 = cast[ptr uint32](cast[int32](stat_buf) + 16)
+              var size_ptr: ptr int32 = cast[ptr int32](cast[int32](stat_buf) + 44)
+              var ino_ptr: ptr int32 = cast[ptr int32](cast[int32](stat_buf) + 12)
+              var mode: int32 = cast[int32](mode_ptr[0])
+              var size: int32 = size_ptr[0]
+              var ino: int32 = ino_ptr[0]
+              var file_type: int32 = mode & S_IFMT
+
+              # Only process regular files for now
+              if file_type == S_IFREG:
+                # Write CPIO header
+                write_cpio_header(line_buf, size, mode, ino)
+
+                # Write file data
+                var fd: int32 = syscall3(SYS_open, cast[int32](line_buf), O_RDONLY, 0)
+                if fd >= 0:
+                  var remaining: int32 = size
+                  while remaining > 0:
+                    var to_read: int32 = 4096
+                    if to_read > remaining:
+                      to_read = remaining
+
+                    var bytes_read: int32 = syscall3(SYS_read, fd, cast[int32](read_buf), to_read)
+                    if bytes_read <= 0:
+                      remaining = 0
+                    else:
+                      discard syscall3(SYS_write, STDOUT, cast[int32](read_buf), bytes_read)
+                      remaining = remaining - bytes_read
+
+                  discard syscall1(SYS_close, fd)
+
+                  # Pad file data to 4-byte boundary
+                  var padding: int32 = (4 - (size % 4)) % 4
+                  if padding > 0:
+                    var pad_buf: ptr uint8 = cast[ptr uint8](old_brk + 12288)
+                    memset(pad_buf, cast[uint8](0), padding)
+                    discard syscall3(SYS_write, STDOUT, cast[int32](pad_buf), padding)
+
+          line_pos = 0
+        else:
+          if line_pos < 4095:
+            line_buf[line_pos] = ch
+            line_pos = line_pos + 1
+        i = i + 1
+
+  # Write trailer
+  write_cpio_header(cast[ptr uint8]("TRAILER!!!"), 0, 0, 0)
+
+# List archive contents
+proc cpio_list() =
+  # Allocate memory
+  var old_brk: int32 = syscall1(SYS_brk, 0)
+  var new_brk: int32 = old_brk + 8192
+  discard syscall1(SYS_brk, new_brk)
+
+  var header: ptr uint8 = cast[ptr uint8](old_brk)
+  var buffer: ptr uint8 = cast[ptr uint8](old_brk + 4096)
+
+  var running: int32 = 1
+  while running != 0:
+    # Read header (110 bytes)
+    var n: int32 = syscall3(SYS_read, STDIN, cast[int32](header), 110)
+    if n != 110:
+      running = 0
+    else:
+      # Parse namesize
+      var namesize: int32 = parse_hex8(cast[ptr uint8](cast[int32](header) + 94))
+      var filesize: int32 = parse_hex8(cast[ptr uint8](cast[int32](header) + 54))
+
+      # Read filename
+      n = syscall3(SYS_read, STDIN, cast[int32](buffer), namesize)
+      if n != namesize:
+        running = 0
+      else:
+        # Check for trailer
+        if strcmp(buffer, cast[ptr uint8]("TRAILER!!!")) == 0:
+          running = 0
+        else:
+          # Print filename
+          print(buffer)
+          discard syscall3(SYS_write, STDOUT, cast[int32]("\n"), 1)
+
+          # Skip padding after filename
+          var total: int32 = 110 + namesize
+          var padding: int32 = (4 - (total % 4)) % 4
+          if padding > 0:
+            discard syscall3(SYS_read, STDIN, cast[int32](buffer), padding)
+
+          # Skip file data
+          var remaining: int32 = filesize
+          while remaining > 0:
+            var to_read: int32 = 4096
+            if to_read > remaining:
+              to_read = remaining
+            n = syscall3(SYS_read, STDIN, cast[int32](buffer), to_read)
+            if n <= 0:
+              remaining = 0
+            else:
+              remaining = remaining - n
+
+          # Skip padding after file data
+          padding = (4 - (filesize % 4)) % 4
+          if padding > 0:
+            discard syscall3(SYS_read, STDIN, cast[int32](buffer), padding)
+
+# Extract archive
+proc cpio_extract() =
+  # Allocate memory
+  var old_brk: int32 = syscall1(SYS_brk, 0)
+  var new_brk: int32 = old_brk + 8192
+  discard syscall1(SYS_brk, new_brk)
+
+  var header: ptr uint8 = cast[ptr uint8](old_brk)
+  var buffer: ptr uint8 = cast[ptr uint8](old_brk + 4096)
+
+  var running: int32 = 1
+  while running != 0:
+    # Read header (110 bytes)
+    var n: int32 = syscall3(SYS_read, STDIN, cast[int32](header), 110)
+    if n != 110:
+      running = 0
+    else:
+      # Parse header fields
+      var namesize: int32 = parse_hex8(cast[ptr uint8](cast[int32](header) + 94))
+      var filesize: int32 = parse_hex8(cast[ptr uint8](cast[int32](header) + 54))
+      var mode: int32 = parse_hex8(cast[ptr uint8](cast[int32](header) + 14))
+
+      # Read filename
+      n = syscall3(SYS_read, STDIN, cast[int32](buffer), namesize)
+      if n != namesize:
+        running = 0
+      else:
+        # Check for trailer
+        if strcmp(buffer, cast[ptr uint8]("TRAILER!!!")) == 0:
+          running = 0
+        else:
+          # Skip padding after filename
+          var total: int32 = 110 + namesize
+          var padding: int32 = (4 - (total % 4)) % 4
+          if padding > 0:
+            discard syscall3(SYS_read, STDIN, cast[int32](header), padding)
+
+          # Create file
+          var fd: int32 = syscall3(SYS_creat, cast[int32](buffer), mode & 4095)
+          if fd < 0:
+            print_err(cast[ptr uint8]("cpio: cannot create "))
+            print_err(buffer)
+            discard syscall3(SYS_write, STDERR, cast[int32]("\n"), 1)
+
+            # Skip file data
+            var remaining: int32 = filesize
+            while remaining > 0:
+              var to_read: int32 = 4096
+              if to_read > remaining:
+                to_read = remaining
+              n = syscall3(SYS_read, STDIN, cast[int32](header), to_read)
+              if n <= 0:
+                remaining = 0
+              else:
+                remaining = remaining - n
+          else:
+            # Write file data
+            var remaining: int32 = filesize
+            while remaining > 0:
+              var to_read: int32 = 4096
+              if to_read > remaining:
+                to_read = remaining
+              n = syscall3(SYS_read, STDIN, cast[int32](header), to_read)
+              if n <= 0:
+                remaining = 0
+              else:
+                discard syscall3(SYS_write, fd, cast[int32](header), n)
+                remaining = remaining - n
+
+            discard syscall1(SYS_close, fd)
+
+          # Skip padding after file data
+          padding = (4 - (filesize % 4)) % 4
+          if padding > 0:
+            discard syscall3(SYS_read, STDIN, cast[int32](header), padding)
+
+proc main() =
+  var argc: int32 = get_argc()
+
+  if argc < 2:
+    print_err(cast[ptr uint8]("Usage: find . | cpio -o > archive.cpio\n"))
+    print_err(cast[ptr uint8]("       cpio -i < archive.cpio\n"))
+    print_err(cast[ptr uint8]("       cpio -t < archive.cpio\n"))
+    discard syscall1(SYS_exit, 1)
+
+  var mode: ptr uint8 = get_argv(1)
+
+  # Check mode
+  if strcmp(mode, cast[ptr uint8]("-o")) == 0:
+    cpio_create()
+  else:
+    if strcmp(mode, cast[ptr uint8]("-t")) == 0:
+      cpio_list()
+    else:
+      if strcmp(mode, cast[ptr uint8]("-i")) == 0:
+        cpio_extract()
+      else:
+        print_err(cast[ptr uint8]("cpio: invalid option\n"))
+        discard syscall1(SYS_exit, 1)
+
+  discard syscall1(SYS_exit, 0)

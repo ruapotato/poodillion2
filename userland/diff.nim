@@ -1,0 +1,260 @@
+# diff - show differences between files
+# Part of PoodillionOS text utilities
+# Simplified line-by-line comparison showing differences
+# Format:
+#   < line from FILE1
+#   > line from FILE2
+
+const SYS_read: int32 = 3
+const SYS_write: int32 = 4
+const SYS_open: int32 = 5
+const SYS_close: int32 = 6
+const SYS_exit: int32 = 1
+const SYS_brk: int32 = 45
+
+const STDIN: int32 = 0
+const STDOUT: int32 = 1
+const STDERR: int32 = 2
+
+const O_RDONLY: int32 = 0
+
+extern proc syscall1(num: int32, arg1: int32): int32
+extern proc syscall2(num: int32, arg1: int32, arg2: int32): int32
+extern proc syscall3(num: int32, arg1: int32, arg2: int32, arg3: int32): int32
+extern proc get_argc(): int32
+extern proc get_argv(index: int32): ptr uint8
+
+proc strlen(s: ptr uint8): int32 =
+  var i: int32 = 0
+  while s[i] != cast[uint8](0):
+    i = i + 1
+  return i
+
+proc print(msg: ptr uint8) =
+  var len: int32 = strlen(msg)
+  discard syscall3(SYS_write, STDOUT, cast[int32](msg), len)
+
+proc print_err(msg: ptr uint8) =
+  var len: int32 = strlen(msg)
+  discard syscall3(SYS_write, STDERR, cast[int32](msg), len)
+
+# Print integer
+proc print_int(n: int32) =
+  if n == 0:
+    discard syscall3(SYS_write, STDOUT, cast[int32]("0"), 1)
+    return
+
+  var old_brk: int32 = syscall1(SYS_brk, 0)
+  var new_brk: int32 = old_brk + 32
+  discard syscall1(SYS_brk, new_brk)
+  var buffer: ptr uint8 = cast[ptr uint8](old_brk)
+
+  var num: int32 = n
+  var i: int32 = 0
+
+  while num > 0:
+    var digit: int32 = num % 10
+    buffer[i] = cast[uint8](48 + digit)
+    num = num / 10
+    i = i + 1
+
+  var j: int32 = i - 1
+  while j >= 0:
+    discard syscall3(SYS_write, STDOUT, cast[int32](buffer + j), 1)
+    j = j - 1
+
+# String comparison
+proc strcmp(s1: ptr uint8, s1_len: int32, s2: ptr uint8, s2_len: int32): int32 =
+  if s1_len != s2_len:
+    return 1
+
+  var i: int32 = 0
+  while i < s1_len:
+    if s1[i] != s2[i]:
+      return 1
+    i = i + 1
+
+  return 0
+
+# Read one line from buffer, return length (excluding newline)
+# Returns -1 if EOF with no data
+proc read_line(buf: ptr uint8, buf_size: int32, buf_pos: ptr int32, buf_end: ptr int32, fd: int32, line_out: ptr uint8, max_line: int32): int32 =
+  var line_len: int32 = 0
+
+  var running: int32 = 1
+  while running != 0:
+    # Refill buffer if needed
+    if buf_pos[0] >= buf_end[0]:
+      var n: int32 = syscall3(SYS_read, fd, cast[int32](buf), buf_size)
+      if n <= 0:
+        # EOF
+        if line_len > 0:
+          return line_len
+        return -1
+      buf_pos[0] = 0
+      buf_end[0] = n
+
+    # Read characters until newline
+    var c: uint8 = buf[buf_pos[0]]
+    buf_pos[0] = buf_pos[0] + 1
+
+    if c == cast[uint8](10):
+      # Newline - return line
+      return line_len
+
+    if line_len < max_line:
+      line_out[line_len] = c
+      line_len = line_len + 1
+
+  return line_len
+
+proc main() =
+  var argc: int32 = get_argc()
+
+  if argc < 3:
+    print_err(cast[ptr uint8]("Usage: diff FILE1 FILE2\n"))
+    discard syscall1(SYS_exit, 1)
+
+  var file1: ptr uint8 = get_argv(1)
+  var file2: ptr uint8 = get_argv(2)
+
+  # Open files
+  var fd1: int32 = syscall3(SYS_open, cast[int32](file1), O_RDONLY, 0)
+  if fd1 < 0:
+    print_err(cast[ptr uint8]("diff: cannot open "))
+    print_err(file1)
+    print_err(cast[ptr uint8]("\n"))
+    discard syscall1(SYS_exit, 2)
+
+  var fd2: int32 = syscall3(SYS_open, cast[int32](file2), O_RDONLY, 0)
+  if fd2 < 0:
+    print_err(cast[ptr uint8]("diff: cannot open "))
+    print_err(file2)
+    print_err(cast[ptr uint8]("\n"))
+    discard syscall1(SYS_close, fd1)
+    discard syscall1(SYS_exit, 2)
+
+  # Allocate buffers
+  var old_brk: int32 = syscall1(SYS_brk, 0)
+  var new_brk: int32 = old_brk + 16384
+  discard syscall1(SYS_brk, new_brk)
+
+  var buf1: ptr uint8 = cast[ptr uint8](old_brk)
+  var buf2: ptr uint8 = cast[ptr uint8](old_brk + 4096)
+  var line1: ptr uint8 = cast[ptr uint8](old_brk + 8192)
+  var line2: ptr uint8 = cast[ptr uint8](old_brk + 12288)
+
+  # Buffer positions
+  var old_brk2: int32 = syscall1(SYS_brk, 0)
+  var new_brk2: int32 = old_brk2 + 16
+  discard syscall1(SYS_brk, new_brk2)
+  var buf1_pos: ptr int32 = cast[ptr int32](old_brk2)
+  var buf1_end: ptr int32 = cast[ptr int32](old_brk2 + 4)
+  var buf2_pos: ptr int32 = cast[ptr int32](old_brk2 + 8)
+  var buf2_end: ptr int32 = cast[ptr int32](old_brk2 + 12)
+
+  buf1_pos[0] = 0
+  buf1_end[0] = 0
+  buf2_pos[0] = 0
+  buf2_end[0] = 0
+
+  var line_num: int32 = 0
+  var has_diff: int32 = 0
+  var running: int32 = 1
+
+  while running != 0:
+    var len1: int32 = read_line(buf1, 4096, buf1_pos, buf1_end, fd1, line1, 4096)
+    var len2: int32 = read_line(buf2, 4096, buf2_pos, buf2_end, fd2, line2, 4096)
+
+    line_num = line_num + 1
+
+    # Both files ended
+    if len1 < 0:
+      if len2 < 0:
+        running = 0
+        # Break loop
+
+    # File1 ended but file2 has more
+    if len1 < 0:
+      if len2 >= 0:
+        if has_diff == 0:
+          print_int(line_num)
+          print(cast[ptr uint8]("a"))
+          print_int(line_num)
+          print(cast[ptr uint8]("\n"))
+          has_diff = 1
+
+        print(cast[ptr uint8]("> "))
+        var i: int32 = 0
+        while i < len2:
+          discard syscall3(SYS_write, STDOUT, cast[int32](line2 + i), 1)
+          i = i + 1
+        print(cast[ptr uint8]("\n"))
+
+        # Continue reading file2
+        len2 = read_line(buf2, 4096, buf2_pos, buf2_end, fd2, line2, 4096)
+        if len2 >= 0:
+          line_num = line_num + 1
+        if len2 < 0:
+          running = 0
+
+    # File2 ended but file1 has more
+    if len2 < 0:
+      if len1 >= 0:
+        if has_diff == 0:
+          print_int(line_num)
+          print(cast[ptr uint8]("d"))
+          print_int(line_num)
+          print(cast[ptr uint8]("\n"))
+          has_diff = 1
+
+        print(cast[ptr uint8]("< "))
+        var i: int32 = 0
+        while i < len1:
+          discard syscall3(SYS_write, STDOUT, cast[int32](line1 + i), 1)
+          i = i + 1
+        print(cast[ptr uint8]("\n"))
+
+        # Continue reading file1
+        len1 = read_line(buf1, 4096, buf1_pos, buf1_end, fd1, line1, 4096)
+        if len1 >= 0:
+          line_num = line_num + 1
+        if len1 < 0:
+          running = 0
+
+    # Both have lines - compare
+    if len1 >= 0:
+      if len2 >= 0:
+        var cmp: int32 = strcmp(line1, len1, line2, len2)
+
+        if cmp != 0:
+          # Lines differ
+          has_diff = 1
+          print_int(line_num)
+          print(cast[ptr uint8]("c"))
+          print_int(line_num)
+          print(cast[ptr uint8]("\n"))
+
+          print(cast[ptr uint8]("< "))
+          var i1: int32 = 0
+          while i1 < len1:
+            discard syscall3(SYS_write, STDOUT, cast[int32](line1 + i1), 1)
+            i1 = i1 + 1
+          print(cast[ptr uint8]("\n"))
+
+          print(cast[ptr uint8]("---\n"))
+
+          print(cast[ptr uint8]("> "))
+          var i2: int32 = 0
+          while i2 < len2:
+            discard syscall3(SYS_write, STDOUT, cast[int32](line2 + i2), 1)
+            i2 = i2 + 1
+          print(cast[ptr uint8]("\n"))
+
+  discard syscall1(SYS_close, fd1)
+  discard syscall1(SYS_close, fd2)
+
+  # Exit with 0 if files identical, 1 if different
+  if has_diff != 0:
+    discard syscall1(SYS_exit, 1)
+  discard syscall1(SYS_exit, 0)

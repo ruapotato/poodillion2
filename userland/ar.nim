@@ -1,0 +1,424 @@
+# ar - Archive library files
+# Usage:
+#   ar r archive.a file1 file2 ...  (create/replace files in archive)
+#   ar t archive.a                  (list contents)
+#   ar x archive.a                  (extract all files)
+
+const SYS_read: int32 = 3
+const SYS_write: int32 = 4
+const SYS_open: int32 = 5
+const SYS_close: int32 = 6
+const SYS_exit: int32 = 1
+const SYS_brk: int32 = 45
+const SYS_lstat64: int32 = 196
+const SYS_creat: int32 = 8
+const SYS_unlink: int32 = 10
+
+const STDIN: int32 = 0
+const STDOUT: int32 = 1
+const STDERR: int32 = 2
+
+const O_RDONLY: int32 = 0
+const O_WRONLY: int32 = 1
+const O_RDWR: int32 = 2
+const O_CREAT: int32 = 64
+const O_TRUNC: int32 = 512
+
+# File permissions
+const S_IRUSR: int32 = 256
+const S_IWUSR: int32 = 128
+const S_IRGRP: int32 = 32
+const S_IROTH: int32 = 4
+
+extern proc syscall1(num: int32, arg1: int32): int32
+extern proc syscall2(num: int32, arg1: int32, arg2: int32): int32
+extern proc syscall3(num: int32, arg1: int32, arg2: int32, arg3: int32): int32
+extern proc get_argc(): int32
+extern proc get_argv(i: int32): ptr uint8
+
+proc strlen(s: ptr uint8): int32 =
+  var i: int32 = 0
+  while s[i] != cast[uint8](0):
+    i = i + 1
+  return i
+
+proc print(msg: ptr uint8) =
+  var len: int32 = strlen(msg)
+  discard syscall3(SYS_write, STDOUT, cast[int32](msg), len)
+
+proc print_err(msg: ptr uint8) =
+  var len: int32 = strlen(msg)
+  discard syscall3(SYS_write, STDERR, cast[int32](msg), len)
+
+proc strcmp(a: ptr uint8, b: ptr uint8): int32 =
+  var i: int32 = 0
+  while a[i] != cast[uint8](0) and b[i] != cast[uint8](0):
+    if a[i] != b[i]:
+      return cast[int32](a[i]) - cast[int32](b[i])
+    i = i + 1
+  return cast[int32](a[i]) - cast[int32](b[i])
+
+proc memset(p: ptr uint8, value: uint8, size: int32) =
+  var i: int32 = 0
+  while i < size:
+    p[i] = value
+    i = i + 1
+
+proc memcpy(dest: ptr uint8, src: ptr uint8, size: int32) =
+  var i: int32 = 0
+  while i < size:
+    dest[i] = src[i]
+    i = i + 1
+
+# Convert number to decimal string (right-aligned, space-padded)
+proc write_decimal(buf: ptr uint8, value: int32, width: int32) =
+  memset(buf, cast[uint8](32), width)
+
+  if value == 0:
+    buf[width - 1] = cast[uint8](48)
+    return
+
+  var temp_buf: ptr uint8 = cast[ptr uint8](0)
+  var old_brk: int32 = syscall1(SYS_brk, 0)
+  var new_brk: int32 = old_brk + 32
+  discard syscall1(SYS_brk, new_brk)
+  temp_buf = cast[ptr uint8](old_brk)
+
+  var v: int32 = value
+  var i: int32 = 0
+  while v > 0:
+    temp_buf[i] = cast[uint8](48 + (v % 10))
+    v = v / 10
+    i = i + 1
+
+  # Copy reversed to output buffer (right-aligned)
+  var pos: int32 = width - 1
+  var j: int32 = 0
+  while j < i and pos >= 0:
+    buf[pos] = temp_buf[j]
+    pos = pos - 1
+    j = j + 1
+
+# Parse decimal string
+proc parse_decimal(buf: ptr uint8, width: int32): int32 =
+  var result: int32 = 0
+  var i: int32 = 0
+
+  while i < width:
+    if buf[i] >= cast[uint8](48) and buf[i] <= cast[uint8](57):
+      result = result * 10 + (cast[int32](buf[i]) - 48)
+    i = i + 1
+
+  return result
+
+# Create AR file header (60 bytes)
+proc create_ar_header(header: ptr uint8, filename: ptr uint8, size: int32) =
+  memset(header, cast[uint8](32), 60)
+
+  # File name (16 bytes, space-padded)
+  var namelen: int32 = strlen(filename)
+  if namelen > 16:
+    namelen = 16
+  memcpy(header, filename, namelen)
+
+  # Modification time (12 bytes) - use 0 for simplicity
+  write_decimal(cast[ptr uint8](cast[int32](header) + 16), 0, 12)
+
+  # Owner ID (6 bytes)
+  write_decimal(cast[ptr uint8](cast[int32](header) + 28), 0, 6)
+
+  # Group ID (6 bytes)
+  write_decimal(cast[ptr uint8](cast[int32](header) + 34), 0, 6)
+
+  # File mode (8 bytes, octal) - use 100644
+  header[40] = cast[uint8](49)  # '1'
+  header[41] = cast[uint8](48)  # '0'
+  header[42] = cast[uint8](48)  # '0'
+  header[43] = cast[uint8](54)  # '6'
+  header[44] = cast[uint8](52)  # '4'
+  header[45] = cast[uint8](52)  # '4'
+  header[46] = cast[uint8](32)  # ' '
+  header[47] = cast[uint8](32)  # ' '
+
+  # File size (10 bytes, decimal)
+  write_decimal(cast[ptr uint8](cast[int32](header) + 48), size, 10)
+
+  # End marker (2 bytes) - backtick + newline
+  header[58] = cast[uint8](96)   # '`'
+  header[59] = cast[uint8](10)   # '\n'
+
+# Create/replace files in archive
+proc ar_create(archive: ptr uint8, start_arg: int32) =
+  var argc: int32 = get_argc()
+
+  # Allocate memory
+  var old_brk: int32 = syscall1(SYS_brk, 0)
+  var new_brk: int32 = old_brk + 65536
+  discard syscall1(SYS_brk, new_brk)
+
+  var header: ptr uint8 = cast[ptr uint8](old_brk)
+  var buffer: ptr uint8 = cast[ptr uint8](old_brk + 4096)
+  var stat_buf: ptr uint8 = cast[ptr uint8](old_brk + 8192)
+  var temp_name: ptr uint8 = cast[ptr uint8](old_brk + 12288)
+
+  # Create temporary file
+  temp_name[0] = cast[uint8](47)   # '/'
+  temp_name[1] = cast[uint8](116)  # 't'
+  temp_name[2] = cast[uint8](109)  # 'm'
+  temp_name[3] = cast[uint8](112)  # 'p'
+  temp_name[4] = cast[uint8](47)   # '/'
+  temp_name[5] = cast[uint8](97)   # 'a'
+  temp_name[6] = cast[uint8](114)  # 'r'
+  temp_name[7] = cast[uint8](46)   # '.'
+  temp_name[8] = cast[uint8](116)  # 't'
+  temp_name[9] = cast[uint8](109)  # 'm'
+  temp_name[10] = cast[uint8](112)  # 'p'
+  temp_name[11] = cast[uint8](0)
+
+  var mode: int32 = S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH
+  var out_fd: int32 = syscall3(SYS_open, cast[int32](temp_name), O_WRONLY | O_CREAT | O_TRUNC, mode)
+  if out_fd < 0:
+    print_err(cast[ptr uint8]("ar: cannot create temporary file\n"))
+    discard syscall1(SYS_exit, 1)
+
+  # Write AR magic: "!<arch>\n"
+  var magic: ptr uint8 = cast[ptr uint8]("!<arch>\n")
+  discard syscall3(SYS_write, out_fd, cast[int32](magic), 8)
+
+  # Process each file
+  var arg_idx: int32 = start_arg
+  while arg_idx < argc:
+    var filename: ptr uint8 = get_argv(arg_idx)
+
+    # Get file stats
+    var ret: int32 = syscall2(SYS_lstat64, cast[int32](filename), cast[int32](stat_buf))
+    if ret < 0:
+      print_err(cast[ptr uint8]("ar: "))
+      print_err(filename)
+      print_err(cast[ptr uint8](": cannot stat\n"))
+    else:
+      var size_ptr: ptr int32 = cast[ptr int32](cast[int32](stat_buf) + 44)
+      var size: int32 = size_ptr[0]
+
+      # Create and write header
+      create_ar_header(header, filename, size)
+      discard syscall3(SYS_write, out_fd, cast[int32](header), 60)
+
+      # Copy file data
+      var fd: int32 = syscall3(SYS_open, cast[int32](filename), O_RDONLY, 0)
+      if fd < 0:
+        print_err(cast[ptr uint8]("ar: "))
+        print_err(filename)
+        print_err(cast[ptr uint8](": cannot open\n"))
+      else:
+        var remaining: int32 = size
+        while remaining > 0:
+          var to_read: int32 = 4096
+          if to_read > remaining:
+            to_read = remaining
+
+          var n: int32 = syscall3(SYS_read, fd, cast[int32](buffer), to_read)
+          if n <= 0:
+            remaining = 0
+          else:
+            discard syscall3(SYS_write, out_fd, cast[int32](buffer), n)
+            remaining = remaining - n
+
+        discard syscall1(SYS_close, fd)
+
+        # Add padding byte if size is odd
+        if (size % 2) != 0:
+          var newline: uint8 = cast[uint8](10)
+          discard syscall3(SYS_write, out_fd, cast[int32](addr(newline)), 1)
+
+    arg_idx = arg_idx + 1
+
+  discard syscall1(SYS_close, out_fd)
+
+  # Replace original archive with temporary file
+  discard syscall1(SYS_unlink, cast[int32](archive))
+
+  # Copy temp file to archive (simple rename not available, so copy)
+  var in_fd: int32 = syscall3(SYS_open, cast[int32](temp_name), O_RDONLY, 0)
+  out_fd = syscall3(SYS_open, cast[int32](archive), O_WRONLY | O_CREAT | O_TRUNC, mode)
+
+  if in_fd >= 0 and out_fd >= 0:
+    var running: int32 = 1
+    while running != 0:
+      var n: int32 = syscall3(SYS_read, in_fd, cast[int32](buffer), 4096)
+      if n <= 0:
+        running = 0
+      else:
+        discard syscall3(SYS_write, out_fd, cast[int32](buffer), n)
+
+    discard syscall1(SYS_close, in_fd)
+    discard syscall1(SYS_close, out_fd)
+
+  discard syscall1(SYS_unlink, cast[int32](temp_name))
+
+# List archive contents
+proc ar_list(archive: ptr uint8) =
+  # Allocate memory
+  var old_brk: int32 = syscall1(SYS_brk, 0)
+  var new_brk: int32 = old_brk + 8192
+  discard syscall1(SYS_brk, new_brk)
+
+  var header: ptr uint8 = cast[ptr uint8](old_brk)
+  var buffer: ptr uint8 = cast[ptr uint8](old_brk + 4096)
+
+  var fd: int32 = syscall3(SYS_open, cast[int32](archive), O_RDONLY, 0)
+  if fd < 0:
+    print_err(cast[ptr uint8]("ar: cannot open "))
+    print_err(archive)
+    discard syscall3(SYS_write, STDERR, cast[int32]("\n"), 1)
+    discard syscall1(SYS_exit, 1)
+
+  # Read and verify magic
+  var n: int32 = syscall3(SYS_read, fd, cast[int32](header), 8)
+  if n != 8:
+    print_err(cast[ptr uint8]("ar: invalid archive\n"))
+    discard syscall1(SYS_close, fd)
+    discard syscall1(SYS_exit, 1)
+
+  # Process entries
+  var running: int32 = 1
+  while running != 0:
+    # Read header (60 bytes)
+    n = syscall3(SYS_read, fd, cast[int32](header), 60)
+    if n != 60:
+      running = 0
+    else:
+      # Parse filename (16 bytes)
+      var name: ptr uint8 = header
+      var name_end: int32 = 0
+      while name_end < 16 and name[name_end] != cast[uint8](32) and name[name_end] != cast[uint8](47):
+        name_end = name_end + 1
+      name[name_end] = cast[uint8](0)
+
+      # Parse size (10 bytes at offset 48)
+      var size: int32 = parse_decimal(cast[ptr uint8](cast[int32](header) + 48), 10)
+
+      # Print filename
+      print(name)
+      discard syscall3(SYS_write, STDOUT, cast[int32]("\n"), 1)
+
+      # Skip file data
+      var remaining: int32 = size
+      while remaining > 0:
+        var to_read: int32 = 4096
+        if to_read > remaining:
+          to_read = remaining
+
+        n = syscall3(SYS_read, fd, cast[int32](buffer), to_read)
+        if n <= 0:
+          remaining = 0
+        else:
+          remaining = remaining - n
+
+      # Skip padding byte if size is odd
+      if (size % 2) != 0:
+        discard syscall3(SYS_read, fd, cast[int32](buffer), 1)
+
+  discard syscall1(SYS_close, fd)
+
+# Extract archive contents
+proc ar_extract(archive: ptr uint8) =
+  # Allocate memory
+  var old_brk: int32 = syscall1(SYS_brk, 0)
+  var new_brk: int32 = old_brk + 8192
+  discard syscall1(SYS_brk, new_brk)
+
+  var header: ptr uint8 = cast[ptr uint8](old_brk)
+  var buffer: ptr uint8 = cast[ptr uint8](old_brk + 4096)
+
+  var fd: int32 = syscall3(SYS_open, cast[int32](archive), O_RDONLY, 0)
+  if fd < 0:
+    print_err(cast[ptr uint8]("ar: cannot open "))
+    print_err(archive)
+    discard syscall3(SYS_write, STDERR, cast[int32]("\n"), 1)
+    discard syscall1(SYS_exit, 1)
+
+  # Read and verify magic
+  var n: int32 = syscall3(SYS_read, fd, cast[int32](header), 8)
+  if n != 8:
+    print_err(cast[ptr uint8]("ar: invalid archive\n"))
+    discard syscall1(SYS_close, fd)
+    discard syscall1(SYS_exit, 1)
+
+  # Process entries
+  var running: int32 = 1
+  while running != 0:
+    # Read header (60 bytes)
+    n = syscall3(SYS_read, fd, cast[int32](header), 60)
+    if n != 60:
+      running = 0
+    else:
+      # Parse filename (16 bytes)
+      var name: ptr uint8 = header
+      var name_end: int32 = 0
+      while name_end < 16 and name[name_end] != cast[uint8](32) and name[name_end] != cast[uint8](47):
+        name_end = name_end + 1
+      name[name_end] = cast[uint8](0)
+
+      # Parse size (10 bytes at offset 48)
+      var size: int32 = parse_decimal(cast[ptr uint8](cast[int32](header) + 48), 10)
+
+      # Create output file
+      var mode: int32 = S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH
+      var out_fd: int32 = syscall3(SYS_creat, cast[int32](name), mode)
+      if out_fd < 0:
+        print_err(cast[ptr uint8]("ar: cannot create "))
+        print_err(name)
+        discard syscall3(SYS_write, STDERR, cast[int32]("\n"), 1)
+      else:
+        # Extract file data
+        var remaining: int32 = size
+        while remaining > 0:
+          var to_read: int32 = 4096
+          if to_read > remaining:
+            to_read = remaining
+
+          n = syscall3(SYS_read, fd, cast[int32](buffer), to_read)
+          if n <= 0:
+            remaining = 0
+          else:
+            discard syscall3(SYS_write, out_fd, cast[int32](buffer), n)
+            remaining = remaining - n
+
+        discard syscall1(SYS_close, out_fd)
+
+      # Skip padding byte if size is odd
+      if (size % 2) != 0:
+        discard syscall3(SYS_read, fd, cast[int32](buffer), 1)
+
+  discard syscall1(SYS_close, fd)
+
+proc main() =
+  var argc: int32 = get_argc()
+
+  if argc < 3:
+    print_err(cast[ptr uint8]("Usage: ar r archive.a file1 file2 ...\n"))
+    print_err(cast[ptr uint8]("       ar t archive.a\n"))
+    print_err(cast[ptr uint8]("       ar x archive.a\n"))
+    discard syscall1(SYS_exit, 1)
+
+  var mode: ptr uint8 = get_argv(1)
+  var archive: ptr uint8 = get_argv(2)
+
+  # Check mode
+  if strcmp(mode, cast[ptr uint8]("r")) == 0:
+    if argc < 4:
+      print_err(cast[ptr uint8]("ar: no files specified\n"))
+      discard syscall1(SYS_exit, 1)
+    ar_create(archive, 3)
+  else:
+    if strcmp(mode, cast[ptr uint8]("t")) == 0:
+      ar_list(archive)
+    else:
+      if strcmp(mode, cast[ptr uint8]("x")) == 0:
+        ar_extract(archive)
+      else:
+        print_err(cast[ptr uint8]("ar: invalid option\n"))
+        discard syscall1(SYS_exit, 1)
+
+  discard syscall1(SYS_exit, 0)

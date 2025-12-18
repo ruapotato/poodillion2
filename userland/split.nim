@@ -1,0 +1,180 @@
+# split - split file into pieces
+# Usage: split [-l LINES] [FILE] [PREFIX]
+# Default: 1000 lines per piece, prefix = x
+
+const SYS_read: int32 = 3
+const SYS_write: int32 = 4
+const SYS_open: int32 = 5
+const SYS_close: int32 = 6
+const SYS_exit: int32 = 1
+const SYS_brk: int32 = 45
+const SYS_creat: int32 = 8
+
+const STDIN: int32 = 0
+const STDOUT: int32 = 1
+const STDERR: int32 = 2
+
+const O_RDONLY: int32 = 0
+const O_WRONLY: int32 = 1
+const O_CREAT: int32 = 64
+const O_TRUNC: int32 = 512
+
+extern proc syscall1(num: int32, arg1: int32): int32
+extern proc syscall2(num: int32, arg1: int32, arg2: int32): int32
+extern proc syscall3(num: int32, arg1: int32, arg2: int32, arg3: int32): int32
+extern proc get_argc(): int32
+extern proc get_argv(index: int32): ptr uint8
+
+proc strlen(s: ptr uint8): int32 =
+  var i: int32 = 0
+  while s[i] != cast[uint8](0):
+    i = i + 1
+  return i
+
+proc print_err(msg: ptr uint8) =
+  var len: int32 = strlen(msg)
+  discard syscall3(SYS_write, STDERR, cast[int32](msg), len)
+
+proc strcmp(s1: ptr uint8, s2: ptr uint8): int32 =
+  var i: int32 = 0
+  while s1[i] != cast[uint8](0):
+    if s2[i] == cast[uint8](0):
+      return 1
+    if s1[i] != s2[i]:
+      if s1[i] > s2[i]:
+        return 1
+      return -1
+    i = i + 1
+  if s2[i] != cast[uint8](0):
+    return -1
+  return 0
+
+proc parse_int(s: ptr uint8): int32 =
+  var result: int32 = 0
+  var i: int32 = 0
+  while s[i] >= cast[uint8](48):
+    if s[i] > cast[uint8](57):
+      break
+    result = result * 10 + cast[int32](s[i]) - 48
+    i = i + 1
+  return result
+
+proc strcpy(dest: ptr uint8, src: ptr uint8) =
+  var i: int32 = 0
+  while src[i] != cast[uint8](0):
+    dest[i] = src[i]
+    i = i + 1
+  dest[i] = cast[uint8](0)
+
+# Build output filename: prefix + suffix (aa, ab, ac, ...)
+proc make_filename(base: ptr uint8, idx: int32, dest: ptr uint8) =
+  strcpy(dest, base)
+  var len: int32 = strlen(base)
+  var first: int32 = idx / 26
+  var second: int32 = idx % 26
+  dest[len] = cast[uint8](97 + first)
+  dest[len + 1] = cast[uint8](97 + second)
+  dest[len + 2] = cast[uint8](0)
+
+proc main() =
+  var argc: int32 = get_argc()
+  var lines_per_file: int32 = 1000
+  var input_fd: int32 = STDIN
+  var prefix: ptr uint8 = cast[ptr uint8]("x")
+  var arg_idx: int32 = 1
+
+  # Parse arguments
+  if argc > 1:
+    var arg: ptr uint8 = get_argv(arg_idx)
+    # Check for -l option
+    if arg[0] == cast[uint8](45):  # '-'
+      if arg[1] == cast[uint8](108):  # 'l'
+        arg_idx = arg_idx + 1
+        if argc > arg_idx:
+          arg = get_argv(arg_idx)
+          lines_per_file = parse_int(arg)
+          if lines_per_file <= 0:
+            lines_per_file = 1000
+          arg_idx = arg_idx + 1
+
+  # Get input file
+  if argc > arg_idx:
+    var filename: ptr uint8 = get_argv(arg_idx)
+    input_fd = syscall3(SYS_open, cast[int32](filename), O_RDONLY, 0)
+    if input_fd < 0:
+      print_err(cast[ptr uint8]("split: cannot open input file\n"))
+      discard syscall1(SYS_exit, 1)
+    arg_idx = arg_idx + 1
+
+  # Get prefix
+  if argc > arg_idx:
+    prefix = get_argv(arg_idx)
+
+  # Allocate buffers
+  var old_brk: int32 = syscall1(SYS_brk, 0)
+  var new_brk: int32 = old_brk + 8192
+  discard syscall1(SYS_brk, new_brk)
+  var buffer: ptr uint8 = cast[ptr uint8](old_brk)
+  var out_name: ptr uint8 = cast[ptr uint8](old_brk + 4096)
+  var line_buf: ptr uint8 = cast[ptr uint8](old_brk + 4096 + 256)
+
+  var file_count: int32 = 0
+  var line_count: int32 = 0
+  var out_fd: int32 = -1
+
+  var buf_pos: int32 = 0
+  var buf_size: int32 = 0
+  var running: int32 = 1
+
+  while running != 0:
+    # Open new output file if needed
+    if line_count == 0:
+      if out_fd >= 0:
+        discard syscall1(SYS_close, out_fd)
+      make_filename(prefix, file_count, out_name)
+      out_fd = syscall3(SYS_open, cast[int32](out_name), O_WRONLY + O_CREAT + O_TRUNC, 420)
+      if out_fd < 0:
+        print_err(cast[ptr uint8]("split: cannot create output file\n"))
+        discard syscall1(SYS_exit, 1)
+      file_count = file_count + 1
+
+    # Read and process a line
+    var line_start: int32 = 0
+    var line_done: int32 = 0
+
+    while line_done == 0:
+      # Need more data?
+      if buf_pos >= buf_size:
+        buf_size = syscall3(SYS_read, input_fd, cast[int32](buffer), 4096)
+        buf_pos = 0
+        if buf_size <= 0:
+          running = 0
+          line_done = 1
+          break
+
+      if buf_pos < buf_size:
+        var c: uint8 = buffer[buf_pos]
+        buf_pos = buf_pos + 1
+
+        line_buf[line_start] = c
+        line_start = line_start + 1
+
+        if c == cast[uint8](10):  # newline
+          line_done = 1
+
+    # Write the line to output
+    if line_start > 0:
+      discard syscall3(SYS_write, out_fd, cast[int32](line_buf), line_start)
+      line_count = line_count + 1
+
+      # Check if we need a new file
+      if line_count >= lines_per_file:
+        line_count = 0
+
+  # Close files
+  if out_fd >= 0:
+    discard syscall1(SYS_close, out_fd)
+  if input_fd != STDIN:
+    discard syscall1(SYS_close, input_fd)
+
+  discard syscall1(SYS_exit, 0)
