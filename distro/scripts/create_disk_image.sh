@@ -49,20 +49,20 @@ if [ "$(id -u)" != "0" ]; then
     SIZE=$(ls -lh /home/david/poodillion2/distro/poodillion-full.cpio.gz | awk '{print $5}')
     echo "Created: /home/david/poodillion2/distro/poodillion-full.cpio.gz ($SIZE)"
     echo ""
-    echo "To test with QEMU (using host kernel):"
+    echo "To test with QEMU (serial console):"
     echo ""
     echo "  qemu-system-x86_64 -m 256M \\"
     echo "    -kernel /boot/vmlinuz-\$(uname -r) \\"
     echo "    -initrd /home/david/poodillion2/distro/poodillion-full.cpio.gz \\"
-    echo "    -append 'console=ttyS0 init=/bin/init' \\"
+    echo "    -append 'console=ttyS0 rdinit=/init' \\"
     echo "    -nographic"
     echo ""
-    echo "Or for graphical:"
+    echo "Or for graphical VGA output:"
     echo ""
     echo "  qemu-system-x86_64 -m 256M \\"
     echo "    -kernel /boot/vmlinuz-\$(uname -r) \\"
     echo "    -initrd /home/david/poodillion2/distro/poodillion-full.cpio.gz \\"
-    echo "    -append 'console=tty0 init=/bin/init'"
+    echo "    -append 'console=tty0 rdinit=/init'"
     exit 0
 fi
 

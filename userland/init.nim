@@ -180,13 +180,24 @@ proc main() =
 
   print(cast[ptr uint8]("init: essential filesystems mounted\n"))
 
-  # Spawn getty on /dev/tty1
+  # Storage for console path
+  var console_path: ptr uint8 = cast[ptr uint8](old_brk + 700)
+
+  # Spawn getty on /dev/tty1 (for graphical console)
   strcpy(tty_path, cast[ptr uint8]("/dev/tty1"))
   print(cast[ptr uint8]("init: spawning getty on /dev/tty1\n"))
   var getty_pid: int32 = spawn_getty(tty_path)
 
   if getty_pid > 0:
-    print(cast[ptr uint8]("init: getty spawned\n"))
+    print(cast[ptr uint8]("init: getty spawned on tty1\n"))
+
+  # Also spawn getty on /dev/console (for serial console mode)
+  strcpy(console_path, cast[ptr uint8]("/dev/console"))
+  print(cast[ptr uint8]("init: spawning getty on /dev/console\n"))
+  var console_getty_pid: int32 = spawn_getty(console_path)
+
+  if console_getty_pid > 0:
+    print(cast[ptr uint8]("init: getty spawned on console\n"))
 
   # Main loop: reap zombie processes
   print(cast[ptr uint8]("init: entering main loop (reaping zombies)\n"))
@@ -206,10 +217,13 @@ proc main() =
       # Would print child_pid here
       print(cast[ptr uint8]("(zombie cleaned)\n"))
 
-      # If it was the getty, respawn it
+      # If it was a getty, respawn it
       if child_pid == getty_pid:
-        print(cast[ptr uint8]("init: getty died, respawning...\n"))
+        print(cast[ptr uint8]("init: tty1 getty died, respawning...\n"))
         getty_pid = spawn_getty(tty_path)
+      if child_pid == console_getty_pid:
+        print(cast[ptr uint8]("init: console getty died, respawning...\n"))
+        console_getty_pid = spawn_getty(console_path)
     else:
       # No children or error - just loop
       # In a real init, we'd handle SIGCHLD here

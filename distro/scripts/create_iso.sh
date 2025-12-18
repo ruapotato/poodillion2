@@ -44,6 +44,9 @@ cp /home/david/poodillion2/bin/* "$INITRD_DIR/bin/"
 ln -sf /bin/init "$INITRD_DIR/sbin/init"
 ln -sf /bin/psh "$INITRD_DIR/bin/sh"
 
+# CRITICAL: Kernel looks for /init at root of initramfs
+cp /home/david/poodillion2/bin/init "$INITRD_DIR/init"
+
 # Copy etc files
 if [ -d "$ROOTFS_DIR/etc" ]; then
     cp -r "$ROOTFS_DIR/etc/"* "$INITRD_DIR/etc/" 2>/dev/null || true
@@ -65,17 +68,17 @@ set timeout=5
 set default=0
 
 menuentry "PoodillionOS" {
-    linux /boot/vmlinuz init=/bin/init console=tty0
+    linux /boot/vmlinuz rdinit=/init console=tty0
     initrd /boot/initrd.img
 }
 
 menuentry "PoodillionOS (Serial Console)" {
-    linux /boot/vmlinuz init=/bin/init console=ttyS0,115200
+    linux /boot/vmlinuz rdinit=/init console=ttyS0,115200
     initrd /boot/initrd.img
 }
 
 menuentry "PoodillionOS (Debug)" {
-    linux /boot/vmlinuz init=/bin/init console=tty0 debug
+    linux /boot/vmlinuz rdinit=/init console=tty0 debug
     initrd /boot/initrd.img
 }
 EOF
