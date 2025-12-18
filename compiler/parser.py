@@ -256,12 +256,83 @@ class Parser:
                     # This shouldn't happen in valid code, but handle gracefully
                     raise SyntaxError(f"Cannot call non-identifier at line {token.line}")
 
-            # Array/pointer indexing: expr[index]
+            # Array/pointer indexing OR generic type arguments: expr[index] or func[Type](args)
             elif token.type == TokenType.LBRACKET:
                 self.advance()
-                index = self.parse_expression()
-                self.expect(TokenType.RBRACKET)
-                expr = IndexExpr(expr, index)
+
+                # Detect generic call by checking if the content looks like type names
+                # followed by ] then (
+                # A type name is an identifier, a number would be array indexing
+                is_generic_call = False
+                type_args = []
+                saved_pos = self.pos
+
+                # Type keyword tokens that can appear in generic type arguments
+                type_keywords = {
+                    TokenType.INT8, TokenType.INT16, TokenType.INT32,
+                    TokenType.UINT8, TokenType.UINT16, TokenType.UINT32,
+                    TokenType.BOOL, TokenType.CHAR,
+                }
+
+                # Check if this could be a generic call (identifier followed by type list)
+                first_tok = self.current_token().type
+                is_type_start = first_tok == TokenType.IDENT or first_tok in type_keywords or first_tok == TokenType.PTR
+
+                if isinstance(expr, Identifier) and is_type_start:
+                    # Look ahead to determine if this is a generic call
+                    # Scan until we find ] or something that can't be a type
+                    scan_pos = self.pos
+                    could_be_generic = True
+
+                    while scan_pos < len(self.tokens):
+                        tok = self.tokens[scan_pos]
+                        if tok.type == TokenType.RBRACKET:
+                            # Check if followed by (
+                            if scan_pos + 1 < len(self.tokens) and \
+                               self.tokens[scan_pos + 1].type == TokenType.LPAREN:
+                                is_generic_call = True
+                            break
+                        elif tok.type == TokenType.IDENT or tok.type == TokenType.COMMA:
+                            scan_pos += 1
+                        elif tok.type in type_keywords or tok.type == TokenType.PTR:
+                            scan_pos += 1
+                        else:
+                            # Not a type - must be array indexing
+                            could_be_generic = False
+                            break
+
+                if is_generic_call:
+                    # Parse type arguments
+                    first_type = self.parse_type()
+                    type_args.append(first_type)
+
+                    while self.current_token().type == TokenType.COMMA:
+                        self.advance()
+                        type_args.append(self.parse_type())
+
+                    self.expect(TokenType.RBRACKET)
+                    # Now parse the function call
+                    self.expect(TokenType.LPAREN)
+                    self.skip_newlines()
+                    args = []
+
+                    if self.current_token().type != TokenType.RPAREN:
+                        args.append(self.parse_expression())
+                        while self.current_token().type == TokenType.COMMA:
+                            self.advance()
+                            self.skip_newlines()
+                            if self.current_token().type == TokenType.RPAREN:
+                                break
+                            args.append(self.parse_expression())
+
+                    self.skip_newlines()
+                    self.expect(TokenType.RPAREN)
+                    expr = CallExpr(expr.name, args, type_args=type_args)
+                else:
+                    # Regular array indexing
+                    index = self.parse_expression()
+                    self.expect(TokenType.RBRACKET)
+                    expr = IndexExpr(expr, index)
 
             # Field access: expr.field
             elif token.type == TokenType.DOT:
@@ -585,6 +656,22 @@ class Parser:
         self.advance()  # Skip 'proc'
 
         name = self.expect(TokenType.IDENT).value
+
+        # Parse optional generic type parameters: proc foo[T, U](...)
+        type_params = []
+        if self.current_token().type == TokenType.LBRACKET:
+            self.advance()  # Skip '['
+            if self.current_token().type != TokenType.RBRACKET:
+                type_name = self.expect(TokenType.IDENT).value
+                type_params.append(GenericType(name=type_name))
+
+                while self.current_token().type == TokenType.COMMA:
+                    self.advance()
+                    type_name = self.expect(TokenType.IDENT).value
+                    type_params.append(GenericType(name=type_name))
+
+            self.expect(TokenType.RBRACKET)
+
         self.expect(TokenType.LPAREN)
 
         # Parse parameters
@@ -616,7 +703,7 @@ class Parser:
         # Parse body
         body = self.parse_block()
 
-        return ProcDecl(name, params, return_type, body)
+        return ProcDecl(name, params, return_type, body, type_params=type_params)
 
     def parse_extern_decl(self) -> ExternDecl:
         self.advance()  # Skip 'extern'

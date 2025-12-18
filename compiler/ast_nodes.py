@@ -155,6 +155,7 @@ class UnaryExpr(ASTNode):
 class CallExpr(ASTNode):
     func: str
     args: List[ASTNode]
+    type_args: List['Type'] = field(default_factory=list)  # Generic type arguments
 
 @dataclass
 class CastExpr(ASTNode):
@@ -276,6 +277,7 @@ class ProcDecl(ASTNode):
     return_type: Optional[Type]
     body: List[ASTNode]
     is_inline: bool = False
+    type_params: List['GenericType'] = field(default_factory=list)  # Generic type parameters
 
 @dataclass
 class ExternDecl(ASTNode):
