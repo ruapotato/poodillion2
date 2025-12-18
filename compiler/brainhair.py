@@ -177,13 +177,18 @@ class Compiler:
         # 10. Link (for standalone binary - skip in kernel mode)
         if not self.kernel_mode:
             print("  [9/9] Linking...")
+            # Find lib/syscalls.o relative to compiler location
+            compiler_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            syscalls_obj = os.path.join(compiler_dir, 'lib', 'syscalls.o')
+            link_files = [self.obj_file]
+            if os.path.exists(syscalls_obj):
+                link_files = [syscalls_obj, self.obj_file]
             try:
                 subprocess.run([
                     'ld',
                     '-m', 'elf_i386',
                     '-o', self.output_file,
-                    self.obj_file
-                ], check=True, capture_output=True)
+                ] + link_files, check=True, capture_output=True)
                 print(f"        Created {self.output_file}")
             except subprocess.CalledProcessError as e:
                 print(f"ERROR: Linking failed!")

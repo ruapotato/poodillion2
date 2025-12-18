@@ -58,6 +58,9 @@ class X86CodeGen:
         if isinstance(typ, PointerType):
             return 4  # 32-bit pointers
 
+        if isinstance(typ, ArrayType):
+            return typ.size * self.type_size(typ.element_type)
+
         type_sizes = {
             'int8': 1, 'uint8': 1, 'char': 1, 'bool': 1,
             'int16': 2, 'uint16': 2,
@@ -279,13 +282,28 @@ class X86CodeGen:
             elif isinstance(expr.array, Identifier):
                 if expr.array.name in self.local_vars:
                     offset = self.local_vars[expr.array.name]
-                    # Load the pointer value - check if parameter or local
-                    if offset > 0:
-                        self.emit(f"mov eax, [ebp+{offset}]")
+                    var_type = self.type_table.get(expr.array.name)
+                    # For local arrays, get address with LEA; for pointers, load value with MOV
+                    if isinstance(var_type, ArrayType):
+                        if offset > 0:
+                            self.emit(f"lea eax, [ebp+{offset}]")
+                        else:
+                            self.emit(f"lea eax, [ebp{offset}]")
                     else:
-                        self.emit(f"mov eax, [ebp{offset}]")
+                        # It's a pointer variable, load its value
+                        if offset > 0:
+                            self.emit(f"mov eax, [ebp+{offset}]")
+                        else:
+                            self.emit(f"mov eax, [ebp{offset}]")
                 else:
-                    self.emit(f"lea eax, [rel {expr.array.name}]")
+                    # Global variable - check if array or pointer
+                    var_type = self.type_table.get(expr.array.name)
+                    if isinstance(var_type, ArrayType):
+                        # Array storage is the data, use LEA to get address
+                        self.emit(f"lea eax, [rel {expr.array.name}]")
+                    else:
+                        # Pointer variable - load its value with MOV
+                        self.emit(f"mov eax, [rel {expr.array.name}]")
 
             # Calculate address: base + index * element_size
             if element_size > 1:
@@ -372,12 +390,24 @@ class X86CodeGen:
                 elif isinstance(expr.expr.array, Identifier):
                     if expr.expr.array.name in self.local_vars:
                         offset = self.local_vars[expr.expr.array.name]
-                        if offset > 0:
-                            self.emit(f"mov eax, [ebp+{offset}]")
+                        var_type = self.type_table.get(expr.expr.array.name)
+                        if isinstance(var_type, ArrayType):
+                            if offset > 0:
+                                self.emit(f"lea eax, [ebp+{offset}]")
+                            else:
+                                self.emit(f"lea eax, [ebp{offset}]")
                         else:
-                            self.emit(f"mov eax, [ebp{offset}]")
+                            if offset > 0:
+                                self.emit(f"mov eax, [ebp+{offset}]")
+                            else:
+                                self.emit(f"mov eax, [ebp{offset}]")
                     else:
-                        self.emit(f"lea eax, [rel {expr.expr.array.name}]")
+                        # Global variable - check if array or pointer
+                        var_type = self.type_table.get(expr.expr.array.name)
+                        if isinstance(var_type, ArrayType):
+                            self.emit(f"lea eax, [rel {expr.expr.array.name}]")
+                        else:
+                            self.emit(f"mov eax, [rel {expr.expr.array.name}]")
 
                 # Calculate address: base + index * element_size
                 if element_size > 1:
@@ -481,13 +511,28 @@ class X86CodeGen:
                 elif isinstance(stmt.target.array, Identifier):
                     if stmt.target.array.name in self.local_vars:
                         offset = self.local_vars[stmt.target.array.name]
-                        # Load the pointer value - check if parameter or local
-                        if offset > 0:
-                            self.emit(f"mov eax, [ebp+{offset}]")
+                        var_type = self.type_table.get(stmt.target.array.name)
+                        # For local arrays, get address with LEA; for pointers, load value with MOV
+                        if isinstance(var_type, ArrayType):
+                            if offset > 0:
+                                self.emit(f"lea eax, [ebp+{offset}]")
+                            else:
+                                self.emit(f"lea eax, [ebp{offset}]")
                         else:
-                            self.emit(f"mov eax, [ebp{offset}]")
+                            # It's a pointer variable, load its value
+                            if offset > 0:
+                                self.emit(f"mov eax, [ebp+{offset}]")
+                            else:
+                                self.emit(f"mov eax, [ebp{offset}]")
                     else:
-                        self.emit(f"lea eax, [rel {stmt.target.array.name}]")
+                        # Global variable - check if array or pointer
+                        var_type = self.type_table.get(stmt.target.array.name)
+                        if isinstance(var_type, ArrayType):
+                            # Array storage is the data, use LEA to get address
+                            self.emit(f"lea eax, [rel {stmt.target.array.name}]")
+                        else:
+                            # Pointer variable - load its value with MOV
+                            self.emit(f"mov eax, [rel {stmt.target.array.name}]")
 
                 # Calculate address: base + index * element_size
                 if element_size > 1:
