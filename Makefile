@@ -437,7 +437,7 @@ GRAPHICS_UTILS = $(BIN_DIR)/fbinfo $(BIN_DIR)/clear $(BIN_DIR)/demo $(BIN_DIR)/p
 FILE_UTILS = $(BIN_DIR)/rm $(BIN_DIR)/mkdir $(BIN_DIR)/rmdir $(BIN_DIR)/mv $(BIN_DIR)/touch $(BIN_DIR)/cp $(BIN_DIR)/mkfifo $(BIN_DIR)/mknod $(BIN_DIR)/link $(BIN_DIR)/unlink $(BIN_DIR)/truncate $(BIN_DIR)/realpath
 
 # Text processing utilities (new)
-TEXT_UTILS = $(BIN_DIR)/wc $(BIN_DIR)/tee $(BIN_DIR)/rev $(BIN_DIR)/yes $(BIN_DIR)/seq $(BIN_DIR)/cut $(BIN_DIR)/uniq $(BIN_DIR)/tr $(BIN_DIR)/basename $(BIN_DIR)/dirname $(BIN_DIR)/ed
+TEXT_UTILS = $(BIN_DIR)/wc $(BIN_DIR)/tee $(BIN_DIR)/rev $(BIN_DIR)/yes $(BIN_DIR)/seq $(BIN_DIR)/cut $(BIN_DIR)/uniq $(BIN_DIR)/tr $(BIN_DIR)/basename $(BIN_DIR)/dirname $(BIN_DIR)/ed $(BIN_DIR)/grep $(BIN_DIR)/sed
 
 # Advanced text utilities
 ADVANCED_TEXT_UTILS = $(BIN_DIR)/more $(BIN_DIR)/split $(BIN_DIR)/join $(BIN_DIR)/paste $(BIN_DIR)/nl
@@ -446,10 +446,10 @@ ADVANCED_TEXT_UTILS = $(BIN_DIR)/more $(BIN_DIR)/split $(BIN_DIR)/join $(BIN_DIR
 STRING_UTILS = $(BIN_DIR)/printf $(BIN_DIR)/fold $(BIN_DIR)/expand $(BIN_DIR)/unexpand $(BIN_DIR)/col $(BIN_DIR)/colrm
 
 # System info utilities (new)
-SYSINFO_UTILS = $(BIN_DIR)/uname $(BIN_DIR)/free $(BIN_DIR)/uptime $(BIN_DIR)/hostname $(BIN_DIR)/whoami $(BIN_DIR)/id $(BIN_DIR)/printenv $(BIN_DIR)/tty $(BIN_DIR)/nproc $(BIN_DIR)/arch $(BIN_DIR)/logname $(BIN_DIR)/groups
+SYSINFO_UTILS = $(BIN_DIR)/uname $(BIN_DIR)/free $(BIN_DIR)/uptime $(BIN_DIR)/hostname $(BIN_DIR)/whoami $(BIN_DIR)/id $(BIN_DIR)/printenv $(BIN_DIR)/tty $(BIN_DIR)/nproc $(BIN_DIR)/arch $(BIN_DIR)/logname $(BIN_DIR)/groups $(BIN_DIR)/vmstat $(BIN_DIR)/iostat $(BIN_DIR)/lsof
 
 # Process utilities (new)
-PROC_UTILS = $(BIN_DIR)/kill $(BIN_DIR)/pidof $(BIN_DIR)/sleep $(BIN_DIR)/timeout $(BIN_DIR)/time $(BIN_DIR)/wait $(BIN_DIR)/renice $(BIN_DIR)/sync $(BIN_DIR)/usleep
+PROC_UTILS = $(BIN_DIR)/kill $(BIN_DIR)/pidof $(BIN_DIR)/sleep $(BIN_DIR)/timeout $(BIN_DIR)/time $(BIN_DIR)/wait $(BIN_DIR)/renice $(BIN_DIR)/sync $(BIN_DIR)/usleep $(BIN_DIR)/pgrep $(BIN_DIR)/pkill $(BIN_DIR)/killall $(BIN_DIR)/nohup $(BIN_DIR)/nice
 
 # Disk utilities (new)
 DISK_UTILS = $(BIN_DIR)/df $(BIN_DIR)/du $(BIN_DIR)/stat $(BIN_DIR)/file $(BIN_DIR)/ln $(BIN_DIR)/readlink
@@ -484,8 +484,11 @@ SHELL_UTILS = $(BIN_DIR)/psh
 DISPLAY_UTILS = $(BIN_DIR)/pr $(BIN_DIR)/xxd $(BIN_DIR)/look $(BIN_DIR)/csplit $(BIN_DIR)/ptx
 TERMINAL_UTILS = $(BIN_DIR)/stty $(BIN_DIR)/tput $(BIN_DIR)/reset $(BIN_DIR)/mesg $(BIN_DIR)/script
 
+# Networking utilities
+NET_UTILS = $(BIN_DIR)/netstat $(BIN_DIR)/ifconfig $(BIN_DIR)/route $(BIN_DIR)/dnsdomainname
+
 # All utilities
-ALL_UTILS = $(CORE_UTILS) $(DATA_UTILS) $(GRAPHICS_UTILS) $(FILE_UTILS) $(TEXT_UTILS) $(ADVANCED_TEXT_UTILS) $(STRING_UTILS) $(DISPLAY_UTILS) $(SYSINFO_UTILS) $(PROC_UTILS) $(DISK_UTILS) $(SEARCH_UTILS) $(TIME_PERM_UTILS) $(SHELL_SCRIPT_UTILS) $(POSIX_UTILS) $(MATH_UTILS) $(DIFF_UTILS) $(ARCHIVE_UTILS) $(SHELL_UTILS) $(TERMINAL_UTILS)
+ALL_UTILS = $(CORE_UTILS) $(DATA_UTILS) $(GRAPHICS_UTILS) $(FILE_UTILS) $(TEXT_UTILS) $(ADVANCED_TEXT_UTILS) $(STRING_UTILS) $(DISPLAY_UTILS) $(SYSINFO_UTILS) $(PROC_UTILS) $(DISK_UTILS) $(SEARCH_UTILS) $(TIME_PERM_UTILS) $(SHELL_SCRIPT_UTILS) $(POSIX_UTILS) $(MATH_UTILS) $(DIFF_UTILS) $(ARCHIVE_UTILS) $(SHELL_UTILS) $(TERMINAL_UTILS) $(NET_UTILS)
 
 # Build all userland utilities
 .PHONY: userland
@@ -544,6 +547,9 @@ userland: $(ALL_UTILS)
 	@echo ""
 	@echo "Terminal and I/O utilities:"
 	@ls -lh $(TERMINAL_UTILS) 2>/dev/null || true
+	@echo ""
+	@echo "Networking utilities:"
+	@ls -lh $(NET_UTILS) 2>/dev/null || true
 
 # Build file utilities
 .PHONY: file-utils
@@ -631,6 +637,12 @@ posix-utils: $(POSIX_UTILS)
 terminal-utils: $(TERMINAL_UTILS)
 	@echo "✓ Terminal and I/O utilities built!"
 	@ls -lh $(TERMINAL_UTILS) 2>/dev/null || true
+
+# Build networking utilities
+.PHONY: net-utils
+net-utils: $(NET_UTILS)
+	@echo "✓ Networking utilities built!"
+	@ls -lh $(NET_UTILS) 2>/dev/null || true
 
 # Graphics utilities target
 .PHONY: graphics

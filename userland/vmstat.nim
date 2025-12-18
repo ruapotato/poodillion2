@@ -1,0 +1,335 @@
+# vmstat - Virtual memory statistics
+# Displays system statistics including processes, memory, swap, io, system, cpu
+# Output: r b swpd free buff cache si so bi bo in cs us sy id wa
+
+const SYS_read: int32 = 3
+const SYS_write: int32 = 4
+const SYS_open: int32 = 5
+const SYS_close: int32 = 6
+const SYS_exit: int32 = 1
+const SYS_brk: int32 = 45
+
+const STDIN: int32 = 0
+const STDOUT: int32 = 1
+const STDERR: int32 = 2
+const O_RDONLY: int32 = 0
+
+extern proc syscall1(num: int32, arg1: int32): int32
+extern proc syscall3(num: int32, arg1: int32, arg2: int32, arg3: int32): int32
+
+proc strlen(s: ptr uint8): int32 =
+  var len: int32 = 0
+  while s[len] != cast[uint8](0):
+    len = len + 1
+  return len
+
+proc print(msg: ptr uint8) =
+  var len: int32 = strlen(msg)
+  discard syscall3(SYS_write, STDOUT, cast[int32](msg), len)
+
+proc print_err(msg: ptr uint8) =
+  var len: int32 = strlen(msg)
+  discard syscall3(SYS_write, STDERR, cast[int32](msg), len)
+
+# Compare strings up to n characters
+proc strncmp(s1: ptr uint8, s2: ptr uint8, n: int32): int32 =
+  var i: int32 = 0
+  while i < n:
+    if s1[i] != s2[i]:
+      if s1[i] < s2[i]:
+        return -1
+      return 1
+    if s1[i] == cast[uint8](0):
+      return 0
+    i = i + 1
+  return 0
+
+# Parse integer from string (skip non-digits)
+proc parse_int(s: ptr uint8): int32 =
+  var result: int32 = 0
+  var i: int32 = 0
+  # Skip non-digits
+  while s[i] != cast[uint8](0):
+    if s[i] >= cast[uint8](48):
+      if s[i] <= cast[uint8](57):
+        result = result * 10 + cast[int32](s[i]) - 48
+        i = i + 1
+        # Continue parsing
+        while s[i] >= cast[uint8](48):
+          if s[i] <= cast[uint8](57):
+            result = result * 10 + cast[int32](s[i]) - 48
+          i = i + 1
+        return result
+    i = i + 1
+  return result
+
+# Print integer with padding
+proc print_int_padded(n: int32, width: int32) =
+  if n == 0:
+    var spaces: int32 = width - 1
+    while spaces > 0:
+      discard syscall3(SYS_write, STDOUT, cast[int32](" "), 1)
+      spaces = spaces - 1
+    discard syscall3(SYS_write, STDOUT, cast[int32]("0"), 1)
+    return
+
+  var neg: int32 = 0
+  var num: int32 = n
+  if num < 0:
+    neg = 1
+    num = 0 - num
+
+  # Count digits
+  var temp: int32 = num
+  var digits: int32 = 0
+  while temp > 0:
+    digits = digits + 1
+    temp = temp / 10
+
+  if neg == 1:
+    digits = digits + 1
+
+  # Print padding spaces
+  var spaces: int32 = width - digits
+  while spaces > 0:
+    discard syscall3(SYS_write, STDOUT, cast[int32](" "), 1)
+    spaces = spaces - 1
+
+  # Allocate buffer for number
+  var old_brk: int32 = syscall1(SYS_brk, 0)
+  var new_brk: int32 = old_brk + 32
+  discard syscall1(SYS_brk, new_brk)
+  var buf: ptr uint8 = cast[ptr uint8](old_brk)
+
+  var pos: int32 = 0
+  if neg == 1:
+    buf[0] = cast[uint8](45)
+    pos = 1
+
+  # Convert to string in reverse
+  temp = num
+  var end_pos: int32 = pos + (digits - pos) - 1
+  while temp > 0:
+    var digit: int32 = temp % 10
+    buf[end_pos] = cast[uint8](48 + digit)
+    end_pos = end_pos - 1
+    temp = temp / 10
+
+  # Print the number
+  var i: int32 = 0
+  while i < digits:
+    discard syscall3(SYS_write, STDOUT, cast[int32](cast[int32](buf) + i), 1)
+    i = i + 1
+
+# Build string path
+proc build_path(buf: ptr uint8, str: ptr uint8) =
+  var i: int32 = 0
+  while str[i] != cast[uint8](0):
+    buf[i] = str[i]
+    i = i + 1
+  buf[i] = cast[uint8](0)
+
+proc main() =
+  # Allocate memory
+  var old_brk: int32 = syscall1(SYS_brk, 0)
+  var new_brk: int32 = old_brk + 16384
+  discard syscall1(SYS_brk, new_brk)
+
+  # Memory layout:
+  # +0: meminfo buffer (4KB)
+  # +4096: stat buffer (4KB)
+  # +8192: path buffer (256 bytes)
+  var meminfo_buf: ptr uint8 = cast[ptr uint8](old_brk)
+  var stat_buf: ptr uint8 = cast[ptr uint8](old_brk + 4096)
+  var path_buf: ptr uint8 = cast[ptr uint8](old_brk + 8192)
+
+  # Read /proc/meminfo
+  build_path(path_buf, cast[ptr uint8]("/proc/meminfo"))
+  var meminfo_fd: int32 = syscall3(SYS_open, cast[int32](path_buf), O_RDONLY, 0)
+  if meminfo_fd < 0:
+    print_err(cast[ptr uint8]("vmstat: cannot open /proc/meminfo\n"))
+    discard syscall1(SYS_exit, 1)
+
+  var meminfo_len: int32 = syscall3(SYS_read, meminfo_fd, cast[int32](meminfo_buf), 4095)
+  discard syscall1(SYS_close, meminfo_fd)
+
+  if meminfo_len <= 0:
+    print_err(cast[ptr uint8]("vmstat: cannot read /proc/meminfo\n"))
+    discard syscall1(SYS_exit, 1)
+
+  meminfo_buf[meminfo_len] = cast[uint8](0)
+
+  # Parse memory statistics from /proc/meminfo
+  var mem_total: int32 = 0
+  var mem_free: int32 = 0
+  var mem_available: int32 = 0
+  var buffers: int32 = 0
+  var cached: int32 = 0
+  var swap_total: int32 = 0
+  var swap_free: int32 = 0
+  var swap_cached: int32 = 0
+
+  var i: int32 = 0
+  while i < meminfo_len:
+    if strncmp(cast[ptr uint8](cast[int32](meminfo_buf) + i), cast[ptr uint8]("MemTotal:"), 9) == 0:
+      mem_total = parse_int(cast[ptr uint8](cast[int32](meminfo_buf) + i + 9))
+    if strncmp(cast[ptr uint8](cast[int32](meminfo_buf) + i), cast[ptr uint8]("MemFree:"), 8) == 0:
+      mem_free = parse_int(cast[ptr uint8](cast[int32](meminfo_buf) + i + 8))
+    if strncmp(cast[ptr uint8](cast[int32](meminfo_buf) + i), cast[ptr uint8]("MemAvailable:"), 13) == 0:
+      mem_available = parse_int(cast[ptr uint8](cast[int32](meminfo_buf) + i + 13))
+    if strncmp(cast[ptr uint8](cast[int32](meminfo_buf) + i), cast[ptr uint8]("Buffers:"), 8) == 0:
+      buffers = parse_int(cast[ptr uint8](cast[int32](meminfo_buf) + i + 8))
+    if strncmp(cast[ptr uint8](cast[int32](meminfo_buf) + i), cast[ptr uint8]("Cached:"), 7) == 0:
+      cached = parse_int(cast[ptr uint8](cast[int32](meminfo_buf) + i + 7))
+    if strncmp(cast[ptr uint8](cast[int32](meminfo_buf) + i), cast[ptr uint8]("SwapTotal:"), 10) == 0:
+      swap_total = parse_int(cast[ptr uint8](cast[int32](meminfo_buf) + i + 10))
+    if strncmp(cast[ptr uint8](cast[int32](meminfo_buf) + i), cast[ptr uint8]("SwapFree:"), 9) == 0:
+      swap_free = parse_int(cast[ptr uint8](cast[int32](meminfo_buf) + i + 9))
+    if strncmp(cast[ptr uint8](cast[int32](meminfo_buf) + i), cast[ptr uint8]("SwapCached:"), 11) == 0:
+      swap_cached = parse_int(cast[ptr uint8](cast[int32](meminfo_buf) + i + 11))
+
+    # Skip to next line
+    while i < meminfo_len:
+      if meminfo_buf[i] == cast[uint8](10):
+        i = i + 1
+        break
+      i = i + 1
+
+  # Read /proc/stat for CPU and system stats
+  build_path(path_buf, cast[ptr uint8]("/proc/stat"))
+  var stat_fd: int32 = syscall3(SYS_open, cast[int32](path_buf), O_RDONLY, 0)
+  if stat_fd < 0:
+    print_err(cast[ptr uint8]("vmstat: cannot open /proc/stat\n"))
+    discard syscall1(SYS_exit, 1)
+
+  var stat_len: int32 = syscall3(SYS_read, stat_fd, cast[int32](stat_buf), 4095)
+  discard syscall1(SYS_close, stat_fd)
+
+  if stat_len <= 0:
+    print_err(cast[ptr uint8]("vmstat: cannot read /proc/stat\n"))
+    discard syscall1(SYS_exit, 1)
+
+  stat_buf[stat_len] = cast[uint8](0)
+
+  # Parse /proc/stat for CPU times and process counts
+  # Format: cpu user nice system idle iowait irq softirq ...
+  var cpu_user: int32 = 0
+  var cpu_system: int32 = 0
+  var cpu_idle: int32 = 0
+  var cpu_iowait: int32 = 0
+  var procs_running: int32 = 0
+  var procs_blocked: int32 = 0
+  var ctxt: int32 = 0
+  var intr: int32 = 0
+
+  i = 0
+  while i < stat_len:
+    # Parse "cpu" line (aggregate)
+    if strncmp(cast[ptr uint8](cast[int32](stat_buf) + i), cast[ptr uint8]("cpu "), 4) == 0:
+      # Skip "cpu "
+      var j: int32 = i + 4
+      # Parse fields: user nice system idle iowait irq softirq
+      # user
+      cpu_user = parse_int(cast[ptr uint8](cast[int32](stat_buf) + j))
+      while stat_buf[j] != cast[uint8](32):
+        j = j + 1
+      j = j + 1  # skip space
+      # skip nice
+      while stat_buf[j] != cast[uint8](32):
+        j = j + 1
+      j = j + 1
+      # system
+      cpu_system = parse_int(cast[ptr uint8](cast[int32](stat_buf) + j))
+      while stat_buf[j] != cast[uint8](32):
+        j = j + 1
+      j = j + 1
+      # idle
+      cpu_idle = parse_int(cast[ptr uint8](cast[int32](stat_buf) + j))
+      while stat_buf[j] != cast[uint8](32):
+        j = j + 1
+      j = j + 1
+      # iowait
+      cpu_iowait = parse_int(cast[ptr uint8](cast[int32](stat_buf) + j))
+
+    # Parse "procs_running"
+    if strncmp(cast[ptr uint8](cast[int32](stat_buf) + i), cast[ptr uint8]("procs_running "), 14) == 0:
+      procs_running = parse_int(cast[ptr uint8](cast[int32](stat_buf) + i + 14))
+
+    # Parse "procs_blocked"
+    if strncmp(cast[ptr uint8](cast[int32](stat_buf) + i), cast[ptr uint8]("procs_blocked "), 14) == 0:
+      procs_blocked = parse_int(cast[ptr uint8](cast[int32](stat_buf) + i + 14))
+
+    # Parse "ctxt" (context switches)
+    if strncmp(cast[ptr uint8](cast[int32](stat_buf) + i), cast[ptr uint8]("ctxt "), 5) == 0:
+      ctxt = parse_int(cast[ptr uint8](cast[int32](stat_buf) + i + 5))
+
+    # Parse "intr" (interrupts)
+    if strncmp(cast[ptr uint8](cast[int32](stat_buf) + i), cast[ptr uint8]("intr "), 5) == 0:
+      intr = parse_int(cast[ptr uint8](cast[int32](stat_buf) + i + 5))
+
+    # Skip to next line
+    while i < stat_len:
+      if stat_buf[i] == cast[uint8](10):
+        i = i + 1
+        break
+      i = i + 1
+
+  # Calculate derived values
+  var swap_used: int32 = swap_total - swap_free
+  var cpu_total: int32 = cpu_user + cpu_system + cpu_idle + cpu_iowait
+  var cpu_us_pct: int32 = 0
+  var cpu_sy_pct: int32 = 0
+  var cpu_id_pct: int32 = 0
+  var cpu_wa_pct: int32 = 0
+
+  if cpu_total > 0:
+    cpu_us_pct = (cpu_user * 100) / cpu_total
+    cpu_sy_pct = (cpu_system * 100) / cpu_total
+    cpu_id_pct = (cpu_idle * 100) / cpu_total
+    cpu_wa_pct = (cpu_iowait * 100) / cpu_total
+
+  # Simplified I/O stats (would need /proc/diskstats for real values)
+  var si: int32 = 0  # swap in
+  var so: int32 = 0  # swap out
+  var bi: int32 = 0  # blocks in
+  var bo: int32 = 0  # blocks out
+
+  # Print header
+  print(cast[ptr uint8]("procs -----------memory---------- ---swap-- -----io---- -system-- ------cpu-----\n"))
+  print(cast[ptr uint8](" r  b   swpd   free   buff  cache   si   so    bi    bo   in   cs us sy id wa st\n"))
+
+  # Print values
+  print_int_padded(procs_running, 2)
+  print(cast[ptr uint8](" "))
+  print_int_padded(procs_blocked, 2)
+  print(cast[ptr uint8](" "))
+  print_int_padded(swap_used, 6)
+  print(cast[ptr uint8](" "))
+  print_int_padded(mem_free, 6)
+  print(cast[ptr uint8](" "))
+  print_int_padded(buffers, 6)
+  print(cast[ptr uint8](" "))
+  print_int_padded(cached, 6)
+  print(cast[ptr uint8](" "))
+  print_int_padded(si, 4)
+  print(cast[ptr uint8](" "))
+  print_int_padded(so, 4)
+  print(cast[ptr uint8](" "))
+  print_int_padded(bi, 5)
+  print(cast[ptr uint8](" "))
+  print_int_padded(bo, 5)
+  print(cast[ptr uint8](" "))
+  print_int_padded(intr % 10000, 4)  # Simplified interrupt count
+  print(cast[ptr uint8](" "))
+  print_int_padded(ctxt % 10000, 4)  # Simplified context switch count
+  print(cast[ptr uint8](" "))
+  print_int_padded(cpu_us_pct, 2)
+  print(cast[ptr uint8](" "))
+  print_int_padded(cpu_sy_pct, 2)
+  print(cast[ptr uint8](" "))
+  print_int_padded(cpu_id_pct, 2)
+  print(cast[ptr uint8](" "))
+  print_int_padded(cpu_wa_pct, 2)
+  print(cast[ptr uint8]("  0\n"))
+
+  discard syscall1(SYS_exit, 0)

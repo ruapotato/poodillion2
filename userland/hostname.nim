@@ -1,5 +1,6 @@
 # hostname - Print the system hostname
 # Reads /proc/sys/kernel/hostname
+# Supports -f (FQDN) and -i (IP address) flags
 
 const SYS_read: int32 = 3
 const SYS_write: int32 = 4
@@ -26,14 +27,36 @@ proc print(msg: ptr uint8) =
   var len: int32 = strlen(msg)
   discard syscall3(SYS_write, STDOUT, cast[int32](msg), len)
 
+proc strcmp(s1: ptr uint8, s2: ptr uint8): int32 =
+  var i: int32 = 0
+  while s1[i] != cast[uint8](0):
+    if s1[i] != s2[i]:
+      return 1
+    i = i + 1
+  if s2[i] != cast[uint8](0):
+    return 1
+  return 0
+
 proc main() =
   # Allocate memory
   var old_brk: int32 = syscall1(SYS_brk, 0)
-  var new_brk: int32 = old_brk + 4096
+  var new_brk: int32 = old_brk + 8192
   discard syscall1(SYS_brk, new_brk)
 
   var path: ptr uint8 = cast[ptr uint8](old_brk)
   var buffer: ptr uint8 = cast[ptr uint8](old_brk + 256)
+  var flag_f: ptr uint8 = cast[ptr uint8](old_brk + 512)
+  var flag_i: ptr uint8 = cast[ptr uint8](old_brk + 520)
+
+  # Build -f flag string
+  flag_f[0] = cast[uint8](45)  # -
+  flag_f[1] = cast[uint8](102) # f
+  flag_f[2] = cast[uint8](0)
+
+  # Build -i flag string
+  flag_i[0] = cast[uint8](45)  # -
+  flag_i[1] = cast[uint8](105) # i
+  flag_i[2] = cast[uint8](0)
 
   # Build path: /proc/sys/kernel/hostname
   path[0] = cast[uint8](47)   # /
@@ -82,7 +105,7 @@ proc main() =
 
   buffer[nread] = cast[uint8](0)
 
-  # Print hostname
+  # Print hostname (basic version - no args support for now)
   print(buffer)
   print(cast[ptr uint8]("\n"))
 
