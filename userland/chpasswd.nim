@@ -1,0 +1,181 @@
+# chpasswd - Batch password update
+# Reads username:password pairs from stdin and updates passwords
+# Usage: chpasswd < user_password_file
+# Note: Simplified version that just displays what would be updated
+
+const SYS_read: int32 = 3
+const SYS_write: int32 = 4
+const SYS_exit: int32 = 1
+const SYS_brk: int32 = 45
+
+const STDIN: int32 = 0
+const STDOUT: int32 = 1
+const STDERR: int32 = 2
+
+extern proc syscall1(num: int32, arg1: int32): int32
+extern proc syscall3(num: int32, arg1: int32, arg2: int32, arg3: int32): int32
+
+proc strlen(s: ptr uint8): int32 =
+  var len: int32 = 0
+  while s[len] != cast[uint8](0):
+    len = len + 1
+  return len
+
+proc print(msg: ptr uint8) =
+  var len: int32 = strlen(msg)
+  discard syscall3(SYS_write, STDOUT, cast[int32](msg), len)
+
+proc print_err(msg: ptr uint8) =
+  var len: int32 = strlen(msg)
+  discard syscall3(SYS_write, STDERR, cast[int32](msg), len)
+
+# Write a single character
+proc print_char(c: uint8) =
+  discard syscall3(SYS_write, STDOUT, cast[int32](cast[ptr uint8](cast[int32](cast[ptr uint8](c)))), 1)
+
+proc main() =
+  # Allocate memory
+  var old_brk: int32 = syscall1(SYS_brk, 0)
+  var new_brk: int32 = old_brk + 16384
+  discard syscall1(SYS_brk, new_brk)
+
+  var input_buf: ptr uint8 = cast[ptr uint8](old_brk)
+  var username: ptr uint8 = cast[ptr uint8](old_brk + 8192)
+  var password: ptr uint8 = cast[ptr uint8](old_brk + 8704)
+
+  print(cast[ptr uint8]("chpasswd: reading username:password pairs from stdin\n"))
+  print(cast[ptr uint8]("chpasswd: simplified version - passwords will not be updated\n"))
+  print(cast[ptr uint8]("chpasswd: full implementation requires crypt() support\n"))
+  print(cast[ptr uint8]("\n"))
+
+  # Read from stdin
+  var total_read: int32 = 0
+  var running: int32 = 1
+
+  while running != 0:
+    var n: int32 = syscall3(SYS_read, STDIN, cast[int32](cast[ptr uint8](cast[int32](input_buf) + total_read)), 8000 - total_read)
+    if n <= 0:
+      running = 0
+      break
+    total_read = total_read + n
+
+  if total_read == 0:
+    print_err(cast[ptr uint8]("chpasswd: no input received\n"))
+    print_err(cast[ptr uint8]("          usage: chpasswd < user_password_file\n"))
+    print_err(cast[ptr uint8]("          format: username:password (one per line)\n"))
+    discard syscall1(SYS_exit, 1)
+
+  input_buf[total_read] = cast[uint8](0)
+
+  # Parse input line by line
+  var i: int32 = 0
+  var count: int32 = 0
+
+  while i < total_read:
+    # Skip empty lines (restructured without continue)
+    if input_buf[i] != cast[uint8](10):
+      # Parse username (before colon)
+      var username_idx: int32 = 0
+      while i < total_read:
+        if input_buf[i] == cast[uint8](58):  # colon
+          break
+        if input_buf[i] == cast[uint8](10):  # newline
+          break
+        username[username_idx] = input_buf[i]
+        username_idx = username_idx + 1
+        i = i + 1
+      username[username_idx] = cast[uint8](0)
+
+      # Check if we found a colon
+      if i < total_read:
+        if input_buf[i] == cast[uint8](58):  # colon found
+          i = i + 1  # Skip the colon
+
+          # Parse password (until newline)
+          var password_idx: int32 = 0
+          while i < total_read:
+            if input_buf[i] == cast[uint8](10):  # newline
+              break
+            password[password_idx] = input_buf[i]
+            password_idx = password_idx + 1
+            i = i + 1
+          password[password_idx] = cast[uint8](0)
+
+          # Skip newline
+          if i < total_read:
+            if input_buf[i] == cast[uint8](10):
+              i = i + 1
+
+          # Process this username:password pair
+          if username_idx > 0:
+            if password_idx > 0:
+              count = count + 1
+              print(cast[ptr uint8]("  Would update password for user: "))
+              print(username)
+              print(cast[ptr uint8](" (password length: "))
+
+              # Print password length
+              var temp: int32 = password_idx
+              if temp == 0:
+                discard syscall3(SYS_write, STDOUT, cast[int32]("0"), 1)
+              else:
+                # Count digits
+                var digits: int32 = 0
+                var t2: int32 = temp
+                while t2 > 0:
+                  digits = digits + 1
+                  t2 = t2 / 10
+
+                # Convert to string
+                var digit_buf: ptr uint8 = cast[ptr uint8](old_brk + 9216)
+                var pos: int32 = digits - 1
+                while temp > 0:
+                  var digit: int32 = temp % 10
+                  digit_buf[pos] = cast[uint8](48 + digit)
+                  pos = pos - 1
+                  temp = temp / 10
+                digit_buf[digits] = cast[uint8](0)
+                print(digit_buf)
+
+              print(cast[ptr uint8](" characters)\n"))
+        else:
+          # Skip to next line (no colon found)
+          while i < total_read:
+            if input_buf[i] == cast[uint8](10):  # newline
+              i = i + 1
+              break
+            i = i + 1
+    else:
+      # Empty line, just skip
+      i = i + 1
+
+  print(cast[ptr uint8]("\n"))
+  print(cast[ptr uint8]("chpasswd: processed "))
+
+  # Print count
+  var temp: int32 = count
+  if temp == 0:
+    discard syscall3(SYS_write, STDOUT, cast[int32]("0"), 1)
+  else:
+    # Count digits
+    var digits: int32 = 0
+    var t2: int32 = temp
+    while t2 > 0:
+      digits = digits + 1
+      t2 = t2 / 10
+
+    # Convert to string
+    var digit_buf: ptr uint8 = cast[ptr uint8](old_brk + 9216)
+    var pos: int32 = digits - 1
+    while temp > 0:
+      var digit: int32 = temp % 10
+      digit_buf[pos] = cast[uint8](48 + digit)
+      pos = pos - 1
+      temp = temp / 10
+    digit_buf[digits] = cast[uint8](0)
+    print(digit_buf)
+
+  print(cast[ptr uint8](" user(s)\n"))
+  print(cast[ptr uint8]("chpasswd: note - passwords were NOT actually updated\n"))
+
+  discard syscall1(SYS_exit, 0)

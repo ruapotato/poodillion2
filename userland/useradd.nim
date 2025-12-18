@@ -1,0 +1,327 @@
+# useradd - Add a new user to the system
+# Usage: useradd [-u UID] [-g GID] USERNAME
+# Simplified version that appends to /etc/passwd
+
+const SYS_read: int32 = 3
+const SYS_write: int32 = 4
+const SYS_open: int32 = 5
+const SYS_close: int32 = 6
+const SYS_exit: int32 = 1
+const SYS_brk: int32 = 45
+const SYS_mkdir: int32 = 39
+const SYS_lseek: int32 = 19
+
+const STDIN: int32 = 0
+const STDOUT: int32 = 1
+const STDERR: int32 = 2
+const O_RDONLY: int32 = 0
+const O_WRONLY: int32 = 1
+const O_RDWR: int32 = 2
+const O_CREAT: int32 = 64
+const O_APPEND: int32 = 1024
+
+const SEEK_END: int32 = 2
+
+extern proc syscall1(num: int32, arg1: int32): int32
+extern proc syscall2(num: int32, arg1: int32, arg2: int32): int32
+extern proc syscall3(num: int32, arg1: int32, arg2: int32, arg3: int32): int32
+
+proc strlen(s: ptr uint8): int32 =
+  var len: int32 = 0
+  while s[len] != cast[uint8](0):
+    len = len + 1
+  return len
+
+proc print(msg: ptr uint8) =
+  var len: int32 = strlen(msg)
+  discard syscall3(SYS_write, STDOUT, cast[int32](msg), len)
+
+proc print_err(msg: ptr uint8) =
+  var len: int32 = strlen(msg)
+  discard syscall3(SYS_write, STDERR, cast[int32](msg), len)
+
+# Copy string
+proc strcpy(dest: ptr uint8, src: ptr uint8) =
+  var i: int32 = 0
+  while src[i] != cast[uint8](0):
+    dest[i] = src[i]
+    i = i + 1
+  dest[i] = cast[uint8](0)
+
+# Parse integer from string
+proc parse_int(s: ptr uint8): int32 =
+  var result: int32 = 0
+  var i: int32 = 0
+  while s[i] != cast[uint8](0):
+    if s[i] >= cast[uint8](48):
+      if s[i] <= cast[uint8](57):
+        result = result * 10 + cast[int32](s[i]) - 48
+    i = i + 1
+  return result
+
+# Find next available UID from /etc/passwd
+proc find_next_uid(passwd_buf: ptr uint8, nread: int32): int32 =
+  var max_uid: int32 = 999  # Start from 1000 for regular users
+  var i: int32 = 0
+
+  while i < nread:
+    # Skip username field
+    while i < nread:
+      if passwd_buf[i] == cast[uint8](58):  # colon
+        break
+      i = i + 1
+
+    # Skip password field
+    i = i + 1
+    while i < nread:
+      if passwd_buf[i] == cast[uint8](58):  # colon
+        break
+      i = i + 1
+
+    # Parse UID field
+    i = i + 1
+    var uid_start: int32 = i
+    while i < nread:
+      if passwd_buf[i] == cast[uint8](58):  # colon
+        break
+      i = i + 1
+    var uid_end: int32 = i
+
+    # Calculate UID
+    var uid: int32 = 0
+    var j: int32 = uid_start
+    while j < uid_end:
+      if passwd_buf[j] >= cast[uint8](48):
+        if passwd_buf[j] <= cast[uint8](57):
+          uid = uid * 10 + cast[int32](passwd_buf[j]) - 48
+      j = j + 1
+
+    if uid > max_uid:
+      max_uid = uid
+
+    # Skip to next line
+    while i < nread:
+      if passwd_buf[i] == cast[uint8](10):  # newline
+        i = i + 1
+        break
+      i = i + 1
+
+  return max_uid + 1
+
+# Convert integer to string
+proc int_to_str(n: int32, buf: ptr uint8): int32 =
+  if n == 0:
+    buf[0] = cast[uint8](48)
+    buf[1] = cast[uint8](0)
+    return 1
+
+  # Count digits
+  var temp: int32 = n
+  var digits: int32 = 0
+  while temp > 0:
+    digits = digits + 1
+    temp = temp / 10
+
+  # Build string
+  var pos: int32 = digits - 1
+  temp = n
+  while temp > 0:
+    var digit: int32 = temp % 10
+    buf[pos] = cast[uint8](48 + digit)
+    pos = pos - 1
+    temp = temp / 10
+
+  buf[digits] = cast[uint8](0)
+  return digits
+
+proc main() =
+  # Allocate memory
+  var old_brk: int32 = syscall1(SYS_brk, 0)
+  var new_brk: int32 = old_brk + 32768
+  discard syscall1(SYS_brk, new_brk)
+
+  var username: ptr uint8 = cast[ptr uint8](old_brk)
+  var passwd_path: ptr uint8 = cast[ptr uint8](old_brk + 256)
+  var passwd_buf: ptr uint8 = cast[ptr uint8](old_brk + 512)
+  var home_path: ptr uint8 = cast[ptr uint8](old_brk + 17024)
+  var entry_buf: ptr uint8 = cast[ptr uint8](old_brk + 17536)
+  var uid_str: ptr uint8 = cast[ptr uint8](old_brk + 18048)
+  var gid_str: ptr uint8 = cast[ptr uint8](old_brk + 18560)
+
+  # Default values
+  var uid: int32 = 0  # Will be auto-assigned
+  var gid: int32 = 100  # Default group (users)
+
+  # For simplified version, username is hardcoded
+  # In real version, parse command line arguments
+  print(cast[ptr uint8]("useradd: simplified version\n"))
+  print(cast[ptr uint8]("Usage: useradd USERNAME\n"))
+  print(cast[ptr uint8]("Note: Using default values. Full argument parsing not yet implemented.\n"))
+  print(cast[ptr uint8]("Example username: testuser\n"))
+
+  # Hardcoded username for demo
+  username[0] = cast[uint8](116)  # t
+  username[1] = cast[uint8](101)  # e
+  username[2] = cast[uint8](115)  # s
+  username[3] = cast[uint8](116)  # t
+  username[4] = cast[uint8](117)  # u
+  username[5] = cast[uint8](115)  # s
+  username[6] = cast[uint8](101)  # e
+  username[7] = cast[uint8](114)  # r
+  username[8] = cast[uint8](0)
+
+  # Build path: /etc/passwd
+  passwd_path[0] = cast[uint8](47)   # /
+  passwd_path[1] = cast[uint8](101)  # e
+  passwd_path[2] = cast[uint8](116)  # t
+  passwd_path[3] = cast[uint8](99)   # c
+  passwd_path[4] = cast[uint8](47)   # /
+  passwd_path[5] = cast[uint8](112)  # p
+  passwd_path[6] = cast[uint8](97)   # a
+  passwd_path[7] = cast[uint8](115)  # s
+  passwd_path[8] = cast[uint8](115)  # s
+  passwd_path[9] = cast[uint8](119)  # w
+  passwd_path[10] = cast[uint8](100) # d
+  passwd_path[11] = cast[uint8](0)
+
+  # Read /etc/passwd to find next UID
+  var fd: int32 = syscall3(SYS_open, cast[int32](passwd_path), O_RDONLY, 0)
+  if fd < 0:
+    print_err(cast[ptr uint8]("useradd: cannot open /etc/passwd\n"))
+    discard syscall1(SYS_exit, 1)
+
+  var nread: int32 = syscall3(SYS_read, fd, cast[int32](passwd_buf), 16000)
+  discard syscall1(SYS_close, fd)
+
+  if nread < 0:
+    print_err(cast[ptr uint8]("useradd: cannot read /etc/passwd\n"))
+    discard syscall1(SYS_exit, 1)
+
+  # Find next available UID
+  if uid == 0:
+    uid = find_next_uid(passwd_buf, nread)
+
+  # Convert UID and GID to strings
+  discard int_to_str(uid, uid_str)
+  discard int_to_str(gid, gid_str)
+
+  # Build home directory path: /home/username
+  home_path[0] = cast[uint8](47)   # /
+  home_path[1] = cast[uint8](104)  # h
+  home_path[2] = cast[uint8](111)  # o
+  home_path[3] = cast[uint8](109)  # m
+  home_path[4] = cast[uint8](101)  # e
+  home_path[5] = cast[uint8](47)   # /
+  var i: int32 = 6
+  var j: int32 = 0
+  while username[j] != cast[uint8](0):
+    home_path[i] = username[j]
+    i = i + 1
+    j = j + 1
+  home_path[i] = cast[uint8](0)
+
+  # Build /etc/passwd entry: username:x:uid:gid:comment:/home/username:/bin/psh
+  var pos: int32 = 0
+
+  # Username
+  i = 0
+  while username[i] != cast[uint8](0):
+    entry_buf[pos] = username[i]
+    pos = pos + 1
+    i = i + 1
+
+  # :x:
+  entry_buf[pos] = cast[uint8](58)  # :
+  pos = pos + 1
+  entry_buf[pos] = cast[uint8](120) # x
+  pos = pos + 1
+  entry_buf[pos] = cast[uint8](58)  # :
+  pos = pos + 1
+
+  # UID
+  i = 0
+  while uid_str[i] != cast[uint8](0):
+    entry_buf[pos] = uid_str[i]
+    pos = pos + 1
+    i = i + 1
+
+  # :
+  entry_buf[pos] = cast[uint8](58)  # :
+  pos = pos + 1
+
+  # GID
+  i = 0
+  while gid_str[i] != cast[uint8](0):
+    entry_buf[pos] = gid_str[i]
+    pos = pos + 1
+    i = i + 1
+
+  # ::
+  entry_buf[pos] = cast[uint8](58)  # :
+  pos = pos + 1
+  entry_buf[pos] = cast[uint8](58)  # :
+  pos = pos + 1
+
+  # Home directory
+  i = 0
+  while home_path[i] != cast[uint8](0):
+    entry_buf[pos] = home_path[i]
+    pos = pos + 1
+    i = i + 1
+
+  # :/bin/psh
+  entry_buf[pos] = cast[uint8](58)   # :
+  pos = pos + 1
+  entry_buf[pos] = cast[uint8](47)   # /
+  pos = pos + 1
+  entry_buf[pos] = cast[uint8](98)   # b
+  pos = pos + 1
+  entry_buf[pos] = cast[uint8](105)  # i
+  pos = pos + 1
+  entry_buf[pos] = cast[uint8](110)  # n
+  pos = pos + 1
+  entry_buf[pos] = cast[uint8](47)   # /
+  pos = pos + 1
+  entry_buf[pos] = cast[uint8](112)  # p
+  pos = pos + 1
+  entry_buf[pos] = cast[uint8](115)  # s
+  pos = pos + 1
+  entry_buf[pos] = cast[uint8](104)  # h
+  pos = pos + 1
+
+  # Newline
+  entry_buf[pos] = cast[uint8](10)   # \n
+  pos = pos + 1
+
+  # Open /etc/passwd for appending
+  fd = syscall3(SYS_open, cast[int32](passwd_path), O_WRONLY + O_APPEND, 0)
+  if fd < 0:
+    print_err(cast[ptr uint8]("useradd: cannot open /etc/passwd for writing\n"))
+    print_err(cast[ptr uint8]("         (may need root privileges)\n"))
+    discard syscall1(SYS_exit, 1)
+
+  # Write entry
+  var nwritten: int32 = syscall3(SYS_write, fd, cast[int32](entry_buf), pos)
+  discard syscall1(SYS_close, fd)
+
+  if nwritten != pos:
+    print_err(cast[ptr uint8]("useradd: failed to write entry\n"))
+    discard syscall1(SYS_exit, 1)
+
+  # Create home directory
+  var mkdir_result: int32 = syscall2(SYS_mkdir, cast[int32](home_path), 493)  # 0755
+  if mkdir_result < 0:
+    print(cast[ptr uint8]("useradd: warning: could not create home directory\n"))
+
+  print(cast[ptr uint8]("useradd: user '"))
+  print(username)
+  print(cast[ptr uint8]("' created successfully\n"))
+  print(cast[ptr uint8]("  UID: "))
+  print(uid_str)
+  print(cast[ptr uint8]("\n  GID: "))
+  print(gid_str)
+  print(cast[ptr uint8]("\n  Home: "))
+  print(home_path)
+  print(cast[ptr uint8]("\n  Shell: /bin/psh\n"))
+
+  discard syscall1(SYS_exit, 0)

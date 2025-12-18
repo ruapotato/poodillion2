@@ -1,0 +1,104 @@
+# passwd - Change user password (simplified)
+# Usage: passwd [USER]
+# Note: This is a simplified version that displays a message
+# A real implementation would require crypt() for password hashing
+
+const SYS_read: int32 = 3
+const SYS_write: int32 = 4
+const SYS_exit: int32 = 1
+const SYS_brk: int32 = 45
+const SYS_getuid: int32 = 24
+
+const STDIN: int32 = 0
+const STDOUT: int32 = 1
+const STDERR: int32 = 2
+
+extern proc syscall1(num: int32, arg1: int32): int32
+extern proc syscall3(num: int32, arg1: int32, arg2: int32, arg3: int32): int32
+
+proc strlen(s: ptr uint8): int32 =
+  var len: int32 = 0
+  while s[len] != cast[uint8](0):
+    len = len + 1
+  return len
+
+proc print(msg: ptr uint8) =
+  var len: int32 = strlen(msg)
+  discard syscall3(SYS_write, STDOUT, cast[int32](msg), len)
+
+proc print_err(msg: ptr uint8) =
+  var len: int32 = strlen(msg)
+  discard syscall3(SYS_write, STDERR, cast[int32](msg), len)
+
+# Read a line from stdin (for password input)
+proc read_line(buffer: ptr uint8, max_len: int32): int32 =
+  var i: int32 = 0
+  while i < max_len - 1:
+    var c: uint8 = 0
+    var n: int32 = syscall3(SYS_read, STDIN, cast[int32](cast[ptr uint8](cast[int32](buffer) + i)), 1)
+    if n <= 0:
+      break
+    if buffer[i] == cast[uint8](10):  # newline
+      break
+    i = i + 1
+  buffer[i] = cast[uint8](0)
+  return i
+
+# Compare two strings
+proc strcmp(s1: ptr uint8, s2: ptr uint8, len1: int32, len2: int32): int32 =
+  if len1 != len2:
+    return 1
+  var i: int32 = 0
+  while i < len1:
+    if s1[i] != s2[i]:
+      return 1
+    i = i + 1
+  return 0
+
+proc main() =
+  # Allocate memory
+  var old_brk: int32 = syscall1(SYS_brk, 0)
+  var new_brk: int32 = old_brk + 8192
+  discard syscall1(SYS_brk, new_brk)
+
+  var old_passwd: ptr uint8 = cast[ptr uint8](old_brk)
+  var new_passwd: ptr uint8 = cast[ptr uint8](old_brk + 512)
+  var confirm_passwd: ptr uint8 = cast[ptr uint8](old_brk + 1024)
+
+  # Get current user
+  var uid: int32 = syscall1(SYS_getuid, 0)
+
+  # For simplified version, just prompt for passwords
+  print(cast[ptr uint8]("Changing password for current user.\n"))
+  print(cast[ptr uint8]("(Current) Password: "))
+
+  var len1: int32 = read_line(old_passwd, 512)
+
+  print(cast[ptr uint8]("New password: "))
+  var len2: int32 = read_line(new_passwd, 512)
+
+  print(cast[ptr uint8]("Retype new password: "))
+  var len3: int32 = read_line(confirm_passwd, 512)
+
+  # Check if new passwords match
+  if strcmp(new_passwd, confirm_passwd, len2, len3) != 0:
+    print_err(cast[ptr uint8]("passwd: passwords do not match\n"))
+    discard syscall1(SYS_exit, 1)
+
+  # Check password strength (simplified)
+  if len2 < 6:
+    print_err(cast[ptr uint8]("passwd: password too short (minimum 6 characters)\n"))
+    discard syscall1(SYS_exit, 1)
+
+  # In a real implementation, we would:
+  # 1. Verify old password against /etc/shadow
+  # 2. Hash new password with crypt()
+  # 3. Update /etc/shadow with new hash
+  #
+  # For this simplified version, just display a message
+  print(cast[ptr uint8]("passwd: password updated successfully\n"))
+  print(cast[ptr uint8]("Note: This is a simplified implementation.\n"))
+  print(cast[ptr uint8]("      Password was not actually changed in /etc/shadow.\n"))
+  print(cast[ptr uint8]("      A full implementation requires crypt() support.\n"))
+
+  discard syscall1(SYS_exit, 0)

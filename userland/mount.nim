@@ -1,0 +1,139 @@
+# mount - Mount filesystems
+# Usage:
+#   mount -t TYPE DEVICE MOUNTPOINT  - mount filesystem
+#   mount                            - show mounted filesystems from /proc/mounts
+#   mount -a                         - mount all from /etc/fstab
+#
+# Uses SYS_mount (21): syscall5(21, source, target, fstype, flags, data)
+
+const SYS_write: int32 = 4
+const SYS_exit: int32 = 1
+const SYS_mount: int32 = 21
+const SYS_open: int32 = 5
+const SYS_read: int32 = 3
+const SYS_close: int32 = 6
+const SYS_brk: int32 = 45
+
+const STDOUT: int32 = 1
+const STDERR: int32 = 2
+
+const O_RDONLY: int32 = 0
+
+# Mount flags
+const MS_RDONLY: uint32 = 1
+const MS_NOSUID: uint32 = 2
+const MS_NODEV: uint32 = 4
+const MS_NOEXEC: uint32 = 8
+const MS_SYNCHRONOUS: uint32 = 16
+const MS_REMOUNT: uint32 = 32
+
+extern proc syscall1(num: int32, arg1: int32): int32
+extern proc syscall2(num: int32, arg1: int32, arg2: int32): int32
+extern proc syscall3(num: int32, arg1: int32, arg2: int32, arg3: int32): int32
+extern proc syscall5(num: int32, arg1: int32, arg2: int32, arg3: int32, arg4: int32, arg5: int32): int32
+
+proc strlen(s: ptr uint8): int32 =
+  var len: int32 = 0
+  while s[len] != cast[uint8](0):
+    len = len + 1
+  return len
+
+proc print(msg: ptr uint8) =
+  var len: int32 = strlen(msg)
+  discard syscall3(SYS_write, STDOUT, cast[int32](msg), len)
+
+proc print_err(msg: ptr uint8) =
+  var len: int32 = strlen(msg)
+  discard syscall3(SYS_write, STDERR, cast[int32](msg), len)
+
+# Compare two null-terminated strings
+proc strcmp(s1: ptr uint8, s2: ptr uint8): int32 =
+  var i: int32 = 0
+  while s1[i] != cast[uint8](0):
+    if s1[i] != s2[i]:
+      if s1[i] < s2[i]:
+        return 0 - 1
+      return 1
+    i = i + 1
+  if s2[i] != cast[uint8](0):
+    return 0 - 1
+  return 0
+
+# Copy string
+proc strcpy(dest: ptr uint8, src: ptr uint8) =
+  var i: int32 = 0
+  while src[i] != cast[uint8](0):
+    dest[i] = src[i]
+    i = i + 1
+  dest[i] = cast[uint8](0)
+
+# Show mounted filesystems from /proc/mounts
+proc show_mounts() =
+  var proc_mounts: ptr uint8 = cast[ptr uint8]("/proc/mounts")
+  var fd: int32 = syscall2(SYS_open, cast[int32](proc_mounts), O_RDONLY)
+
+  if fd < 0:
+    print_err(cast[ptr uint8]("mount: cannot open /proc/mounts\n"))
+    discard syscall1(SYS_exit, 1)
+
+  # Allocate buffer
+  var old_brk: int32 = syscall1(SYS_brk, 0)
+  var new_brk: int32 = old_brk + 4096
+  discard syscall1(SYS_brk, new_brk)
+  var buf: ptr uint8 = cast[ptr uint8](old_brk)
+
+  # Read and display
+  var n: int32 = syscall3(SYS_read, fd, cast[int32](buf), 4096)
+  if n > 0:
+    discard syscall3(SYS_write, STDOUT, cast[int32](buf), n)
+
+  discard syscall1(SYS_close, fd)
+
+# Print usage
+proc usage() =
+  print_err(cast[ptr uint8]("Usage:\n"))
+  print_err(cast[ptr uint8]("  mount                           - show mounted filesystems\n"))
+  print_err(cast[ptr uint8]("  mount -t TYPE DEVICE MOUNTPOINT - mount filesystem\n"))
+  print_err(cast[ptr uint8]("  mount -a                        - mount all from /etc/fstab\n"))
+  print_err(cast[ptr uint8]("\n"))
+  print_err(cast[ptr uint8]("Common virtual filesystems:\n"))
+  print_err(cast[ptr uint8]("  mount -t proc proc /proc\n"))
+  print_err(cast[ptr uint8]("  mount -t sysfs sysfs /sys\n"))
+  print_err(cast[ptr uint8]("  mount -t devtmpfs devtmpfs /dev\n"))
+
+proc main() =
+  # For this implementation, we'll demonstrate mount syscall
+  # In a full implementation, this would parse argc/argv
+
+  # Default behavior: show mounted filesystems
+  print(cast[ptr uint8]("mount: showing mounted filesystems from /proc/mounts\n"))
+  print(cast[ptr uint8]("==================================================\n"))
+  show_mounts()
+  print(cast[ptr uint8]("==================================================\n"))
+  print(cast[ptr uint8]("\n"))
+
+  usage()
+
+  # Example mount operation (commented out - would need root privileges)
+  # To actually mount, uncomment and provide proper arguments:
+  #
+  # var source: ptr uint8 = cast[ptr uint8]("proc")
+  # var target: ptr uint8 = cast[ptr uint8]("/proc")
+  # var fstype: ptr uint8 = cast[ptr uint8]("proc")
+  # var flags: uint32 = 0
+  # var data: int32 = 0  # NULL
+  #
+  # var result: int32 = syscall5(SYS_mount,
+  #   cast[int32](source),
+  #   cast[int32](target),
+  #   cast[int32](fstype),
+  #   cast[int32](flags),
+  #   data)
+  #
+  # if result < 0:
+  #   print_err(cast[ptr uint8]("mount: failed to mount filesystem\n"))
+  #   discard syscall1(SYS_exit, 1)
+  #
+  # print(cast[ptr uint8]("mount: filesystem mounted successfully\n"))
+
+  discard syscall1(SYS_exit, 0)

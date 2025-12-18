@@ -448,6 +448,9 @@ STRING_UTILS = $(BIN_DIR)/printf $(BIN_DIR)/fold $(BIN_DIR)/expand $(BIN_DIR)/un
 # System info utilities (new)
 SYSINFO_UTILS = $(BIN_DIR)/uname $(BIN_DIR)/free $(BIN_DIR)/uptime $(BIN_DIR)/hostname $(BIN_DIR)/whoami $(BIN_DIR)/id $(BIN_DIR)/printenv $(BIN_DIR)/tty $(BIN_DIR)/nproc $(BIN_DIR)/arch $(BIN_DIR)/logname $(BIN_DIR)/groups $(BIN_DIR)/vmstat $(BIN_DIR)/iostat $(BIN_DIR)/lsof
 
+# User management utilities
+USER_MGMT_UTILS = $(BIN_DIR)/su $(BIN_DIR)/passwd $(BIN_DIR)/useradd $(BIN_DIR)/userdel $(BIN_DIR)/groupadd $(BIN_DIR)/chpasswd
+
 # Process utilities (new)
 PROC_UTILS = $(BIN_DIR)/kill $(BIN_DIR)/pidof $(BIN_DIR)/sleep $(BIN_DIR)/timeout $(BIN_DIR)/time $(BIN_DIR)/wait $(BIN_DIR)/renice $(BIN_DIR)/sync $(BIN_DIR)/usleep $(BIN_DIR)/pgrep $(BIN_DIR)/pkill $(BIN_DIR)/killall $(BIN_DIR)/nohup $(BIN_DIR)/nice
 
@@ -487,8 +490,17 @@ TERMINAL_UTILS = $(BIN_DIR)/stty $(BIN_DIR)/tput $(BIN_DIR)/reset $(BIN_DIR)/mes
 # Networking utilities
 NET_UTILS = $(BIN_DIR)/netstat $(BIN_DIR)/ifconfig $(BIN_DIR)/route $(BIN_DIR)/dnsdomainname
 
+# Kernel utilities
+KERNEL_UTILS = $(BIN_DIR)/dmesg $(BIN_DIR)/lsmod $(BIN_DIR)/sysctl $(BIN_DIR)/modinfo $(BIN_DIR)/insmod $(BIN_DIR)/rmmod
+
+# System control utilities
+SYSTEM_UTILS = $(BIN_DIR)/mount $(BIN_DIR)/umount $(BIN_DIR)/shutdown $(BIN_DIR)/reboot $(BIN_DIR)/halt $(BIN_DIR)/poweroff
+
+# Boot utilities (essential for system boot)
+BOOT_UTILS = $(BIN_DIR)/init $(BIN_DIR)/getty $(BIN_DIR)/login
+
 # All utilities
-ALL_UTILS = $(CORE_UTILS) $(DATA_UTILS) $(GRAPHICS_UTILS) $(FILE_UTILS) $(TEXT_UTILS) $(ADVANCED_TEXT_UTILS) $(STRING_UTILS) $(DISPLAY_UTILS) $(SYSINFO_UTILS) $(PROC_UTILS) $(DISK_UTILS) $(SEARCH_UTILS) $(TIME_PERM_UTILS) $(SHELL_SCRIPT_UTILS) $(POSIX_UTILS) $(MATH_UTILS) $(DIFF_UTILS) $(ARCHIVE_UTILS) $(SHELL_UTILS) $(TERMINAL_UTILS) $(NET_UTILS)
+ALL_UTILS = $(CORE_UTILS) $(DATA_UTILS) $(GRAPHICS_UTILS) $(FILE_UTILS) $(TEXT_UTILS) $(ADVANCED_TEXT_UTILS) $(STRING_UTILS) $(DISPLAY_UTILS) $(SYSINFO_UTILS) $(USER_MGMT_UTILS) $(PROC_UTILS) $(DISK_UTILS) $(SEARCH_UTILS) $(TIME_PERM_UTILS) $(SHELL_SCRIPT_UTILS) $(POSIX_UTILS) $(MATH_UTILS) $(DIFF_UTILS) $(ARCHIVE_UTILS) $(SHELL_UTILS) $(TERMINAL_UTILS) $(NET_UTILS) $(KERNEL_UTILS) $(SYSTEM_UTILS) $(BOOT_UTILS)
 
 # Build all userland utilities
 .PHONY: userland
@@ -550,6 +562,27 @@ userland: $(ALL_UTILS)
 	@echo ""
 	@echo "Networking utilities:"
 	@ls -lh $(NET_UTILS) 2>/dev/null || true
+	@echo ""
+	@echo "Kernel utilities:"
+	@ls -lh $(KERNEL_UTILS) 2>/dev/null || true
+	@echo ""
+	@echo "System control utilities:"
+	@ls -lh $(SYSTEM_UTILS) 2>/dev/null || true
+	@echo ""
+	@echo "Boot utilities (init system):"
+	@ls -lh $(BOOT_UTILS) 2>/dev/null || true
+
+# Build system control utilities
+.PHONY: system-utils
+system-utils: $(SYSTEM_UTILS)
+	@echo "✓ System control utilities built!"
+	@ls -lh $(SYSTEM_UTILS) 2>/dev/null || true
+
+# Build boot utilities (essential for bootable system)
+.PHONY: boot-utils
+boot-utils: $(BOOT_UTILS)
+	@echo "✓ Boot utilities built!"
+	@ls -lh $(BOOT_UTILS) 2>/dev/null || true
 
 # Build file utilities
 .PHONY: file-utils
@@ -643,6 +676,12 @@ terminal-utils: $(TERMINAL_UTILS)
 net-utils: $(NET_UTILS)
 	@echo "✓ Networking utilities built!"
 	@ls -lh $(NET_UTILS) 2>/dev/null || true
+
+# Build kernel utilities
+.PHONY: kernel-utils
+kernel-utils: $(KERNEL_UTILS)
+	@echo "✓ Kernel utilities built!"
+	@ls -lh $(KERNEL_UTILS) 2>/dev/null || true
 
 # Graphics utilities target
 .PHONY: graphics
