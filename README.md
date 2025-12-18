@@ -512,6 +512,23 @@ make userland
 rm -rf bin/
 ```
 
+### Self-Hosted Toolchain (NEW!)
+
+BrainhairOS now builds itself using pure Brainhair tools:
+
+```
+source.bh → python3 brainhair.py → .asm
+          → bin/basm (Brainhair)  → .o (ELF32 object)
+          → bin/bhlink (Brainhair) → executable
+
+Build tools written in Brainhair:
+- basm (64KB)   - x86 assembler with SIB addressing, all x86 modes
+- bhlink (24KB) - ELF32 linker with symbol resolution, R_386_PC32/R_386_32
+- bhbuild (9KB) - Build orchestrator (compile → assemble → link)
+```
+
+**No external assembler or linker required** (except for compiler itself)!
+
 ### Compiler Pipeline
 
 ```
@@ -520,8 +537,8 @@ source.bh → Brainhair Lexer → Tokens (with source positions)
            → Type Checker → Validated AST
            → MIR Lowering → Mid-Level IR (SSA form)
            → CodeGen → x86 Assembly (.asm)
-           → NASM → Object file (.o)
-           → LD + syscalls.o → ELF executable
+           → basm → Object file (.o)       # Self-hosted!
+           → bhlink + syscalls.o → ELF     # Self-hosted!
 ```
 
 ### Compiler Infrastructure (Enhanced!)
