@@ -1,0 +1,129 @@
+# tr - translate characters
+# Usage: tr SET1 SET2
+#        tr -d SET1
+# Part of PoodillionOS text utilities
+
+const SYS_read: int32 = 3
+const SYS_write: int32 = 4
+const SYS_exit: int32 = 1
+const SYS_brk: int32 = 45
+
+const STDIN: int32 = 0
+const STDOUT: int32 = 1
+const STDERR: int32 = 2
+
+extern proc syscall1(num: int32, arg1: int32): int32
+extern proc syscall3(num: int32, arg1: int32, arg2: int32, arg3: int32): int32
+extern proc get_argc(): int32
+extern proc get_argv(index: int32): ptr uint8
+
+proc strlen(s: ptr uint8): int32 =
+  var i: int32 = 0
+  while s[i] != cast[uint8](0):
+    i = i + 1
+  return i
+
+proc print_err(msg: ptr uint8) =
+  var len: int32 = strlen(msg)
+  discard syscall3(SYS_write, STDERR, cast[int32](msg), len)
+
+proc strcmp(s1: ptr uint8, s2: ptr uint8): int32 =
+  var i: int32 = 0
+  while s1[i] != cast[uint8](0):
+    if s1[i] != s2[i]:
+      return cast[int32](s1[i]) - cast[int32](s2[i])
+    i = i + 1
+  if s2[i] != cast[uint8](0):
+    return 0 - cast[int32](s2[i])
+  return 0
+
+proc main() =
+  var argc: int32 = get_argc()
+
+  if argc < 2:
+    print_err(cast[ptr uint8]("tr: usage: tr SET1 SET2 or tr -d SET1\n"))
+    discard syscall1(SYS_exit, 1)
+
+  # Allocate translation table (256 bytes)
+  var old_brk: int32 = syscall1(SYS_brk, 0)
+  var new_brk: int32 = old_brk + 4096
+  discard syscall1(SYS_brk, new_brk)
+
+  var trans_table: ptr uint8 = cast[ptr uint8](old_brk)
+  var delete_set: ptr uint8 = cast[ptr uint8](old_brk + 256)
+
+  # Initialize translation table (identity mapping)
+  var i: int32 = 0
+  while i < 256:
+    trans_table[i] = cast[uint8](i)
+    delete_set[i] = cast[uint8](0)
+    i = i + 1
+
+  # Parse arguments
+  var delete_mode: int32 = 0
+  var set1: ptr uint8 = cast[ptr uint8](0)
+  var set2: ptr uint8 = cast[ptr uint8](0)
+
+  var arg_idx: int32 = 1
+  var first_arg: ptr uint8 = get_argv(1)
+
+  if strcmp(first_arg, cast[ptr uint8]("-d")) == 0:
+    delete_mode = 1
+    if argc < 3:
+      print_err(cast[ptr uint8]("tr: -d requires SET1\n"))
+      discard syscall1(SYS_exit, 1)
+    set1 = get_argv(2)
+  else:
+    if argc < 3:
+      print_err(cast[ptr uint8]("tr: requires SET1 and SET2\n"))
+      discard syscall1(SYS_exit, 1)
+    set1 = get_argv(1)
+    set2 = get_argv(2)
+
+  # Build translation table
+  if delete_mode != 0:
+    # Mark characters to delete
+    var j: int32 = 0
+    while set1[j] != cast[uint8](0):
+      var ch: uint8 = set1[j]
+      delete_set[cast[int32](ch)] = cast[uint8](1)
+      j = j + 1
+  else:
+    # Build translation mapping
+    var len1: int32 = strlen(set1)
+    var len2: int32 = strlen(set2)
+    var j: int32 = 0
+    while j < len1:
+      var from_ch: uint8 = set1[j]
+      var to_ch: uint8 = 0
+      if j < len2:
+        to_ch = set2[j]
+      else:
+        if len2 > 0:
+          to_ch = set2[len2 - 1]
+      trans_table[cast[int32](from_ch)] = to_ch
+      j = j + 1
+
+  # Process input
+  var buffer: ptr uint8 = cast[ptr uint8](old_brk + 512)
+  var running: int32 = 1
+
+  while running != 0:
+    var n: int32 = syscall3(SYS_read, STDIN, cast[int32](buffer), 4096)
+    if n <= 0:
+      running = 0
+      break
+
+    # Translate or filter characters
+    var k: int32 = 0
+    while k < n:
+      var ch: uint8 = buffer[k]
+      if delete_mode != 0:
+        if delete_set[cast[int32](ch)] == cast[uint8](0):
+          discard syscall3(SYS_write, STDOUT, cast[int32](buffer + k), 1)
+      else:
+        var translated: uint8 = trans_table[cast[int32](ch)]
+        discard syscall3(SYS_write, STDOUT, cast[int32](addr(translated)), 1)
+      k = k + 1
+
+  discard syscall1(SYS_exit, 0)

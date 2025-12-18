@@ -1,0 +1,88 @@
+# dirname - extract directory from path
+# Usage: dirname PATH
+# Part of PoodillionOS text utilities
+
+const SYS_write: int32 = 4
+const SYS_exit: int32 = 1
+
+const STDOUT: int32 = 1
+const STDERR: int32 = 2
+
+extern proc syscall1(num: int32, arg1: int32): int32
+extern proc syscall3(num: int32, arg1: int32, arg2: int32, arg3: int32): int32
+extern proc get_argc(): int32
+extern proc get_argv(index: int32): ptr uint8
+
+proc strlen(s: ptr uint8): int32 =
+  var i: int32 = 0
+  while s[i] != cast[uint8](0):
+    i = i + 1
+  return i
+
+proc print_err(msg: ptr uint8) =
+  var len: int32 = strlen(msg)
+  discard syscall3(SYS_write, STDERR, cast[int32](msg), len)
+
+proc main() =
+  var argc: int32 = get_argc()
+
+  if argc < 2:
+    print_err(cast[ptr uint8]("dirname: usage: dirname PATH\n"))
+    discard syscall1(SYS_exit, 1)
+
+  var path: ptr uint8 = get_argv(1)
+  var len: int32 = strlen(path)
+
+  if len == 0:
+    discard syscall3(SYS_write, STDOUT, cast[int32]("."), 1)
+    discard syscall3(SYS_write, STDOUT, cast[int32]("\n"), 1)
+    discard syscall1(SYS_exit, 0)
+
+  # Remove trailing slashes
+  var end_pos: int32 = len - 1
+  while end_pos > 0:
+    if path[end_pos] != cast[uint8](47):  # '/'
+      break
+    end_pos = end_pos - 1
+
+  # Find last slash
+  var last_slash: int32 = -1
+  var i: int32 = end_pos
+  while i >= 0:
+    if path[i] == cast[uint8](47):  # '/'
+      last_slash = i
+      break
+    i = i - 1
+
+  # No slash found - current directory
+  if last_slash < 0:
+    discard syscall3(SYS_write, STDOUT, cast[int32]("."), 1)
+    discard syscall3(SYS_write, STDOUT, cast[int32]("\n"), 1)
+    discard syscall1(SYS_exit, 0)
+
+  # Slash at position 0 - root directory
+  if last_slash == 0:
+    discard syscall3(SYS_write, STDOUT, cast[int32]("/"), 1)
+    discard syscall3(SYS_write, STDOUT, cast[int32]("\n"), 1)
+    discard syscall1(SYS_exit, 0)
+
+  # Remove trailing slashes from directory part
+  var dir_end: int32 = last_slash - 1
+  while dir_end > 0:
+    if path[dir_end] != cast[uint8](47):  # '/'
+      break
+    dir_end = dir_end - 1
+
+  # Check if entire path is slashes
+  if dir_end == 0:
+    if path[0] == cast[uint8](47):
+      discard syscall3(SYS_write, STDOUT, cast[int32]("/"), 1)
+      discard syscall3(SYS_write, STDOUT, cast[int32]("\n"), 1)
+      discard syscall1(SYS_exit, 0)
+
+  # Output directory
+  var dir_len: int32 = dir_end + 1
+  discard syscall3(SYS_write, STDOUT, cast[int32](path), dir_len)
+  discard syscall3(SYS_write, STDOUT, cast[int32]("\n"), 1)
+
+  discard syscall1(SYS_exit, 0)

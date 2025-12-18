@@ -437,7 +437,7 @@ GRAPHICS_UTILS = $(BIN_DIR)/fbinfo $(BIN_DIR)/clear $(BIN_DIR)/demo $(BIN_DIR)/p
 FILE_UTILS = $(BIN_DIR)/rm $(BIN_DIR)/mkdir $(BIN_DIR)/rmdir $(BIN_DIR)/mv $(BIN_DIR)/touch $(BIN_DIR)/cp
 
 # Text processing utilities (new)
-TEXT_UTILS = $(BIN_DIR)/wc $(BIN_DIR)/tee $(BIN_DIR)/rev $(BIN_DIR)/yes $(BIN_DIR)/seq
+TEXT_UTILS = $(BIN_DIR)/wc $(BIN_DIR)/tee $(BIN_DIR)/rev $(BIN_DIR)/yes $(BIN_DIR)/seq $(BIN_DIR)/cut $(BIN_DIR)/uniq $(BIN_DIR)/tr $(BIN_DIR)/basename $(BIN_DIR)/dirname
 
 # System info utilities (new)
 SYSINFO_UTILS = $(BIN_DIR)/uname $(BIN_DIR)/free $(BIN_DIR)/uptime $(BIN_DIR)/hostname $(BIN_DIR)/whoami $(BIN_DIR)/id
@@ -448,11 +448,20 @@ PROC_UTILS = $(BIN_DIR)/kill $(BIN_DIR)/pidof $(BIN_DIR)/sleep
 # Disk utilities (new)
 DISK_UTILS = $(BIN_DIR)/df $(BIN_DIR)/du $(BIN_DIR)/stat $(BIN_DIR)/file $(BIN_DIR)/ln $(BIN_DIR)/readlink
 
+# File search utilities
+SEARCH_UTILS = $(BIN_DIR)/find $(BIN_DIR)/od $(BIN_DIR)/strings
+
+# Time and permission utilities
+TIME_PERM_UTILS = $(BIN_DIR)/date $(BIN_DIR)/chmod $(BIN_DIR)/chown $(BIN_DIR)/chgrp $(BIN_DIR)/pwd
+
+# Shell scripting utilities
+SHELL_SCRIPT_UTILS = $(BIN_DIR)/test $(BIN_DIR)/expr $(BIN_DIR)/which $(BIN_DIR)/xargs $(BIN_DIR)/env
+
 # Shell
 SHELL_UTILS = $(BIN_DIR)/psh
 
 # All utilities
-ALL_UTILS = $(CORE_UTILS) $(DATA_UTILS) $(GRAPHICS_UTILS) $(FILE_UTILS) $(TEXT_UTILS) $(SYSINFO_UTILS) $(PROC_UTILS) $(DISK_UTILS) $(SHELL_UTILS)
+ALL_UTILS = $(CORE_UTILS) $(DATA_UTILS) $(GRAPHICS_UTILS) $(FILE_UTILS) $(TEXT_UTILS) $(SYSINFO_UTILS) $(PROC_UTILS) $(DISK_UTILS) $(SEARCH_UTILS) $(TIME_PERM_UTILS) $(SHELL_SCRIPT_UTILS) $(SHELL_UTILS)
 
 # Build all userland utilities
 .PHONY: userland
@@ -479,6 +488,15 @@ userland: $(ALL_UTILS)
 	@echo ""
 	@echo "Disk utilities:"
 	@ls -lh $(DISK_UTILS) 2>/dev/null || true
+	@echo ""
+	@echo "Search utilities:"
+	@ls -lh $(SEARCH_UTILS) 2>/dev/null || true
+	@echo ""
+	@echo "Time and permission utilities:"
+	@ls -lh $(TIME_PERM_UTILS) 2>/dev/null || true
+	@echo ""
+	@echo "Shell scripting utilities:"
+	@ls -lh $(SHELL_SCRIPT_UTILS) 2>/dev/null || true
 	@echo ""
 	@echo "Shell:"
 	@ls -lh $(SHELL_UTILS) 2>/dev/null || true
@@ -507,6 +525,22 @@ proc-utils: $(PROC_UTILS)
 .PHONY: disk-utils
 disk-utils: $(DISK_UTILS)
 	@echo "✓ Disk utilities built!"
+
+# Build search utilities
+.PHONY: search-utils
+search-utils: $(SEARCH_UTILS)
+	@echo "✓ Search utilities built!"
+
+# Build time and permission utilities
+.PHONY: time-perm-utils
+time-perm-utils: $(TIME_PERM_UTILS)
+	@echo "✓ Time and permission utilities built!"
+
+# Build shell scripting utilities
+.PHONY: shell-utils
+shell-utils: $(SHELL_SCRIPT_UTILS)
+	@echo "✓ Shell scripting utilities built!"
+	@ls -lh $(SHELL_SCRIPT_UTILS) 2>/dev/null || true
 
 # Graphics utilities target
 .PHONY: graphics

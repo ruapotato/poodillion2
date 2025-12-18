@@ -1,0 +1,306 @@
+# test - Evaluate conditional expressions
+# Returns 0 for true, 1 for false
+# Usage: test EXPRESSION or [ EXPRESSION ]
+
+const SYS_write: int32 = 4
+const SYS_exit: int32 = 1
+const SYS_lstat: int32 = 107
+const SYS_access: int32 = 33
+const SYS_brk: int32 = 45
+
+const STDIN: int32 = 0
+const STDOUT: int32 = 1
+const STDERR: int32 = 2
+
+const R_OK: int32 = 4
+const W_OK: int32 = 2
+const X_OK: int32 = 1
+const F_OK: int32 = 0
+
+# File mode flags (from stat.h)
+const S_IFMT: uint32 = 0o170000
+const S_IFREG: uint32 = 0o100000
+const S_IFDIR: uint32 = 0o040000
+const S_IRUSR: uint32 = 0o000400
+const S_IWUSR: uint32 = 0o000200
+const S_IXUSR: uint32 = 0o000100
+
+extern proc syscall1(num: int32, arg1: int32): int32
+extern proc syscall2(num: int32, arg1: int32, arg2: int32): int32
+extern proc syscall3(num: int32, arg1: int32, arg2: int32, arg3: int32): int32
+extern proc get_argc(): int32
+extern proc get_argv(index: int32): ptr uint8
+
+# String length
+proc strlen(s: ptr uint8): int32 =
+  var i: int32 = 0
+  while s[i] != cast[uint8](0):
+    i = i + 1
+  return i
+
+# String compare
+proc strcmp(s1: ptr uint8, s2: ptr uint8): int32 =
+  var i: int32 = 0
+  while s1[i] != cast[uint8](0) and s2[i] != cast[uint8](0):
+    if s1[i] != s2[i]:
+      if s1[i] < s2[i]:
+        return -1
+      else:
+        return 1
+    i = i + 1
+  if s1[i] == cast[uint8](0) and s2[i] == cast[uint8](0):
+    return 0
+  if s1[i] == cast[uint8](0):
+    return -1
+  return 1
+
+# String to integer (simple atoi)
+proc atoi(s: ptr uint8): int32 =
+  var result: int32 = 0
+  var i: int32 = 0
+  var negative: int32 = 0
+
+  # Skip leading whitespace
+  while s[i] == cast[uint8](32) or s[i] == cast[uint8](9):
+    i = i + 1
+
+  # Check for sign
+  if s[i] == cast[uint8](45):  # '-'
+    negative = 1
+    i = i + 1
+  if s[i] == cast[uint8](43):  # '+'
+    i = i + 1
+
+  # Convert digits
+  while s[i] >= cast[uint8](48) and s[i] <= cast[uint8](57):  # '0'-'9'
+    result = result * 10 + cast[int32](s[i]) - 48
+    i = i + 1
+
+  if negative != 0:
+    result = 0 - result
+  return result
+
+# Print error message
+proc print_err(msg: ptr uint8) =
+  var len: int32 = strlen(msg)
+  discard syscall3(SYS_write, STDERR, cast[int32](msg), len)
+
+# Test file exists
+proc test_file_exists(path: ptr uint8): int32 =
+  # Allocate stat buffer (144 bytes for struct stat)
+  var old_brk: int32 = syscall1(SYS_brk, 0)
+  var new_brk: int32 = old_brk + 256
+  discard syscall1(SYS_brk, new_brk)
+  var stat_buf: ptr uint8 = cast[ptr uint8](old_brk)
+
+  var ret: int32 = syscall2(SYS_lstat, cast[int32](path), cast[int32](stat_buf))
+  if ret >= 0:
+    return 0  # exists
+  return 1  # does not exist
+
+# Test regular file
+proc test_regular_file(path: ptr uint8): int32 =
+  var old_brk: int32 = syscall1(SYS_brk, 0)
+  var new_brk: int32 = old_brk + 256
+  discard syscall1(SYS_brk, new_brk)
+  var stat_buf: ptr uint8 = cast[ptr uint8](old_brk)
+
+  var ret: int32 = syscall2(SYS_lstat, cast[int32](path), cast[int32](stat_buf))
+  if ret < 0:
+    return 1  # does not exist
+
+  # st_mode is at offset 16 (uint32)
+  var mode_ptr: ptr uint32 = cast[ptr uint32](old_brk + 16)
+  var mode: uint32 = mode_ptr[0]
+
+  if (mode and S_IFMT) == S_IFREG:
+    return 0  # is regular file
+  return 1
+
+# Test directory
+proc test_directory(path: ptr uint8): int32 =
+  var old_brk: int32 = syscall1(SYS_brk, 0)
+  var new_brk: int32 = old_brk + 256
+  discard syscall1(SYS_brk, new_brk)
+  var stat_buf: ptr uint8 = cast[ptr uint8](old_brk)
+
+  var ret: int32 = syscall2(SYS_lstat, cast[int32](path), cast[int32](stat_buf))
+  if ret < 0:
+    return 1
+
+  var mode_ptr: ptr uint32 = cast[ptr uint32](old_brk + 16)
+  var mode: uint32 = mode_ptr[0]
+
+  if (mode and S_IFMT) == S_IFDIR:
+    return 0  # is directory
+  return 1
+
+# Test readable
+proc test_readable(path: ptr uint8): int32 =
+  var ret: int32 = syscall2(SYS_access, cast[int32](path), R_OK)
+  if ret >= 0:
+    return 0
+  return 1
+
+# Test writable
+proc test_writable(path: ptr uint8): int32 =
+  var ret: int32 = syscall2(SYS_access, cast[int32](path), W_OK)
+  if ret >= 0:
+    return 0
+  return 1
+
+# Test executable
+proc test_executable(path: ptr uint8): int32 =
+  var ret: int32 = syscall2(SYS_access, cast[int32](path), X_OK)
+  if ret >= 0:
+    return 0
+  return 1
+
+# Test file size > 0
+proc test_file_size(path: ptr uint8): int32 =
+  var old_brk: int32 = syscall1(SYS_brk, 0)
+  var new_brk: int32 = old_brk + 256
+  discard syscall1(SYS_brk, new_brk)
+  var stat_buf: ptr uint8 = cast[ptr uint8](old_brk)
+
+  var ret: int32 = syscall2(SYS_lstat, cast[int32](path), cast[int32](stat_buf))
+  if ret < 0:
+    return 1
+
+  # st_size is at offset 44 (int32) for 32-bit systems
+  var size_ptr: ptr int32 = cast[ptr int32](old_brk + 44)
+  var size: int32 = size_ptr[0]
+
+  if size > 0:
+    return 0
+  return 1
+
+proc main() =
+  var argc: int32 = get_argc()
+
+  # If invoked as '[', last argument must be ']'
+  var prog: ptr uint8 = get_argv(0)
+  var is_bracket: int32 = 0
+
+  # Check if program name is '['
+  var plen: int32 = strlen(prog)
+  if plen > 0:
+    if prog[plen - 1] == cast[uint8](91):  # '['
+      is_bracket = 1
+
+  if is_bracket != 0:
+    if argc < 2:
+      discard syscall1(SYS_exit, 1)
+    var last_arg: ptr uint8 = get_argv(argc - 1)
+    if strcmp(last_arg, cast[ptr uint8]("]")) != 0:
+      print_err(cast[ptr uint8]("[: missing ']'\n"))
+      discard syscall1(SYS_exit, 2)
+    argc = argc - 1  # ignore last ']'
+
+  # Need at least 2 args (test EXPRESSION)
+  if argc < 2:
+    discard syscall1(SYS_exit, 1)
+
+  var arg1: ptr uint8 = get_argv(1)
+
+  # Unary operators (need 2 args: test -f file)
+  if argc == 3:
+    var arg2: ptr uint8 = get_argv(2)
+
+    # File tests
+    if strcmp(arg1, cast[ptr uint8]("-e")) == 0:
+      discard syscall1(SYS_exit, test_file_exists(arg2))
+
+    if strcmp(arg1, cast[ptr uint8]("-f")) == 0:
+      discard syscall1(SYS_exit, test_regular_file(arg2))
+
+    if strcmp(arg1, cast[ptr uint8]("-d")) == 0:
+      discard syscall1(SYS_exit, test_directory(arg2))
+
+    if strcmp(arg1, cast[ptr uint8]("-r")) == 0:
+      discard syscall1(SYS_exit, test_readable(arg2))
+
+    if strcmp(arg1, cast[ptr uint8]("-w")) == 0:
+      discard syscall1(SYS_exit, test_writable(arg2))
+
+    if strcmp(arg1, cast[ptr uint8]("-x")) == 0:
+      discard syscall1(SYS_exit, test_executable(arg2))
+
+    if strcmp(arg1, cast[ptr uint8]("-s")) == 0:
+      discard syscall1(SYS_exit, test_file_size(arg2))
+
+    # String tests
+    if strcmp(arg1, cast[ptr uint8]("-z")) == 0:
+      # empty string
+      if strlen(arg2) == 0:
+        discard syscall1(SYS_exit, 0)
+      else:
+        discard syscall1(SYS_exit, 1)
+
+    if strcmp(arg1, cast[ptr uint8]("-n")) == 0:
+      # non-empty string
+      if strlen(arg2) > 0:
+        discard syscall1(SYS_exit, 0)
+      else:
+        discard syscall1(SYS_exit, 1)
+
+  # Binary operators (need 3 args: test str1 = str2)
+  if argc == 4:
+    var arg2: ptr uint8 = get_argv(2)
+    var arg3: ptr uint8 = get_argv(3)
+
+    # String comparison
+    if strcmp(arg2, cast[ptr uint8]("=")) == 0:
+      if strcmp(arg1, arg3) == 0:
+        discard syscall1(SYS_exit, 0)
+      else:
+        discard syscall1(SYS_exit, 1)
+
+    if strcmp(arg2, cast[ptr uint8]("!=")) == 0:
+      if strcmp(arg1, arg3) != 0:
+        discard syscall1(SYS_exit, 0)
+      else:
+        discard syscall1(SYS_exit, 1)
+
+    # Integer comparison
+    var val1: int32 = atoi(arg1)
+    var val3: int32 = atoi(arg3)
+
+    if strcmp(arg2, cast[ptr uint8]("-eq")) == 0:
+      if val1 == val3:
+        discard syscall1(SYS_exit, 0)
+      else:
+        discard syscall1(SYS_exit, 1)
+
+    if strcmp(arg2, cast[ptr uint8]("-ne")) == 0:
+      if val1 != val3:
+        discard syscall1(SYS_exit, 0)
+      else:
+        discard syscall1(SYS_exit, 1)
+
+    if strcmp(arg2, cast[ptr uint8]("-lt")) == 0:
+      if val1 < val3:
+        discard syscall1(SYS_exit, 0)
+      else:
+        discard syscall1(SYS_exit, 1)
+
+    if strcmp(arg2, cast[ptr uint8]("-le")) == 0:
+      if val1 <= val3:
+        discard syscall1(SYS_exit, 0)
+      else:
+        discard syscall1(SYS_exit, 1)
+
+    if strcmp(arg2, cast[ptr uint8]("-gt")) == 0:
+      if val1 > val3:
+        discard syscall1(SYS_exit, 0)
+      else:
+        discard syscall1(SYS_exit, 1)
+
+    if strcmp(arg2, cast[ptr uint8]("-ge")) == 0:
+      if val1 >= val3:
+        discard syscall1(SYS_exit, 0)
+      else:
+        discard syscall1(SYS_exit, 1)
+
+  # Unknown or unsupported test
+  discard syscall1(SYS_exit, 1)

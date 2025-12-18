@@ -1,0 +1,303 @@
+# od - Octal dump
+# Usage: od [-A RADIX] [-t TYPE] [FILE]
+# -A: address radix (o=octal, x=hex, d=decimal, n=none)
+# -t c: characters
+# -t x1: hex bytes
+# Default: octal words (16-bit)
+
+const SYS_read: int32 = 3
+const SYS_write: int32 = 4
+const SYS_open: int32 = 5
+const SYS_close: int32 = 6
+const SYS_exit: int32 = 1
+const SYS_brk: int32 = 45
+
+const STDIN: int32 = 0
+const STDOUT: int32 = 1
+const STDERR: int32 = 2
+
+const O_RDONLY: int32 = 0
+
+extern proc syscall1(num: int32, arg1: int32): int32
+extern proc syscall2(num: int32, arg1: int32, arg2: int32): int32
+extern proc syscall3(num: int32, arg1: int32, arg2: int32, arg3: int32): int32
+extern proc get_argc(): int32
+extern proc get_argv(i: int32): ptr uint8
+
+# String utilities
+proc strlen(s: ptr uint8): int32 =
+  var i: int32 = 0
+  while s[i] != cast[uint8](0):
+    i = i + 1
+  return i
+
+proc print(msg: ptr uint8) =
+  var len: int32 = strlen(msg)
+  discard syscall3(SYS_write, STDOUT, cast[int32](msg), len)
+
+proc strcmp(s1: ptr uint8, s2: ptr uint8): int32 =
+  var i: int32 = 0
+  while true:
+    if s1[i] != s2[i]:
+      return 1
+    if s1[i] == cast[uint8](0):
+      return 0
+    i = i + 1
+  return 0
+
+# Print number in octal
+proc print_octal(n: int32, width: int32) =
+  var buf: ptr uint8 = cast[ptr uint8](0)
+  var old_brk: int32 = syscall1(SYS_brk, 0)
+  var new_brk: int32 = old_brk + 32
+  discard syscall1(SYS_brk, new_brk)
+  buf = cast[ptr uint8](old_brk)
+
+  var num: int32 = n
+  var i: int32 = 0
+
+  # Convert to octal
+  if num == 0:
+    buf[0] = cast[uint8](48)
+    i = 1
+  else:
+    while num > 0:
+      var digit: int32 = num % 8
+      buf[i] = cast[uint8](48 + digit)
+      num = num / 8
+      i = i + 1
+
+  # Reverse
+  var j: int32 = 0
+  var k: int32 = i - 1
+  while j < k:
+    var temp: uint8 = buf[j]
+    buf[j] = buf[k]
+    buf[k] = temp
+    j = j + 1
+    k = k - 1
+
+  # Pad with zeros
+  while i < width:
+    discard syscall3(SYS_write, STDOUT, cast[int32]("0"), 1)
+    i = i + 1
+
+  discard syscall3(SYS_write, STDOUT, cast[int32](buf), k + 1)
+
+# Print number in hex
+proc print_hex(n: int32, width: int32) =
+  var buf: ptr uint8 = cast[ptr uint8](0)
+  var old_brk: int32 = syscall1(SYS_brk, 0)
+  var new_brk: int32 = old_brk + 32
+  discard syscall1(SYS_brk, new_brk)
+  buf = cast[ptr uint8](old_brk)
+
+  var num: int32 = n
+  var i: int32 = 0
+
+  # Convert to hex
+  if num == 0:
+    buf[0] = cast[uint8](48)
+    i = 1
+  else:
+    while num > 0:
+      var digit: int32 = num % 16
+      if digit < 10:
+        buf[i] = cast[uint8](48 + digit)
+      else:
+        buf[i] = cast[uint8](97 + digit - 10)  # 'a' + (digit - 10)
+      num = num / 16
+      i = i + 1
+
+  # Reverse
+  var j: int32 = 0
+  var k: int32 = i - 1
+  while j < k:
+    var temp: uint8 = buf[j]
+    buf[j] = buf[k]
+    buf[k] = temp
+    j = j + 1
+    k = k - 1
+
+  # Pad with zeros
+  while i < width:
+    discard syscall3(SYS_write, STDOUT, cast[int32]("0"), 1)
+    i = i + 1
+
+  discard syscall3(SYS_write, STDOUT, cast[int32](buf), k + 1)
+
+# Print number in decimal
+proc print_decimal(n: int32, width: int32) =
+  var buf: ptr uint8 = cast[ptr uint8](0)
+  var old_brk: int32 = syscall1(SYS_brk, 0)
+  var new_brk: int32 = old_brk + 32
+  discard syscall1(SYS_brk, new_brk)
+  buf = cast[ptr uint8](old_brk)
+
+  var num: int32 = n
+  var i: int32 = 0
+
+  # Convert to decimal
+  if num == 0:
+    buf[0] = cast[uint8](48)
+    i = 1
+  else:
+    while num > 0:
+      var digit: int32 = num % 10
+      buf[i] = cast[uint8](48 + digit)
+      num = num / 10
+      i = i + 1
+
+  # Reverse
+  var j: int32 = 0
+  var k: int32 = i - 1
+  while j < k:
+    var temp: uint8 = buf[j]
+    buf[j] = buf[k]
+    buf[k] = temp
+    j = j + 1
+    k = k - 1
+
+  # Pad with spaces
+  while i < width:
+    discard syscall3(SYS_write, STDOUT, cast[int32](" "), 1)
+    i = i + 1
+
+  discard syscall3(SYS_write, STDOUT, cast[int32](buf), k + 1)
+
+# Print address based on radix
+proc print_address(address: int32, radix: uint8) =
+  if radix == cast[uint8](110):  # 'n' - none
+    return
+
+  if radix == cast[uint8](111):  # 'o' - octal
+    print_octal(address, 7)
+  else:
+    if radix == cast[uint8](120):  # 'x' - hex
+      print_hex(address, 7)
+    else:
+      if radix == cast[uint8](100):  # 'd' - decimal
+        print_decimal(address, 7)
+      else:
+        print_octal(address, 7)  # Default
+
+  discard syscall3(SYS_write, STDOUT, cast[int32](" "), 1)
+
+# Print character representation
+proc print_char(c: uint8) =
+  if c >= cast[uint8](32) and c < cast[uint8](127):
+    discard syscall3(SYS_write, STDOUT, cast[int32](c), 1)
+  else:
+    # Print escape sequences
+    if c == cast[uint8](0):
+      discard syscall3(SYS_write, STDOUT, cast[int32]("\\0"), 2)
+    else:
+      if c == cast[uint8](10):
+        discard syscall3(SYS_write, STDOUT, cast[int32]("\\n"), 2)
+      else:
+        if c == cast[uint8](9):
+          discard syscall3(SYS_write, STDOUT, cast[int32]("\\t"), 2)
+        else:
+          discard syscall3(SYS_write, STDOUT, cast[int32]("\\x"), 2)
+          print_hex(cast[int32](c), 2)
+
+proc main() =
+  # Parse arguments
+  var argc: int32 = get_argc()
+  var filename: ptr uint8 = cast[ptr uint8](0)
+  var addr_radix: uint8 = cast[uint8](111)  # 'o' for octal (default)
+  var type_format: uint8 = cast[uint8](111)  # 'o' for octal words (default)
+
+  var i: int32 = 1
+  while i < argc:
+    var arg: ptr uint8 = get_argv(i)
+
+    if arg[0] == cast[uint8](45):  # '-'
+      if arg[1] == cast[uint8](65):  # 'A'
+        # Address radix
+        i = i + 1
+        if i < argc:
+          var radix_arg: ptr uint8 = get_argv(i)
+          addr_radix = radix_arg[0]
+      else:
+        if arg[1] == cast[uint8](116):  # 't'
+          # Type format
+          i = i + 1
+          if i < argc:
+            var type_arg: ptr uint8 = get_argv(i)
+            type_format = type_arg[0]
+            # If it's x1, use 'x'
+            if type_format == cast[uint8](120) and type_arg[1] == cast[uint8](49):
+              type_format = cast[uint8](120)  # 'x'
+    else:
+      filename = arg
+
+    i = i + 1
+
+  # Open file or use stdin
+  var fd: int32 = STDIN
+  if filename != cast[ptr uint8](0):
+    fd = syscall2(SYS_open, cast[int32](filename), O_RDONLY)
+    if fd < 0:
+      print(cast[ptr uint8]("od: cannot open file\n"))
+      discard syscall1(SYS_exit, 1)
+
+  # Allocate buffer
+  var old_brk: int32 = syscall1(SYS_brk, 0)
+  var new_brk: int32 = old_brk + 4096
+  discard syscall1(SYS_brk, new_brk)
+  var buffer: ptr uint8 = cast[ptr uint8](old_brk)
+
+  # Read and dump
+  var offset: int32 = 0
+  var bytes_read: int32 = syscall3(SYS_read, fd, cast[int32](buffer), 4096)
+
+  while bytes_read > 0:
+    var pos: int32 = 0
+
+    while pos < bytes_read:
+      # Print address at start of line
+      if pos % 16 == 0:
+        print_address(offset + pos, addr_radix)
+
+      # Print data based on format
+      if type_format == cast[uint8](99):  # 'c' - characters
+        discard syscall3(SYS_write, STDOUT, cast[int32](" "), 1)
+        print_char(buffer[pos])
+        pos = pos + 1
+        if pos % 16 == 0:
+          discard syscall3(SYS_write, STDOUT, cast[int32]("\n"), 1)
+      else:
+        if type_format == cast[uint8](120):  # 'x' - hex bytes
+          discard syscall3(SYS_write, STDOUT, cast[int32](" "), 1)
+          print_hex(cast[int32](buffer[pos]), 2)
+          pos = pos + 1
+          if pos % 16 == 0:
+            discard syscall3(SYS_write, STDOUT, cast[int32]("\n"), 1)
+        else:
+          # Default: octal words (16-bit)
+          discard syscall3(SYS_write, STDOUT, cast[int32](" "), 1)
+          if pos + 1 < bytes_read:
+            var word: int32 = cast[int32](buffer[pos]) + cast[int32](buffer[pos + 1]) * 256
+            print_octal(word, 6)
+          else:
+            print_octal(cast[int32](buffer[pos]), 6)
+          pos = pos + 2
+          if pos % 16 == 0 or pos % 16 == 1:
+            discard syscall3(SYS_write, STDOUT, cast[int32]("\n"), 1)
+
+    # Newline if we didn't end on a boundary
+    if bytes_read % 16 != 0:
+      discard syscall3(SYS_write, STDOUT, cast[int32]("\n"), 1)
+
+    offset = offset + bytes_read
+    bytes_read = syscall3(SYS_read, fd, cast[int32](buffer), 4096)
+
+  # Print final address
+  print_address(offset, addr_radix)
+  discard syscall3(SYS_write, STDOUT, cast[int32]("\n"), 1)
+
+  if fd != STDIN:
+    discard syscall1(SYS_close, fd)
+
+  discard syscall1(SYS_exit, 0)

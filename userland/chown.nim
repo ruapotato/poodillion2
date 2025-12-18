@@ -1,0 +1,140 @@
+# chown - Change file ownership
+# Usage: chown UID:GID FILE
+# Uses numeric IDs for simplicity
+
+const SYS_write: int32 = 4
+const SYS_exit: int32 = 1
+const SYS_brk: int32 = 45
+const SYS_chown: int32 = 182
+
+const STDOUT: int32 = 1
+const STDERR: int32 = 2
+
+extern proc syscall1(num: int32, arg1: int32): int32
+extern proc syscall3(num: int32, arg1: int32, arg2: int32, arg3: int32): int32
+extern proc get_argc(): int32
+extern proc get_argv(i: int32): ptr uint8
+
+proc strlen(s: ptr uint8): int32 =
+  var len: int32 = 0
+  while s[len] != cast[uint8](0):
+    len = len + 1
+  return len
+
+proc print(msg: ptr uint8) =
+  var len: int32 = strlen(msg)
+  discard syscall3(SYS_write, STDOUT, cast[int32](msg), len)
+
+proc print_err(msg: ptr uint8) =
+  var len: int32 = strlen(msg)
+  discard syscall3(SYS_write, STDERR, cast[int32](msg), len)
+
+# Check if character is digit
+proc is_digit(c: uint8): int32 =
+  if c >= cast[uint8](48):
+    if c <= cast[uint8](57):
+      return 1
+  return 0
+
+# Parse integer from string
+proc parse_int(s: ptr uint8): int32 =
+  var result: int32 = 0
+  var i: int32 = 0
+
+  while s[i] != cast[uint8](0):
+    var is_dig: int32 = is_digit(s[i])
+    if is_dig == 0:
+      return -1
+
+    var digit: int32 = cast[int32](s[i]) - 48
+    result = result * 10 + digit
+    i = i + 1
+
+  return result
+
+# Parse UID:GID format
+# Returns: uid in high 16 bits, gid in low 16 bits, or -1 on error
+proc parse_owner(owner_str: ptr uint8): int32 =
+  var i: int32 = 0
+  var colon_pos: int32 = -1
+
+  # Find colon position
+  while owner_str[i] != cast[uint8](0):
+    if owner_str[i] == cast[uint8](58):  # ':'
+      colon_pos = i
+      break
+    i = i + 1
+
+  if colon_pos < 0:
+    return -1
+
+  # Allocate buffers for uid and gid strings
+  var old_brk: int32 = syscall1(SYS_brk, 0)
+  var new_brk: int32 = old_brk + 128
+  discard syscall1(SYS_brk, new_brk)
+
+  var uid_str: ptr uint8 = cast[ptr uint8](old_brk)
+  var gid_str: ptr uint8 = cast[ptr uint8](old_brk + 64)
+
+  # Copy UID string
+  var j: int32 = 0
+  while j < colon_pos:
+    uid_str[j] = owner_str[j]
+    j = j + 1
+  uid_str[j] = cast[uint8](0)
+
+  # Copy GID string
+  j = 0
+  i = colon_pos + 1
+  while owner_str[i] != cast[uint8](0):
+    gid_str[j] = owner_str[i]
+    j = j + 1
+    i = i + 1
+  gid_str[j] = cast[uint8](0)
+
+  # Parse both
+  var uid: int32 = parse_int(uid_str)
+  var gid: int32 = parse_int(gid_str)
+
+  if uid < 0:
+    return -1
+  if gid < 0:
+    return -1
+
+  # Return combined value (we'll extract them later)
+  # Since we can't return both, we'll use global approach
+  return (uid << 16) | (gid & 65535)
+
+proc main() =
+  var argc: int32 = get_argc()
+  if argc < 3:
+    print_err(cast[ptr uint8]("Usage: chown UID:GID FILE\n"))
+    print_err(cast[ptr uint8]("  Example: chown 1000:1000 myfile.txt\n"))
+    discard syscall1(SYS_exit, 1)
+
+  var owner_str: ptr uint8 = get_argv(1)
+  var filename: ptr uint8 = get_argv(2)
+
+  # Parse UID:GID
+  var combined: int32 = parse_owner(owner_str)
+
+  if combined < 0:
+    print_err(cast[ptr uint8]("chown: invalid format '"))
+    print_err(owner_str)
+    print_err(cast[ptr uint8]("'\n"))
+    print_err(cast[ptr uint8]("  Use format UID:GID (e.g., 1000:1000)\n"))
+    discard syscall1(SYS_exit, 1)
+
+  var uid: int32 = combined >> 16
+  var gid: int32 = combined & 65535
+
+  # Call chown syscall
+  var ret: int32 = syscall3(SYS_chown, cast[int32](filename), uid, gid)
+
+  if ret < 0:
+    print_err(cast[ptr uint8]("chown: cannot change ownership of '"))
+    print_err(filename)
+    print_err(cast[ptr uint8]("'\n"))
+    discard syscall1(SYS_exit, 1)
+
+  discard syscall1(SYS_exit, 0)

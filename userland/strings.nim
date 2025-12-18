@@ -1,0 +1,107 @@
+# strings - Print printable strings from binary
+# Usage: strings [FILE]
+# Prints sequences of 4+ printable characters
+# Useful for examining binaries
+
+const SYS_read: int32 = 3
+const SYS_write: int32 = 4
+const SYS_open: int32 = 5
+const SYS_close: int32 = 6
+const SYS_exit: int32 = 1
+const SYS_brk: int32 = 45
+
+const STDIN: int32 = 0
+const STDOUT: int32 = 1
+const STDERR: int32 = 2
+
+const O_RDONLY: int32 = 0
+
+const MIN_STRING_LEN: int32 = 4
+
+extern proc syscall1(num: int32, arg1: int32): int32
+extern proc syscall2(num: int32, arg1: int32, arg2: int32): int32
+extern proc syscall3(num: int32, arg1: int32, arg2: int32, arg3: int32): int32
+extern proc get_argc(): int32
+extern proc get_argv(i: int32): ptr uint8
+
+# String utilities
+proc strlen(s: ptr uint8): int32 =
+  var i: int32 = 0
+  while s[i] != cast[uint8](0):
+    i = i + 1
+  return i
+
+proc print(msg: ptr uint8) =
+  var len: int32 = strlen(msg)
+  discard syscall3(SYS_write, STDOUT, cast[int32](msg), len)
+
+# Check if character is printable
+proc is_printable(c: uint8): int32 =
+  # Printable characters: space (32) to ~ (126), plus tab (9)
+  if c >= cast[uint8](32) and c <= cast[uint8](126):
+    return 1
+  if c == cast[uint8](9):  # Tab
+    return 1
+  return 0
+
+proc main() =
+  # Parse arguments
+  var argc: int32 = get_argc()
+  var filename: ptr uint8 = cast[ptr uint8](0)
+
+  var i: int32 = 1
+  while i < argc:
+    var arg: ptr uint8 = get_argv(i)
+    filename = arg
+    i = i + 1
+
+  # Open file or use stdin
+  var fd: int32 = STDIN
+  if filename != cast[ptr uint8](0):
+    fd = syscall2(SYS_open, cast[int32](filename), O_RDONLY)
+    if fd < 0:
+      print(cast[ptr uint8]("strings: cannot open file\n"))
+      discard syscall1(SYS_exit, 1)
+
+  # Allocate buffers
+  var old_brk: int32 = syscall1(SYS_brk, 0)
+  var new_brk: int32 = old_brk + 8192
+  discard syscall1(SYS_brk, new_brk)
+  var buffer: ptr uint8 = cast[ptr uint8](old_brk)
+  var string_buf: ptr uint8 = cast[ptr uint8](old_brk + 4096)
+
+  # Read and extract strings
+  var bytes_read: int32 = syscall3(SYS_read, fd, cast[int32](buffer), 4096)
+  var string_len: int32 = 0
+
+  while bytes_read > 0:
+    var pos: int32 = 0
+
+    while pos < bytes_read:
+      var c: uint8 = buffer[pos]
+
+      if is_printable(c) == 1:
+        # Add to current string
+        if string_len < 1024:
+          string_buf[string_len] = c
+          string_len = string_len + 1
+      else:
+        # End of string - print if long enough
+        if string_len >= MIN_STRING_LEN:
+          discard syscall3(SYS_write, STDOUT, cast[int32](string_buf), string_len)
+          discard syscall3(SYS_write, STDOUT, cast[int32]("\n"), 1)
+        string_len = 0
+
+      pos = pos + 1
+
+    bytes_read = syscall3(SYS_read, fd, cast[int32](buffer), 4096)
+
+  # Print final string if any
+  if string_len >= MIN_STRING_LEN:
+    discard syscall3(SYS_write, STDOUT, cast[int32](string_buf), string_len)
+    discard syscall3(SYS_write, STDOUT, cast[int32]("\n"), 1)
+
+  if fd != STDIN:
+    discard syscall1(SYS_close, fd)
+
+  discard syscall1(SYS_exit, 0)
