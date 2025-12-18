@@ -16,17 +16,26 @@ from pathlib import Path
 from lexer import Lexer
 from parser import Parser
 from codegen_x86 import X86CodeGen
+from codegen_llvm import LLVMCodeGen
 from type_checker import TypeChecker
+from ownership import OwnershipChecker
+from lifetimes import LifetimeChecker
 
 class Compiler:
-    def __init__(self, source_file: str, output_file: str = None, kernel_mode: bool = False, check_types: bool = True):
+    def __init__(self, source_file: str, output_file: str = None, kernel_mode: bool = False,
+                 check_types: bool = True, check_ownership: bool = True, check_lifetimes: bool = True,
+                 use_llvm: bool = False):
         self.source_file = source_file
         self.output_file = output_file or Path(source_file).stem
         self.kernel_mode = kernel_mode
         self.check_types = check_types
+        self.check_ownership = check_ownership
+        self.check_lifetimes = check_lifetimes
+        self.use_llvm = use_llvm
 
         # Intermediate files
         self.asm_file = f"{self.output_file}.asm"
+        self.ll_file = f"{self.output_file}.ll"
         self.obj_file = f"{self.output_file}.o"
 
     def compile(self):
@@ -51,7 +60,7 @@ class Compiler:
 
         # 4. Type checking (optional)
         if self.check_types:
-            print("  [3/5] Type checking...")
+            print("  [3/7] Type checking...")
             checker = TypeChecker()
             errors = checker.check(ast)
             if errors:
@@ -63,39 +72,100 @@ class Compiler:
             else:
                 print("        No type errors found")
         else:
-            print("  [3/5] Type checking... (skipped)")
+            print("  [3/7] Type checking... (skipped)")
 
-        # 5. Code generation
-        print("  [4/5] Generating x86 assembly...")
-        codegen = X86CodeGen(kernel_mode=self.kernel_mode)
-        asm_code = codegen.generate(ast)
+        # 5. Ownership checking (optional)
+        if self.check_ownership:
+            print("  [4/7] Ownership checking...")
+            ownership_checker = OwnershipChecker()
+            ownership_errors = ownership_checker.check(ast)
+            if ownership_errors:
+                print(f"        Found {len(ownership_errors)} ownership error(s):")
+                for error in ownership_errors:
+                    print(f"          - {error}")
+                # Ownership errors are warnings for now during transition
+                print("        (continuing with code generation)")
+            else:
+                print("        No ownership errors found")
+        else:
+            print("  [4/7] Ownership checking... (skipped)")
 
-        # Write assembly file
-        with open(self.asm_file, 'w') as f:
-            f.write(asm_code)
-        print(f"        Wrote {self.asm_file}")
+        # 6. Lifetime checking (optional)
+        if self.check_lifetimes:
+            print("  [5/7] Lifetime checking...")
+            lifetime_checker = LifetimeChecker()
+            lifetime_errors = lifetime_checker.check(ast)
+            if lifetime_errors:
+                print(f"        Found {len(lifetime_errors)} lifetime error(s):")
+                for error in lifetime_errors:
+                    print(f"          - {error}")
+                # Lifetime errors are warnings for now during transition
+                print("        (continuing with code generation)")
+            else:
+                print("        No lifetime errors found")
+        else:
+            print("  [5/7] Lifetime checking... (skipped)")
 
-        # 6. Assemble with NASM
-        print("  [5/5] Assembling...")
-        try:
-            subprocess.run([
-                'nasm',
-                '-f', 'elf32',
-                self.asm_file,
-                '-o', self.obj_file
-            ], check=True, capture_output=True)
-            print(f"        Created {self.obj_file}")
-        except subprocess.CalledProcessError as e:
-            print(f"ERROR: Assembly failed!")
-            print(e.stderr.decode())
-            return False
-        except FileNotFoundError:
-            print("ERROR: nasm not found! Install with: sudo apt install nasm")
-            return False
+        # 7. Code generation
+        if self.use_llvm:
+            print("  [6/7] Generating LLVM IR...")
+            codegen = LLVMCodeGen()
+            llvm_code = codegen.generate(ast)
 
-        # 7. Link (for standalone binary - skip in kernel mode)
+            # Write LLVM IR file
+            with open(self.ll_file, 'w') as f:
+                f.write(llvm_code)
+            print(f"        Wrote {self.ll_file}")
+
+            # 8. Compile LLVM IR to object file
+            print("  [7/7] Compiling LLVM IR...")
+            try:
+                subprocess.run([
+                    'clang',
+                    '-m32',
+                    '-c',
+                    self.ll_file,
+                    '-o', self.obj_file
+                ], check=True, capture_output=True)
+                print(f"        Created {self.obj_file}")
+            except subprocess.CalledProcessError as e:
+                print(f"ERROR: LLVM compilation failed!")
+                print(e.stderr.decode())
+                return False
+            except FileNotFoundError:
+                print("ERROR: clang not found! Install with: sudo apt install clang")
+                return False
+        else:
+            print("  [6/7] Generating x86 assembly...")
+            codegen = X86CodeGen(kernel_mode=self.kernel_mode)
+            asm_code = codegen.generate(ast)
+
+            # Write assembly file
+            with open(self.asm_file, 'w') as f:
+                f.write(asm_code)
+            print(f"        Wrote {self.asm_file}")
+
+            # 8. Assemble with NASM
+            print("  [7/7] Assembling...")
+            try:
+                subprocess.run([
+                    'nasm',
+                    '-f', 'elf32',
+                    self.asm_file,
+                    '-o', self.obj_file
+                ], check=True, capture_output=True)
+                print(f"        Created {self.obj_file}")
+            except subprocess.CalledProcessError as e:
+                print(f"ERROR: Assembly failed!")
+                print(e.stderr.decode())
+                return False
+            except FileNotFoundError:
+                print("ERROR: nasm not found! Install with: sudo apt install nasm")
+                return False
+
+        # 9. Link (for standalone binary - skip in kernel mode)
         if not self.kernel_mode:
-            print("  [6/6] Linking...")
+            print("  [8/8] Linking...")
             try:
                 subprocess.run([
                     'ld',
@@ -135,11 +205,15 @@ def main():
         print("Usage: brainhair.py <source.bh> [-o output] [--run] [--kernel]")
         print("")
         print("Options:")
-        print("  -o <name>      Output filename (default: same as source)")
-        print("  --run          Compile and run immediately")
-        print("  --asm-only     Only generate assembly, don't assemble")
-        print("  --kernel       Kernel mode: don't generate _start, export main")
-        print("  --no-typecheck Skip type checking phase")
+        print("  -o <name>       Output filename (default: same as source)")
+        print("  --run           Compile and run immediately")
+        print("  --asm-only      Only generate assembly, don't assemble")
+        print("  --kernel        Kernel mode: don't generate _start, export main")
+        print("  --no-typecheck  Skip type checking phase")
+        print("  --no-ownership  Skip ownership checking phase")
+        print("  --no-lifetimes  Skip lifetime checking phase")
+        print("  --llvm          Use LLVM backend instead of x86")
+        print("  --emit-llvm     Output LLVM IR (for --llvm)")
         sys.exit(1)
 
     source_file = sys.argv[1]
@@ -148,6 +222,10 @@ def main():
     asm_only = False
     kernel_mode = False
     check_types = True
+    check_ownership = True
+    check_lifetimes = True
+    use_llvm = False
+    emit_llvm = False
 
     # Parse arguments
     i = 2
@@ -167,14 +245,29 @@ def main():
         elif sys.argv[i] == '--no-typecheck':
             check_types = False
             i += 1
+        elif sys.argv[i] == '--no-ownership':
+            check_ownership = False
+            i += 1
+        elif sys.argv[i] == '--no-lifetimes':
+            check_lifetimes = False
+            i += 1
+        elif sys.argv[i] == '--llvm':
+            use_llvm = True
+            i += 1
+        elif sys.argv[i] == '--emit-llvm':
+            emit_llvm = True
+            use_llvm = True
+            i += 1
         else:
             print(f"Unknown option: {sys.argv[i]}")
             sys.exit(1)
 
-    compiler = Compiler(source_file, output_file, kernel_mode=kernel_mode, check_types=check_types)
+    compiler = Compiler(source_file, output_file, kernel_mode=kernel_mode,
+                       check_types=check_types, check_ownership=check_ownership,
+                       check_lifetimes=check_lifetimes, use_llvm=use_llvm)
 
-    if asm_only:
-        # Just generate assembly
+    if asm_only or emit_llvm:
+        # Just generate assembly/LLVM IR
         with open(source_file, 'r') as f:
             source_code = f.read()
 
@@ -184,10 +277,14 @@ def main():
         parser = Parser(tokens)
         ast = parser.parse()
 
-        codegen = X86CodeGen(kernel_mode=kernel_mode)
-        asm_code = codegen.generate(ast)
-
-        print(asm_code)
+        if emit_llvm or use_llvm:
+            codegen = LLVMCodeGen()
+            llvm_code = codegen.generate(ast)
+            print(llvm_code)
+        else:
+            codegen = X86CodeGen(kernel_mode=kernel_mode)
+            asm_code = codegen.generate(ast)
+            print(asm_code)
     elif run_after:
         sys.exit(compiler.run())
     else:
