@@ -1,0 +1,178 @@
+# cksum - POSIX CRC checksum
+# Usage: cksum FILE
+# CRC-32 checksum (POSIX standard)
+# Print: CRC bytecount filename
+# Part of PoodillionOS math utilities
+
+const SYS_read: int32 = 3
+const SYS_write: int32 = 4
+const SYS_open: int32 = 5
+const SYS_close: int32 = 6
+const SYS_exit: int32 = 1
+const SYS_brk: int32 = 45
+
+const STDIN: int32 = 0
+const STDOUT: int32 = 1
+const STDERR: int32 = 2
+
+const O_RDONLY: int32 = 0
+
+extern proc syscall1(num: int32, arg1: int32): int32
+extern proc syscall2(num: int32, arg1: int32, arg2: int32): int32
+extern proc syscall3(num: int32, arg1: int32, arg2: int32, arg3: int32): int32
+extern proc get_argc(): int32
+extern proc get_argv(index: int32): ptr uint8
+
+# String length
+proc strlen(s: ptr uint8): int32 =
+  var i: int32 = 0
+  while s[i] != cast[uint8](0):
+    i = i + 1
+  return i
+
+# Print string
+proc print(s: ptr uint8) =
+  var len: int32 = strlen(s)
+  discard syscall3(SYS_write, STDOUT, cast[int32](s), len)
+
+# Print error
+proc print_err(s: ptr uint8) =
+  var len: int32 = strlen(s)
+  discard syscall3(SYS_write, STDERR, cast[int32](s), len)
+
+# Print unsigned integer
+proc print_uint(n: uint32) =
+  if n == cast[uint32](0):
+    discard syscall3(SYS_write, STDOUT, cast[int32]("0"), 1)
+    return
+
+  # Allocate buffer for digits
+  var old_brk: int32 = syscall1(SYS_brk, 0)
+  var new_brk: int32 = old_brk + 32
+  discard syscall1(SYS_brk, new_brk)
+  var buffer: ptr uint8 = cast[ptr uint8](old_brk)
+
+  var i: int32 = 0
+  var num: uint32 = n
+
+  # Build string in reverse
+  while num > cast[uint32](0):
+    var digit: uint32 = num % cast[uint32](10)
+    buffer[i] = cast[uint8](48 + cast[int32](digit))
+    num = num / cast[uint32](10)
+    i = i + 1
+
+  # Print in reverse order
+  var j: int32 = i - 1
+  while j >= 0:
+    discard syscall3(SYS_write, STDOUT, cast[int32](buffer + j), 1)
+    j = j - 1
+
+# Build CRC-32 lookup table
+proc build_crc_table(table: ptr uint32) =
+  var n: int32 = 0
+  while n < 256:
+    var c: uint32 = cast[uint32](n)
+    var k: int32 = 0
+
+    while k < 8:
+      if (c & cast[uint32](1)) != cast[uint32](0):
+        c = cast[uint32](3988292384) ^ (c / cast[uint32](2))
+      else:
+        c = c / cast[uint32](2)
+      k = k + 1
+
+    table[n] = c
+    n = n + 1
+
+# Calculate CRC-32 checksum
+proc crc32(fd: int32, table: ptr uint32, byte_count: ptr uint32): uint32 =
+  var crc: uint32 = cast[uint32](0)
+  var total_bytes: uint32 = cast[uint32](0)
+
+  # Allocate buffer (4096 bytes)
+  var old_brk: int32 = syscall1(SYS_brk, 0)
+  var new_brk: int32 = old_brk + 4096
+  discard syscall1(SYS_brk, new_brk)
+  var buffer: ptr uint8 = cast[ptr uint8](old_brk)
+
+  var running: int32 = 1
+  while running != 0:
+    var n: int32 = syscall3(SYS_read, fd, cast[int32](buffer), 4096)
+
+    if n <= 0:
+      running = 0
+    else:
+      var i: int32 = 0
+      while i < n:
+        var byte_val: uint8 = buffer[i]
+        var byte_as_int: int32 = cast[int32](byte_val)
+        var byte_as_uint: uint32 = cast[uint32](byte_as_int)
+        var index: uint32 = crc ^ byte_as_uint
+        index = index & cast[uint32](255)
+        crc = table[cast[int32](index)] ^ (crc / cast[uint32](256))
+        i = i + 1
+
+      total_bytes = total_bytes + cast[uint32](n)
+
+  # Process byte count for POSIX CRC
+  var len: uint32 = total_bytes
+  while len != cast[uint32](0):
+    var len_as_int: int32 = cast[int32](len)
+    var len_masked: int32 = len_as_int & 255
+    var byte_val: uint8 = cast[uint8](len_masked)
+    var byte_as_int: int32 = cast[int32](byte_val)
+    var byte_as_uint: uint32 = cast[uint32](byte_as_int)
+    var index: uint32 = crc ^ byte_as_uint
+    index = index & cast[uint32](255)
+    crc = table[cast[int32](index)] ^ (crc / cast[uint32](256))
+    len = len / cast[uint32](256)
+
+  byte_count[0] = total_bytes
+  return crc ^ cast[uint32](4294967295)
+
+proc main() =
+  var argc: int32 = get_argc()
+
+  if argc < 2:
+    print_err(cast[ptr uint8]("Usage: cksum FILE\n"))
+    discard syscall1(SYS_exit, 1)
+
+  var filename: ptr uint8 = get_argv(1)
+
+  # Allocate CRC table (256 * 4 bytes = 1024 bytes)
+  var old_brk: int32 = syscall1(SYS_brk, 0)
+  var new_brk: int32 = old_brk + 1024
+  discard syscall1(SYS_brk, new_brk)
+  var crc_table: ptr uint32 = cast[ptr uint32](old_brk)
+
+  # Build CRC table
+  build_crc_table(crc_table)
+
+  # Open file
+  var fd: int32 = syscall2(SYS_open, cast[int32](filename), O_RDONLY)
+  if fd < 0:
+    print_err(cast[ptr uint8]("cksum: cannot open file\n"))
+    discard syscall1(SYS_exit, 1)
+
+  # Allocate space for byte count
+  old_brk = syscall1(SYS_brk, 0)
+  new_brk = old_brk + 16
+  discard syscall1(SYS_brk, new_brk)
+  var byte_count_ptr: ptr uint32 = cast[ptr uint32](old_brk)
+
+  # Compute CRC
+  var crc: uint32 = crc32(fd, crc_table, byte_count_ptr)
+
+  # Close file
+  discard syscall1(SYS_close, fd)
+
+  # Print: CRC bytecount filename
+  print_uint(crc)
+  discard syscall3(SYS_write, STDOUT, cast[int32](" "), 1)
+  print_uint(byte_count_ptr[0])
+  discard syscall3(SYS_write, STDOUT, cast[int32](" "), 1)
+  print(filename)
+  discard syscall3(SYS_write, STDOUT, cast[int32]("\n"), 1)
+
+  discard syscall1(SYS_exit, 0)

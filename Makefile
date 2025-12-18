@@ -442,11 +442,14 @@ TEXT_UTILS = $(BIN_DIR)/wc $(BIN_DIR)/tee $(BIN_DIR)/rev $(BIN_DIR)/yes $(BIN_DI
 # Advanced text utilities
 ADVANCED_TEXT_UTILS = $(BIN_DIR)/more $(BIN_DIR)/split $(BIN_DIR)/join $(BIN_DIR)/paste $(BIN_DIR)/nl
 
+# String/formatting utilities
+STRING_UTILS = $(BIN_DIR)/printf $(BIN_DIR)/fold $(BIN_DIR)/expand $(BIN_DIR)/unexpand $(BIN_DIR)/col $(BIN_DIR)/colrm
+
 # System info utilities (new)
-SYSINFO_UTILS = $(BIN_DIR)/uname $(BIN_DIR)/free $(BIN_DIR)/uptime $(BIN_DIR)/hostname $(BIN_DIR)/whoami $(BIN_DIR)/id
+SYSINFO_UTILS = $(BIN_DIR)/uname $(BIN_DIR)/free $(BIN_DIR)/uptime $(BIN_DIR)/hostname $(BIN_DIR)/whoami $(BIN_DIR)/id $(BIN_DIR)/printenv $(BIN_DIR)/tty $(BIN_DIR)/nproc $(BIN_DIR)/arch $(BIN_DIR)/logname $(BIN_DIR)/groups
 
 # Process utilities (new)
-PROC_UTILS = $(BIN_DIR)/kill $(BIN_DIR)/pidof $(BIN_DIR)/sleep
+PROC_UTILS = $(BIN_DIR)/kill $(BIN_DIR)/pidof $(BIN_DIR)/sleep $(BIN_DIR)/timeout $(BIN_DIR)/time $(BIN_DIR)/wait $(BIN_DIR)/renice $(BIN_DIR)/sync $(BIN_DIR)/usleep
 
 # Disk utilities (new)
 DISK_UTILS = $(BIN_DIR)/df $(BIN_DIR)/du $(BIN_DIR)/stat $(BIN_DIR)/file $(BIN_DIR)/ln $(BIN_DIR)/readlink
@@ -466,11 +469,14 @@ DIFF_UTILS = $(BIN_DIR)/cmp $(BIN_DIR)/comm $(BIN_DIR)/diff
 # Archive utilities
 ARCHIVE_UTILS = $(BIN_DIR)/tar $(BIN_DIR)/cpio $(BIN_DIR)/ar
 
+# Math and calculation utilities
+MATH_UTILS = $(BIN_DIR)/factor $(BIN_DIR)/bc $(BIN_DIR)/sum $(BIN_DIR)/cksum $(BIN_DIR)/shuf
+
 # Shell
 SHELL_UTILS = $(BIN_DIR)/psh
 
 # All utilities
-ALL_UTILS = $(CORE_UTILS) $(DATA_UTILS) $(GRAPHICS_UTILS) $(FILE_UTILS) $(TEXT_UTILS) $(ADVANCED_TEXT_UTILS) $(SYSINFO_UTILS) $(PROC_UTILS) $(DISK_UTILS) $(SEARCH_UTILS) $(TIME_PERM_UTILS) $(SHELL_SCRIPT_UTILS) $(DIFF_UTILS) $(ARCHIVE_UTILS) $(SHELL_UTILS)
+ALL_UTILS = $(CORE_UTILS) $(DATA_UTILS) $(GRAPHICS_UTILS) $(FILE_UTILS) $(TEXT_UTILS) $(ADVANCED_TEXT_UTILS) $(STRING_UTILS) $(SYSINFO_UTILS) $(PROC_UTILS) $(DISK_UTILS) $(SEARCH_UTILS) $(TIME_PERM_UTILS) $(SHELL_SCRIPT_UTILS) $(MATH_UTILS) $(DIFF_UTILS) $(ARCHIVE_UTILS) $(SHELL_UTILS)
 
 # Build all userland utilities
 .PHONY: userland
@@ -507,6 +513,9 @@ userland: $(ALL_UTILS)
 	@echo "Shell scripting utilities:"
 	@ls -lh $(SHELL_SCRIPT_UTILS) 2>/dev/null || true
 	@echo ""
+	@echo "Math utilities:"
+	@ls -lh $(MATH_UTILS) 2>/dev/null || true
+	@echo ""
 	@echo "Diff/comparison utilities:"
 	@ls -lh $(DIFF_UTILS) 2>/dev/null || true
 	@echo ""
@@ -515,6 +524,9 @@ userland: $(ALL_UTILS)
 	@echo ""
 	@echo "Shell:"
 	@ls -lh $(SHELL_UTILS) 2>/dev/null || true
+	@echo ""
+	@echo "String/formatting utilities:"
+	@ls -lh $(STRING_UTILS) 2>/dev/null || true
 
 # Build file utilities
 .PHONY: file-utils
@@ -531,6 +543,12 @@ text-utils: $(TEXT_UTILS)
 advanced-text-utils: $(ADVANCED_TEXT_UTILS)
 	@echo "✓ Advanced text utilities built!"
 	@ls -lh $(ADVANCED_TEXT_UTILS) 2>/dev/null || true
+
+# Build string/formatting utilities
+.PHONY: string-utils
+string-utils: $(STRING_UTILS)
+	@echo "✓ String/formatting utilities built!"
+	@ls -lh $(STRING_UTILS) 2>/dev/null || true
 
 # Build system info utilities
 .PHONY: sysinfo-utils
@@ -562,6 +580,12 @@ time-perm-utils: $(TIME_PERM_UTILS)
 shell-utils: $(SHELL_SCRIPT_UTILS)
 	@echo "✓ Shell scripting utilities built!"
 	@ls -lh $(SHELL_SCRIPT_UTILS) 2>/dev/null || true
+
+# Build math utilities
+.PHONY: math-utils
+math-utils: $(MATH_UTILS)
+	@echo "✓ Math utilities built!"
+	@ls -lh $(MATH_UTILS) 2>/dev/null || true
 
 # Build archive utilities
 .PHONY: archive-utils

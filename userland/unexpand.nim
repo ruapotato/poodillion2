@@ -1,0 +1,132 @@
+# unexpand - convert leading spaces to tabs
+# Usage: unexpand [FILE]
+# Convert leading spaces to tabs (8-space tabs)
+# Part of PoodillionOS text utilities
+
+const SYS_read: int32 = 3
+const SYS_write: int32 = 4
+const SYS_open: int32 = 5
+const SYS_close: int32 = 6
+const SYS_exit: int32 = 1
+const SYS_brk: int32 = 45
+
+const STDIN: int32 = 0
+const STDOUT: int32 = 1
+const STDERR: int32 = 2
+
+const O_RDONLY: int32 = 0
+
+extern proc syscall1(num: int32, arg1: int32): int32
+extern proc syscall2(num: int32, arg1: int32, arg2: int32): int32
+extern proc syscall3(num: int32, arg1: int32, arg2: int32, arg3: int32): int32
+extern proc get_argc(): int32
+extern proc get_argv(index: int32): ptr uint8
+
+proc strlen(s: ptr uint8): int32 =
+  var i: int32 = 0
+  while s[i] != cast[uint8](0):
+    i = i + 1
+  return i
+
+proc print_err(msg: ptr uint8) =
+  var len: int32 = strlen(msg)
+  discard syscall3(SYS_write, STDERR, cast[int32](msg), len)
+
+proc main() =
+  var argc: int32 = get_argc()
+
+  # Allocate buffer
+  var old_brk: int32 = syscall1(SYS_brk, 0)
+  var new_brk: int32 = old_brk + 8192
+  discard syscall1(SYS_brk, new_brk)
+  var buffer: ptr uint8 = cast[ptr uint8](old_brk)
+  var line_buf: ptr uint8 = cast[ptr uint8](old_brk + 4096)
+
+  # Parse arguments
+  var input_fd: int32 = STDIN
+  if argc > 1:
+    var arg: ptr uint8 = get_argv(1)
+    if arg[0] != cast[uint8](45):  # not a flag
+      input_fd = syscall2(SYS_open, cast[int32](arg), O_RDONLY)
+      if input_fd < 0:
+        print_err(cast[ptr uint8]("unexpand: cannot open file\n"))
+        discard syscall1(SYS_exit, 1)
+
+  # Process input line by line
+  var line_len: int32 = 0
+  var running: int32 = 1
+
+  while running != 0:
+    var n: int32 = syscall3(SYS_read, input_fd, cast[int32](buffer), 4096)
+    if n <= 0:
+      # Output remaining line if any
+      if line_len > 0:
+        # Process final line
+        var spaces: int32 = 0
+        var i: int32 = 0
+        while i < line_len:
+          if line_buf[i] == cast[uint8](32):  # space
+            spaces = spaces + 1
+            if spaces == 8:
+              discard syscall3(SYS_write, STDOUT, cast[int32]("\t"), 1)
+              spaces = 0
+          else:
+            # Output remaining spaces
+            var j: int32 = 0
+            while j < spaces:
+              discard syscall3(SYS_write, STDOUT, cast[int32](" "), 1)
+              j = j + 1
+            spaces = 0
+            # Output rest of line
+            discard syscall3(SYS_write, STDOUT, cast[int32](line_buf + i), line_len - i)
+            break
+          i = i + 1
+        discard syscall3(SYS_write, STDOUT, cast[int32]("\n"), 1)
+      running = 0
+      break
+
+    var j: int32 = 0
+    while j < n:
+      var ch: uint8 = buffer[j]
+
+      if ch == cast[uint8](10):  # newline
+        # Process current line - convert leading spaces to tabs
+        var spaces: int32 = 0
+        var i: int32 = 0
+        while i < line_len:
+          if line_buf[i] == cast[uint8](32):  # space
+            spaces = spaces + 1
+            if spaces == 8:
+              discard syscall3(SYS_write, STDOUT, cast[int32]("\t"), 1)
+              spaces = 0
+          else:
+            # Output remaining spaces
+            var k: int32 = 0
+            while k < spaces:
+              discard syscall3(SYS_write, STDOUT, cast[int32](" "), 1)
+              k = k + 1
+            spaces = 0
+            # Output rest of line
+            discard syscall3(SYS_write, STDOUT, cast[int32](line_buf + i), line_len - i)
+            break
+          i = i + 1
+        # Output remaining spaces if line was all spaces
+        var k: int32 = 0
+        while k < spaces:
+          discard syscall3(SYS_write, STDOUT, cast[int32](" "), 1)
+          k = k + 1
+
+        discard syscall3(SYS_write, STDOUT, cast[int32]("\n"), 1)
+        line_len = 0
+      else:
+        # Add character to line buffer
+        if line_len < 4096:
+          line_buf[line_len] = ch
+          line_len = line_len + 1
+
+      j = j + 1
+
+  if input_fd != STDIN:
+    discard syscall1(SYS_close, input_fd)
+
+  discard syscall1(SYS_exit, 0)

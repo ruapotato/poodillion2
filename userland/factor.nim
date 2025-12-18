@@ -1,0 +1,140 @@
+# factor - Print prime factors of a number
+# Usage: factor NUMBER
+# Part of PoodillionOS math utilities
+
+const SYS_write: int32 = 4
+const SYS_exit: int32 = 1
+const SYS_brk: int32 = 45
+
+const STDOUT: int32 = 1
+const STDERR: int32 = 2
+
+extern proc syscall1(num: int32, arg1: int32): int32
+extern proc syscall3(num: int32, arg1: int32, arg2: int32, arg3: int32): int32
+extern proc get_argc(): int32
+extern proc get_argv(index: int32): ptr uint8
+
+# String length
+proc strlen(s: ptr uint8): int32 =
+  var i: int32 = 0
+  while s[i] != cast[uint8](0):
+    i = i + 1
+  return i
+
+# Print string
+proc print(s: ptr uint8) =
+  var len: int32 = strlen(s)
+  discard syscall3(SYS_write, STDOUT, cast[int32](s), len)
+
+# Print error
+proc print_err(s: ptr uint8) =
+  var len: int32 = strlen(s)
+  discard syscall3(SYS_write, STDERR, cast[int32](s), len)
+
+# String to unsigned integer (handles larger numbers)
+proc atou(s: ptr uint8): uint32 =
+  var result: uint32 = cast[uint32](0)
+  var i: int32 = 0
+
+  while s[i] == cast[uint8](32) or s[i] == cast[uint8](9):
+    i = i + 1
+
+  while s[i] >= cast[uint8](48) and s[i] <= cast[uint8](57):
+    result = result * cast[uint32](10) + cast[uint32](cast[int32](s[i]) - 48)
+    i = i + 1
+
+  return result
+
+# Print unsigned integer
+proc print_uint(n: uint32) =
+  if n == cast[uint32](0):
+    discard syscall3(SYS_write, STDOUT, cast[int32]("0"), 1)
+    return
+
+  # Allocate small buffer for digits
+  var old_brk: int32 = syscall1(SYS_brk, 0)
+  var new_brk: int32 = old_brk + 32
+  discard syscall1(SYS_brk, new_brk)
+  var buffer: ptr uint8 = cast[ptr uint8](old_brk)
+
+  var i: int32 = 0
+  var num: uint32 = n
+
+  # Build string in reverse
+  while num > cast[uint32](0):
+    var digit: uint32 = num % cast[uint32](10)
+    buffer[i] = cast[uint8](48 + cast[int32](digit))
+    num = num / cast[uint32](10)
+    i = i + 1
+
+  # Print in reverse order (correct direction)
+  var j: int32 = i - 1
+  while j >= 0:
+    discard syscall3(SYS_write, STDOUT, cast[int32](buffer + j), 1)
+    j = j - 1
+
+# Compute integer square root (for optimization)
+proc isqrt(n: uint32): uint32 =
+  if n < cast[uint32](2):
+    return n
+
+  var x: uint32 = n
+  var y: uint32 = (x + cast[uint32](1)) / cast[uint32](2)
+
+  # Newton's method
+  while y < x:
+    x = y
+    y = (x + n / x) / cast[uint32](2)
+
+  return x
+
+# Factor a number and print its prime factors
+proc factor(n: uint32) =
+  var num: uint32 = n
+
+  # Print the number being factored
+  print_uint(n)
+  discard syscall3(SYS_write, STDOUT, cast[int32](":"), 1)
+
+  # Handle 0 and 1 specially
+  if num == cast[uint32](0) or num == cast[uint32](1):
+    discard syscall3(SYS_write, STDOUT, cast[int32]("\n"), 1)
+    return
+
+  # Factor out 2s
+  while num % cast[uint32](2) == cast[uint32](0):
+    discard syscall3(SYS_write, STDOUT, cast[int32](" 2"), 2)
+    num = num / cast[uint32](2)
+
+  # Factor out odd numbers from 3 to sqrt(n)
+  var i: uint32 = cast[uint32](3)
+  var limit: uint32 = isqrt(num)
+
+  while i <= limit:
+    while num % i == cast[uint32](0):
+      discard syscall3(SYS_write, STDOUT, cast[int32](" "), 1)
+      print_uint(i)
+      num = num / i
+      limit = isqrt(num)  # Update limit as num gets smaller
+    i = i + cast[uint32](2)
+
+  # If num > 1, then it's a prime factor
+  if num > cast[uint32](1):
+    discard syscall3(SYS_write, STDOUT, cast[int32](" "), 1)
+    print_uint(num)
+
+  discard syscall3(SYS_write, STDOUT, cast[int32]("\n"), 1)
+
+proc main() =
+  var argc: int32 = get_argc()
+
+  if argc < 2:
+    print_err(cast[ptr uint8]("Usage: factor NUMBER\n"))
+    discard syscall1(SYS_exit, 1)
+
+  var arg: ptr uint8 = get_argv(1)
+  var num: uint32 = atou(arg)
+
+  factor(num)
+
+  discard syscall1(SYS_exit, 0)

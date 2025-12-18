@@ -1,0 +1,147 @@
+# printenv - Print environment variables
+# Usage: printenv (print all)
+#        printenv VAR (print specific variable)
+# Reads from /proc/self/environ
+
+const SYS_read: int32 = 3
+const SYS_write: int32 = 4
+const SYS_open: int32 = 5
+const SYS_close: int32 = 6
+const SYS_exit: int32 = 1
+const SYS_brk: int32 = 45
+
+const STDIN: int32 = 0
+const STDOUT: int32 = 1
+const STDERR: int32 = 2
+
+const O_RDONLY: int32 = 0
+
+extern proc syscall1(num: int32, arg1: int32): int32
+extern proc syscall2(num: int32, arg1: int32, arg2: int32): int32
+extern proc syscall3(num: int32, arg1: int32, arg2: int32, arg3: int32): int32
+extern proc get_argc(): int32
+extern proc get_argv(index: int32): ptr uint8
+
+proc strlen(s: ptr uint8): int32 =
+  var i: int32 = 0
+  while s[i] != cast[uint8](0):
+    i = i + 1
+  return i
+
+proc print(s: ptr uint8) =
+  var len: int32 = strlen(s)
+  discard syscall3(SYS_write, STDOUT, cast[int32](s), len)
+
+proc print_err(s: ptr uint8) =
+  var len: int32 = strlen(s)
+  discard syscall3(SYS_write, STDERR, cast[int32](s), len)
+
+# Compare strings
+proc strcmp(s1: ptr uint8, s2: ptr uint8): int32 =
+  var i: int32 = 0
+  while s1[i] != cast[uint8](0) and s2[i] != cast[uint8](0):
+    if s1[i] != s2[i]:
+      return 1
+    i = i + 1
+  if s1[i] == cast[uint8](0) and s2[i] == cast[uint8](0):
+    return 0
+  return 1
+
+# Compare string with prefix
+proc strncmp(s1: ptr uint8, s2: ptr uint8, n: int32): int32 =
+  var i: int32 = 0
+  while i < n:
+    if s1[i] != s2[i]:
+      return 1
+    if s1[i] == cast[uint8](0):
+      return 0
+    i = i + 1
+  return 0
+
+proc main() =
+  var argc: int32 = get_argc()
+
+  # Open /proc/self/environ
+  var old_brk: int32 = syscall1(SYS_brk, 0)
+  var new_brk: int32 = old_brk + 16384
+  discard syscall1(SYS_brk, new_brk)
+
+  var path: ptr uint8 = cast[ptr uint8](old_brk)
+  var buf: ptr uint8 = cast[ptr uint8](old_brk + 256)
+
+  # Build path: /proc/self/environ
+  path[0] = cast[uint8](47)   # /
+  path[1] = cast[uint8](112)  # p
+  path[2] = cast[uint8](114)  # r
+  path[3] = cast[uint8](111)  # o
+  path[4] = cast[uint8](99)   # c
+  path[5] = cast[uint8](47)   # /
+  path[6] = cast[uint8](115)  # s
+  path[7] = cast[uint8](101)  # e
+  path[8] = cast[uint8](108)  # l
+  path[9] = cast[uint8](102)  # f
+  path[10] = cast[uint8](47)  # /
+  path[11] = cast[uint8](101) # e
+  path[12] = cast[uint8](110) # n
+  path[13] = cast[uint8](118) # v
+  path[14] = cast[uint8](105) # i
+  path[15] = cast[uint8](114) # r
+  path[16] = cast[uint8](111) # o
+  path[17] = cast[uint8](110) # n
+  path[18] = cast[uint8](0)
+
+  var fd: int32 = syscall3(SYS_open, cast[int32](path), O_RDONLY, 0)
+  if fd < 0:
+    print_err(cast[ptr uint8]("printenv: cannot open /proc/self/environ\n"))
+    discard syscall1(SYS_exit, 1)
+
+  # Read environment
+  var total_read: int32 = 0
+  while 1 == 1:
+    var n: int32 = syscall3(SYS_read, fd, cast[int32](buf) + total_read, 16000 - total_read)
+    if n <= 0:
+      break
+    total_read = total_read + n
+
+  discard syscall1(SYS_close, fd)
+
+  if argc == 1:
+    # Print all environment variables
+    var i: int32 = 0
+    var line_start: int32 = 0
+    while i < total_read:
+      if buf[i] == cast[uint8](0):
+        if i > line_start:
+          discard syscall3(SYS_write, STDOUT, cast[int32](buf) + line_start, i - line_start)
+          discard syscall3(SYS_write, STDOUT, cast[int32]("\n"), 1)
+        line_start = i + 1
+      i = i + 1
+  else:
+    # Print specific variable
+    var varname: ptr uint8 = get_argv(1)
+    var varlen: int32 = strlen(varname)
+    var found: int32 = 0
+
+    # Search for VAR=VALUE in environment
+    var i: int32 = 0
+    var line_start: int32 = 0
+    while i < total_read:
+      if buf[i] == cast[uint8](0):
+        if i > line_start:
+          # Check if this line starts with varname=
+          var line_ptr: ptr uint8 = cast[ptr uint8](cast[int32](buf) + line_start)
+          if strncmp(line_ptr, varname, varlen) == 0:
+            if line_ptr[varlen] == cast[uint8](61):  # '='
+              # Found it, print the value (after '=')
+              var value_start: int32 = line_start + varlen + 1
+              discard syscall3(SYS_write, STDOUT, cast[int32](buf) + value_start, i - value_start)
+              discard syscall3(SYS_write, STDOUT, cast[int32]("\n"), 1)
+              found = 1
+              break
+        line_start = i + 1
+      i = i + 1
+
+    if found == 0:
+      discard syscall1(SYS_exit, 1)
+
+  discard syscall1(SYS_exit, 0)
