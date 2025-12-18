@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Mini-Nim Parser - Builds AST from tokens
+Brainhair Parser - Builds AST from tokens
 
-Recursive descent parser for Mini-Nim
+Recursive descent parser for Brainhair
 """
 
 from typing import List, Optional
@@ -58,10 +58,37 @@ class Parser:
             base_type = self.parse_type()
             return PointerType(base_type)
 
+        # Array type: array[N, T]
+        if token.type == TokenType.IDENT and token.value == 'array':
+            self.advance()
+            self.expect(TokenType.LBRACKET)
+
+            # Parse size (must be a number literal for now)
+            size_token = self.current_token()
+            if size_token.type != TokenType.NUMBER:
+                raise SyntaxError(f"Array size must be a number at line {size_token.line}")
+            size = size_token.value
+            self.advance()
+
+            self.expect(TokenType.COMMA)
+
+            # Parse element type
+            element_type = self.parse_type()
+            self.expect(TokenType.RBRACKET)
+
+            return ArrayType(size, element_type)
+
+        # User-defined type (identifier) - could be struct name
+        if token.type == TokenType.IDENT:
+            type_name = token.value
+            self.advance()
+            return Type(type_name)
+
         raise SyntaxError(f"Expected type, got {token.type} at line {token.line}")
 
     # Expression parsing (with precedence)
-    def parse_primary(self) -> ASTNode:
+    def parse_atom(self) -> ASTNode:
+        """Parse atomic expressions (literals, identifiers, parenthesized exprs)"""
         token = self.current_token()
 
         # Literals
@@ -85,61 +112,31 @@ class Parser:
             self.advance()
             return BoolLiteral(False)
 
-        # Identifier or function call
+        # Array literal: [1, 2, 3]
+        if token.type == TokenType.LBRACKET:
+            self.advance()
+            self.skip_newlines()  # Allow newlines after [
+            elements = []
+
+            if self.current_token().type != TokenType.RBRACKET:
+                elements.append(self.parse_expression())
+                while self.current_token().type == TokenType.COMMA:
+                    self.advance()
+                    self.skip_newlines()  # Allow newlines after comma
+                    # Check for trailing comma
+                    if self.current_token().type == TokenType.RBRACKET:
+                        break
+                    elements.append(self.parse_expression())
+
+            self.skip_newlines()  # Allow newlines before ]
+            self.expect(TokenType.RBRACKET)
+            return ArrayLiteral(elements)
+
+        # Identifier
         if token.type == TokenType.IDENT:
             name = token.value
             self.advance()
-
-            # Function call
-            if self.current_token().type == TokenType.LPAREN:
-                self.advance()
-                args = []
-
-                if self.current_token().type != TokenType.RPAREN:
-                    args.append(self.parse_expression())
-                    while self.current_token().type == TokenType.COMMA:
-                        self.advance()
-                        args.append(self.parse_expression())
-
-                self.expect(TokenType.RPAREN)
-                return CallExpr(name, args)
-
-            # Array/pointer indexing
-            if self.current_token().type == TokenType.LBRACKET:
-                self.advance()
-                index = self.parse_expression()
-                self.expect(TokenType.RBRACKET)
-                return IndexExpr(Identifier(name), index)
-
             return Identifier(name)
-
-        # Cast expression: cast[Type](expr)
-        if token.type == TokenType.CAST:
-            self.advance()
-            self.expect(TokenType.LBRACKET)
-            target_type = self.parse_type()
-            self.expect(TokenType.RBRACKET)
-            self.expect(TokenType.LPAREN)
-            expr = self.parse_expression()
-            self.expect(TokenType.RPAREN)
-            cast_expr = CastExpr(target_type, expr)
-
-            # Check for indexing on the cast result: cast[Type](expr)[index]
-            if self.current_token().type == TokenType.LBRACKET:
-                self.advance()
-                index = self.parse_expression()
-                self.expect(TokenType.RBRACKET)
-                return IndexExpr(cast_expr, index)
-
-            return cast_expr
-
-        # Address-of expression: addr(var)
-        if token.type == TokenType.ADDR:
-            self.advance()
-            self.expect(TokenType.LPAREN)
-            expr = self.parse_expression()
-            self.expect(TokenType.RPAREN)
-            return AddrOfExpr(expr)
 
         # Parenthesized expression
         if token.type == TokenType.LPAREN:
@@ -155,6 +152,128 @@ class Parser:
             return UnaryExpr(op, self.parse_primary())
 
         raise SyntaxError(f"Unexpected token {token.type} at line {token.line}")
+
+    def parse_primary(self) -> ASTNode:
+        """Parse primary expressions with postfix operations (calls, indexing, field access)"""
+        token = self.current_token()
+
+        # Handle special prefix expressions first
+        # Cast expression: cast[Type](expr)
+        if token.type == TokenType.CAST:
+            self.advance()
+            self.expect(TokenType.LBRACKET)
+            target_type = self.parse_type()
+            self.expect(TokenType.RBRACKET)
+            self.expect(TokenType.LPAREN)
+            expr = self.parse_expression()
+            self.expect(TokenType.RPAREN)
+            expr = CastExpr(target_type, expr)
+        # Address-of expression: addr(var)
+        elif token.type == TokenType.ADDR:
+            self.advance()
+            self.expect(TokenType.LPAREN)
+            expr = self.parse_expression()
+            self.expect(TokenType.RPAREN)
+            expr = AddrOfExpr(expr)
+        else:
+            # Parse atom (literal, identifier, etc.)
+            expr = self.parse_atom()
+
+        # Handle postfix operations: calls, indexing, field access
+        while True:
+            token = self.current_token()
+
+            # Function call or struct literal: foo(...) or Type(field: val)
+            if token.type == TokenType.LPAREN:
+                # Check if this is a struct literal (identifier followed by named args)
+                if isinstance(expr, Identifier):
+                    # Peek ahead to see if it's name: value pattern
+                    saved_pos = self.pos
+                    self.advance()  # Skip (
+                    # Skip any newlines to properly detect pattern
+                    while self.current_token().type == TokenType.NEWLINE:
+                        self.advance()
+
+                    is_struct_literal = False
+                    if self.current_token().type == TokenType.IDENT:
+                        next_tok = self.peek_token()
+                        if next_tok.type == TokenType.COLON:
+                            is_struct_literal = True
+                    # NOTE: Empty parens foo() is always a function call, not struct literal
+                    # Struct literals require at least one field: Type(field: value)
+
+                    # Restore position
+                    self.pos = saved_pos
+
+                    if is_struct_literal:
+                        # Parse as struct literal
+                        struct_name = expr.name
+                        self.advance()  # Skip (
+                        self.skip_newlines()  # Allow newlines after (
+                        field_values = {}
+
+                        if self.current_token().type != TokenType.RPAREN:
+                            field_name = self.expect(TokenType.IDENT).value
+                            self.expect(TokenType.COLON)
+                            field_values[field_name] = self.parse_expression()
+
+                            while self.current_token().type == TokenType.COMMA:
+                                self.advance()
+                                self.skip_newlines()  # Allow newlines after comma
+                                # Check for trailing comma
+                                if self.current_token().type == TokenType.RPAREN:
+                                    break
+                                field_name = self.expect(TokenType.IDENT).value
+                                self.expect(TokenType.COLON)
+                                field_values[field_name] = self.parse_expression()
+
+                        self.skip_newlines()  # Allow newlines before )
+                        self.expect(TokenType.RPAREN)
+                        expr = StructLiteral(struct_name, field_values)
+                        continue
+
+                # Regular function call
+                self.advance()
+                self.skip_newlines()  # Allow newlines after (
+                args = []
+
+                if self.current_token().type != TokenType.RPAREN:
+                    args.append(self.parse_expression())
+                    while self.current_token().type == TokenType.COMMA:
+                        self.advance()
+                        self.skip_newlines()  # Allow newlines after comma
+                        # Check for trailing comma
+                        if self.current_token().type == TokenType.RPAREN:
+                            break
+                        args.append(self.parse_expression())
+
+                self.skip_newlines()  # Allow newlines before )
+                self.expect(TokenType.RPAREN)
+                # If expr is an Identifier, convert to CallExpr with name
+                if isinstance(expr, Identifier):
+                    expr = CallExpr(expr.name, args)
+                else:
+                    # This shouldn't happen in valid code, but handle gracefully
+                    raise SyntaxError(f"Cannot call non-identifier at line {token.line}")
+
+            # Array/pointer indexing: expr[index]
+            elif token.type == TokenType.LBRACKET:
+                self.advance()
+                index = self.parse_expression()
+                self.expect(TokenType.RBRACKET)
+                expr = IndexExpr(expr, index)
+
+            # Field access: expr.field
+            elif token.type == TokenType.DOT:
+                self.advance()
+                field_name = self.expect(TokenType.IDENT).value
+                expr = FieldAccessExpr(expr, field_name)
+
+            else:
+                # No more postfix operations
+                break
+
+        return expr
 
     def parse_multiplicative(self) -> ASTNode:
         left = self.parse_primary()
@@ -531,6 +650,50 @@ class Parser:
 
         return ExternDecl(name, params, return_type)
 
+    def parse_struct_decl(self) -> StructDecl:
+        """Parse struct type declaration: type Name = object ... """
+        self.advance()  # Skip 'type'
+
+        name = self.expect(TokenType.IDENT).value
+        self.expect(TokenType.EQUALS)
+        self.expect(TokenType.OBJECT)
+        self.skip_newlines()
+
+        # Parse fields - indented block
+        fields = []
+        block_indent = None
+
+        while True:
+            self.skip_newlines()
+            token = self.current_token()
+
+            # Stop at end of file or dedent
+            if token.type == TokenType.EOF:
+                break
+
+            # Track indentation of first field
+            if block_indent is None:
+                block_indent = token.col
+            # If we encounter a line at LOWER indentation, struct is done
+            elif token.col < block_indent:
+                break
+
+            # Parse field: name: type
+            field_name = self.expect(TokenType.IDENT).value
+            self.expect(TokenType.COLON)
+            field_type = self.parse_type()
+
+            # Optional default value
+            default_value = None
+            if self.current_token().type == TokenType.EQUALS:
+                self.advance()
+                default_value = self.parse_expression()
+
+            fields.append(StructField(field_name, field_type, default_value))
+            self.skip_newlines()
+
+        return StructDecl(name, fields)
+
     def parse(self) -> Program:
         declarations = []
 
@@ -543,6 +706,8 @@ class Parser:
                 declarations.append(self.parse_extern_decl())
             elif token.type == TokenType.PROC:
                 declarations.append(self.parse_proc_decl())
+            elif token.type == TokenType.TYPE:
+                declarations.append(self.parse_struct_decl())
             elif token.type in [TokenType.VAR, TokenType.CONST]:
                 declarations.append(self.parse_var_decl())
             else:

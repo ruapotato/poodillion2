@@ -1,16 +1,16 @@
-# PoodillionOS
+# BrainhairOS
 
 **A Data-Oriented Operating System with Type-Safe Binary Pipelines**
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 
-*Unix Performance + PowerShell Composability + Type Safety = **PoodillionOS***
+*Unix Performance + PowerShell Composability + Type Safety = **BrainhairOS***
 
 ---
 
-## 🎯 What Makes PoodillionOS Different?
+## 🎯 What Makes BrainhairOS Different?
 
-Unlike Unix (text streams) or PowerShell (serialized objects), PoodillionOS uses **binary typed data structures** throughout the entire system.
+Unlike Unix (text streams) or PowerShell (serialized objects), BrainhairOS uses **binary typed data structures** throughout the entire system.
 
 ### The Problem with Text Pipes
 
@@ -28,7 +28,7 @@ PS> Get-Process | Where-Object {$_.Name -eq "python"} | Stop-Process
 # Nice, but .NET object serialization is expensive
 ```
 
-### The PoodillionOS Way
+### The BrainhairOS Way
 
 ```bash
 # Type-safe, binary, zero-copy pipelines
@@ -39,13 +39,13 @@ $ ps | where .name == "python" | select .pid | kill
 
 ## 🎨 The Type-Aware Shell
 
-PoodillionOS includes `psh`, a **badass type-aware shell** that automatically detects and beautifully displays structured data!
+BrainhairOS includes `psh`, a **badass type-aware shell** that automatically detects and beautifully displays structured data!
 
 ```bash
 $ ./bin/psh
 
 ╔════════════════════════════════════════════════╗
-║  PoodillionOS Shell - Type-Aware Data Shell   ║
+║  BrainhairOS Shell - Type-Aware Data Shell   ║
 ║                                                ║
 ║  • Type-safe binary pipelines                 ║
 ║  • Automatic schema detection                 ║
@@ -78,7 +78,7 @@ psh> bin/ps
 
 ### ✅ Working Now
 
-**Userland Utilities** (all in Mini-Nim, no libc):
+**Userland Utilities** (all in Brainhair, no libc):
 - **echo** (8.9KB) - Display text output
 - **cat** (5.1KB) - Concatenate and display files
 - **edit** (11KB) - CLI text editor with ANSI colors!
@@ -86,7 +86,7 @@ psh> bin/ps
 - **false** (4.8KB) - Exit with failure code
 
 **Type-Aware Shell** ⭐ NEW:
-- **psh** (14KB) - PoodillionOS Shell with schema awareness!
+- **psh** (14KB) - BrainhairOS Shell with schema awareness!
   - Automatically detects PSCH format
   - Displays schemas in pretty boxes
   - Formats binary data as hex tables
@@ -103,7 +103,7 @@ psh> bin/ps
 **Key Innovation**: Direct write to `/dev/fb0` via lseek + write
 - No mmap needed! (VTY console blocks mmap)
 - Pure syscalls, no graphics libraries
-- All shapes compile from Mini-Nim to x86
+- All shapes compile from Brainhair to x86
 
 **Data-Oriented Tools** (working binary pipeline!):
 - **ps** (10.7KB) - Read real `/proc` data, output binary Process objects
@@ -128,7 +128,7 @@ psh> bin/ps
 - 🔧 Built-in commands: exit, quit
 
 **Compiler Features**:
-- Type-safe Mini-Nim → x86 compiler
+- Type-safe Brainhair → x86 compiler
 - Block-scoped parsing with indentation
 - Size-aware loads/stores (byte, word, dword)
 - Address-of operator (`addr`) for safe pointer operations
@@ -143,7 +143,7 @@ psh> bin/ps
 
 ### 📊 Comparison
 
-| Feature | Unix | PowerShell | **PoodillionOS** |
+| Feature | Unix | PowerShell | **BrainhairOS** |
 |---------|------|------------|------------------|
 | Pipeline Data | Text | .NET Objects | **Binary Structs** |
 | Performance | ⚡ Fast I/O | 🐢 Slow (serialize) | **⚡⚡ Zero-copy** |
@@ -225,7 +225,7 @@ sudo apt install nasm gcc ld python3
 make userland
 
 # Test them
-./bin/echo          # Hello from Mini-Nim echo!
+./bin/echo          # Hello from Brainhair echo!
 echo "test" | ./bin/cat
 ./bin/true && echo "Success: $?"
 ./bin/false || echo "Failed: $?"
@@ -238,7 +238,7 @@ echo "test" | ./bin/cat
 ### Try the Type-Aware Shell! ⭐ NEW
 
 ```bash
-# Launch the PoodillionOS Shell
+# Launch the BrainhairOS Shell
 ./bin/psh
 
 # The shell automatically detects and formats structured data!
@@ -316,8 +316,8 @@ echo "bin/ps" | ./bin/psh  # Pretty tables automatically!
 ### Build Kernel (optional)
 
 ```bash
-# Build and run Mini-Nim kernel
-make run-grub-mininim
+# Build and run Brainhair kernel
+make run-grub-brainhair
 
 # Or just the userland
 make userland
@@ -328,36 +328,36 @@ make userland
 ## 📁 Project Structure
 
 ```
-poodillion2/
-├── compiler/           # Mini-Nim Compiler
-│   ├── mininim.py     # Compiler driver
+brainhair2/
+├── compiler/           # Brainhair Compiler
+│   ├── brainhair.py     # Compiler driver
 │   ├── lexer.py       # Tokenizer
 │   ├── parser.py      # Parser (indentation-aware)
 │   └── codegen_x86.py # x86 code generator
 │
 ├── lib/               # System Libraries
-│   ├── syscalls.nim   # Syscall wrappers (45+)
+│   ├── syscalls.bh   # Syscall wrappers (45+)
 │   ├── syscalls.asm   # Assembly syscall stubs
-│   └── schema.nim     # Data schema definitions
+│   └── schema.bh     # Data schema definitions
 │
 ├── userland/          # Unix Utilities
-│   ├── psh.nim        # ✅ Type-Aware Shell with pipelines! 🎨
-│   ├── echo.nim       # ✅ Working
-│   ├── cat.nim        # ✅ Working
-│   ├── edit.nim       # ✅ Working (text editor)
-│   ├── fbinfo.nim     # ✅ Working (framebuffer info) 🎨
-│   ├── true.nim       # ✅ Working
-│   ├── false.nim      # ✅ Working
-│   ├── ps.nim         # ✅ Real /proc parsing!
-│   ├── inspect.nim    # ✅ Working (schema viewer)
-│   ├── where.nim      # ✅ Filter: where FIELD OP VALUE
-│   ├── count.nim      # ✅ Working (count records)
-│   ├── head.nim       # ✅ head N (take first N)
-│   ├── tail.nim       # ✅ Working (take last N)
-│   ├── select.nim     # ✅ Working (field projection)
-│   ├── sort.nim       # ✅ sort FIELD [desc]
-│   ├── fmt.nim        # ✅ Human-readable output
-│   └── ls.nim         # ✅ Directory listing
+│   ├── psh.bh        # ✅ Type-Aware Shell with pipelines! 🎨
+│   ├── echo.bh       # ✅ Working
+│   ├── cat.bh        # ✅ Working
+│   ├── edit.bh       # ✅ Working (text editor)
+│   ├── fbinfo.bh     # ✅ Working (framebuffer info) 🎨
+│   ├── true.bh       # ✅ Working
+│   ├── false.bh      # ✅ Working
+│   ├── ps.bh         # ✅ Real /proc parsing!
+│   ├── inspect.bh    # ✅ Working (schema viewer)
+│   ├── where.bh      # ✅ Filter: where FIELD OP VALUE
+│   ├── count.bh      # ✅ Working (count records)
+│   ├── head.bh       # ✅ head N (take first N)
+│   ├── tail.bh       # ✅ Working (take last N)
+│   ├── select.bh     # ✅ Working (field projection)
+│   ├── sort.bh       # ✅ sort FIELD [desc]
+│   ├── fmt.bh        # ✅ Human-readable output
+│   └── ls.bh         # ✅ Directory listing
 │
 ├── bin/               # Compiled executables
 │   ├── psh            # 19KB ELF32 - Type-Aware Shell with pipelines! 🎨
@@ -380,7 +380,7 @@ poodillion2/
 │
 ├── kernel/            # OS Kernel (optional)
 │   ├── kernel.c       # C kernel
-│   └── shell_nim.nim  # Mini-Nim shell
+│   └── shell_nim.bh  # Brainhair shell
 │
 ├── boot/              # Bootloader
 │   └── multiboot.asm  # GRUB multiboot
@@ -394,7 +394,7 @@ poodillion2/
 
 ### Phase 1: Core Infrastructure ✅ COMPLETE
 
-- [x] Mini-Nim compiler with type system
+- [x] Brainhair compiler with type system
 - [x] Syscall library (45+ syscalls)
 - [x] Basic utilities (echo, cat, true, false)
 - [x] Binary schema format definition
@@ -452,7 +452,7 @@ poodillion2/
 - [x] **Pixel plotting** - Direct pixel manipulation via lseek+write ✅
 - [x] **Graphics primitives** - Line, rect, circle drawing ✅
 - [x] **clear utility** - Clear screen to solid color ✅
-- [x] **Mini-Nim extensions** - and/or/break/continue/conditional exprs ✅
+- [x] **Brainhair extensions** - and/or/break/continue/conditional exprs ✅
 - [ ] **Text rendering** - Bitmap font support ⬅ NEXT
 - [ ] **Optimized drawing** - Double buffering, fast fills
 - [ ] **Sprite support** - Blit images to screen
@@ -491,8 +491,8 @@ poodillion2/
 - Simpler than X11 (no legacy cruft)
 - More complete than basic framebuffer
 - ~100-150KB total code
-- Binary protocol (fits PoodillionOS data philosophy)
-- Works with existing Mini-Nim utilities
+- Binary protocol (fits BrainhairOS data philosophy)
+- Works with existing Brainhair utilities
 
 ---
 
@@ -515,14 +515,47 @@ rm -rf bin/
 ### Compiler Pipeline
 
 ```
-source.nim → Mini-Nim Lexer → Tokens
-           → Parser → AST
+source.bh → Brainhair Lexer → Tokens (with source positions)
+           → Parser → AST (with span tracking)
+           → Type Checker → Validated AST
+           → MIR Lowering → Mid-Level IR (SSA form)
            → CodeGen → x86 Assembly (.asm)
            → NASM → Object file (.o)
            → LD + syscalls.o → ELF executable
 ```
 
-### Mini-Nim Language Features
+### Compiler Infrastructure (Enhanced!)
+
+**Phase 0: Error Handling & Symbols** (Complete!)
+- `compiler/errors.py` - Comprehensive error reporting with colorized output
+- `compiler/spans.py` - Source location tracking (line, column, file)
+- `compiler/symbols.py` - Symbol table with scoped variable/function tracking
+
+**Phase 1: Type System** (Complete!)
+- `compiler/type_checker.py` - Full type checker (988 lines!)
+  - Type annotation validation
+  - Expression type inference
+  - Function call validation
+  - Assignment compatibility
+  - Struct/array type support
+- Parser extensions for structs and arrays
+
+**Phase 2: Mid-Level IR** (Complete!)
+- `compiler/mir.py` - MIR data structures
+  - SSA (Static Single Assignment) form
+  - Basic blocks with explicit control flow
+  - Typed values and operations
+  - Explicit memory operations (load, store, alloca, GEP)
+- `compiler/ast_to_mir.py` - AST to MIR lowering
+- `compiler/mir_to_x86.py` - MIR to x86 code generation
+
+**Test Infrastructure:**
+- `compiler/tests/run_tests.py` - Custom test runner
+- `compiler/tests/test_lexer.py` - 27 lexer tests
+- `compiler/tests/test_parser.py` - 44 parser tests
+- **71 tests passing!**
+
+### Brainhair Language Features
 
 - **Types**: int32, uint32, int64, uint64, float32, bool, char, ptr T
 - **Control**: if/elif/else, while, for i in start..end
@@ -562,19 +595,19 @@ source.nim → Mini-Nim Lexer → Tokens
 - **SQL query engine** - Full relational ops
 - **Distributed mode** - Query cluster nodes
 - **Time-travel** - Replay command history
-- **Self-hosting** - Rewrite compiler in Mini-Nim
+- **Self-hosting** - Rewrite compiler in Brainhair
 
 ---
 
 ## 📚 Documentation
 
 - **[VISION.md](VISION.md)** - Complete vision for data-oriented OS
-- **[lib/syscalls.nim](lib/syscalls.nim)** - Available syscalls
-- **[lib/schema.nim](lib/schema.nim)** - Data format specification
+- **[lib/syscalls.bh](lib/syscalls.bh)** - Available syscalls
+- **[lib/schema.bh](lib/schema.bh)** - Data format specification
 
 ### Example Code
 
-**Simple Utility (true.nim)**:
+**Simple Utility (true.bh)**:
 ```nim
 const SYS_exit: int32 = 1
 extern proc syscall1(num: int32, arg1: int32): int32
@@ -583,7 +616,7 @@ proc main() =
   discard syscall1(SYS_exit, 0)
 ```
 
-**Data Producer (ps.nim)**:
+**Data Producer (ps.bh)**:
 ```nim
 proc write_schema_header() =
   # Magic: "PSCH"
@@ -630,7 +663,7 @@ Want to help build the future of operating systems?
 - Zero-copy mmap pipelines
 - Distributed query engine
 
-See [GitHub Issues](https://github.com/yourusername/poodillion2/issues) for specific tasks.
+See [GitHub Issues](https://github.com/yourusername/brainhair2/issues) for specific tasks.
 
 ---
 
@@ -645,30 +678,37 @@ All code is free software. Fork it, hack it, improve it!
 ## 🌟 Status Summary
 
 ```
-Project:    PoodillionOS - Data-Oriented Operating System
-Language:   Mini-Nim (custom compiled language)
+Project:    BrainhairOS - Data-Oriented Operating System
+Language:   Brainhair (custom compiled language)
 Runtime:    Zero dependencies (no libc, no stdlib)
 Utilities:  18 working + Type-Aware Shell!
             (echo, cat, edit, true, false, ps, inspect, where, count,
              head, tail, select, psh, fbinfo, clear, pixel, line, rect, circle)
 Size:       ~167KB total for all utilities
 Platform:   Linux x86/x86_64 (32-bit executables)
-Status:     🚀 Active Development - GRAPHICS FOUNDATION COMPLETE! 🎨
+Status:     🚀 Active Development - COMPILER INFRASTRUCTURE COMPLETE! 🔧
 
 Vision:     Unix performance + PowerShell composability + Native Graphics!
 Innovation: Binary typed data streams + Direct framebuffer manipulation
-Goal:       Type-safe, zero-copy, SQL-queryable OS with custom display server!
+Goal:       Self-hosting, type-safe, zero-copy, SQL-queryable OS!
 
 ✅ Complete: Type-aware shell with automatic schema detection and formatting!
 ✅ Complete: Full data pipeline! (ps | where | select | head | tail | count)
 ✅ Complete: Graphics primitives! (clear, pixel, line, rect, circle)
-Next:       Text rendering → Mouse input → Display server protocol
+✅ Complete: Compiler Phase 0-2 infrastructure!
+            - Error handling with source locations
+            - Symbol table with proper scoping
+            - Type checker (988 lines!)
+            - Mid-Level IR (SSA form)
+            - MIR to x86 code generation
+            - 71 tests passing!
+Next:       Phase 3 (Memory Safety) → Phase 4 (LLVM Backend) → Self-hosting!
 ```
 
 **Try it now**:
 ```bash
-git clone https://github.com/yourusername/poodillion2.git
-cd poodillion2
+git clone https://github.com/yourusername/brainhair2.git
+cd brainhair2
 make userland
 
 # Try the type-aware shell!
@@ -685,4 +725,4 @@ echo "Hello" | ./bin/cat
 
 **Built with ❤️ and pure x86 assembly**
 
-*PoodillionOS - Rethinking Unix from First Principles*
+*BrainhairOS - Rethinking Unix from First Principles*
