@@ -33,6 +33,9 @@ if [ "$(id -u)" != "0" ]; then
     ln -sf /bin/init "$INITRD_DIR/sbin/init"
     ln -sf /bin/psh "$INITRD_DIR/bin/sh"
 
+    # CRITICAL: Kernel looks for /init at root of initramfs
+    cp "$BIN_DIR/init" "$INITRD_DIR/init"
+
     # Create minimal config
     echo "root:x:0:0:root:/root:/bin/psh" > "$INITRD_DIR/etc/passwd"
     echo "root:x:0:" > "$INITRD_DIR/etc/group"

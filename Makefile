@@ -794,7 +794,7 @@ test-qemu: initramfs
 	qemu-system-x86_64 -m 256M \
 		-kernel /boot/vmlinuz-$$(uname -r) \
 		-initrd distro/poodillion-full.cpio.gz \
-		-append 'console=ttyS0 init=/bin/init' \
+		-append 'console=ttyS0 rdinit=/init' \
 		-nographic
 
 # Test with QEMU (graphical)
@@ -803,7 +803,7 @@ test-qemu-gui: initramfs
 	qemu-system-x86_64 -m 256M \
 		-kernel /boot/vmlinuz-$$(uname -r) \
 		-initrd distro/poodillion-full.cpio.gz \
-		-append 'console=tty0 init=/bin/init'
+		-append 'console=tty0 rdinit=/init'
 
 # Full distro build
 distro: userland rootfs initramfs
