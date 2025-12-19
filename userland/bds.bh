@@ -15,6 +15,11 @@ const SYS_lseek: int32 = 19
 const SYS_exit: int32 = 1
 const SYS_brk: int32 = 45
 const SYS_fcntl: int32 = 55
+const SYS_mmap2: int32 = 192
+
+const PROT_READ: int32 = 1
+const PROT_WRITE: int32 = 2
+const MAP_SHARED: int32 = 1
 
 const STDOUT: int32 = 1
 const O_RDONLY: int32 = 0
@@ -59,6 +64,13 @@ const MENU_ITEM_HEIGHT: int32 = 28
 extern proc syscall1(num: int32, arg1: int32): int32
 extern proc syscall2(num: int32, arg1: int32, arg2: int32): int32
 extern proc syscall3(num: int32, arg1: int32, arg2: int32, arg3: int32): int32
+extern proc syscall6(num: int32, arg1: int32, arg2: int32, arg3: int32, arg4: int32, arg5: int32, arg6: int32): int32
+
+proc memcpy32(dst: ptr uint32, src: ptr uint32, count: int32) =
+  var i: int32 = 0
+  while i < count:
+    dst[i] = src[i]
+    i = i + 1
 
 proc print_str(s: ptr uint8) =
   var len: int32 = 0
@@ -705,11 +717,10 @@ proc draw_cursor(buf: ptr uint32, x: int32, y: int32, xres: int32, yres: int32) 
       buf_pixel(buf, x + i, y + i, 0xFFFFFF, xres, yres)
     i = i + 1
 
-proc flush_buffer(fd: int32, buf: ptr uint32, xres: int32, yres: int32) =
-  # Write entire buffer to framebuffer
-  var size: int32 = xres * yres * 4
-  discard syscall3(SYS_lseek, fd, 0, SEEK_SET)
-  discard syscall3(SYS_write, fd, cast[int32](buf), size)
+proc flush_buffer(fb: ptr uint32, buf: ptr uint32, xres: int32, yres: int32) =
+  # Copy backbuffer to mmap'd framebuffer (fast memcpy)
+  var count: int32 = xres * yres
+  memcpy32(fb, buf, count)
 
 proc flush_rect(fd: int32, buf: ptr uint32, x: int32, y: int32, w: int32, h: int32, xres: int32, yres: int32) =
   # Write only a rectangle to framebuffer (much faster for cursor updates)
@@ -1028,8 +1039,15 @@ proc main() =
   print_num(yres)
   print_str(cast[ptr uint8]("\n"))
 
-  # Allocate backbuffer (xres * yres * 4 bytes) + cursor save area (256 bytes for 16x16)
+  # mmap framebuffer for direct access (faster than write syscalls)
   var buf_size: int32 = xres * yres * 4
+  var framebuffer: ptr uint32 = cast[ptr uint32](syscall6(SYS_mmap2, 0, buf_size, PROT_READ | PROT_WRITE, MAP_SHARED, fb_fd, 0))
+  if cast[int32](framebuffer) < 0:
+    print_str(cast[ptr uint8]("Error: Cannot mmap framebuffer\n"))
+    discard syscall1(SYS_exit, 1)
+  print_str(cast[ptr uint8]("Framebuffer mmap'd\n"))
+
+  # Allocate backbuffer + cursor save area
   var buf_brk: int32 = syscall1(SYS_brk, 0)
   discard syscall1(SYS_brk, buf_brk + buf_size + 1024)
   var backbuffer: ptr uint32 = cast[ptr uint32](buf_brk)
@@ -1083,10 +1101,10 @@ proc main() =
       cursor_moved = 1  # Force cursor redraw after scene change
 
     if cursor_moved != 0:
-      # Draw cursor and flush entire buffer (single write = no tearing)
+      # Draw cursor and copy to mmap'd framebuffer (direct memcpy = fast)
       save_cursor_area(backbuffer, cursor_save, cursor_x, cursor_y, xres, yres)
       draw_cursor(backbuffer, cursor_x, cursor_y, xres, yres)
-      flush_buffer(fb_fd, backbuffer, xres, yres)
+      flush_buffer(framebuffer, backbuffer, xres, yres)
       restore_cursor_area(backbuffer, cursor_save, cursor_x, cursor_y, xres, yres)
       cursor_moved = 0
 
