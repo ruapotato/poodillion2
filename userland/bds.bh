@@ -1033,6 +1033,11 @@ proc main() =
       var dx: int32 = cast[int32](mouse_buf[1])
       var dy: int32 = cast[int32](mouse_buf[2])
 
+      # Debug: print raw button state
+      print_str(cast[ptr uint8]("b="))
+      print_num(btns)
+      print_str(cast[ptr uint8](" "))
+
       if (btns & 0x10) != 0: dx = dx - 256
       if (btns & 0x20) != 0: dy = dy - 256
 
@@ -1041,6 +1046,9 @@ proc main() =
       var middle: int32 = btns & 0x04
 
       if middle != 0:
+        print_str(cast[ptr uint8]("\nMiddle btn="))
+        print_num(btns)
+        print_str(cast[ptr uint8](" exiting\n"))
         running = 0
 
       # Always redraw after mouse movement for clean cursor

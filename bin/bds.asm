@@ -30,7 +30,11 @@ str_20: db "Error: Cannot open fb0", 10, "", 0
 str_21: db "Screen: ", 0
 str_22: db "x", 0
 str_23: db "", 10, "", 0
-str_24: db "BDS exited", 10, "", 0
+str_24: db "b=", 0
+str_25: db " ", 0
+str_26: db "", 10, "Middle btn=", 0
+str_27: db " exiting", 10, "", 0
+str_28: db "BDS exited", 10, "", 0
 
 section .text
 global _start
@@ -11260,6 +11264,18 @@ endif1092:
     add eax, ebx
     movzx eax, byte [eax]
     mov [ebp-140], eax
+    lea eax, [rel str_24]
+    push eax
+    call print_str
+    add esp, 4
+    mov eax, [ebp-132]
+    push eax
+    call print_num
+    add esp, 4
+    lea eax, [rel str_25]
+    push eax
+    call print_str
+    add esp, 4
     mov eax, [ebp-132]
     push eax
     mov eax, 16
@@ -11341,6 +11357,18 @@ endif1100:
     movzx eax, al
     test eax, eax
     jz else1103
+    lea eax, [rel str_26]
+    push eax
+    call print_str
+    add esp, 4
+    mov eax, [ebp-132]
+    push eax
+    call print_num
+    add esp, 4
+    lea eax, [rel str_27]
+    push eax
+    call print_str
+    add esp, 4
     mov eax, 0
     mov [ebp-124], eax
     jmp endif1102
@@ -12500,7 +12528,7 @@ while_end1091:
     push eax
     call syscall1
     add esp, 8
-    lea eax, [rel str_24]
+    lea eax, [rel str_28]
     push eax
     call print_str
     add esp, 4
