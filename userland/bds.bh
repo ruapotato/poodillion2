@@ -1,0 +1,592 @@
+# bds - Brainhair Display Server
+# Core display server with pluggable compositor
+#
+# Architecture:
+#   BDS Core: Buffer management, input routing, window registry
+#   Compositor: Renders windows to framebuffer (pluggable)
+#   WM Client: Controls window placement (separate process via IPC)
+#   Shell: Taskbar, launcher (separate process via IPC)
+#
+# For v1: WM and Shell are callbacks, will be IPC in v2
+
+const SYS_read: int32 = 3
+const SYS_write: int32 = 4
+const SYS_open: int32 = 5
+const SYS_close: int32 = 6
+const SYS_ioctl: int32 = 54
+const SYS_lseek: int32 = 19
+const SYS_exit: int32 = 1
+const SYS_brk: int32 = 45
+const SYS_fcntl: int32 = 55
+const SYS_nanosleep: int32 = 162
+
+const STDOUT: int32 = 1
+const O_RDONLY: int32 = 0
+const O_RDWR: int32 = 2
+const O_NONBLOCK: int32 = 2048
+const F_SETFL: int32 = 4
+const F_GETFL: int32 = 3
+const FBIOGET_VSCREENINFO: int32 = 0x4600
+const SEEK_SET: int32 = 0
+
+# Window constants
+const MAX_WINDOWS: int32 = 32
+const WINDOW_STRUCT_SIZE: int32 = 64
+
+# Window struct offsets
+const WIN_ACTIVE: int32 = 0
+const WIN_X: int32 = 1
+const WIN_Y: int32 = 2
+const WIN_WIDTH: int32 = 3
+const WIN_HEIGHT: int32 = 4
+const WIN_DECORATED: int32 = 5
+const WIN_FOCUSED: int32 = 6
+const WIN_MINIMIZED: int32 = 7
+const WIN_TITLE_COLOR: int32 = 8
+const WIN_BODY_COLOR: int32 = 9
+const WIN_BORDER_COLOR: int32 = 10
+const WIN_FLAGS: int32 = 11
+
+# Decoration constants
+const TITLE_HEIGHT: int32 = 22
+const BORDER_SIZE: int32 = 3
+const BUTTON_SIZE: int32 = 16
+
+# Shell constants
+const TASKBAR_HEIGHT: int32 = 32
+const LAUNCHER_WIDTH: int32 = 48
+
+extern proc syscall1(num: int32, arg1: int32): int32
+extern proc syscall2(num: int32, arg1: int32, arg2: int32): int32
+extern proc syscall3(num: int32, arg1: int32, arg2: int32, arg3: int32): int32
+
+proc print_str(s: ptr uint8) =
+  var len: int32 = 0
+  while s[len] != cast[uint8](0):
+    len = len + 1
+  discard syscall3(SYS_write, STDOUT, cast[int32](s), len)
+
+proc print_num(n: int32) =
+  var buf: ptr uint8 = cast[ptr uint8](0)
+  var old_brk: int32 = syscall1(SYS_brk, 0)
+  discard syscall1(SYS_brk, old_brk + 16)
+  buf = cast[ptr uint8](old_brk)
+
+  if n == 0:
+    buf[0] = cast[uint8](48)
+    buf[1] = cast[uint8](0)
+    print_str(buf)
+    return
+
+  var tmp: int32 = n
+  var i: int32 = 0
+  while tmp > 0:
+    buf[i] = cast[uint8](48 + tmp - (tmp / 10) * 10)
+    tmp = tmp / 10
+    i = i + 1
+  buf[i] = cast[uint8](0)
+
+  # Reverse
+  var j: int32 = 0
+  var k: int32 = i - 1
+  while j < k:
+    var t: uint8 = buf[j]
+    buf[j] = buf[k]
+    buf[k] = t
+    j = j + 1
+    k = k - 1
+
+  print_str(buf)
+
+# ============ Window Registry ============
+
+proc window_ptr(windows: ptr int32, idx: int32): ptr int32 =
+  return cast[ptr int32](cast[int32](windows) + idx * WINDOW_STRUCT_SIZE)
+
+proc win_get(win: ptr int32, field: int32): int32 =
+  return win[field]
+
+proc win_set(win: ptr int32, field: int32, val: int32) =
+  win[field] = val
+
+proc create_window(windows: ptr int32, x: int32, y: int32, w: int32, h: int32, title_col: int32, body_col: int32): int32 =
+  var i: int32 = 0
+  while i < MAX_WINDOWS:
+    var win: ptr int32 = window_ptr(windows, i)
+    if win_get(win, WIN_ACTIVE) == 0:
+      win_set(win, WIN_ACTIVE, 1)
+      win_set(win, WIN_X, x)
+      win_set(win, WIN_Y, y)
+      win_set(win, WIN_WIDTH, w)
+      win_set(win, WIN_HEIGHT, h)
+      win_set(win, WIN_DECORATED, 1)
+      win_set(win, WIN_FOCUSED, 0)
+      win_set(win, WIN_MINIMIZED, 0)
+      win_set(win, WIN_TITLE_COLOR, title_col)
+      win_set(win, WIN_BODY_COLOR, body_col)
+      win_set(win, WIN_BORDER_COLOR, 0x404040)
+      return i
+    i = i + 1
+  return -1
+
+proc destroy_window(windows: ptr int32, idx: int32) =
+  if idx >= 0 and idx < MAX_WINDOWS:
+    var win: ptr int32 = window_ptr(windows, idx)
+    win_set(win, WIN_ACTIVE, 0)
+
+# ============ 2D Compositor ============
+
+proc fill_rect(fd: int32, x: int32, y: int32, w: int32, h: int32, color: int32, xres: int32, yres: int32, line_buf: ptr uint32) =
+  var cy: int32 = y
+  while cy < y + h:
+    if cy >= 0 and cy < yres:
+      var sx: int32 = x
+      var ex: int32 = x + w
+      if sx < 0: sx = 0
+      if ex > xres: ex = xres
+      if sx < ex:
+        var width: int32 = ex - sx
+        var i: int32 = 0
+        while i < width:
+          line_buf[i] = cast[uint32](color)
+          i = i + 1
+        var offset: int32 = (cy * xres + sx) * 4
+        discard syscall3(SYS_lseek, fd, offset, SEEK_SET)
+        discard syscall3(SYS_write, fd, cast[int32](line_buf), width * 4)
+    cy = cy + 1
+
+proc draw_pixel(fd: int32, x: int32, y: int32, color: int32, xres: int32, yres: int32, pixel_buf: ptr uint32) =
+  if x >= 0 and x < xres and y >= 0 and y < yres:
+    pixel_buf[0] = cast[uint32](color)
+    var offset: int32 = (y * xres + x) * 4
+    discard syscall3(SYS_lseek, fd, offset, SEEK_SET)
+    discard syscall3(SYS_write, fd, cast[int32](pixel_buf), 4)
+
+# Draw window decoration (called by compositor)
+proc draw_decoration(fd: int32, win: ptr int32, focused: int32, xres: int32, yres: int32, line_buf: ptr uint32) =
+  var x: int32 = win_get(win, WIN_X)
+  var y: int32 = win_get(win, WIN_Y)
+  var w: int32 = win_get(win, WIN_WIDTH)
+  var h: int32 = win_get(win, WIN_HEIGHT)
+  var title_col: int32 = win_get(win, WIN_TITLE_COLOR)
+
+  # Border color based on focus
+  var border_col: int32 = 0x606060
+  if focused != 0:
+    border_col = 0x0088FF
+    title_col = title_col | 0x202020  # Brighten title when focused
+
+  # Outer border
+  fill_rect(fd, x, y, w, BORDER_SIZE, border_col, xres, yres, line_buf)
+  fill_rect(fd, x, y + h - BORDER_SIZE, w, BORDER_SIZE, border_col, xres, yres, line_buf)
+  fill_rect(fd, x, y, BORDER_SIZE, h, border_col, xres, yres, line_buf)
+  fill_rect(fd, x + w - BORDER_SIZE, y, BORDER_SIZE, h, border_col, xres, yres, line_buf)
+
+  # Title bar
+  fill_rect(fd, x + BORDER_SIZE, y + BORDER_SIZE, w - BORDER_SIZE * 2, TITLE_HEIGHT, title_col, xres, yres, line_buf)
+
+  # Close button (red)
+  fill_rect(fd, x + w - BORDER_SIZE - BUTTON_SIZE - 4, y + BORDER_SIZE + 3, BUTTON_SIZE, BUTTON_SIZE, 0xDD4444, xres, yres, line_buf)
+
+  # Maximize button (green)
+  fill_rect(fd, x + w - BORDER_SIZE - BUTTON_SIZE * 2 - 8, y + BORDER_SIZE + 3, BUTTON_SIZE, BUTTON_SIZE, 0x44DD44, xres, yres, line_buf)
+
+  # Minimize button (yellow)
+  fill_rect(fd, x + w - BORDER_SIZE - BUTTON_SIZE * 3 - 12, y + BORDER_SIZE + 3, BUTTON_SIZE, BUTTON_SIZE, 0xDDDD44, xres, yres, line_buf)
+
+# Draw window content area
+proc draw_window_body(fd: int32, win: ptr int32, xres: int32, yres: int32, line_buf: ptr uint32) =
+  var x: int32 = win_get(win, WIN_X)
+  var y: int32 = win_get(win, WIN_Y)
+  var w: int32 = win_get(win, WIN_WIDTH)
+  var h: int32 = win_get(win, WIN_HEIGHT)
+  var body_col: int32 = win_get(win, WIN_BODY_COLOR)
+
+  var content_x: int32 = x + BORDER_SIZE
+  var content_y: int32 = y + BORDER_SIZE + TITLE_HEIGHT
+  var content_w: int32 = w - BORDER_SIZE * 2
+  var content_h: int32 = h - BORDER_SIZE * 2 - TITLE_HEIGHT
+
+  fill_rect(fd, content_x, content_y, content_w, content_h, body_col, xres, yres, line_buf)
+
+# Composite all windows
+proc composite(fd: int32, windows: ptr int32, focused_idx: int32, xres: int32, yres: int32, line_buf: ptr uint32, bg_color: int32) =
+  # Draw background
+  fill_rect(fd, 0, 0, xres, yres - TASKBAR_HEIGHT, bg_color, xres, yres, line_buf)
+
+  # Draw unfocused windows first (back to front would need z-order)
+  var i: int32 = 0
+  while i < MAX_WINDOWS:
+    if i != focused_idx:
+      var win: ptr int32 = window_ptr(windows, i)
+      if win_get(win, WIN_ACTIVE) != 0 and win_get(win, WIN_MINIMIZED) == 0:
+        if win_get(win, WIN_DECORATED) != 0:
+          draw_decoration(fd, win, 0, xres, yres, line_buf)
+        draw_window_body(fd, win, xres, yres, line_buf)
+    i = i + 1
+
+  # Draw focused window on top
+  if focused_idx >= 0 and focused_idx < MAX_WINDOWS:
+    var win: ptr int32 = window_ptr(windows, focused_idx)
+    if win_get(win, WIN_ACTIVE) != 0 and win_get(win, WIN_MINIMIZED) == 0:
+      if win_get(win, WIN_DECORATED) != 0:
+        draw_decoration(fd, win, 1, xres, yres, line_buf)
+      draw_window_body(fd, win, xres, yres, line_buf)
+
+# ============ Desktop Shell ============
+
+proc draw_taskbar(fd: int32, windows: ptr int32, xres: int32, yres: int32, line_buf: ptr uint32) =
+  var taskbar_y: int32 = yres - TASKBAR_HEIGHT
+
+  # Taskbar background
+  fill_rect(fd, 0, taskbar_y, xres, TASKBAR_HEIGHT, 0x2D2D2D, xres, yres, line_buf)
+
+  # Top border (highlight)
+  fill_rect(fd, 0, taskbar_y, xres, 1, 0x505050, xres, yres, line_buf)
+
+  # Launcher button (left side)
+  fill_rect(fd, 4, taskbar_y + 4, LAUNCHER_WIDTH, TASKBAR_HEIGHT - 8, 0x0066AA, xres, yres, line_buf)
+
+  # Window buttons in taskbar
+  var btn_x: int32 = LAUNCHER_WIDTH + 16
+  var i: int32 = 0
+  while i < MAX_WINDOWS:
+    var win: ptr int32 = window_ptr(windows, i)
+    if win_get(win, WIN_ACTIVE) != 0:
+      var btn_color: int32 = 0x404040
+      if win_get(win, WIN_FOCUSED) != 0:
+        btn_color = 0x505050
+      if win_get(win, WIN_MINIMIZED) != 0:
+        btn_color = 0x353535
+
+      fill_rect(fd, btn_x, taskbar_y + 4, 120, TASKBAR_HEIGHT - 8, btn_color, xres, yres, line_buf)
+
+      # Use window's title color as indicator
+      fill_rect(fd, btn_x + 2, taskbar_y + 6, 4, TASKBAR_HEIGHT - 12, win_get(win, WIN_TITLE_COLOR), xres, yres, line_buf)
+
+      btn_x = btn_x + 128
+    i = i + 1
+
+# ============ Cursor ============
+
+proc draw_cursor(fd: int32, x: int32, y: int32, xres: int32, yres: int32, pixel_buf: ptr uint32) =
+  # White arrow cursor with black outline
+  var i: int32 = 0
+  while i < 14:
+    # Left edge (white)
+    draw_pixel(fd, x, y + i, 0xFFFFFF, xres, yres, pixel_buf)
+    # Diagonal (white)
+    if i < 10:
+      draw_pixel(fd, x + i, y + i, 0xFFFFFF, xres, yres, pixel_buf)
+    # Black fill
+    var j: int32 = 1
+    while j < i and j < 8:
+      draw_pixel(fd, x + j, y + i, 0x000000, xres, yres, pixel_buf)
+      j = j + 1
+    i = i + 1
+  # Arrow tail
+  draw_pixel(fd, x + 3, y + 10, 0xFFFFFF, xres, yres, pixel_buf)
+  draw_pixel(fd, x + 4, y + 11, 0xFFFFFF, xres, yres, pixel_buf)
+  draw_pixel(fd, x + 5, y + 12, 0xFFFFFF, xres, yres, pixel_buf)
+  draw_pixel(fd, x + 6, y + 13, 0xFFFFFF, xres, yres, pixel_buf)
+
+# ============ Hit Testing ============
+
+proc point_in_rect(px: int32, py: int32, x: int32, y: int32, w: int32, h: int32): int32 =
+  if px >= x and px < x + w and py >= y and py < y + h:
+    return 1
+  return 0
+
+proc hit_test_window(win: ptr int32, px: int32, py: int32): int32 =
+  # Returns: 0=miss, 1=body, 2=titlebar, 3=close, 4=max, 5=min, 6=border
+  if win_get(win, WIN_ACTIVE) == 0 or win_get(win, WIN_MINIMIZED) != 0:
+    return 0
+
+  var x: int32 = win_get(win, WIN_X)
+  var y: int32 = win_get(win, WIN_Y)
+  var w: int32 = win_get(win, WIN_WIDTH)
+  var h: int32 = win_get(win, WIN_HEIGHT)
+
+  if point_in_rect(px, py, x, y, w, h) == 0:
+    return 0
+
+  # Close button
+  if point_in_rect(px, py, x + w - BORDER_SIZE - BUTTON_SIZE - 4, y + BORDER_SIZE + 3, BUTTON_SIZE, BUTTON_SIZE) != 0:
+    return 3
+
+  # Maximize button
+  if point_in_rect(px, py, x + w - BORDER_SIZE - BUTTON_SIZE * 2 - 8, y + BORDER_SIZE + 3, BUTTON_SIZE, BUTTON_SIZE) != 0:
+    return 4
+
+  # Minimize button
+  if point_in_rect(px, py, x + w - BORDER_SIZE - BUTTON_SIZE * 3 - 12, y + BORDER_SIZE + 3, BUTTON_SIZE, BUTTON_SIZE) != 0:
+    return 5
+
+  # Title bar (for dragging)
+  if point_in_rect(px, py, x + BORDER_SIZE, y + BORDER_SIZE, w - BORDER_SIZE * 2, TITLE_HEIGHT) != 0:
+    return 2
+
+  # Border (for resizing - future)
+  if py < y + BORDER_SIZE or py >= y + h - BORDER_SIZE or px < x + BORDER_SIZE or px >= x + w - BORDER_SIZE:
+    return 6
+
+  return 1  # Body
+
+proc hit_test_taskbar(px: int32, py: int32, windows: ptr int32, yres: int32): int32 =
+  # Returns window index if clicked, -1 for launcher, -2 for nothing
+  var taskbar_y: int32 = yres - TASKBAR_HEIGHT
+
+  if py < taskbar_y:
+    return -2
+
+  # Launcher button
+  if px >= 4 and px < 4 + LAUNCHER_WIDTH:
+    return -1
+
+  # Window buttons
+  var btn_x: int32 = LAUNCHER_WIDTH + 16
+  var i: int32 = 0
+  while i < MAX_WINDOWS:
+    var win: ptr int32 = window_ptr(windows, i)
+    if win_get(win, WIN_ACTIVE) != 0:
+      if px >= btn_x and px < btn_x + 120:
+        return i
+      btn_x = btn_x + 128
+    i = i + 1
+
+  return -2
+
+# ============ Main Event Loop ============
+
+proc main() =
+  print_str(cast[ptr uint8]("Brainhair Display Server v0.1\n"))
+  print_str(cast[ptr uint8]("Controls: Left=drag/click, Right=new window, Middle=quit\n"))
+
+  # Open devices
+  var mouse_fd: int32 = syscall2(SYS_open, cast[int32]("/dev/input/mice"), O_RDONLY)
+  if mouse_fd < 0:
+    print_str(cast[ptr uint8]("Error: Cannot open /dev/input/mice\n"))
+    discard syscall1(SYS_exit, 1)
+
+  var flags: int32 = syscall2(SYS_fcntl, mouse_fd, F_GETFL)
+  discard syscall3(SYS_fcntl, mouse_fd, F_SETFL, flags | O_NONBLOCK)
+
+  var fb_fd: int32 = syscall2(SYS_open, cast[int32]("/dev/fb0"), O_RDWR)
+  if fb_fd < 0:
+    print_str(cast[ptr uint8]("Error: Cannot open /dev/fb0\n"))
+    discard syscall1(SYS_exit, 1)
+
+  # Allocate memory (64KB)
+  var old_brk: int32 = syscall1(SYS_brk, 0)
+  var new_brk: int32 = old_brk + 65536
+  discard syscall1(SYS_brk, new_brk)
+
+  var vinfo: ptr uint32 = cast[ptr uint32](old_brk)
+  var line_buf: ptr uint32 = cast[ptr uint32](old_brk + 256)
+  var pixel_buf: ptr uint32 = cast[ptr uint32](old_brk + 16384)
+  var mouse_buf: ptr uint8 = cast[ptr uint8](old_brk + 16392)
+  var windows: ptr int32 = cast[ptr int32](old_brk + 16400)
+
+  # Get screen info
+  discard syscall3(SYS_ioctl, fb_fd, FBIOGET_VSCREENINFO, cast[int32](vinfo))
+  var xres: int32 = cast[int32](vinfo[0])
+  var yres: int32 = cast[int32](vinfo[1])
+
+  print_str(cast[ptr uint8]("Screen: "))
+  print_num(xres)
+  print_str(cast[ptr uint8]("x"))
+  print_num(yres)
+  print_str(cast[ptr uint8]("\n"))
+
+  # Initialize window registry
+  var i: int32 = 0
+  while i < MAX_WINDOWS:
+    var win: ptr int32 = window_ptr(windows, i)
+    win_set(win, WIN_ACTIVE, 0)
+    i = i + 1
+
+  # Create demo windows
+  var w1: int32 = create_window(windows, 80, 60, 400, 300, 0x2255AA, 0xE8E8E8)
+  var w2: int32 = create_window(windows, 200, 120, 450, 350, 0x22AA55, 0xF0F0F0)
+  var w3: int32 = create_window(windows, 350, 180, 380, 280, 0xAA5522, 0xEEEEEE)
+
+  # State
+  var cursor_x: int32 = xres / 2
+  var cursor_y: int32 = yres / 2
+  var focused: int32 = w3
+  var dragging: int32 = 0
+  var drag_win: int32 = -1
+  var drag_ox: int32 = 0
+  var drag_oy: int32 = 0
+  var needs_redraw: int32 = 1
+  var prev_left: int32 = 0
+  var prev_right: int32 = 0
+  var bg_color: int32 = 0x1A3A5A  # Dark blue desktop
+
+  # Mark focused window
+  if focused >= 0:
+    var fwin: ptr int32 = window_ptr(windows, focused)
+    win_set(fwin, WIN_FOCUSED, 1)
+
+  # Main loop
+  var running: int32 = 1
+  while running != 0:
+    # Redraw if needed
+    if needs_redraw != 0:
+      composite(fb_fd, windows, focused, xres, yres, line_buf, bg_color)
+      draw_taskbar(fb_fd, windows, xres, yres, line_buf)
+      needs_redraw = 0
+
+    # Draw cursor (always on top)
+    draw_cursor(fb_fd, cursor_x, cursor_y, xres, yres, pixel_buf)
+
+    # Read mouse
+    var bytes: int32 = syscall3(SYS_read, mouse_fd, cast[int32](mouse_buf), 3)
+
+    if bytes == 3:
+      var btns: int32 = cast[int32](mouse_buf[0])
+      var dx: int32 = cast[int32](mouse_buf[1])
+      var dy: int32 = cast[int32](mouse_buf[2])
+
+      if (btns & 0x10) != 0: dx = dx - 256
+      if (btns & 0x20) != 0: dy = dy - 256
+
+      var left: int32 = btns & 0x01
+      var right: int32 = btns & 0x02
+      var middle: int32 = btns & 0x04
+
+      # Quit on middle click
+      if middle != 0:
+        running = 0
+
+      # Erase cursor
+      fill_rect(fb_fd, cursor_x, cursor_y, 14, 16, bg_color, xres, yres, line_buf)
+
+      # Update cursor
+      cursor_x = cursor_x + dx
+      cursor_y = cursor_y - dy
+      if cursor_x < 0: cursor_x = 0
+      if cursor_x >= xres - 14: cursor_x = xres - 15
+      if cursor_y < 0: cursor_y = 0
+      if cursor_y >= yres - 16: cursor_y = yres - 17
+
+      # Handle dragging
+      if dragging != 0:
+        if left != 0:
+          var win: ptr int32 = window_ptr(windows, drag_win)
+          win_set(win, WIN_X, cursor_x - drag_ox)
+          win_set(win, WIN_Y, cursor_y - drag_oy)
+          needs_redraw = 1
+        else:
+          dragging = 0
+
+      # Left click (on press)
+      if left != 0 and prev_left == 0 and dragging == 0:
+        # Check taskbar first
+        var tb_hit: int32 = hit_test_taskbar(cursor_x, cursor_y, windows, yres)
+        if tb_hit == -1:
+          # Launcher clicked - create new window
+          var nx: int32 = 100 + (cursor_x / 50) * 20
+          var ny: int32 = 80 + (cursor_y / 50) * 20
+          var nw: int32 = create_window(windows, nx, ny, 350, 250, 0x5522AA, 0xF4F4F4)
+          if nw >= 0:
+            if focused >= 0:
+              var old: ptr int32 = window_ptr(windows, focused)
+              win_set(old, WIN_FOCUSED, 0)
+            focused = nw
+            var new_win: ptr int32 = window_ptr(windows, nw)
+            win_set(new_win, WIN_FOCUSED, 1)
+            needs_redraw = 1
+        else:
+          if tb_hit >= 0:
+            # Window button clicked - focus/unminimize
+            var win: ptr int32 = window_ptr(windows, tb_hit)
+            if win_get(win, WIN_MINIMIZED) != 0:
+              win_set(win, WIN_MINIMIZED, 0)
+            if focused >= 0 and focused != tb_hit:
+              var old: ptr int32 = window_ptr(windows, focused)
+              win_set(old, WIN_FOCUSED, 0)
+            focused = tb_hit
+            win_set(win, WIN_FOCUSED, 1)
+            needs_redraw = 1
+          else:
+            # Check windows (focused first, then others)
+            var found: int32 = 0
+
+            # Check focused window
+            if focused >= 0 and found == 0:
+              var win: ptr int32 = window_ptr(windows, focused)
+              var hit: int32 = hit_test_window(win, cursor_x, cursor_y)
+              if hit == 3:
+                # Close
+                destroy_window(windows, focused)
+                focused = -1
+                # Find new focused window
+                i = MAX_WINDOWS - 1
+                while i >= 0:
+                  var w: ptr int32 = window_ptr(windows, i)
+                  if win_get(w, WIN_ACTIVE) != 0 and win_get(w, WIN_MINIMIZED) == 0:
+                    focused = i
+                    win_set(w, WIN_FOCUSED, 1)
+                    i = -1
+                  i = i - 1
+                needs_redraw = 1
+                found = 1
+              if hit == 5 and found == 0:
+                # Minimize
+                win_set(win, WIN_MINIMIZED, 1)
+                win_set(win, WIN_FOCUSED, 0)
+                focused = -1
+                needs_redraw = 1
+                found = 1
+              if hit == 2 and found == 0:
+                # Start drag
+                dragging = 1
+                drag_win = focused
+                drag_ox = cursor_x - win_get(win, WIN_X)
+                drag_oy = cursor_y - win_get(win, WIN_Y)
+                found = 1
+              if hit > 0 and found == 0:
+                found = 1
+
+            # Check other windows
+            if found == 0:
+              i = MAX_WINDOWS - 1
+              while i >= 0 and found == 0:
+                if i != focused:
+                  var win: ptr int32 = window_ptr(windows, i)
+                  var hit: int32 = hit_test_window(win, cursor_x, cursor_y)
+                  if hit > 0:
+                    # Focus this window
+                    if focused >= 0:
+                      var old: ptr int32 = window_ptr(windows, focused)
+                      win_set(old, WIN_FOCUSED, 0)
+                    focused = i
+                    win_set(win, WIN_FOCUSED, 1)
+                    needs_redraw = 1
+                    found = 1
+                i = i - 1
+
+      # Right click - create window at cursor
+      if right != 0 and prev_right == 0:
+        var nw: int32 = create_window(windows, cursor_x, cursor_y, 320, 220, 0xAA2255, 0xF8F8F8)
+        if nw >= 0:
+          if focused >= 0:
+            var old: ptr int32 = window_ptr(windows, focused)
+            win_set(old, WIN_FOCUSED, 0)
+          focused = nw
+          var new_win: ptr int32 = window_ptr(windows, nw)
+          win_set(new_win, WIN_FOCUSED, 1)
+          needs_redraw = 1
+
+      prev_left = left
+      prev_right = right
+
+  # Cleanup
+  discard syscall1(SYS_close, fb_fd)
+  discard syscall1(SYS_close, mouse_fd)
+
+  print_str(cast[ptr uint8]("BDS exited\n"))
+  discard syscall1(SYS_exit, 0)
+
+main()

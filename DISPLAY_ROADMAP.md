@@ -1,9 +1,9 @@
-# PoodillionOS Display Server Roadmap
+# BrainhairOS Display Server Roadmap
 ## From Framebuffer to X11/Wayland-like System
 
 **Vision**: A minimal, fast display server that's simpler than X11 but more capable than a basic framebuffer.
 
-**Philosophy**: Start simple, architect for growth, maintain PoodillionOS principles (minimal, syscalls-only, composable).
+**Philosophy**: Start simple, architect for growth, maintain BrainhairOS principles (minimal, syscalls-only, composable).
 
 ---
 
@@ -148,7 +148,7 @@ type InputEvent = object
 #### Protocol Design Principles:
 1. **Simpler than X11** - No complex legacy cruft
 2. **More structured than Wayland** - Not too free-form
-3. **Binary protocol** - Fast, matches PoodillionOS data philosophy
+3. **Binary protocol** - Fast, matches BrainhairOS data philosophy
 4. **Stateless where possible** - Easier to debug/implement
 5. **Extensible** - Can add features later
 
@@ -381,7 +381,7 @@ const PDP_CLIPBOARD_COPY: uint16 = 400
 ## 🏗️ Key Architectural Decisions
 
 ### 1. Protocol: Binary, not text (unlike X11)
-**Why**: Faster, fits PoodillionOS data-oriented philosophy
+**Why**: Faster, fits BrainhairOS data-oriented philosophy
 ```nim
 # X11 uses text protocol:
 "CreateWindow 640x480+100+100"
@@ -430,7 +430,7 @@ client -> server: "damage_region(10, 10, 100, 50)"
 
 ## 📊 Comparison with X11/Wayland
 
-| Feature | X11 | Wayland | PoodillionOS |
+| Feature | X11 | Wayland | BrainhairOS |
 |---------|-----|---------|--------------|
 | **Protocol** | Text | Binary | **Binary** ✓ |
 | **Network** | Yes | No | **Optional** (Phase 7) |
@@ -516,7 +516,7 @@ userland/text.nim
 
 ---
 
-## 💡 Why This Will Work for PoodillionOS
+## 💡 Why This Will Work for BrainhairOS
 
 1. **Incremental**: Each phase delivers working software
 2. **Minimal**: No bloat, no unnecessary features
@@ -558,7 +558,7 @@ proc main() =
   pdp_draw_rect(win, 0, 0, 400, 300, 0xFFFFFF)
 
   # Draw text
-  pdp_draw_text(win, 150, 140, cast[ptr uint8]("Hello, PoodillionOS!"))
+  pdp_draw_text(win, 150, 140, cast[ptr uint8]("Hello, BrainhairOS!"))
 
   # Event loop
   var running: int32 = 1
@@ -585,7 +585,7 @@ make bin/hello-gui
 ./bin/hello-gui
 ```
 
-**Output**: A white window with "Hello, PoodillionOS!" centered!
+**Output**: A white window with "Hello, BrainhairOS!" centered!
 
 ---
 

@@ -1,6 +1,6 @@
-# PoodillionOS Windowing System Design
+# BrainhairOS Windowing System Design
 
-**Goal**: Build a modern display server from scratch - simpler than X11, more integrated than Wayland, perfectly suited for PoodillionOS's data-oriented philosophy.
+**Goal**: Build a modern display server from scratch - simpler than X11, more integrated than Wayland, perfectly suited for BrainhairOS's data-oriented philosophy.
 
 ---
 
@@ -21,7 +21,7 @@
 - Not just a protocol - full stack
 - Built-in compositor
 - Native text rendering
-- Integrated with PoodillionOS data streams
+- Integrated with BrainhairOS data streams
 
 ### 4. **Modern Choices**
 - Binary protocol (not X11's wire format complexity)
@@ -64,7 +64,7 @@
 
 ### Core Concepts
 
-**Everything is binary structured data** - just like the rest of PoodillionOS!
+**Everything is binary structured data** - just like the rest of BrainhairOS!
 
 ### Message Format (PSCH-based)
 
@@ -426,7 +426,7 @@ typedef struct {
 bool pood_poll_event(PoodDisplay* d, PoodEvent* event);
 ```
 
-### Mini-Nim API
+### Brainhair API
 
 ```nim
 type PoodDisplay = object
@@ -478,7 +478,7 @@ var window = create_window(addr(display), 640, 480)
 clear_window(addr(window), 0x0000FF)
 
 # Draw white text
-draw_text(addr(window), 10, 10, "Hello, PoodillionOS!", 0xFFFFFF)
+draw_text(addr(window), 10, 10, "Hello, BrainhairOS!", 0xFFFFFF)
 
 # Show window
 show_window(addr(window))
@@ -567,7 +567,7 @@ while true:
 - [ ] Cursor rendering
 
 ### Phase 4: Client Library (1-2 weeks)
-- [ ] `libpood.nim` - Mini-Nim API
+- [ ] `libpood.nim` - Brainhair API
 - [ ] `libpood.c` - C API (optional)
 - [ ] Example applications
 - [ ] Documentation
@@ -605,14 +605,14 @@ while true:
 ### vs Wayland
 - **Complete**: Not just a protocol - full stack
 - **Integrated**: Native text, fonts, rendering
-- **Data-oriented**: Uses PoodillionOS binary streams
+- **Data-oriented**: Uses BrainhairOS binary streams
 - **Simpler**: Built-in compositor, no separate weston
 
 ### vs Windows/macOS
 - **Open**: GPL, hackable
 - **Minimal**: ~20-30KB for core display server
 - **Direct**: Framebuffer + DRM, no HAL bloat
-- **Type-safe**: Mini-Nim compiled, no C pointer bugs
+- **Type-safe**: Brainhair compiled, no C pointer bugs
 
 ---
 
@@ -635,7 +635,7 @@ Compare:
 - Windows DWM: ~several MB
 - macOS WindowServer: ~several MB
 
-**PoodillionOS windowing: 50KB total - 100x smaller!**
+**BrainhairOS windowing: 50KB total - 100x smaller!**
 
 ---
 
