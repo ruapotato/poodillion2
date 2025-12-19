@@ -8,21 +8,21 @@ extern syscall3
 section .data
 str_0: db "Terminal", 0
 str_1: db "Files", 0
-str_2: db "Editor", 0
+str_2: db "Text Editor", 0
 str_3: db "Window", 0
-str_4: db "Terminal Window", 0
-str_5: db "Double-click to", 0
-str_6: db "launch terminal", 0
-str_7: db "File Manager", 0
-str_8: db "Double-click to", 0
-str_9: db "launch files", 0
-str_10: db "Text Editor", 0
-str_11: db "Double-click to", 0
-str_12: db "launch editor", 0
-str_13: db "Demo Window", 0
-str_14: db "MENU", 0
-str_15: db "Brainhair Display Server v0.2", 10, "", 0
-str_16: db "Controls: Left=drag, Right=new, Middle=quit", 10, "", 0
+str_4: db "Terminal", 0
+str_5: db "Ready for input...", 0
+str_6: db "File Manager", 0
+str_7: db "Home  Documents", 0
+str_8: db "Text Editor", 0
+str_9: db "New document", 0
+str_10: db "Demo Window", 0
+str_11: db "Menu", 0
+str_12: db "Terminal", 0
+str_13: db "Files", 0
+str_14: db "Editor", 0
+str_15: db "Brainhair Display Server v0.3", 10, "", 0
+str_16: db "Controls: Left=interact, Right=new, Middle=quit", 10, "", 0
 str_17: db "/dev/input/mice", 0
 str_18: db "Error: Cannot open mouse", 10, "", 0
 str_19: db "/dev/fb0", 0
@@ -1412,7 +1412,7 @@ else139:
 endif138:
     mov eax, [ebp+8]
     push eax
-    mov eax, 76
+    mov eax, 74
     mov ebx, eax
     pop eax
     cmp eax, ebx
@@ -1430,7 +1430,7 @@ endif138:
     movzx eax, al
     test eax, eax
     jz else157
-    mov eax, 96
+    mov eax, 30
     jmp get_font_row_return
     jmp endif156
 else157:
@@ -1445,7 +1445,7 @@ endif156:
     movzx eax, al
     test eax, eax
     jz else159
-    mov eax, 96
+    mov eax, 12
     jmp get_font_row_return
     jmp endif158
 else159:
@@ -1460,7 +1460,7 @@ endif158:
     movzx eax, al
     test eax, eax
     jz else161
-    mov eax, 96
+    mov eax, 12
     jmp get_font_row_return
     jmp endif160
 else161:
@@ -1475,7 +1475,7 @@ endif160:
     movzx eax, al
     test eax, eax
     jz else163
-    mov eax, 96
+    mov eax, 12
     jmp get_font_row_return
     jmp endif162
 else163:
@@ -1490,7 +1490,7 @@ endif162:
     movzx eax, al
     test eax, eax
     jz else165
-    mov eax, 96
+    mov eax, 12
     jmp get_font_row_return
     jmp endif164
 else165:
@@ -1505,7 +1505,7 @@ endif164:
     movzx eax, al
     test eax, eax
     jz else167
-    mov eax, 96
+    mov eax, 108
     jmp get_font_row_return
     jmp endif166
 else167:
@@ -1520,7 +1520,7 @@ endif166:
     movzx eax, al
     test eax, eax
     jz else169
-    mov eax, 126
+    mov eax, 56
     jmp get_font_row_return
     jmp endif168
 else169:
@@ -1532,7 +1532,7 @@ else155:
 endif154:
     mov eax, [ebp+8]
     push eax
-    mov eax, 77
+    mov eax, 75
     mov ebx, eax
     pop eax
     cmp eax, ebx
@@ -1550,7 +1550,7 @@ endif154:
     movzx eax, al
     test eax, eax
     jz else173
-    mov eax, 99
+    mov eax, 102
     jmp get_font_row_return
     jmp endif172
 else173:
@@ -1565,7 +1565,7 @@ endif172:
     movzx eax, al
     test eax, eax
     jz else175
-    mov eax, 119
+    mov eax, 108
     jmp get_font_row_return
     jmp endif174
 else175:
@@ -1580,7 +1580,7 @@ endif174:
     movzx eax, al
     test eax, eax
     jz else177
-    mov eax, 127
+    mov eax, 120
     jmp get_font_row_return
     jmp endif176
 else177:
@@ -1595,7 +1595,7 @@ endif176:
     movzx eax, al
     test eax, eax
     jz else179
-    mov eax, 107
+    mov eax, 112
     jmp get_font_row_return
     jmp endif178
 else179:
@@ -1610,7 +1610,7 @@ endif178:
     movzx eax, al
     test eax, eax
     jz else181
-    mov eax, 99
+    mov eax, 120
     jmp get_font_row_return
     jmp endif180
 else181:
@@ -1625,7 +1625,7 @@ endif180:
     movzx eax, al
     test eax, eax
     jz else183
-    mov eax, 99
+    mov eax, 108
     jmp get_font_row_return
     jmp endif182
 else183:
@@ -1640,7 +1640,7 @@ endif182:
     movzx eax, al
     test eax, eax
     jz else185
-    mov eax, 99
+    mov eax, 102
     jmp get_font_row_return
     jmp endif184
 else185:
@@ -1652,7 +1652,7 @@ else171:
 endif170:
     mov eax, [ebp+8]
     push eax
-    mov eax, 78
+    mov eax, 76
     mov ebx, eax
     pop eax
     cmp eax, ebx
@@ -1670,7 +1670,7 @@ endif170:
     movzx eax, al
     test eax, eax
     jz else189
-    mov eax, 102
+    mov eax, 96
     jmp get_font_row_return
     jmp endif188
 else189:
@@ -1685,7 +1685,7 @@ endif188:
     movzx eax, al
     test eax, eax
     jz else191
-    mov eax, 118
+    mov eax, 96
     jmp get_font_row_return
     jmp endif190
 else191:
@@ -1700,7 +1700,7 @@ endif190:
     movzx eax, al
     test eax, eax
     jz else193
-    mov eax, 126
+    mov eax, 96
     jmp get_font_row_return
     jmp endif192
 else193:
@@ -1715,7 +1715,7 @@ endif192:
     movzx eax, al
     test eax, eax
     jz else195
-    mov eax, 126
+    mov eax, 96
     jmp get_font_row_return
     jmp endif194
 else195:
@@ -1730,7 +1730,7 @@ endif194:
     movzx eax, al
     test eax, eax
     jz else197
-    mov eax, 110
+    mov eax, 96
     jmp get_font_row_return
     jmp endif196
 else197:
@@ -1745,7 +1745,7 @@ endif196:
     movzx eax, al
     test eax, eax
     jz else199
-    mov eax, 102
+    mov eax, 96
     jmp get_font_row_return
     jmp endif198
 else199:
@@ -1760,7 +1760,7 @@ endif198:
     movzx eax, al
     test eax, eax
     jz else201
-    mov eax, 102
+    mov eax, 126
     jmp get_font_row_return
     jmp endif200
 else201:
@@ -1772,7 +1772,7 @@ else187:
 endif186:
     mov eax, [ebp+8]
     push eax
-    mov eax, 79
+    mov eax, 77
     mov ebx, eax
     pop eax
     cmp eax, ebx
@@ -1790,7 +1790,7 @@ endif186:
     movzx eax, al
     test eax, eax
     jz else205
-    mov eax, 60
+    mov eax, 99
     jmp get_font_row_return
     jmp endif204
 else205:
@@ -1805,7 +1805,7 @@ endif204:
     movzx eax, al
     test eax, eax
     jz else207
-    mov eax, 102
+    mov eax, 119
     jmp get_font_row_return
     jmp endif206
 else207:
@@ -1820,7 +1820,7 @@ endif206:
     movzx eax, al
     test eax, eax
     jz else209
-    mov eax, 102
+    mov eax, 127
     jmp get_font_row_return
     jmp endif208
 else209:
@@ -1835,7 +1835,7 @@ endif208:
     movzx eax, al
     test eax, eax
     jz else211
-    mov eax, 102
+    mov eax, 107
     jmp get_font_row_return
     jmp endif210
 else211:
@@ -1850,7 +1850,7 @@ endif210:
     movzx eax, al
     test eax, eax
     jz else213
-    mov eax, 102
+    mov eax, 99
     jmp get_font_row_return
     jmp endif212
 else213:
@@ -1865,7 +1865,7 @@ endif212:
     movzx eax, al
     test eax, eax
     jz else215
-    mov eax, 102
+    mov eax, 99
     jmp get_font_row_return
     jmp endif214
 else215:
@@ -1880,7 +1880,7 @@ endif214:
     movzx eax, al
     test eax, eax
     jz else217
-    mov eax, 60
+    mov eax, 99
     jmp get_font_row_return
     jmp endif216
 else217:
@@ -1892,7 +1892,7 @@ else203:
 endif202:
     mov eax, [ebp+8]
     push eax
-    mov eax, 80
+    mov eax, 78
     mov ebx, eax
     pop eax
     cmp eax, ebx
@@ -1910,7 +1910,7 @@ endif202:
     movzx eax, al
     test eax, eax
     jz else221
-    mov eax, 124
+    mov eax, 102
     jmp get_font_row_return
     jmp endif220
 else221:
@@ -1925,7 +1925,7 @@ endif220:
     movzx eax, al
     test eax, eax
     jz else223
-    mov eax, 102
+    mov eax, 118
     jmp get_font_row_return
     jmp endif222
 else223:
@@ -1940,7 +1940,7 @@ endif222:
     movzx eax, al
     test eax, eax
     jz else225
-    mov eax, 102
+    mov eax, 126
     jmp get_font_row_return
     jmp endif224
 else225:
@@ -1955,7 +1955,7 @@ endif224:
     movzx eax, al
     test eax, eax
     jz else227
-    mov eax, 124
+    mov eax, 126
     jmp get_font_row_return
     jmp endif226
 else227:
@@ -1970,7 +1970,7 @@ endif226:
     movzx eax, al
     test eax, eax
     jz else229
-    mov eax, 96
+    mov eax, 110
     jmp get_font_row_return
     jmp endif228
 else229:
@@ -1985,7 +1985,7 @@ endif228:
     movzx eax, al
     test eax, eax
     jz else231
-    mov eax, 96
+    mov eax, 102
     jmp get_font_row_return
     jmp endif230
 else231:
@@ -2000,7 +2000,7 @@ endif230:
     movzx eax, al
     test eax, eax
     jz else233
-    mov eax, 96
+    mov eax, 102
     jmp get_font_row_return
     jmp endif232
 else233:
@@ -2012,7 +2012,7 @@ else219:
 endif218:
     mov eax, [ebp+8]
     push eax
-    mov eax, 82
+    mov eax, 79
     mov ebx, eax
     pop eax
     cmp eax, ebx
@@ -2030,7 +2030,7 @@ endif218:
     movzx eax, al
     test eax, eax
     jz else237
-    mov eax, 124
+    mov eax, 60
     jmp get_font_row_return
     jmp endif236
 else237:
@@ -2075,7 +2075,7 @@ endif240:
     movzx eax, al
     test eax, eax
     jz else243
-    mov eax, 124
+    mov eax, 102
     jmp get_font_row_return
     jmp endif242
 else243:
@@ -2090,7 +2090,7 @@ endif242:
     movzx eax, al
     test eax, eax
     jz else245
-    mov eax, 108
+    mov eax, 102
     jmp get_font_row_return
     jmp endif244
 else245:
@@ -2120,7 +2120,7 @@ endif246:
     movzx eax, al
     test eax, eax
     jz else249
-    mov eax, 102
+    mov eax, 60
     jmp get_font_row_return
     jmp endif248
 else249:
@@ -2132,7 +2132,7 @@ else235:
 endif234:
     mov eax, [ebp+8]
     push eax
-    mov eax, 83
+    mov eax, 80
     mov ebx, eax
     pop eax
     cmp eax, ebx
@@ -2150,7 +2150,7 @@ endif234:
     movzx eax, al
     test eax, eax
     jz else253
-    mov eax, 60
+    mov eax, 124
     jmp get_font_row_return
     jmp endif252
 else253:
@@ -2180,7 +2180,7 @@ endif254:
     movzx eax, al
     test eax, eax
     jz else257
-    mov eax, 96
+    mov eax, 102
     jmp get_font_row_return
     jmp endif256
 else257:
@@ -2195,7 +2195,7 @@ endif256:
     movzx eax, al
     test eax, eax
     jz else259
-    mov eax, 60
+    mov eax, 124
     jmp get_font_row_return
     jmp endif258
 else259:
@@ -2210,7 +2210,7 @@ endif258:
     movzx eax, al
     test eax, eax
     jz else261
-    mov eax, 6
+    mov eax, 96
     jmp get_font_row_return
     jmp endif260
 else261:
@@ -2225,7 +2225,7 @@ endif260:
     movzx eax, al
     test eax, eax
     jz else263
-    mov eax, 102
+    mov eax, 96
     jmp get_font_row_return
     jmp endif262
 else263:
@@ -2240,7 +2240,7 @@ endif262:
     movzx eax, al
     test eax, eax
     jz else265
-    mov eax, 60
+    mov eax, 96
     jmp get_font_row_return
     jmp endif264
 else265:
@@ -2252,7 +2252,7 @@ else251:
 endif250:
     mov eax, [ebp+8]
     push eax
-    mov eax, 84
+    mov eax, 81
     mov ebx, eax
     pop eax
     cmp eax, ebx
@@ -2270,7 +2270,7 @@ endif250:
     movzx eax, al
     test eax, eax
     jz else269
-    mov eax, 126
+    mov eax, 60
     jmp get_font_row_return
     jmp endif268
 else269:
@@ -2285,7 +2285,7 @@ endif268:
     movzx eax, al
     test eax, eax
     jz else271
-    mov eax, 24
+    mov eax, 102
     jmp get_font_row_return
     jmp endif270
 else271:
@@ -2300,7 +2300,7 @@ endif270:
     movzx eax, al
     test eax, eax
     jz else273
-    mov eax, 24
+    mov eax, 102
     jmp get_font_row_return
     jmp endif272
 else273:
@@ -2315,7 +2315,7 @@ endif272:
     movzx eax, al
     test eax, eax
     jz else275
-    mov eax, 24
+    mov eax, 102
     jmp get_font_row_return
     jmp endif274
 else275:
@@ -2330,7 +2330,7 @@ endif274:
     movzx eax, al
     test eax, eax
     jz else277
-    mov eax, 24
+    mov eax, 106
     jmp get_font_row_return
     jmp endif276
 else277:
@@ -2345,7 +2345,7 @@ endif276:
     movzx eax, al
     test eax, eax
     jz else279
-    mov eax, 24
+    mov eax, 108
     jmp get_font_row_return
     jmp endif278
 else279:
@@ -2360,7 +2360,7 @@ endif278:
     movzx eax, al
     test eax, eax
     jz else281
-    mov eax, 24
+    mov eax, 54
     jmp get_font_row_return
     jmp endif280
 else281:
@@ -2372,7 +2372,7 @@ else267:
 endif266:
     mov eax, [ebp+8]
     push eax
-    mov eax, 85
+    mov eax, 82
     mov ebx, eax
     pop eax
     cmp eax, ebx
@@ -2390,7 +2390,7 @@ endif266:
     movzx eax, al
     test eax, eax
     jz else285
-    mov eax, 102
+    mov eax, 124
     jmp get_font_row_return
     jmp endif284
 else285:
@@ -2435,7 +2435,7 @@ endif288:
     movzx eax, al
     test eax, eax
     jz else291
-    mov eax, 102
+    mov eax, 124
     jmp get_font_row_return
     jmp endif290
 else291:
@@ -2450,7 +2450,7 @@ endif290:
     movzx eax, al
     test eax, eax
     jz else293
-    mov eax, 102
+    mov eax, 108
     jmp get_font_row_return
     jmp endif292
 else293:
@@ -2480,7 +2480,7 @@ endif294:
     movzx eax, al
     test eax, eax
     jz else297
-    mov eax, 60
+    mov eax, 102
     jmp get_font_row_return
     jmp endif296
 else297:
@@ -2492,7 +2492,7 @@ else283:
 endif282:
     mov eax, [ebp+8]
     push eax
-    mov eax, 87
+    mov eax, 83
     mov ebx, eax
     pop eax
     cmp eax, ebx
@@ -2510,7 +2510,7 @@ endif282:
     movzx eax, al
     test eax, eax
     jz else301
-    mov eax, 99
+    mov eax, 60
     jmp get_font_row_return
     jmp endif300
 else301:
@@ -2525,7 +2525,7 @@ endif300:
     movzx eax, al
     test eax, eax
     jz else303
-    mov eax, 99
+    mov eax, 102
     jmp get_font_row_return
     jmp endif302
 else303:
@@ -2540,7 +2540,7 @@ endif302:
     movzx eax, al
     test eax, eax
     jz else305
-    mov eax, 99
+    mov eax, 96
     jmp get_font_row_return
     jmp endif304
 else305:
@@ -2555,7 +2555,7 @@ endif304:
     movzx eax, al
     test eax, eax
     jz else307
-    mov eax, 107
+    mov eax, 60
     jmp get_font_row_return
     jmp endif306
 else307:
@@ -2570,7 +2570,7 @@ endif306:
     movzx eax, al
     test eax, eax
     jz else309
-    mov eax, 127
+    mov eax, 6
     jmp get_font_row_return
     jmp endif308
 else309:
@@ -2585,7 +2585,7 @@ endif308:
     movzx eax, al
     test eax, eax
     jz else311
-    mov eax, 119
+    mov eax, 102
     jmp get_font_row_return
     jmp endif310
 else311:
@@ -2600,7 +2600,7 @@ endif310:
     movzx eax, al
     test eax, eax
     jz else313
-    mov eax, 99
+    mov eax, 60
     jmp get_font_row_return
     jmp endif312
 else313:
@@ -2612,7 +2612,7 @@ else299:
 endif298:
     mov eax, [ebp+8]
     push eax
-    mov eax, 97
+    mov eax, 84
     mov ebx, eax
     pop eax
     cmp eax, ebx
@@ -2622,7 +2622,7 @@ endif298:
     jz else315
     mov eax, [ebp+12]
     push eax
-    mov eax, 2
+    mov eax, 0
     mov ebx, eax
     pop eax
     cmp eax, ebx
@@ -2630,101 +2630,11 @@ endif298:
     movzx eax, al
     test eax, eax
     jz else317
-    mov eax, 60
+    mov eax, 126
     jmp get_font_row_return
     jmp endif316
 else317:
 endif316:
-    mov eax, [ebp+12]
-    push eax
-    mov eax, 3
-    mov ebx, eax
-    pop eax
-    cmp eax, ebx
-    sete al
-    movzx eax, al
-    test eax, eax
-    jz else319
-    mov eax, 6
-    jmp get_font_row_return
-    jmp endif318
-else319:
-endif318:
-    mov eax, [ebp+12]
-    push eax
-    mov eax, 4
-    mov ebx, eax
-    pop eax
-    cmp eax, ebx
-    sete al
-    movzx eax, al
-    test eax, eax
-    jz else321
-    mov eax, 62
-    jmp get_font_row_return
-    jmp endif320
-else321:
-endif320:
-    mov eax, [ebp+12]
-    push eax
-    mov eax, 5
-    mov ebx, eax
-    pop eax
-    cmp eax, ebx
-    sete al
-    movzx eax, al
-    test eax, eax
-    jz else323
-    mov eax, 102
-    jmp get_font_row_return
-    jmp endif322
-else323:
-endif322:
-    mov eax, [ebp+12]
-    push eax
-    mov eax, 6
-    mov ebx, eax
-    pop eax
-    cmp eax, ebx
-    sete al
-    movzx eax, al
-    test eax, eax
-    jz else325
-    mov eax, 62
-    jmp get_font_row_return
-    jmp endif324
-else325:
-endif324:
-    mov eax, 0
-    jmp get_font_row_return
-    jmp endif314
-else315:
-endif314:
-    mov eax, [ebp+8]
-    push eax
-    mov eax, 100
-    mov ebx, eax
-    pop eax
-    cmp eax, ebx
-    sete al
-    movzx eax, al
-    test eax, eax
-    jz else327
-    mov eax, [ebp+12]
-    push eax
-    mov eax, 0
-    mov ebx, eax
-    pop eax
-    cmp eax, ebx
-    sete al
-    movzx eax, al
-    test eax, eax
-    jz else329
-    mov eax, 6
-    jmp get_font_row_return
-    jmp endif328
-else329:
-endif328:
     mov eax, [ebp+12]
     push eax
     mov eax, 1
@@ -2734,12 +2644,12 @@ endif328:
     sete al
     movzx eax, al
     test eax, eax
-    jz else331
-    mov eax, 6
+    jz else319
+    mov eax, 24
     jmp get_font_row_return
-    jmp endif330
-else331:
-endif330:
+    jmp endif318
+else319:
+endif318:
     mov eax, [ebp+12]
     push eax
     mov eax, 2
@@ -2749,15 +2659,105 @@ endif330:
     sete al
     movzx eax, al
     test eax, eax
+    jz else321
+    mov eax, 24
+    jmp get_font_row_return
+    jmp endif320
+else321:
+endif320:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 3
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else323
+    mov eax, 24
+    jmp get_font_row_return
+    jmp endif322
+else323:
+endif322:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 4
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else325
+    mov eax, 24
+    jmp get_font_row_return
+    jmp endif324
+else325:
+endif324:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 5
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else327
+    mov eax, 24
+    jmp get_font_row_return
+    jmp endif326
+else327:
+endif326:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 6
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else329
+    mov eax, 24
+    jmp get_font_row_return
+    jmp endif328
+else329:
+endif328:
+    mov eax, 0
+    jmp get_font_row_return
+    jmp endif314
+else315:
+endif314:
+    mov eax, [ebp+8]
+    push eax
+    mov eax, 85
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else331
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 0
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
     jz else333
-    mov eax, 62
+    mov eax, 102
     jmp get_font_row_return
     jmp endif332
 else333:
 endif332:
     mov eax, [ebp+12]
     push eax
-    mov eax, 3
+    mov eax, 1
     mov ebx, eax
     pop eax
     cmp eax, ebx
@@ -2772,7 +2772,7 @@ else335:
 endif334:
     mov eax, [ebp+12]
     push eax
-    mov eax, 4
+    mov eax, 2
     mov ebx, eax
     pop eax
     cmp eax, ebx
@@ -2787,7 +2787,7 @@ else337:
 endif336:
     mov eax, [ebp+12]
     push eax
-    mov eax, 5
+    mov eax, 3
     mov ebx, eax
     pop eax
     cmp eax, ebx
@@ -2802,7 +2802,7 @@ else339:
 endif338:
     mov eax, [ebp+12]
     push eax
-    mov eax, 6
+    mov eax, 4
     mov ebx, eax
     pop eax
     cmp eax, ebx
@@ -2810,19 +2810,14 @@ endif338:
     movzx eax, al
     test eax, eax
     jz else341
-    mov eax, 62
+    mov eax, 102
     jmp get_font_row_return
     jmp endif340
 else341:
 endif340:
-    mov eax, 0
-    jmp get_font_row_return
-    jmp endif326
-else327:
-endif326:
-    mov eax, [ebp+8]
+    mov eax, [ebp+12]
     push eax
-    mov eax, 101
+    mov eax, 5
     mov ebx, eax
     pop eax
     cmp eax, ebx
@@ -2830,9 +2825,14 @@ endif326:
     movzx eax, al
     test eax, eax
     jz else343
+    mov eax, 102
+    jmp get_font_row_return
+    jmp endif342
+else343:
+endif342:
     mov eax, [ebp+12]
     push eax
-    mov eax, 2
+    mov eax, 6
     mov ebx, eax
     pop eax
     cmp eax, ebx
@@ -2845,9 +2845,14 @@ endif326:
     jmp endif344
 else345:
 endif344:
-    mov eax, [ebp+12]
+    mov eax, 0
+    jmp get_font_row_return
+    jmp endif330
+else331:
+endif330:
+    mov eax, [ebp+8]
     push eax
-    mov eax, 3
+    mov eax, 86
     mov ebx, eax
     pop eax
     cmp eax, ebx
@@ -2855,14 +2860,9 @@ endif344:
     movzx eax, al
     test eax, eax
     jz else347
-    mov eax, 102
-    jmp get_font_row_return
-    jmp endif346
-else347:
-endif346:
     mov eax, [ebp+12]
     push eax
-    mov eax, 4
+    mov eax, 0
     mov ebx, eax
     pop eax
     cmp eax, ebx
@@ -2870,14 +2870,14 @@ endif346:
     movzx eax, al
     test eax, eax
     jz else349
-    mov eax, 126
+    mov eax, 102
     jmp get_font_row_return
     jmp endif348
 else349:
 endif348:
     mov eax, [ebp+12]
     push eax
-    mov eax, 5
+    mov eax, 1
     mov ebx, eax
     pop eax
     cmp eax, ebx
@@ -2885,56 +2885,11 @@ endif348:
     movzx eax, al
     test eax, eax
     jz else351
-    mov eax, 96
+    mov eax, 102
     jmp get_font_row_return
     jmp endif350
 else351:
 endif350:
-    mov eax, [ebp+12]
-    push eax
-    mov eax, 6
-    mov ebx, eax
-    pop eax
-    cmp eax, ebx
-    sete al
-    movzx eax, al
-    test eax, eax
-    jz else353
-    mov eax, 60
-    jmp get_font_row_return
-    jmp endif352
-else353:
-endif352:
-    mov eax, 0
-    jmp get_font_row_return
-    jmp endif342
-else343:
-endif342:
-    mov eax, [ebp+8]
-    push eax
-    mov eax, 105
-    mov ebx, eax
-    pop eax
-    cmp eax, ebx
-    sete al
-    movzx eax, al
-    test eax, eax
-    jz else355
-    mov eax, [ebp+12]
-    push eax
-    mov eax, 0
-    mov ebx, eax
-    pop eax
-    cmp eax, ebx
-    sete al
-    movzx eax, al
-    test eax, eax
-    jz else357
-    mov eax, 24
-    jmp get_font_row_return
-    jmp endif356
-else357:
-endif356:
     mov eax, [ebp+12]
     push eax
     mov eax, 2
@@ -2944,15 +2899,60 @@ endif356:
     sete al
     movzx eax, al
     test eax, eax
+    jz else353
+    mov eax, 102
+    jmp get_font_row_return
+    jmp endif352
+else353:
+endif352:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 3
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else355
+    mov eax, 102
+    jmp get_font_row_return
+    jmp endif354
+else355:
+endif354:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 4
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else357
+    mov eax, 102
+    jmp get_font_row_return
+    jmp endif356
+else357:
+endif356:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 5
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
     jz else359
-    mov eax, 56
+    mov eax, 60
     jmp get_font_row_return
     jmp endif358
 else359:
 endif358:
     mov eax, [ebp+12]
     push eax
-    mov eax, 3
+    mov eax, 6
     mov ebx, eax
     pop eax
     cmp eax, ebx
@@ -2965,9 +2965,14 @@ endif358:
     jmp endif360
 else361:
 endif360:
-    mov eax, [ebp+12]
+    mov eax, 0
+    jmp get_font_row_return
+    jmp endif346
+else347:
+endif346:
+    mov eax, [ebp+8]
     push eax
-    mov eax, 4
+    mov eax, 87
     mov ebx, eax
     pop eax
     cmp eax, ebx
@@ -2975,14 +2980,9 @@ endif360:
     movzx eax, al
     test eax, eax
     jz else363
-    mov eax, 24
-    jmp get_font_row_return
-    jmp endif362
-else363:
-endif362:
     mov eax, [ebp+12]
     push eax
-    mov eax, 5
+    mov eax, 0
     mov ebx, eax
     pop eax
     cmp eax, ebx
@@ -2990,56 +2990,11 @@ endif362:
     movzx eax, al
     test eax, eax
     jz else365
-    mov eax, 24
+    mov eax, 99
     jmp get_font_row_return
     jmp endif364
 else365:
 endif364:
-    mov eax, [ebp+12]
-    push eax
-    mov eax, 6
-    mov ebx, eax
-    pop eax
-    cmp eax, ebx
-    sete al
-    movzx eax, al
-    test eax, eax
-    jz else367
-    mov eax, 60
-    jmp get_font_row_return
-    jmp endif366
-else367:
-endif366:
-    mov eax, 0
-    jmp get_font_row_return
-    jmp endif354
-else355:
-endif354:
-    mov eax, [ebp+8]
-    push eax
-    mov eax, 108
-    mov ebx, eax
-    pop eax
-    cmp eax, ebx
-    sete al
-    movzx eax, al
-    test eax, eax
-    jz else369
-    mov eax, [ebp+12]
-    push eax
-    mov eax, 0
-    mov ebx, eax
-    pop eax
-    cmp eax, ebx
-    sete al
-    movzx eax, al
-    test eax, eax
-    jz else371
-    mov eax, 56
-    jmp get_font_row_return
-    jmp endif370
-else371:
-endif370:
     mov eax, [ebp+12]
     push eax
     mov eax, 1
@@ -3049,15 +3004,60 @@ endif370:
     sete al
     movzx eax, al
     test eax, eax
+    jz else367
+    mov eax, 99
+    jmp get_font_row_return
+    jmp endif366
+else367:
+endif366:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 2
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else369
+    mov eax, 99
+    jmp get_font_row_return
+    jmp endif368
+else369:
+endif368:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 3
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else371
+    mov eax, 107
+    jmp get_font_row_return
+    jmp endif370
+else371:
+endif370:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 4
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
     jz else373
-    mov eax, 24
+    mov eax, 127
     jmp get_font_row_return
     jmp endif372
 else373:
 endif372:
     mov eax, [ebp+12]
     push eax
-    mov eax, 2
+    mov eax, 5
     mov ebx, eax
     pop eax
     cmp eax, ebx
@@ -3065,14 +3065,14 @@ endif372:
     movzx eax, al
     test eax, eax
     jz else375
-    mov eax, 24
+    mov eax, 119
     jmp get_font_row_return
     jmp endif374
 else375:
 endif374:
     mov eax, [ebp+12]
     push eax
-    mov eax, 3
+    mov eax, 6
     mov ebx, eax
     pop eax
     cmp eax, ebx
@@ -3080,14 +3080,19 @@ endif374:
     movzx eax, al
     test eax, eax
     jz else377
-    mov eax, 24
+    mov eax, 99
     jmp get_font_row_return
     jmp endif376
 else377:
 endif376:
-    mov eax, [ebp+12]
+    mov eax, 0
+    jmp get_font_row_return
+    jmp endif362
+else363:
+endif362:
+    mov eax, [ebp+8]
     push eax
-    mov eax, 4
+    mov eax, 88
     mov ebx, eax
     pop eax
     cmp eax, ebx
@@ -3095,14 +3100,9 @@ endif376:
     movzx eax, al
     test eax, eax
     jz else379
-    mov eax, 24
-    jmp get_font_row_return
-    jmp endif378
-else379:
-endif378:
     mov eax, [ebp+12]
     push eax
-    mov eax, 5
+    mov eax, 0
     mov ebx, eax
     pop eax
     cmp eax, ebx
@@ -3110,14 +3110,14 @@ endif378:
     movzx eax, al
     test eax, eax
     jz else381
-    mov eax, 24
+    mov eax, 102
     jmp get_font_row_return
     jmp endif380
 else381:
 endif380:
     mov eax, [ebp+12]
     push eax
-    mov eax, 6
+    mov eax, 1
     mov ebx, eax
     pop eax
     cmp eax, ebx
@@ -3125,26 +3125,11 @@ endif380:
     movzx eax, al
     test eax, eax
     jz else383
-    mov eax, 60
+    mov eax, 102
     jmp get_font_row_return
     jmp endif382
 else383:
 endif382:
-    mov eax, 0
-    jmp get_font_row_return
-    jmp endif368
-else369:
-endif368:
-    mov eax, [ebp+8]
-    push eax
-    mov eax, 109
-    mov ebx, eax
-    pop eax
-    cmp eax, ebx
-    sete al
-    movzx eax, al
-    test eax, eax
-    jz else385
     mov eax, [ebp+12]
     push eax
     mov eax, 2
@@ -3154,12 +3139,12 @@ endif368:
     sete al
     movzx eax, al
     test eax, eax
-    jz else387
-    mov eax, 118
+    jz else385
+    mov eax, 60
     jmp get_font_row_return
-    jmp endif386
-else387:
-endif386:
+    jmp endif384
+else385:
+endif384:
     mov eax, [ebp+12]
     push eax
     mov eax, 3
@@ -3169,12 +3154,12 @@ endif386:
     sete al
     movzx eax, al
     test eax, eax
-    jz else389
-    mov eax, 127
+    jz else387
+    mov eax, 24
     jmp get_font_row_return
-    jmp endif388
-else389:
-endif388:
+    jmp endif386
+else387:
+endif386:
     mov eax, [ebp+12]
     push eax
     mov eax, 4
@@ -3184,12 +3169,12 @@ endif388:
     sete al
     movzx eax, al
     test eax, eax
-    jz else391
-    mov eax, 107
+    jz else389
+    mov eax, 60
     jmp get_font_row_return
-    jmp endif390
-else391:
-endif390:
+    jmp endif388
+else389:
+endif388:
     mov eax, [ebp+12]
     push eax
     mov eax, 5
@@ -3199,12 +3184,12 @@ endif390:
     sete al
     movzx eax, al
     test eax, eax
-    jz else393
-    mov eax, 99
+    jz else391
+    mov eax, 102
     jmp get_font_row_return
-    jmp endif392
-else393:
-endif392:
+    jmp endif390
+else391:
+endif390:
     mov eax, [ebp+12]
     push eax
     mov eax, 6
@@ -3214,20 +3199,30 @@ endif392:
     sete al
     movzx eax, al
     test eax, eax
-    jz else395
-    mov eax, 99
+    jz else393
+    mov eax, 102
     jmp get_font_row_return
-    jmp endif394
-else395:
-endif394:
+    jmp endif392
+else393:
+endif392:
     mov eax, 0
     jmp get_font_row_return
-    jmp endif384
-else385:
-endif384:
+    jmp endif378
+else379:
+endif378:
     mov eax, [ebp+8]
     push eax
-    mov eax, 110
+    mov eax, 89
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else395
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 0
     mov ebx, eax
     pop eax
     cmp eax, ebx
@@ -3235,9 +3230,14 @@ endif384:
     movzx eax, al
     test eax, eax
     jz else397
+    mov eax, 102
+    jmp get_font_row_return
+    jmp endif396
+else397:
+endif396:
     mov eax, [ebp+12]
     push eax
-    mov eax, 2
+    mov eax, 1
     mov ebx, eax
     pop eax
     cmp eax, ebx
@@ -3245,14 +3245,14 @@ endif384:
     movzx eax, al
     test eax, eax
     jz else399
-    mov eax, 124
+    mov eax, 102
     jmp get_font_row_return
     jmp endif398
 else399:
 endif398:
     mov eax, [ebp+12]
     push eax
-    mov eax, 3
+    mov eax, 2
     mov ebx, eax
     pop eax
     cmp eax, ebx
@@ -3267,7 +3267,7 @@ else401:
 endif400:
     mov eax, [ebp+12]
     push eax
-    mov eax, 4
+    mov eax, 3
     mov ebx, eax
     pop eax
     cmp eax, ebx
@@ -3275,14 +3275,14 @@ endif400:
     movzx eax, al
     test eax, eax
     jz else403
-    mov eax, 102
+    mov eax, 60
     jmp get_font_row_return
     jmp endif402
 else403:
 endif402:
     mov eax, [ebp+12]
     push eax
-    mov eax, 5
+    mov eax, 4
     mov ebx, eax
     pop eax
     cmp eax, ebx
@@ -3290,14 +3290,14 @@ endif402:
     movzx eax, al
     test eax, eax
     jz else405
-    mov eax, 102
+    mov eax, 24
     jmp get_font_row_return
     jmp endif404
 else405:
 endif404:
     mov eax, [ebp+12]
     push eax
-    mov eax, 6
+    mov eax, 5
     mov ebx, eax
     pop eax
     cmp eax, ebx
@@ -3305,19 +3305,14 @@ endif404:
     movzx eax, al
     test eax, eax
     jz else407
-    mov eax, 102
+    mov eax, 24
     jmp get_font_row_return
     jmp endif406
 else407:
 endif406:
-    mov eax, 0
-    jmp get_font_row_return
-    jmp endif396
-else397:
-endif396:
-    mov eax, [ebp+8]
+    mov eax, [ebp+12]
     push eax
-    mov eax, 111
+    mov eax, 6
     mov ebx, eax
     pop eax
     cmp eax, ebx
@@ -3325,9 +3320,19 @@ endif396:
     movzx eax, al
     test eax, eax
     jz else409
-    mov eax, [ebp+12]
+    mov eax, 24
+    jmp get_font_row_return
+    jmp endif408
+else409:
+endif408:
+    mov eax, 0
+    jmp get_font_row_return
+    jmp endif394
+else395:
+endif394:
+    mov eax, [ebp+8]
     push eax
-    mov eax, 2
+    mov eax, 90
     mov ebx, eax
     pop eax
     cmp eax, ebx
@@ -3335,14 +3340,9 @@ endif396:
     movzx eax, al
     test eax, eax
     jz else411
-    mov eax, 60
-    jmp get_font_row_return
-    jmp endif410
-else411:
-endif410:
     mov eax, [ebp+12]
     push eax
-    mov eax, 3
+    mov eax, 0
     mov ebx, eax
     pop eax
     cmp eax, ebx
@@ -3350,176 +3350,11 @@ endif410:
     movzx eax, al
     test eax, eax
     jz else413
-    mov eax, 102
+    mov eax, 126
     jmp get_font_row_return
     jmp endif412
 else413:
 endif412:
-    mov eax, [ebp+12]
-    push eax
-    mov eax, 4
-    mov ebx, eax
-    pop eax
-    cmp eax, ebx
-    sete al
-    movzx eax, al
-    test eax, eax
-    jz else415
-    mov eax, 102
-    jmp get_font_row_return
-    jmp endif414
-else415:
-endif414:
-    mov eax, [ebp+12]
-    push eax
-    mov eax, 5
-    mov ebx, eax
-    pop eax
-    cmp eax, ebx
-    sete al
-    movzx eax, al
-    test eax, eax
-    jz else417
-    mov eax, 102
-    jmp get_font_row_return
-    jmp endif416
-else417:
-endif416:
-    mov eax, [ebp+12]
-    push eax
-    mov eax, 6
-    mov ebx, eax
-    pop eax
-    cmp eax, ebx
-    sete al
-    movzx eax, al
-    test eax, eax
-    jz else419
-    mov eax, 60
-    jmp get_font_row_return
-    jmp endif418
-else419:
-endif418:
-    mov eax, 0
-    jmp get_font_row_return
-    jmp endif408
-else409:
-endif408:
-    mov eax, [ebp+8]
-    push eax
-    mov eax, 114
-    mov ebx, eax
-    pop eax
-    cmp eax, ebx
-    sete al
-    movzx eax, al
-    test eax, eax
-    jz else421
-    mov eax, [ebp+12]
-    push eax
-    mov eax, 2
-    mov ebx, eax
-    pop eax
-    cmp eax, ebx
-    sete al
-    movzx eax, al
-    test eax, eax
-    jz else423
-    mov eax, 108
-    jmp get_font_row_return
-    jmp endif422
-else423:
-endif422:
-    mov eax, [ebp+12]
-    push eax
-    mov eax, 3
-    mov ebx, eax
-    pop eax
-    cmp eax, ebx
-    sete al
-    movzx eax, al
-    test eax, eax
-    jz else425
-    mov eax, 118
-    jmp get_font_row_return
-    jmp endif424
-else425:
-endif424:
-    mov eax, [ebp+12]
-    push eax
-    mov eax, 4
-    mov ebx, eax
-    pop eax
-    cmp eax, ebx
-    sete al
-    movzx eax, al
-    test eax, eax
-    jz else427
-    mov eax, 96
-    jmp get_font_row_return
-    jmp endif426
-else427:
-endif426:
-    mov eax, [ebp+12]
-    push eax
-    mov eax, 5
-    mov ebx, eax
-    pop eax
-    cmp eax, ebx
-    sete al
-    movzx eax, al
-    test eax, eax
-    jz else429
-    mov eax, 96
-    jmp get_font_row_return
-    jmp endif428
-else429:
-endif428:
-    mov eax, [ebp+12]
-    push eax
-    mov eax, 6
-    mov ebx, eax
-    pop eax
-    cmp eax, ebx
-    sete al
-    movzx eax, al
-    test eax, eax
-    jz else431
-    mov eax, 96
-    jmp get_font_row_return
-    jmp endif430
-else431:
-endif430:
-    mov eax, 0
-    jmp get_font_row_return
-    jmp endif420
-else421:
-endif420:
-    mov eax, [ebp+8]
-    push eax
-    mov eax, 116
-    mov ebx, eax
-    pop eax
-    cmp eax, ebx
-    sete al
-    movzx eax, al
-    test eax, eax
-    jz else433
-    mov eax, [ebp+12]
-    push eax
-    mov eax, 0
-    mov ebx, eax
-    pop eax
-    cmp eax, ebx
-    sete al
-    movzx eax, al
-    test eax, eax
-    jz else435
-    mov eax, 48
-    jmp get_font_row_return
-    jmp endif434
-else435:
-endif434:
     mov eax, [ebp+12]
     push eax
     mov eax, 1
@@ -3529,12 +3364,12 @@ endif434:
     sete al
     movzx eax, al
     test eax, eax
-    jz else437
-    mov eax, 48
+    jz else415
+    mov eax, 6
     jmp get_font_row_return
-    jmp endif436
-else437:
-endif436:
+    jmp endif414
+else415:
+endif414:
     mov eax, [ebp+12]
     push eax
     mov eax, 2
@@ -3544,12 +3379,12 @@ endif436:
     sete al
     movzx eax, al
     test eax, eax
-    jz else439
-    mov eax, 124
+    jz else417
+    mov eax, 12
     jmp get_font_row_return
-    jmp endif438
-else439:
-endif438:
+    jmp endif416
+else417:
+endif416:
     mov eax, [ebp+12]
     push eax
     mov eax, 3
@@ -3559,12 +3394,12 @@ endif438:
     sete al
     movzx eax, al
     test eax, eax
-    jz else441
-    mov eax, 48
+    jz else419
+    mov eax, 24
     jmp get_font_row_return
-    jmp endif440
-else441:
-endif440:
+    jmp endif418
+else419:
+endif418:
     mov eax, [ebp+12]
     push eax
     mov eax, 4
@@ -3574,12 +3409,12 @@ endif440:
     sete al
     movzx eax, al
     test eax, eax
-    jz else443
+    jz else421
     mov eax, 48
     jmp get_font_row_return
-    jmp endif442
-else443:
-endif442:
+    jmp endif420
+else421:
+endif420:
     mov eax, [ebp+12]
     push eax
     mov eax, 5
@@ -3589,12 +3424,12 @@ endif442:
     sete al
     movzx eax, al
     test eax, eax
-    jz else445
-    mov eax, 48
+    jz else423
+    mov eax, 96
     jmp get_font_row_return
-    jmp endif444
-else445:
-endif444:
+    jmp endif422
+else423:
+endif422:
     mov eax, [ebp+12]
     push eax
     mov eax, 6
@@ -3604,20 +3439,180 @@ endif444:
     sete al
     movzx eax, al
     test eax, eax
-    jz else447
-    mov eax, 28
+    jz else425
+    mov eax, 126
     jmp get_font_row_return
-    jmp endif446
-else447:
-endif446:
+    jmp endif424
+else425:
+endif424:
     mov eax, 0
+    jmp get_font_row_return
+    jmp endif410
+else411:
+endif410:
+    mov eax, [ebp+8]
+    push eax
+    mov eax, 97
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else427
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 2
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else429
+    mov eax, 60
+    jmp get_font_row_return
+    jmp endif428
+else429:
+endif428:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 3
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else431
+    mov eax, 6
+    jmp get_font_row_return
+    jmp endif430
+else431:
+endif430:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 4
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else433
+    mov eax, 62
     jmp get_font_row_return
     jmp endif432
 else433:
 endif432:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 5
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else435
+    mov eax, 102
+    jmp get_font_row_return
+    jmp endif434
+else435:
+endif434:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 6
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else437
+    mov eax, 62
+    jmp get_font_row_return
+    jmp endif436
+else437:
+endif436:
+    mov eax, 0
+    jmp get_font_row_return
+    jmp endif426
+else427:
+endif426:
     mov eax, [ebp+8]
     push eax
-    mov eax, 117
+    mov eax, 98
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else439
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 0
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else441
+    mov eax, 96
+    jmp get_font_row_return
+    jmp endif440
+else441:
+endif440:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 1
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else443
+    mov eax, 96
+    jmp get_font_row_return
+    jmp endif442
+else443:
+endif442:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 2
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else445
+    mov eax, 124
+    jmp get_font_row_return
+    jmp endif444
+else445:
+endif444:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 3
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else447
+    mov eax, 102
+    jmp get_font_row_return
+    jmp endif446
+else447:
+endif446:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 4
     mov ebx, eax
     pop eax
     cmp eax, ebx
@@ -3625,9 +3620,14 @@ endif432:
     movzx eax, al
     test eax, eax
     jz else449
+    mov eax, 102
+    jmp get_font_row_return
+    jmp endif448
+else449:
+endif448:
     mov eax, [ebp+12]
     push eax
-    mov eax, 2
+    mov eax, 5
     mov ebx, eax
     pop eax
     cmp eax, ebx
@@ -3642,7 +3642,7 @@ else451:
 endif450:
     mov eax, [ebp+12]
     push eax
-    mov eax, 3
+    mov eax, 6
     mov ebx, eax
     pop eax
     cmp eax, ebx
@@ -3650,11 +3650,56 @@ endif450:
     movzx eax, al
     test eax, eax
     jz else453
-    mov eax, 102
+    mov eax, 124
     jmp get_font_row_return
     jmp endif452
 else453:
 endif452:
+    mov eax, 0
+    jmp get_font_row_return
+    jmp endif438
+else439:
+endif438:
+    mov eax, [ebp+8]
+    push eax
+    mov eax, 99
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else455
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 2
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else457
+    mov eax, 60
+    jmp get_font_row_return
+    jmp endif456
+else457:
+endif456:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 3
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else459
+    mov eax, 102
+    jmp get_font_row_return
+    jmp endif458
+else459:
+endif458:
     mov eax, [ebp+12]
     push eax
     mov eax, 4
@@ -3664,12 +3709,12 @@ endif452:
     sete al
     movzx eax, al
     test eax, eax
-    jz else455
-    mov eax, 102
+    jz else461
+    mov eax, 96
     jmp get_font_row_return
-    jmp endif454
-else455:
-endif454:
+    jmp endif460
+else461:
+endif460:
     mov eax, [ebp+12]
     push eax
     mov eax, 5
@@ -3679,12 +3724,12 @@ endif454:
     sete al
     movzx eax, al
     test eax, eax
-    jz else457
+    jz else463
     mov eax, 102
     jmp get_font_row_return
-    jmp endif456
-else457:
-endif456:
+    jmp endif462
+else463:
+endif462:
     mov eax, [ebp+12]
     push eax
     mov eax, 6
@@ -3694,17 +3739,2492 @@ endif456:
     sete al
     movzx eax, al
     test eax, eax
-    jz else459
-    mov eax, 62
+    jz else465
+    mov eax, 60
     jmp get_font_row_return
-    jmp endif458
-else459:
-endif458:
+    jmp endif464
+else465:
+endif464:
     mov eax, 0
     jmp get_font_row_return
-    jmp endif448
-else449:
-endif448:
+    jmp endif454
+else455:
+endif454:
+    mov eax, [ebp+8]
+    push eax
+    mov eax, 100
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else467
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 0
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else469
+    mov eax, 6
+    jmp get_font_row_return
+    jmp endif468
+else469:
+endif468:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 1
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else471
+    mov eax, 6
+    jmp get_font_row_return
+    jmp endif470
+else471:
+endif470:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 2
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else473
+    mov eax, 62
+    jmp get_font_row_return
+    jmp endif472
+else473:
+endif472:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 3
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else475
+    mov eax, 102
+    jmp get_font_row_return
+    jmp endif474
+else475:
+endif474:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 4
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else477
+    mov eax, 102
+    jmp get_font_row_return
+    jmp endif476
+else477:
+endif476:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 5
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else479
+    mov eax, 102
+    jmp get_font_row_return
+    jmp endif478
+else479:
+endif478:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 6
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else481
+    mov eax, 62
+    jmp get_font_row_return
+    jmp endif480
+else481:
+endif480:
+    mov eax, 0
+    jmp get_font_row_return
+    jmp endif466
+else467:
+endif466:
+    mov eax, [ebp+8]
+    push eax
+    mov eax, 101
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else483
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 2
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else485
+    mov eax, 60
+    jmp get_font_row_return
+    jmp endif484
+else485:
+endif484:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 3
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else487
+    mov eax, 102
+    jmp get_font_row_return
+    jmp endif486
+else487:
+endif486:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 4
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else489
+    mov eax, 126
+    jmp get_font_row_return
+    jmp endif488
+else489:
+endif488:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 5
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else491
+    mov eax, 96
+    jmp get_font_row_return
+    jmp endif490
+else491:
+endif490:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 6
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else493
+    mov eax, 60
+    jmp get_font_row_return
+    jmp endif492
+else493:
+endif492:
+    mov eax, 0
+    jmp get_font_row_return
+    jmp endif482
+else483:
+endif482:
+    mov eax, [ebp+8]
+    push eax
+    mov eax, 102
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else495
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 0
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else497
+    mov eax, 28
+    jmp get_font_row_return
+    jmp endif496
+else497:
+endif496:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 1
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else499
+    mov eax, 48
+    jmp get_font_row_return
+    jmp endif498
+else499:
+endif498:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 2
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else501
+    mov eax, 124
+    jmp get_font_row_return
+    jmp endif500
+else501:
+endif500:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 3
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else503
+    mov eax, 48
+    jmp get_font_row_return
+    jmp endif502
+else503:
+endif502:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 4
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else505
+    mov eax, 48
+    jmp get_font_row_return
+    jmp endif504
+else505:
+endif504:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 5
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else507
+    mov eax, 48
+    jmp get_font_row_return
+    jmp endif506
+else507:
+endif506:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 6
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else509
+    mov eax, 48
+    jmp get_font_row_return
+    jmp endif508
+else509:
+endif508:
+    mov eax, 0
+    jmp get_font_row_return
+    jmp endif494
+else495:
+endif494:
+    mov eax, [ebp+8]
+    push eax
+    mov eax, 103
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else511
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 2
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else513
+    mov eax, 62
+    jmp get_font_row_return
+    jmp endif512
+else513:
+endif512:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 3
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else515
+    mov eax, 102
+    jmp get_font_row_return
+    jmp endif514
+else515:
+endif514:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 4
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else517
+    mov eax, 102
+    jmp get_font_row_return
+    jmp endif516
+else517:
+endif516:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 5
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else519
+    mov eax, 62
+    jmp get_font_row_return
+    jmp endif518
+else519:
+endif518:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 6
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else521
+    mov eax, 6
+    jmp get_font_row_return
+    jmp endif520
+else521:
+endif520:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 7
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else523
+    mov eax, 60
+    jmp get_font_row_return
+    jmp endif522
+else523:
+endif522:
+    mov eax, 0
+    jmp get_font_row_return
+    jmp endif510
+else511:
+endif510:
+    mov eax, [ebp+8]
+    push eax
+    mov eax, 104
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else525
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 0
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else527
+    mov eax, 96
+    jmp get_font_row_return
+    jmp endif526
+else527:
+endif526:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 1
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else529
+    mov eax, 96
+    jmp get_font_row_return
+    jmp endif528
+else529:
+endif528:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 2
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else531
+    mov eax, 124
+    jmp get_font_row_return
+    jmp endif530
+else531:
+endif530:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 3
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else533
+    mov eax, 102
+    jmp get_font_row_return
+    jmp endif532
+else533:
+endif532:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 4
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else535
+    mov eax, 102
+    jmp get_font_row_return
+    jmp endif534
+else535:
+endif534:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 5
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else537
+    mov eax, 102
+    jmp get_font_row_return
+    jmp endif536
+else537:
+endif536:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 6
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else539
+    mov eax, 102
+    jmp get_font_row_return
+    jmp endif538
+else539:
+endif538:
+    mov eax, 0
+    jmp get_font_row_return
+    jmp endif524
+else525:
+endif524:
+    mov eax, [ebp+8]
+    push eax
+    mov eax, 105
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else541
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 0
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else543
+    mov eax, 24
+    jmp get_font_row_return
+    jmp endif542
+else543:
+endif542:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 2
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else545
+    mov eax, 56
+    jmp get_font_row_return
+    jmp endif544
+else545:
+endif544:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 3
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else547
+    mov eax, 24
+    jmp get_font_row_return
+    jmp endif546
+else547:
+endif546:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 4
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else549
+    mov eax, 24
+    jmp get_font_row_return
+    jmp endif548
+else549:
+endif548:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 5
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else551
+    mov eax, 24
+    jmp get_font_row_return
+    jmp endif550
+else551:
+endif550:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 6
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else553
+    mov eax, 60
+    jmp get_font_row_return
+    jmp endif552
+else553:
+endif552:
+    mov eax, 0
+    jmp get_font_row_return
+    jmp endif540
+else541:
+endif540:
+    mov eax, [ebp+8]
+    push eax
+    mov eax, 106
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else555
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 0
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else557
+    mov eax, 12
+    jmp get_font_row_return
+    jmp endif556
+else557:
+endif556:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 2
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else559
+    mov eax, 28
+    jmp get_font_row_return
+    jmp endif558
+else559:
+endif558:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 3
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else561
+    mov eax, 12
+    jmp get_font_row_return
+    jmp endif560
+else561:
+endif560:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 4
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else563
+    mov eax, 12
+    jmp get_font_row_return
+    jmp endif562
+else563:
+endif562:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 5
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else565
+    mov eax, 12
+    jmp get_font_row_return
+    jmp endif564
+else565:
+endif564:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 6
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else567
+    mov eax, 108
+    jmp get_font_row_return
+    jmp endif566
+else567:
+endif566:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 7
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else569
+    mov eax, 56
+    jmp get_font_row_return
+    jmp endif568
+else569:
+endif568:
+    mov eax, 0
+    jmp get_font_row_return
+    jmp endif554
+else555:
+endif554:
+    mov eax, [ebp+8]
+    push eax
+    mov eax, 107
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else571
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 0
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else573
+    mov eax, 96
+    jmp get_font_row_return
+    jmp endif572
+else573:
+endif572:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 1
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else575
+    mov eax, 96
+    jmp get_font_row_return
+    jmp endif574
+else575:
+endif574:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 2
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else577
+    mov eax, 102
+    jmp get_font_row_return
+    jmp endif576
+else577:
+endif576:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 3
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else579
+    mov eax, 108
+    jmp get_font_row_return
+    jmp endif578
+else579:
+endif578:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 4
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else581
+    mov eax, 120
+    jmp get_font_row_return
+    jmp endif580
+else581:
+endif580:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 5
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else583
+    mov eax, 108
+    jmp get_font_row_return
+    jmp endif582
+else583:
+endif582:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 6
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else585
+    mov eax, 102
+    jmp get_font_row_return
+    jmp endif584
+else585:
+endif584:
+    mov eax, 0
+    jmp get_font_row_return
+    jmp endif570
+else571:
+endif570:
+    mov eax, [ebp+8]
+    push eax
+    mov eax, 108
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else587
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 0
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else589
+    mov eax, 56
+    jmp get_font_row_return
+    jmp endif588
+else589:
+endif588:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 1
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else591
+    mov eax, 24
+    jmp get_font_row_return
+    jmp endif590
+else591:
+endif590:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 2
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else593
+    mov eax, 24
+    jmp get_font_row_return
+    jmp endif592
+else593:
+endif592:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 3
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else595
+    mov eax, 24
+    jmp get_font_row_return
+    jmp endif594
+else595:
+endif594:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 4
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else597
+    mov eax, 24
+    jmp get_font_row_return
+    jmp endif596
+else597:
+endif596:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 5
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else599
+    mov eax, 24
+    jmp get_font_row_return
+    jmp endif598
+else599:
+endif598:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 6
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else601
+    mov eax, 60
+    jmp get_font_row_return
+    jmp endif600
+else601:
+endif600:
+    mov eax, 0
+    jmp get_font_row_return
+    jmp endif586
+else587:
+endif586:
+    mov eax, [ebp+8]
+    push eax
+    mov eax, 109
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else603
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 2
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else605
+    mov eax, 118
+    jmp get_font_row_return
+    jmp endif604
+else605:
+endif604:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 3
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else607
+    mov eax, 127
+    jmp get_font_row_return
+    jmp endif606
+else607:
+endif606:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 4
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else609
+    mov eax, 107
+    jmp get_font_row_return
+    jmp endif608
+else609:
+endif608:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 5
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else611
+    mov eax, 99
+    jmp get_font_row_return
+    jmp endif610
+else611:
+endif610:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 6
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else613
+    mov eax, 99
+    jmp get_font_row_return
+    jmp endif612
+else613:
+endif612:
+    mov eax, 0
+    jmp get_font_row_return
+    jmp endif602
+else603:
+endif602:
+    mov eax, [ebp+8]
+    push eax
+    mov eax, 110
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else615
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 2
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else617
+    mov eax, 124
+    jmp get_font_row_return
+    jmp endif616
+else617:
+endif616:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 3
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else619
+    mov eax, 102
+    jmp get_font_row_return
+    jmp endif618
+else619:
+endif618:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 4
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else621
+    mov eax, 102
+    jmp get_font_row_return
+    jmp endif620
+else621:
+endif620:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 5
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else623
+    mov eax, 102
+    jmp get_font_row_return
+    jmp endif622
+else623:
+endif622:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 6
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else625
+    mov eax, 102
+    jmp get_font_row_return
+    jmp endif624
+else625:
+endif624:
+    mov eax, 0
+    jmp get_font_row_return
+    jmp endif614
+else615:
+endif614:
+    mov eax, [ebp+8]
+    push eax
+    mov eax, 111
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else627
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 2
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else629
+    mov eax, 60
+    jmp get_font_row_return
+    jmp endif628
+else629:
+endif628:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 3
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else631
+    mov eax, 102
+    jmp get_font_row_return
+    jmp endif630
+else631:
+endif630:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 4
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else633
+    mov eax, 102
+    jmp get_font_row_return
+    jmp endif632
+else633:
+endif632:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 5
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else635
+    mov eax, 102
+    jmp get_font_row_return
+    jmp endif634
+else635:
+endif634:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 6
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else637
+    mov eax, 60
+    jmp get_font_row_return
+    jmp endif636
+else637:
+endif636:
+    mov eax, 0
+    jmp get_font_row_return
+    jmp endif626
+else627:
+endif626:
+    mov eax, [ebp+8]
+    push eax
+    mov eax, 112
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else639
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 2
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else641
+    mov eax, 124
+    jmp get_font_row_return
+    jmp endif640
+else641:
+endif640:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 3
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else643
+    mov eax, 102
+    jmp get_font_row_return
+    jmp endif642
+else643:
+endif642:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 4
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else645
+    mov eax, 102
+    jmp get_font_row_return
+    jmp endif644
+else645:
+endif644:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 5
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else647
+    mov eax, 124
+    jmp get_font_row_return
+    jmp endif646
+else647:
+endif646:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 6
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else649
+    mov eax, 96
+    jmp get_font_row_return
+    jmp endif648
+else649:
+endif648:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 7
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else651
+    mov eax, 96
+    jmp get_font_row_return
+    jmp endif650
+else651:
+endif650:
+    mov eax, 0
+    jmp get_font_row_return
+    jmp endif638
+else639:
+endif638:
+    mov eax, [ebp+8]
+    push eax
+    mov eax, 113
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else653
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 2
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else655
+    mov eax, 62
+    jmp get_font_row_return
+    jmp endif654
+else655:
+endif654:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 3
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else657
+    mov eax, 102
+    jmp get_font_row_return
+    jmp endif656
+else657:
+endif656:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 4
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else659
+    mov eax, 102
+    jmp get_font_row_return
+    jmp endif658
+else659:
+endif658:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 5
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else661
+    mov eax, 62
+    jmp get_font_row_return
+    jmp endif660
+else661:
+endif660:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 6
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else663
+    mov eax, 6
+    jmp get_font_row_return
+    jmp endif662
+else663:
+endif662:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 7
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else665
+    mov eax, 6
+    jmp get_font_row_return
+    jmp endif664
+else665:
+endif664:
+    mov eax, 0
+    jmp get_font_row_return
+    jmp endif652
+else653:
+endif652:
+    mov eax, [ebp+8]
+    push eax
+    mov eax, 114
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else667
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 2
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else669
+    mov eax, 108
+    jmp get_font_row_return
+    jmp endif668
+else669:
+endif668:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 3
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else671
+    mov eax, 118
+    jmp get_font_row_return
+    jmp endif670
+else671:
+endif670:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 4
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else673
+    mov eax, 96
+    jmp get_font_row_return
+    jmp endif672
+else673:
+endif672:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 5
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else675
+    mov eax, 96
+    jmp get_font_row_return
+    jmp endif674
+else675:
+endif674:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 6
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else677
+    mov eax, 96
+    jmp get_font_row_return
+    jmp endif676
+else677:
+endif676:
+    mov eax, 0
+    jmp get_font_row_return
+    jmp endif666
+else667:
+endif666:
+    mov eax, [ebp+8]
+    push eax
+    mov eax, 115
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else679
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 2
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else681
+    mov eax, 62
+    jmp get_font_row_return
+    jmp endif680
+else681:
+endif680:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 3
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else683
+    mov eax, 96
+    jmp get_font_row_return
+    jmp endif682
+else683:
+endif682:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 4
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else685
+    mov eax, 60
+    jmp get_font_row_return
+    jmp endif684
+else685:
+endif684:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 5
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else687
+    mov eax, 6
+    jmp get_font_row_return
+    jmp endif686
+else687:
+endif686:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 6
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else689
+    mov eax, 124
+    jmp get_font_row_return
+    jmp endif688
+else689:
+endif688:
+    mov eax, 0
+    jmp get_font_row_return
+    jmp endif678
+else679:
+endif678:
+    mov eax, [ebp+8]
+    push eax
+    mov eax, 116
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else691
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 0
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else693
+    mov eax, 48
+    jmp get_font_row_return
+    jmp endif692
+else693:
+endif692:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 1
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else695
+    mov eax, 48
+    jmp get_font_row_return
+    jmp endif694
+else695:
+endif694:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 2
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else697
+    mov eax, 124
+    jmp get_font_row_return
+    jmp endif696
+else697:
+endif696:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 3
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else699
+    mov eax, 48
+    jmp get_font_row_return
+    jmp endif698
+else699:
+endif698:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 4
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else701
+    mov eax, 48
+    jmp get_font_row_return
+    jmp endif700
+else701:
+endif700:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 5
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else703
+    mov eax, 48
+    jmp get_font_row_return
+    jmp endif702
+else703:
+endif702:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 6
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else705
+    mov eax, 28
+    jmp get_font_row_return
+    jmp endif704
+else705:
+endif704:
+    mov eax, 0
+    jmp get_font_row_return
+    jmp endif690
+else691:
+endif690:
+    mov eax, [ebp+8]
+    push eax
+    mov eax, 117
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else707
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 2
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else709
+    mov eax, 102
+    jmp get_font_row_return
+    jmp endif708
+else709:
+endif708:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 3
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else711
+    mov eax, 102
+    jmp get_font_row_return
+    jmp endif710
+else711:
+endif710:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 4
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else713
+    mov eax, 102
+    jmp get_font_row_return
+    jmp endif712
+else713:
+endif712:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 5
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else715
+    mov eax, 102
+    jmp get_font_row_return
+    jmp endif714
+else715:
+endif714:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 6
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else717
+    mov eax, 62
+    jmp get_font_row_return
+    jmp endif716
+else717:
+endif716:
+    mov eax, 0
+    jmp get_font_row_return
+    jmp endif706
+else707:
+endif706:
+    mov eax, [ebp+8]
+    push eax
+    mov eax, 118
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else719
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 2
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else721
+    mov eax, 102
+    jmp get_font_row_return
+    jmp endif720
+else721:
+endif720:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 3
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else723
+    mov eax, 102
+    jmp get_font_row_return
+    jmp endif722
+else723:
+endif722:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 4
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else725
+    mov eax, 102
+    jmp get_font_row_return
+    jmp endif724
+else725:
+endif724:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 5
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else727
+    mov eax, 60
+    jmp get_font_row_return
+    jmp endif726
+else727:
+endif726:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 6
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else729
+    mov eax, 24
+    jmp get_font_row_return
+    jmp endif728
+else729:
+endif728:
+    mov eax, 0
+    jmp get_font_row_return
+    jmp endif718
+else719:
+endif718:
+    mov eax, [ebp+8]
+    push eax
+    mov eax, 119
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else731
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 2
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else733
+    mov eax, 99
+    jmp get_font_row_return
+    jmp endif732
+else733:
+endif732:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 3
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else735
+    mov eax, 99
+    jmp get_font_row_return
+    jmp endif734
+else735:
+endif734:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 4
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else737
+    mov eax, 107
+    jmp get_font_row_return
+    jmp endif736
+else737:
+endif736:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 5
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else739
+    mov eax, 127
+    jmp get_font_row_return
+    jmp endif738
+else739:
+endif738:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 6
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else741
+    mov eax, 54
+    jmp get_font_row_return
+    jmp endif740
+else741:
+endif740:
+    mov eax, 0
+    jmp get_font_row_return
+    jmp endif730
+else731:
+endif730:
+    mov eax, [ebp+8]
+    push eax
+    mov eax, 120
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else743
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 2
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else745
+    mov eax, 102
+    jmp get_font_row_return
+    jmp endif744
+else745:
+endif744:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 3
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else747
+    mov eax, 60
+    jmp get_font_row_return
+    jmp endif746
+else747:
+endif746:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 4
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else749
+    mov eax, 24
+    jmp get_font_row_return
+    jmp endif748
+else749:
+endif748:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 5
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else751
+    mov eax, 60
+    jmp get_font_row_return
+    jmp endif750
+else751:
+endif750:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 6
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else753
+    mov eax, 102
+    jmp get_font_row_return
+    jmp endif752
+else753:
+endif752:
+    mov eax, 0
+    jmp get_font_row_return
+    jmp endif742
+else743:
+endif742:
+    mov eax, [ebp+8]
+    push eax
+    mov eax, 121
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else755
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 2
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else757
+    mov eax, 102
+    jmp get_font_row_return
+    jmp endif756
+else757:
+endif756:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 3
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else759
+    mov eax, 102
+    jmp get_font_row_return
+    jmp endif758
+else759:
+endif758:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 4
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else761
+    mov eax, 102
+    jmp get_font_row_return
+    jmp endif760
+else761:
+endif760:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 5
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else763
+    mov eax, 62
+    jmp get_font_row_return
+    jmp endif762
+else763:
+endif762:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 6
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else765
+    mov eax, 6
+    jmp get_font_row_return
+    jmp endif764
+else765:
+endif764:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 7
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else767
+    mov eax, 60
+    jmp get_font_row_return
+    jmp endif766
+else767:
+endif766:
+    mov eax, 0
+    jmp get_font_row_return
+    jmp endif754
+else755:
+endif754:
+    mov eax, [ebp+8]
+    push eax
+    mov eax, 122
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else769
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 2
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else771
+    mov eax, 126
+    jmp get_font_row_return
+    jmp endif770
+else771:
+endif770:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 3
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else773
+    mov eax, 12
+    jmp get_font_row_return
+    jmp endif772
+else773:
+endif772:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 4
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else775
+    mov eax, 24
+    jmp get_font_row_return
+    jmp endif774
+else775:
+endif774:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 5
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else777
+    mov eax, 48
+    jmp get_font_row_return
+    jmp endif776
+else777:
+endif776:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 6
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else779
+    mov eax, 126
+    jmp get_font_row_return
+    jmp endif778
+else779:
+endif778:
+    mov eax, 0
+    jmp get_font_row_return
+    jmp endif768
+else769:
+endif768:
+    mov eax, [ebp+8]
+    push eax
+    mov eax, 48
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else781
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 0
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else783
+    mov eax, 60
+    jmp get_font_row_return
+    jmp endif782
+else783:
+endif782:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 1
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else785
+    mov eax, 102
+    jmp get_font_row_return
+    jmp endif784
+else785:
+endif784:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 2
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else787
+    mov eax, 110
+    jmp get_font_row_return
+    jmp endif786
+else787:
+endif786:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 3
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else789
+    mov eax, 118
+    jmp get_font_row_return
+    jmp endif788
+else789:
+endif788:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 4
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else791
+    mov eax, 102
+    jmp get_font_row_return
+    jmp endif790
+else791:
+endif790:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 5
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else793
+    mov eax, 102
+    jmp get_font_row_return
+    jmp endif792
+else793:
+endif792:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 6
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else795
+    mov eax, 60
+    jmp get_font_row_return
+    jmp endif794
+else795:
+endif794:
+    mov eax, 0
+    jmp get_font_row_return
+    jmp endif780
+else781:
+endif780:
     mov eax, [ebp+8]
     push eax
     mov eax, 49
@@ -3714,7 +6234,7 @@ endif448:
     sete al
     movzx eax, al
     test eax, eax
-    jz else461
+    jz else797
     mov eax, [ebp+12]
     push eax
     mov eax, 0
@@ -3724,12 +6244,12 @@ endif448:
     sete al
     movzx eax, al
     test eax, eax
-    jz else463
+    jz else799
     mov eax, 24
     jmp get_font_row_return
-    jmp endif462
-else463:
-endif462:
+    jmp endif798
+else799:
+endif798:
     mov eax, [ebp+12]
     push eax
     mov eax, 1
@@ -3739,12 +6259,12 @@ endif462:
     sete al
     movzx eax, al
     test eax, eax
-    jz else465
+    jz else801
     mov eax, 56
     jmp get_font_row_return
-    jmp endif464
-else465:
-endif464:
+    jmp endif800
+else801:
+endif800:
     mov eax, [ebp+12]
     push eax
     mov eax, 2
@@ -3754,12 +6274,12 @@ endif464:
     sete al
     movzx eax, al
     test eax, eax
-    jz else467
+    jz else803
     mov eax, 24
     jmp get_font_row_return
-    jmp endif466
-else467:
-endif466:
+    jmp endif802
+else803:
+endif802:
     mov eax, [ebp+12]
     push eax
     mov eax, 3
@@ -3769,12 +6289,12 @@ endif466:
     sete al
     movzx eax, al
     test eax, eax
-    jz else469
+    jz else805
     mov eax, 24
     jmp get_font_row_return
-    jmp endif468
-else469:
-endif468:
+    jmp endif804
+else805:
+endif804:
     mov eax, [ebp+12]
     push eax
     mov eax, 4
@@ -3784,12 +6304,12 @@ endif468:
     sete al
     movzx eax, al
     test eax, eax
-    jz else471
+    jz else807
     mov eax, 24
     jmp get_font_row_return
-    jmp endif470
-else471:
-endif470:
+    jmp endif806
+else807:
+endif806:
     mov eax, [ebp+12]
     push eax
     mov eax, 5
@@ -3799,12 +6319,12 @@ endif470:
     sete al
     movzx eax, al
     test eax, eax
-    jz else473
+    jz else809
     mov eax, 24
     jmp get_font_row_return
-    jmp endif472
-else473:
-endif472:
+    jmp endif808
+else809:
+endif808:
     mov eax, [ebp+12]
     push eax
     mov eax, 6
@@ -3814,17 +6334,17 @@ endif472:
     sete al
     movzx eax, al
     test eax, eax
-    jz else475
+    jz else811
     mov eax, 126
     jmp get_font_row_return
-    jmp endif474
-else475:
-endif474:
+    jmp endif810
+else811:
+endif810:
     mov eax, 0
     jmp get_font_row_return
-    jmp endif460
-else461:
-endif460:
+    jmp endif796
+else797:
+endif796:
     mov eax, [ebp+8]
     push eax
     mov eax, 50
@@ -3834,7 +6354,7 @@ endif460:
     sete al
     movzx eax, al
     test eax, eax
-    jz else477
+    jz else813
     mov eax, [ebp+12]
     push eax
     mov eax, 0
@@ -3844,12 +6364,12 @@ endif460:
     sete al
     movzx eax, al
     test eax, eax
-    jz else479
+    jz else815
     mov eax, 60
     jmp get_font_row_return
-    jmp endif478
-else479:
-endif478:
+    jmp endif814
+else815:
+endif814:
     mov eax, [ebp+12]
     push eax
     mov eax, 1
@@ -3859,12 +6379,12 @@ endif478:
     sete al
     movzx eax, al
     test eax, eax
-    jz else481
+    jz else817
     mov eax, 102
     jmp get_font_row_return
-    jmp endif480
-else481:
-endif480:
+    jmp endif816
+else817:
+endif816:
     mov eax, [ebp+12]
     push eax
     mov eax, 2
@@ -3874,12 +6394,12 @@ endif480:
     sete al
     movzx eax, al
     test eax, eax
-    jz else483
+    jz else819
     mov eax, 6
     jmp get_font_row_return
-    jmp endif482
-else483:
-endif482:
+    jmp endif818
+else819:
+endif818:
     mov eax, [ebp+12]
     push eax
     mov eax, 3
@@ -3889,12 +6409,12 @@ endif482:
     sete al
     movzx eax, al
     test eax, eax
-    jz else485
+    jz else821
     mov eax, 28
     jmp get_font_row_return
-    jmp endif484
-else485:
-endif484:
+    jmp endif820
+else821:
+endif820:
     mov eax, [ebp+12]
     push eax
     mov eax, 4
@@ -3904,12 +6424,12 @@ endif484:
     sete al
     movzx eax, al
     test eax, eax
-    jz else487
+    jz else823
     mov eax, 48
     jmp get_font_row_return
-    jmp endif486
-else487:
-endif486:
+    jmp endif822
+else823:
+endif822:
     mov eax, [ebp+12]
     push eax
     mov eax, 5
@@ -3919,12 +6439,12 @@ endif486:
     sete al
     movzx eax, al
     test eax, eax
-    jz else489
+    jz else825
     mov eax, 96
     jmp get_font_row_return
-    jmp endif488
-else489:
-endif488:
+    jmp endif824
+else825:
+endif824:
     mov eax, [ebp+12]
     push eax
     mov eax, 6
@@ -3934,17 +6454,17 @@ endif488:
     sete al
     movzx eax, al
     test eax, eax
-    jz else491
+    jz else827
     mov eax, 126
     jmp get_font_row_return
-    jmp endif490
-else491:
-endif490:
+    jmp endif826
+else827:
+endif826:
     mov eax, 0
     jmp get_font_row_return
-    jmp endif476
-else477:
-endif476:
+    jmp endif812
+else813:
+endif812:
     mov eax, [ebp+8]
     push eax
     mov eax, 51
@@ -3954,7 +6474,7 @@ endif476:
     sete al
     movzx eax, al
     test eax, eax
-    jz else493
+    jz else829
     mov eax, [ebp+12]
     push eax
     mov eax, 0
@@ -3964,12 +6484,12 @@ endif476:
     sete al
     movzx eax, al
     test eax, eax
-    jz else495
+    jz else831
     mov eax, 60
     jmp get_font_row_return
-    jmp endif494
-else495:
-endif494:
+    jmp endif830
+else831:
+endif830:
     mov eax, [ebp+12]
     push eax
     mov eax, 1
@@ -3979,12 +6499,12 @@ endif494:
     sete al
     movzx eax, al
     test eax, eax
-    jz else497
+    jz else833
     mov eax, 102
     jmp get_font_row_return
-    jmp endif496
-else497:
-endif496:
+    jmp endif832
+else833:
+endif832:
     mov eax, [ebp+12]
     push eax
     mov eax, 2
@@ -3994,12 +6514,12 @@ endif496:
     sete al
     movzx eax, al
     test eax, eax
-    jz else499
+    jz else835
     mov eax, 6
     jmp get_font_row_return
-    jmp endif498
-else499:
-endif498:
+    jmp endif834
+else835:
+endif834:
     mov eax, [ebp+12]
     push eax
     mov eax, 3
@@ -4009,12 +6529,12 @@ endif498:
     sete al
     movzx eax, al
     test eax, eax
-    jz else501
+    jz else837
     mov eax, 28
     jmp get_font_row_return
-    jmp endif500
-else501:
-endif500:
+    jmp endif836
+else837:
+endif836:
     mov eax, [ebp+12]
     push eax
     mov eax, 4
@@ -4024,12 +6544,12 @@ endif500:
     sete al
     movzx eax, al
     test eax, eax
-    jz else503
+    jz else839
     mov eax, 6
     jmp get_font_row_return
-    jmp endif502
-else503:
-endif502:
+    jmp endif838
+else839:
+endif838:
     mov eax, [ebp+12]
     push eax
     mov eax, 5
@@ -4039,12 +6559,12 @@ endif502:
     sete al
     movzx eax, al
     test eax, eax
-    jz else505
+    jz else841
     mov eax, 102
     jmp get_font_row_return
-    jmp endif504
-else505:
-endif504:
+    jmp endif840
+else841:
+endif840:
     mov eax, [ebp+12]
     push eax
     mov eax, 6
@@ -4054,17 +6574,842 @@ endif504:
     sete al
     movzx eax, al
     test eax, eax
-    jz else507
+    jz else843
     mov eax, 60
     jmp get_font_row_return
-    jmp endif506
-else507:
-endif506:
+    jmp endif842
+else843:
+endif842:
     mov eax, 0
     jmp get_font_row_return
-    jmp endif492
-else493:
-endif492:
+    jmp endif828
+else829:
+endif828:
+    mov eax, [ebp+8]
+    push eax
+    mov eax, 52
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else845
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 0
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else847
+    mov eax, 12
+    jmp get_font_row_return
+    jmp endif846
+else847:
+endif846:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 1
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else849
+    mov eax, 28
+    jmp get_font_row_return
+    jmp endif848
+else849:
+endif848:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 2
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else851
+    mov eax, 60
+    jmp get_font_row_return
+    jmp endif850
+else851:
+endif850:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 3
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else853
+    mov eax, 108
+    jmp get_font_row_return
+    jmp endif852
+else853:
+endif852:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 4
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else855
+    mov eax, 126
+    jmp get_font_row_return
+    jmp endif854
+else855:
+endif854:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 5
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else857
+    mov eax, 12
+    jmp get_font_row_return
+    jmp endif856
+else857:
+endif856:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 6
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else859
+    mov eax, 12
+    jmp get_font_row_return
+    jmp endif858
+else859:
+endif858:
+    mov eax, 0
+    jmp get_font_row_return
+    jmp endif844
+else845:
+endif844:
+    mov eax, [ebp+8]
+    push eax
+    mov eax, 53
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else861
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 0
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else863
+    mov eax, 126
+    jmp get_font_row_return
+    jmp endif862
+else863:
+endif862:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 1
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else865
+    mov eax, 96
+    jmp get_font_row_return
+    jmp endif864
+else865:
+endif864:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 2
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else867
+    mov eax, 124
+    jmp get_font_row_return
+    jmp endif866
+else867:
+endif866:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 3
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else869
+    mov eax, 6
+    jmp get_font_row_return
+    jmp endif868
+else869:
+endif868:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 4
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else871
+    mov eax, 6
+    jmp get_font_row_return
+    jmp endif870
+else871:
+endif870:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 5
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else873
+    mov eax, 102
+    jmp get_font_row_return
+    jmp endif872
+else873:
+endif872:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 6
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else875
+    mov eax, 60
+    jmp get_font_row_return
+    jmp endif874
+else875:
+endif874:
+    mov eax, 0
+    jmp get_font_row_return
+    jmp endif860
+else861:
+endif860:
+    mov eax, [ebp+8]
+    push eax
+    mov eax, 54
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else877
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 0
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else879
+    mov eax, 28
+    jmp get_font_row_return
+    jmp endif878
+else879:
+endif878:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 1
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else881
+    mov eax, 48
+    jmp get_font_row_return
+    jmp endif880
+else881:
+endif880:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 2
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else883
+    mov eax, 96
+    jmp get_font_row_return
+    jmp endif882
+else883:
+endif882:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 3
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else885
+    mov eax, 124
+    jmp get_font_row_return
+    jmp endif884
+else885:
+endif884:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 4
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else887
+    mov eax, 102
+    jmp get_font_row_return
+    jmp endif886
+else887:
+endif886:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 5
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else889
+    mov eax, 102
+    jmp get_font_row_return
+    jmp endif888
+else889:
+endif888:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 6
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else891
+    mov eax, 60
+    jmp get_font_row_return
+    jmp endif890
+else891:
+endif890:
+    mov eax, 0
+    jmp get_font_row_return
+    jmp endif876
+else877:
+endif876:
+    mov eax, [ebp+8]
+    push eax
+    mov eax, 55
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else893
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 0
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else895
+    mov eax, 126
+    jmp get_font_row_return
+    jmp endif894
+else895:
+endif894:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 1
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else897
+    mov eax, 6
+    jmp get_font_row_return
+    jmp endif896
+else897:
+endif896:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 2
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else899
+    mov eax, 12
+    jmp get_font_row_return
+    jmp endif898
+else899:
+endif898:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 3
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else901
+    mov eax, 24
+    jmp get_font_row_return
+    jmp endif900
+else901:
+endif900:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 4
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else903
+    mov eax, 48
+    jmp get_font_row_return
+    jmp endif902
+else903:
+endif902:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 5
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else905
+    mov eax, 48
+    jmp get_font_row_return
+    jmp endif904
+else905:
+endif904:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 6
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else907
+    mov eax, 48
+    jmp get_font_row_return
+    jmp endif906
+else907:
+endif906:
+    mov eax, 0
+    jmp get_font_row_return
+    jmp endif892
+else893:
+endif892:
+    mov eax, [ebp+8]
+    push eax
+    mov eax, 56
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else909
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 0
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else911
+    mov eax, 60
+    jmp get_font_row_return
+    jmp endif910
+else911:
+endif910:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 1
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else913
+    mov eax, 102
+    jmp get_font_row_return
+    jmp endif912
+else913:
+endif912:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 2
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else915
+    mov eax, 102
+    jmp get_font_row_return
+    jmp endif914
+else915:
+endif914:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 3
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else917
+    mov eax, 60
+    jmp get_font_row_return
+    jmp endif916
+else917:
+endif916:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 4
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else919
+    mov eax, 102
+    jmp get_font_row_return
+    jmp endif918
+else919:
+endif918:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 5
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else921
+    mov eax, 102
+    jmp get_font_row_return
+    jmp endif920
+else921:
+endif920:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 6
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else923
+    mov eax, 60
+    jmp get_font_row_return
+    jmp endif922
+else923:
+endif922:
+    mov eax, 0
+    jmp get_font_row_return
+    jmp endif908
+else909:
+endif908:
+    mov eax, [ebp+8]
+    push eax
+    mov eax, 57
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else925
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 0
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else927
+    mov eax, 60
+    jmp get_font_row_return
+    jmp endif926
+else927:
+endif926:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 1
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else929
+    mov eax, 102
+    jmp get_font_row_return
+    jmp endif928
+else929:
+endif928:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 2
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else931
+    mov eax, 102
+    jmp get_font_row_return
+    jmp endif930
+else931:
+endif930:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 3
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else933
+    mov eax, 62
+    jmp get_font_row_return
+    jmp endif932
+else933:
+endif932:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 4
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else935
+    mov eax, 6
+    jmp get_font_row_return
+    jmp endif934
+else935:
+endif934:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 5
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else937
+    mov eax, 12
+    jmp get_font_row_return
+    jmp endif936
+else937:
+endif936:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 6
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else939
+    mov eax, 56
+    jmp get_font_row_return
+    jmp endif938
+else939:
+endif938:
+    mov eax, 0
+    jmp get_font_row_return
+    jmp endif924
+else925:
+endif924:
+    mov eax, [ebp+8]
+    push eax
+    mov eax, 45
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else941
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 3
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else943
+    mov eax, 126
+    jmp get_font_row_return
+    jmp endif942
+else943:
+endif942:
+    mov eax, 0
+    jmp get_font_row_return
+    jmp endif940
+else941:
+endif940:
+    mov eax, [ebp+8]
+    push eax
+    mov eax, 46
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else945
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 6
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else947
+    mov eax, 24
+    jmp get_font_row_return
+    jmp endif946
+else947:
+endif946:
+    mov eax, 0
+    jmp get_font_row_return
+    jmp endif944
+else945:
+endif944:
+    mov eax, [ebp+8]
+    push eax
+    mov eax, 58
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else949
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 2
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else951
+    mov eax, 24
+    jmp get_font_row_return
+    jmp endif950
+else951:
+endif950:
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 5
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else953
+    mov eax, 24
+    jmp get_font_row_return
+    jmp endif952
+else953:
+endif952:
+    mov eax, 0
+    jmp get_font_row_return
+    jmp endif948
+else949:
+endif948:
     mov eax, 0
     jmp get_font_row_return
 get_font_row_return:
@@ -4078,7 +7423,7 @@ fill_rect:
     sub esp, 24
     mov eax, [ebp+16]
     mov [ebp-4], eax
-while_start508:
+while_start954:
     mov eax, [ebp-4]
     push eax
     mov eax, [ebp+16]
@@ -4093,7 +7438,7 @@ while_start508:
     setl al
     movzx eax, al
     test eax, eax
-    jz while_end509
+    jz while_end955
     mov eax, [ebp-4]
     push eax
     mov eax, 0
@@ -4114,16 +7459,16 @@ while_start508:
     mov ebx, eax
     pop eax
     test eax, eax
-    jz and_short512
+    jz and_short958
     test ebx, ebx
-    jz and_short512
+    jz and_short958
     mov eax, 1
-    jmp and_end513
-and_short512:
+    jmp and_end959
+and_short958:
     xor eax, eax
-and_end513:
+and_end959:
     test eax, eax
-    jz else511
+    jz else957
     mov eax, [ebp+12]
     mov [ebp-8], eax
     mov eax, [ebp+12]
@@ -4142,12 +7487,12 @@ and_end513:
     setl al
     movzx eax, al
     test eax, eax
-    jz else515
+    jz else961
     mov eax, 0
     mov [ebp-8], eax
-    jmp endif514
-else515:
-endif514:
+    jmp endif960
+else961:
+endif960:
     mov eax, [ebp-12]
     push eax
     mov eax, [ebp+32]
@@ -4157,12 +7502,12 @@ endif514:
     setg al
     movzx eax, al
     test eax, eax
-    jz else517
+    jz else963
     mov eax, [ebp+32]
     mov [ebp-12], eax
-    jmp endif516
-else517:
-endif516:
+    jmp endif962
+else963:
+endif962:
     mov eax, [ebp-8]
     push eax
     mov eax, [ebp-12]
@@ -4172,7 +7517,7 @@ endif516:
     setl al
     movzx eax, al
     test eax, eax
-    jz else519
+    jz else965
     mov eax, [ebp-12]
     push eax
     mov eax, [ebp-8]
@@ -4182,7 +7527,7 @@ endif516:
     mov [ebp-16], eax
     mov eax, 0
     mov [ebp-20], eax
-while_start520:
+while_start966:
     mov eax, [ebp-20]
     push eax
     mov eax, [ebp-16]
@@ -4192,7 +7537,7 @@ while_start520:
     setl al
     movzx eax, al
     test eax, eax
-    jz while_end521
+    jz while_end967
     mov eax, [ebp+28]
     push eax
     mov eax, [ebp-20]
@@ -4209,8 +7554,8 @@ while_start520:
     pop eax
     add eax, ebx
     mov [ebp-20], eax
-    jmp while_start520
-while_end521:
+    jmp while_start966
+while_end967:
     mov eax, [ebp-4]
     push eax
     mov eax, [ebp+32]
@@ -4253,12 +7598,12 @@ while_end521:
     push eax
     call syscall3
     add esp, 16
-    jmp endif518
-else519:
-endif518:
-    jmp endif510
-else511:
-endif510:
+    jmp endif964
+else965:
+endif964:
+    jmp endif956
+else957:
+endif956:
     mov eax, [ebp-4]
     push eax
     mov eax, 1
@@ -4266,8 +7611,8 @@ endif510:
     pop eax
     add eax, ebx
     mov [ebp-4], eax
-    jmp while_start508
-while_end509:
+    jmp while_start954
+while_end955:
 fill_rect_return:
     mov esp, ebp
     pop ebp
@@ -4279,7 +7624,7 @@ draw_char:
     sub esp, 24
     mov eax, 0
     mov [ebp-4], eax
-while_start522:
+while_start968:
     mov eax, [ebp-4]
     push eax
     mov eax, 8
@@ -4289,7 +7634,7 @@ while_start522:
     setl al
     movzx eax, al
     test eax, eax
-    jz while_end523
+    jz while_end969
     mov eax, [ebp-4]
     push eax
     mov eax, [ebp+20]
@@ -4299,7 +7644,7 @@ while_start522:
     mov [ebp-8], eax
     mov eax, 0
     mov [ebp-12], eax
-while_start524:
+while_start970:
     mov eax, [ebp-12]
     push eax
     mov eax, 8
@@ -4309,7 +7654,7 @@ while_start524:
     setl al
     movzx eax, al
     test eax, eax
-    jz while_end525
+    jz while_end971
     mov eax, [ebp-8]
     push eax
     mov eax, 7
@@ -4339,12 +7684,12 @@ while_start524:
     setne al
     movzx eax, al
     test eax, eax
-    jz else527
+    jz else973
     mov eax, [ebp+24]
     mov [ebp-20], eax
-    jmp endif526
-else527:
-endif526:
+    jmp endif972
+else973:
+endif972:
     mov eax, [ebp-20]
     push eax
     mov eax, [ebp-12]
@@ -4361,8 +7706,8 @@ endif526:
     pop eax
     add eax, ebx
     mov [ebp-12], eax
-    jmp while_start524
-while_end525:
+    jmp while_start970
+while_end971:
     mov eax, [ebp+16]
     push eax
     mov eax, [ebp-4]
@@ -4412,8 +7757,8 @@ while_end525:
     pop eax
     add eax, ebx
     mov [ebp-4], eax
-    jmp while_start522
-while_end523:
+    jmp while_start968
+while_end969:
 draw_char_return:
     mov esp, ebp
     pop ebp
@@ -4425,7 +7770,7 @@ draw_text:
     sub esp, 4
     mov eax, 0
     mov [ebp-4], eax
-while_start528:
+while_start974:
     mov eax, [ebp-4]
     mov ebx, eax
     mov eax, [ebp+20]
@@ -4450,16 +7795,16 @@ while_start528:
     mov ebx, eax
     pop eax
     test eax, eax
-    jz and_short530
+    jz and_short976
     test ebx, ebx
-    jz and_short530
+    jz and_short976
     mov eax, 1
-    jmp and_end531
-and_short530:
+    jmp and_end977
+and_short976:
     xor eax, eax
-and_end531:
+and_end977:
     test eax, eax
-    jz while_end529
+    jz while_end975
     mov eax, [ebp+36]
     push eax
     mov eax, [ebp+32]
@@ -4499,9 +7844,511 @@ and_end531:
     pop eax
     add eax, ebx
     mov [ebp-4], eax
-    jmp while_start528
-while_end529:
+    jmp while_start974
+while_end975:
 draw_text_return:
+    mov esp, ebp
+    pop ebp
+    ret
+    
+save_cursor_area:
+    push ebp
+    mov ebp, esp
+    sub esp, 8
+    mov eax, 0
+    mov [ebp-4], eax
+while_start978:
+    mov eax, [ebp-4]
+    push eax
+    mov eax, 16
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    setl al
+    movzx eax, al
+    test eax, eax
+    jz while_end979
+    mov eax, [ebp+16]
+    push eax
+    mov eax, [ebp-4]
+    mov ebx, eax
+    pop eax
+    add eax, ebx
+    push eax
+    mov eax, 0
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    setge al
+    movzx eax, al
+    push eax
+    mov eax, [ebp+16]
+    push eax
+    mov eax, [ebp-4]
+    mov ebx, eax
+    pop eax
+    add eax, ebx
+    push eax
+    mov eax, [ebp+24]
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    setl al
+    movzx eax, al
+    mov ebx, eax
+    pop eax
+    test eax, eax
+    jz and_short982
+    test ebx, ebx
+    jz and_short982
+    mov eax, 1
+    jmp and_end983
+and_short982:
+    xor eax, eax
+and_end983:
+    test eax, eax
+    jz else981
+    mov eax, [ebp+16]
+    push eax
+    mov eax, [ebp-4]
+    mov ebx, eax
+    pop eax
+    add eax, ebx
+    push eax
+    mov eax, [ebp+20]
+    mov ebx, eax
+    pop eax
+    imul eax, ebx
+    push eax
+    mov eax, [ebp+12]
+    mov ebx, eax
+    pop eax
+    add eax, ebx
+    push eax
+    mov eax, 4
+    mov ebx, eax
+    pop eax
+    imul eax, ebx
+    mov [ebp-8], eax
+    mov eax, 0
+    push eax
+    mov eax, [ebp-8]
+    push eax
+    mov eax, [ebp+8]
+    push eax
+    mov eax, 19
+    push eax
+    call syscall3
+    add esp, 16
+    mov eax, 16
+    push eax
+    mov eax, 4
+    mov ebx, eax
+    pop eax
+    imul eax, ebx
+    push eax
+    mov eax, [ebp+28]
+    push eax
+    mov eax, [ebp-4]
+    push eax
+    mov eax, 16
+    mov ebx, eax
+    pop eax
+    imul eax, ebx
+    push eax
+    mov eax, 4
+    mov ebx, eax
+    pop eax
+    imul eax, ebx
+    mov ebx, eax
+    pop eax
+    add eax, ebx
+    push eax
+    mov eax, [ebp+8]
+    push eax
+    mov eax, 3
+    push eax
+    call syscall3
+    add esp, 16
+    jmp endif980
+else981:
+endif980:
+    mov eax, [ebp-4]
+    push eax
+    mov eax, 1
+    mov ebx, eax
+    pop eax
+    add eax, ebx
+    mov [ebp-4], eax
+    jmp while_start978
+while_end979:
+save_cursor_area_return:
+    mov esp, ebp
+    pop ebp
+    ret
+    
+restore_cursor_area:
+    push ebp
+    mov ebp, esp
+    sub esp, 8
+    mov eax, 0
+    mov [ebp-4], eax
+while_start984:
+    mov eax, [ebp-4]
+    push eax
+    mov eax, 16
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    setl al
+    movzx eax, al
+    test eax, eax
+    jz while_end985
+    mov eax, [ebp+16]
+    push eax
+    mov eax, [ebp-4]
+    mov ebx, eax
+    pop eax
+    add eax, ebx
+    push eax
+    mov eax, 0
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    setge al
+    movzx eax, al
+    push eax
+    mov eax, [ebp+16]
+    push eax
+    mov eax, [ebp-4]
+    mov ebx, eax
+    pop eax
+    add eax, ebx
+    push eax
+    mov eax, [ebp+24]
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    setl al
+    movzx eax, al
+    mov ebx, eax
+    pop eax
+    test eax, eax
+    jz and_short988
+    test ebx, ebx
+    jz and_short988
+    mov eax, 1
+    jmp and_end989
+and_short988:
+    xor eax, eax
+and_end989:
+    test eax, eax
+    jz else987
+    mov eax, [ebp+16]
+    push eax
+    mov eax, [ebp-4]
+    mov ebx, eax
+    pop eax
+    add eax, ebx
+    push eax
+    mov eax, [ebp+20]
+    mov ebx, eax
+    pop eax
+    imul eax, ebx
+    push eax
+    mov eax, [ebp+12]
+    mov ebx, eax
+    pop eax
+    add eax, ebx
+    push eax
+    mov eax, 4
+    mov ebx, eax
+    pop eax
+    imul eax, ebx
+    mov [ebp-8], eax
+    mov eax, 0
+    push eax
+    mov eax, [ebp-8]
+    push eax
+    mov eax, [ebp+8]
+    push eax
+    mov eax, 19
+    push eax
+    call syscall3
+    add esp, 16
+    mov eax, 16
+    push eax
+    mov eax, 4
+    mov ebx, eax
+    pop eax
+    imul eax, ebx
+    push eax
+    mov eax, [ebp+28]
+    push eax
+    mov eax, [ebp-4]
+    push eax
+    mov eax, 16
+    mov ebx, eax
+    pop eax
+    imul eax, ebx
+    push eax
+    mov eax, 4
+    mov ebx, eax
+    pop eax
+    imul eax, ebx
+    mov ebx, eax
+    pop eax
+    add eax, ebx
+    push eax
+    mov eax, [ebp+8]
+    push eax
+    mov eax, 4
+    push eax
+    call syscall3
+    add esp, 16
+    jmp endif986
+else987:
+endif986:
+    mov eax, [ebp-4]
+    push eax
+    mov eax, 1
+    mov ebx, eax
+    pop eax
+    add eax, ebx
+    mov [ebp-4], eax
+    jmp while_start984
+while_end985:
+restore_cursor_area_return:
+    mov esp, ebp
+    pop ebp
+    ret
+    
+draw_cursor:
+    push ebp
+    mov ebp, esp
+    sub esp, 12
+    mov eax, 0
+    mov [ebp-4], eax
+while_start990:
+    mov eax, [ebp-4]
+    push eax
+    mov eax, 12
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    setl al
+    movzx eax, al
+    test eax, eax
+    jz while_end991
+    mov eax, [ebp+16]
+    push eax
+    mov eax, [ebp-4]
+    mov ebx, eax
+    pop eax
+    add eax, ebx
+    push eax
+    mov eax, [ebp+24]
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    setl al
+    movzx eax, al
+    push eax
+    mov eax, [ebp+12]
+    push eax
+    mov eax, [ebp+20]
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    setl al
+    movzx eax, al
+    mov ebx, eax
+    pop eax
+    test eax, eax
+    jz and_short994
+    test ebx, ebx
+    jz and_short994
+    mov eax, 1
+    jmp and_end995
+and_short994:
+    xor eax, eax
+and_end995:
+    test eax, eax
+    jz else993
+    mov eax, 16777215
+    push eax
+    mov eax, 0
+    mov ebx, eax
+    mov eax, [ebp+28]
+    shl ebx, 2
+    add eax, ebx
+    pop ebx
+    mov [eax], ebx
+    mov eax, [ebp+16]
+    push eax
+    mov eax, [ebp-4]
+    mov ebx, eax
+    pop eax
+    add eax, ebx
+    push eax
+    mov eax, [ebp+20]
+    mov ebx, eax
+    pop eax
+    imul eax, ebx
+    push eax
+    mov eax, [ebp+12]
+    mov ebx, eax
+    pop eax
+    add eax, ebx
+    push eax
+    mov eax, 4
+    mov ebx, eax
+    pop eax
+    imul eax, ebx
+    mov [ebp-8], eax
+    mov eax, 0
+    push eax
+    mov eax, [ebp-8]
+    push eax
+    mov eax, [ebp+8]
+    push eax
+    mov eax, 19
+    push eax
+    call syscall3
+    add esp, 16
+    mov eax, 4
+    push eax
+    mov eax, [ebp+28]
+    push eax
+    mov eax, [ebp+8]
+    push eax
+    mov eax, 4
+    push eax
+    call syscall3
+    add esp, 16
+    jmp endif992
+else993:
+endif992:
+    mov eax, [ebp-4]
+    push eax
+    mov eax, 8
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    setl al
+    movzx eax, al
+    push eax
+    mov eax, [ebp+16]
+    push eax
+    mov eax, [ebp-4]
+    mov ebx, eax
+    pop eax
+    add eax, ebx
+    push eax
+    mov eax, [ebp+24]
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    setl al
+    movzx eax, al
+    mov ebx, eax
+    pop eax
+    test eax, eax
+    jz and_short998
+    test ebx, ebx
+    jz and_short998
+    mov eax, 1
+    jmp and_end999
+and_short998:
+    xor eax, eax
+and_end999:
+    push eax
+    mov eax, [ebp+12]
+    push eax
+    mov eax, [ebp-4]
+    mov ebx, eax
+    pop eax
+    add eax, ebx
+    push eax
+    mov eax, [ebp+20]
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    setl al
+    movzx eax, al
+    mov ebx, eax
+    pop eax
+    test eax, eax
+    jz and_short1000
+    test ebx, ebx
+    jz and_short1000
+    mov eax, 1
+    jmp and_end1001
+and_short1000:
+    xor eax, eax
+and_end1001:
+    test eax, eax
+    jz else997
+    mov eax, [ebp+16]
+    push eax
+    mov eax, [ebp-4]
+    mov ebx, eax
+    pop eax
+    add eax, ebx
+    push eax
+    mov eax, [ebp+20]
+    mov ebx, eax
+    pop eax
+    imul eax, ebx
+    push eax
+    mov eax, [ebp+12]
+    mov ebx, eax
+    pop eax
+    add eax, ebx
+    push eax
+    mov eax, [ebp-4]
+    mov ebx, eax
+    pop eax
+    add eax, ebx
+    push eax
+    mov eax, 4
+    mov ebx, eax
+    pop eax
+    imul eax, ebx
+    mov [ebp-12], eax
+    mov eax, 0
+    push eax
+    mov eax, [ebp-12]
+    push eax
+    mov eax, [ebp+8]
+    push eax
+    mov eax, 19
+    push eax
+    call syscall3
+    add esp, 16
+    mov eax, 4
+    push eax
+    mov eax, [ebp+28]
+    push eax
+    mov eax, [ebp+8]
+    push eax
+    mov eax, 4
+    push eax
+    call syscall3
+    add esp, 16
+    jmp endif996
+else997:
+endif996:
+    mov eax, [ebp-4]
+    push eax
+    mov eax, 1
+    mov ebx, eax
+    pop eax
+    add eax, ebx
+    mov [ebp-4], eax
+    jmp while_start990
+while_end991:
+draw_cursor_return:
     mov esp, ebp
     pop ebp
     ret
@@ -4570,12 +8417,12 @@ get_window_title:
     sete al
     movzx eax, al
     test eax, eax
-    jz else533
+    jz else1003
     lea eax, [rel str_0]
     jmp get_window_title_return
-    jmp endif532
-else533:
-endif532:
+    jmp endif1002
+else1003:
+endif1002:
     mov eax, [ebp+8]
     push eax
     mov eax, 2
@@ -4585,12 +8432,12 @@ endif532:
     sete al
     movzx eax, al
     test eax, eax
-    jz else535
+    jz else1005
     lea eax, [rel str_1]
     jmp get_window_title_return
-    jmp endif534
-else535:
-endif534:
+    jmp endif1004
+else1005:
+endif1004:
     mov eax, [ebp+8]
     push eax
     mov eax, 3
@@ -4600,12 +8447,12 @@ endif534:
     sete al
     movzx eax, al
     test eax, eax
-    jz else537
+    jz else1007
     lea eax, [rel str_2]
     jmp get_window_title_return
-    jmp endif536
-else537:
-endif536:
+    jmp endif1006
+else1007:
+endif1006:
     lea eax, [rel str_3]
     jmp get_window_title_return
 get_window_title_return:
@@ -4619,7 +8466,7 @@ create_window:
     sub esp, 8
     mov eax, 0
     mov [ebp-4], eax
-while_start538:
+while_start1008:
     mov eax, [ebp-4]
     push eax
     mov eax, 16
@@ -4629,7 +8476,7 @@ while_start538:
     setl al
     movzx eax, al
     test eax, eax
-    jz while_end539
+    jz while_end1009
     mov eax, [ebp-4]
     push eax
     mov eax, [ebp+8]
@@ -4651,7 +8498,7 @@ while_start538:
     sete al
     movzx eax, al
     test eax, eax
-    jz else541
+    jz else1011
     mov eax, 1
     push eax
     mov eax, 0
@@ -4750,9 +8597,9 @@ while_start538:
     add esp, 12
     mov eax, [ebp-4]
     jmp create_window_return
-    jmp endif540
-else541:
-endif540:
+    jmp endif1010
+else1011:
+endif1010:
     mov eax, [ebp-4]
     push eax
     mov eax, 1
@@ -4760,8 +8607,8 @@ endif540:
     pop eax
     add eax, ebx
     mov [ebp-4], eax
-    jmp while_start538
-while_end539:
+    jmp while_start1008
+while_end1009:
     mov eax, 1
     neg eax
     jmp create_window_return
@@ -4794,16 +8641,16 @@ destroy_window:
     mov ebx, eax
     pop eax
     test eax, eax
-    jz and_short544
+    jz and_short1014
     test ebx, ebx
-    jz and_short544
+    jz and_short1014
     mov eax, 1
-    jmp and_end545
-and_short544:
+    jmp and_end1015
+and_short1014:
     xor eax, eax
-and_end545:
+and_end1015:
     test eax, eax
-    jz else543
+    jz else1013
     mov eax, [ebp+12]
     push eax
     mov eax, [ebp+8]
@@ -4819,9 +8666,9 @@ and_end545:
     push eax
     call win_set
     add esp, 12
-    jmp endif542
-else543:
-endif542:
+    jmp endif1012
+else1013:
+endif1012:
 destroy_window_return:
     mov esp, ebp
     pop ebp
@@ -4884,7 +8731,7 @@ draw_decoration:
     setne al
     movzx eax, al
     test eax, eax
-    jz else547
+    jz else1017
     mov eax, 35071
     mov [ebp-28], eax
     mov eax, [ebp-20]
@@ -4894,9 +8741,9 @@ draw_decoration:
     pop eax
     or eax, ebx
     mov [ebp-20], eax
-    jmp endif546
-else547:
-endif546:
+    jmp endif1016
+else1017:
+endif1016:
     mov eax, [ebp+28]
     push eax
     mov eax, [ebp+24]
@@ -5317,7 +9164,7 @@ draw_window_body:
     sete al
     movzx eax, al
     test eax, eax
-    jz else549
+    jz else1019
     mov eax, 20
     push eax
     mov eax, [ebp+28]
@@ -5378,6 +9225,19 @@ draw_window_body:
     push eax
     call draw_text
     add esp, 36
+    jmp endif1018
+else1019:
+endif1018:
+    mov eax, [ebp-24]
+    push eax
+    mov eax, 2
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else1021
     mov eax, 20
     push eax
     mov eax, [ebp+28]
@@ -5392,7 +9252,7 @@ draw_window_body:
     push eax
     mov eax, [ebp-32]
     push eax
-    mov eax, 40
+    mov eax, 8
     mov ebx, eax
     pop eax
     add eax, ebx
@@ -5408,19 +9268,6 @@ draw_window_body:
     push eax
     call draw_text
     add esp, 36
-    jmp endif548
-else549:
-endif548:
-    mov eax, [ebp-24]
-    push eax
-    mov eax, 2
-    mov ebx, eax
-    pop eax
-    cmp eax, ebx
-    sete al
-    movzx eax, al
-    test eax, eax
-    jz else551
     mov eax, 20
     push eax
     mov eax, [ebp+28]
@@ -5435,7 +9282,7 @@ endif548:
     push eax
     mov eax, [ebp-32]
     push eax
-    mov eax, 8
+    mov eax, 24
     mov ebx, eax
     pop eax
     add eax, ebx
@@ -5451,6 +9298,19 @@ endif548:
     push eax
     call draw_text
     add esp, 36
+    jmp endif1020
+else1021:
+endif1020:
+    mov eax, [ebp-24]
+    push eax
+    mov eax, 3
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else1023
     mov eax, 20
     push eax
     mov eax, [ebp+28]
@@ -5465,7 +9325,7 @@ endif548:
     push eax
     mov eax, [ebp-32]
     push eax
-    mov eax, 24
+    mov eax, 8
     mov ebx, eax
     pop eax
     add eax, ebx
@@ -5495,7 +9355,7 @@ endif548:
     push eax
     mov eax, [ebp-32]
     push eax
-    mov eax, 40
+    mov eax, 24
     mov ebx, eax
     pop eax
     add eax, ebx
@@ -5511,19 +9371,19 @@ endif548:
     push eax
     call draw_text
     add esp, 36
-    jmp endif550
-else551:
-endif550:
+    jmp endif1022
+else1023:
+endif1022:
     mov eax, [ebp-24]
     push eax
-    mov eax, 3
+    mov eax, 0
     mov ebx, eax
     pop eax
     cmp eax, ebx
     sete al
     movzx eax, al
     test eax, eax
-    jz else553
+    jz else1025
     mov eax, 20
     push eax
     mov eax, [ebp+28]
@@ -5554,112 +9414,9 @@ endif550:
     push eax
     call draw_text
     add esp, 36
-    mov eax, 20
-    push eax
-    mov eax, [ebp+28]
-    push eax
-    mov eax, [ebp+16]
-    push eax
-    mov eax, [ebp-20]
-    push eax
-    mov eax, [ebp-44]
-    push eax
-    lea eax, [rel str_11]
-    push eax
-    mov eax, [ebp-32]
-    push eax
-    mov eax, 24
-    mov ebx, eax
-    pop eax
-    add eax, ebx
-    push eax
-    mov eax, [ebp-28]
-    push eax
-    mov eax, 8
-    mov ebx, eax
-    pop eax
-    add eax, ebx
-    push eax
-    mov eax, [ebp+8]
-    push eax
-    call draw_text
-    add esp, 36
-    mov eax, 20
-    push eax
-    mov eax, [ebp+28]
-    push eax
-    mov eax, [ebp+16]
-    push eax
-    mov eax, [ebp-20]
-    push eax
-    mov eax, [ebp-44]
-    push eax
-    lea eax, [rel str_12]
-    push eax
-    mov eax, [ebp-32]
-    push eax
-    mov eax, 40
-    mov ebx, eax
-    pop eax
-    add eax, ebx
-    push eax
-    mov eax, [ebp-28]
-    push eax
-    mov eax, 8
-    mov ebx, eax
-    pop eax
-    add eax, ebx
-    push eax
-    mov eax, [ebp+8]
-    push eax
-    call draw_text
-    add esp, 36
-    jmp endif552
-else553:
-endif552:
-    mov eax, [ebp-24]
-    push eax
-    mov eax, 0
-    mov ebx, eax
-    pop eax
-    cmp eax, ebx
-    sete al
-    movzx eax, al
-    test eax, eax
-    jz else555
-    mov eax, 20
-    push eax
-    mov eax, [ebp+28]
-    push eax
-    mov eax, [ebp+16]
-    push eax
-    mov eax, [ebp-20]
-    push eax
-    mov eax, [ebp-44]
-    push eax
-    lea eax, [rel str_13]
-    push eax
-    mov eax, [ebp-32]
-    push eax
-    mov eax, 8
-    mov ebx, eax
-    pop eax
-    add eax, ebx
-    push eax
-    mov eax, [ebp-28]
-    push eax
-    mov eax, 8
-    mov ebx, eax
-    pop eax
-    add eax, ebx
-    push eax
-    mov eax, [ebp+8]
-    push eax
-    call draw_text
-    add esp, 36
-    jmp endif554
-else555:
-endif554:
+    jmp endif1024
+else1025:
+endif1024:
 draw_window_body_return:
     mov esp, ebp
     pop ebp
@@ -5696,7 +9453,7 @@ composite:
     add esp, 36
     mov eax, 0
     mov [ebp-4], eax
-while_start556:
+while_start1026:
     mov eax, [ebp-4]
     push eax
     mov eax, 16
@@ -5706,7 +9463,7 @@ while_start556:
     setl al
     movzx eax, al
     test eax, eax
-    jz while_end557
+    jz while_end1027
     mov eax, [ebp-4]
     push eax
     mov eax, [ebp+16]
@@ -5716,7 +9473,7 @@ while_start556:
     setne al
     movzx eax, al
     test eax, eax
-    jz else559
+    jz else1029
     mov eax, [ebp-4]
     push eax
     mov eax, [ebp+12]
@@ -5754,16 +9511,16 @@ while_start556:
     mov ebx, eax
     pop eax
     test eax, eax
-    jz and_short562
+    jz and_short1032
     test ebx, ebx
-    jz and_short562
+    jz and_short1032
     mov eax, 1
-    jmp and_end563
-and_short562:
+    jmp and_end1033
+and_short1032:
     xor eax, eax
-and_end563:
+and_end1033:
     test eax, eax
-    jz else561
+    jz else1031
     mov eax, 5
     push eax
     mov eax, [ebp-8]
@@ -5778,7 +9535,7 @@ and_end563:
     setne al
     movzx eax, al
     test eax, eax
-    jz else565
+    jz else1035
     mov eax, [ebp+32]
     push eax
     mov eax, [ebp+28]
@@ -5795,9 +9552,9 @@ and_end563:
     push eax
     call draw_decoration
     add esp, 28
-    jmp endif564
-else565:
-endif564:
+    jmp endif1034
+else1035:
+endif1034:
     mov eax, [ebp+32]
     push eax
     mov eax, [ebp+28]
@@ -5812,12 +9569,12 @@ endif564:
     push eax
     call draw_window_body
     add esp, 24
-    jmp endif560
-else561:
-endif560:
-    jmp endif558
-else559:
-endif558:
+    jmp endif1030
+else1031:
+endif1030:
+    jmp endif1028
+else1029:
+endif1028:
     mov eax, [ebp-4]
     push eax
     mov eax, 1
@@ -5825,8 +9582,8 @@ endif558:
     pop eax
     add eax, ebx
     mov [ebp-4], eax
-    jmp while_start556
-while_end557:
+    jmp while_start1026
+while_end1027:
     mov eax, [ebp+16]
     push eax
     mov eax, 0
@@ -5847,16 +9604,16 @@ while_end557:
     mov ebx, eax
     pop eax
     test eax, eax
-    jz and_short568
+    jz and_short1038
     test ebx, ebx
-    jz and_short568
+    jz and_short1038
     mov eax, 1
-    jmp and_end569
-and_short568:
+    jmp and_end1039
+and_short1038:
     xor eax, eax
-and_end569:
+and_end1039:
     test eax, eax
-    jz else567
+    jz else1037
     mov eax, [ebp+16]
     push eax
     mov eax, [ebp+12]
@@ -5894,16 +9651,16 @@ and_end569:
     mov ebx, eax
     pop eax
     test eax, eax
-    jz and_short572
+    jz and_short1042
     test ebx, ebx
-    jz and_short572
+    jz and_short1042
     mov eax, 1
-    jmp and_end573
-and_short572:
+    jmp and_end1043
+and_short1042:
     xor eax, eax
-and_end573:
+and_end1043:
     test eax, eax
-    jz else571
+    jz else1041
     mov eax, 5
     push eax
     mov eax, [ebp-12]
@@ -5918,7 +9675,7 @@ and_end573:
     setne al
     movzx eax, al
     test eax, eax
-    jz else575
+    jz else1045
     mov eax, [ebp+32]
     push eax
     mov eax, [ebp+28]
@@ -5935,9 +9692,9 @@ and_end573:
     push eax
     call draw_decoration
     add esp, 28
-    jmp endif574
-else575:
-endif574:
+    jmp endif1044
+else1045:
+endif1044:
     mov eax, [ebp+32]
     push eax
     mov eax, [ebp+28]
@@ -5952,12 +9709,12 @@ endif574:
     push eax
     call draw_window_body
     add esp, 24
-    jmp endif570
-else571:
-endif570:
-    jmp endif566
-else567:
-endif566:
+    jmp endif1040
+else1041:
+endif1040:
+    jmp endif1036
+else1037:
+endif1036:
 composite_return:
     mov esp, ebp
     pop ebp
@@ -6054,7 +9811,7 @@ draw_taskbar:
     push eax
     mov eax, 16777215
     push eax
-    lea eax, [rel str_14]
+    lea eax, [rel str_11]
     push eax
     mov eax, [ebp-4]
     push eax
@@ -6063,7 +9820,7 @@ draw_taskbar:
     pop eax
     add eax, ebx
     push eax
-    mov eax, 12
+    mov eax, 20
     push eax
     mov eax, [ebp+8]
     push eax
@@ -6078,7 +9835,7 @@ draw_taskbar:
     mov [ebp-8], eax
     mov eax, 0
     mov [ebp-12], eax
-while_start576:
+while_start1046:
     mov eax, [ebp-12]
     push eax
     mov eax, 16
@@ -6088,7 +9845,7 @@ while_start576:
     setl al
     movzx eax, al
     test eax, eax
-    jz while_end577
+    jz while_end1047
     mov eax, [ebp-12]
     push eax
     mov eax, [ebp+12]
@@ -6110,7 +9867,7 @@ while_start576:
     setne al
     movzx eax, al
     test eax, eax
-    jz else579
+    jz else1049
     mov eax, 4210752
     mov [ebp-20], eax
     mov eax, 6
@@ -6127,12 +9884,12 @@ while_start576:
     setne al
     movzx eax, al
     test eax, eax
-    jz else581
+    jz else1051
     mov eax, 5263440
     mov [ebp-20], eax
-    jmp endif580
-else581:
-endif580:
+    jmp endif1050
+else1051:
+endif1050:
     mov eax, 7
     push eax
     mov eax, [ebp-16]
@@ -6147,12 +9904,12 @@ endif580:
     setne al
     movzx eax, al
     test eax, eax
-    jz else583
+    jz else1053
     mov eax, 3487029
     mov [ebp-20], eax
-    jmp endif582
-else583:
-endif582:
+    jmp endif1052
+else1053:
+endif1052:
     mov eax, [ebp+24]
     push eax
     mov eax, [ebp+20]
@@ -6232,9 +9989,9 @@ endif582:
     pop eax
     add eax, ebx
     mov [ebp-8], eax
-    jmp endif578
-else579:
-endif578:
+    jmp endif1048
+else1049:
+endif1048:
     mov eax, [ebp-12]
     push eax
     mov eax, 1
@@ -6242,232 +9999,342 @@ endif578:
     pop eax
     add eax, ebx
     mov [ebp-12], eax
-    jmp while_start576
-while_end577:
+    jmp while_start1046
+while_end1047:
 draw_taskbar_return:
     mov esp, ebp
     pop ebp
     ret
     
-draw_cursor:
+draw_menu:
     push ebp
     mov ebp, esp
-    sub esp, 12
-    mov eax, 0
+    sub esp, 8
+    mov eax, 4
     mov [ebp-4], eax
-while_start584:
-    mov eax, [ebp-4]
-    push eax
-    mov eax, 12
-    mov ebx, eax
-    pop eax
-    cmp eax, ebx
-    setl al
-    movzx eax, al
-    test eax, eax
-    jz while_end585
-    mov eax, 16777215
-    push eax
-    mov eax, 0
-    mov ebx, eax
-    mov eax, [ebp+28]
-    shl ebx, 2
-    add eax, ebx
-    pop ebx
-    mov [eax], ebx
     mov eax, [ebp+16]
     push eax
-    mov eax, [ebp-4]
+    mov eax, 32
     mov ebx, eax
     pop eax
-    add eax, ebx
+    sub eax, ebx
     push eax
-    mov eax, [ebp+20]
+    mov eax, 28
+    push eax
+    mov eax, 3
     mov ebx, eax
     pop eax
     imul eax, ebx
-    push eax
-    mov eax, [ebp+12]
     mov ebx, eax
     pop eax
-    add eax, ebx
+    sub eax, ebx
     push eax
     mov eax, 4
     mov ebx, eax
     pop eax
-    imul eax, ebx
+    sub eax, ebx
     mov [ebp-8], eax
+    mov eax, [ebp+20]
+    push eax
     mov eax, [ebp+16]
     push eax
-    mov eax, [ebp-4]
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 4210752
+    push eax
+    mov eax, 28
+    push eax
+    mov eax, 3
+    mov ebx, eax
+    pop eax
+    imul eax, ebx
+    push eax
+    mov eax, 4
     mov ebx, eax
     pop eax
     add eax, ebx
     push eax
-    mov eax, [ebp+24]
-    mov ebx, eax
-    pop eax
-    cmp eax, ebx
-    setl al
-    movzx eax, al
-    push eax
-    mov eax, [ebp+12]
-    push eax
-    mov eax, [ebp+20]
-    mov ebx, eax
-    pop eax
-    cmp eax, ebx
-    setl al
-    movzx eax, al
-    mov ebx, eax
-    pop eax
-    test eax, eax
-    jz and_short588
-    test ebx, ebx
-    jz and_short588
-    mov eax, 1
-    jmp and_end589
-and_short588:
-    xor eax, eax
-and_end589:
-    test eax, eax
-    jz else587
-    mov eax, 0
+    mov eax, 120
     push eax
     mov eax, [ebp-8]
     push eax
-    mov eax, [ebp+8]
-    push eax
-    mov eax, 19
-    push eax
-    call syscall3
-    add esp, 16
-    mov eax, 4
-    push eax
-    mov eax, [ebp+28]
+    mov eax, [ebp-4]
     push eax
     mov eax, [ebp+8]
     push eax
-    mov eax, 4
-    push eax
-    call syscall3
-    add esp, 16
-    jmp endif586
-else587:
-endif586:
-    mov eax, [ebp-4]
-    push eax
-    mov eax, 8
-    mov ebx, eax
-    pop eax
-    cmp eax, ebx
-    setl al
-    movzx eax, al
-    test eax, eax
-    jz else591
-    mov eax, [ebp+16]
-    push eax
-    mov eax, [ebp-4]
-    mov ebx, eax
-    pop eax
-    add eax, ebx
-    push eax
+    call fill_rect
+    add esp, 36
     mov eax, [ebp+20]
-    mov ebx, eax
-    pop eax
-    imul eax, ebx
+    push eax
+    mov eax, [ebp+16]
     push eax
     mov eax, [ebp+12]
+    push eax
+    mov eax, 2960685
+    push eax
+    mov eax, 28
+    push eax
+    mov eax, 3
+    mov ebx, eax
+    pop eax
+    imul eax, ebx
+    push eax
+    mov eax, 2
+    mov ebx, eax
+    pop eax
+    add eax, ebx
+    push eax
+    mov eax, 120
+    push eax
+    mov eax, 2
+    mov ebx, eax
+    pop eax
+    sub eax, ebx
+    push eax
+    mov eax, [ebp-8]
+    push eax
+    mov eax, 1
     mov ebx, eax
     pop eax
     add eax, ebx
     push eax
     mov eax, [ebp-4]
+    push eax
+    mov eax, 1
     mov ebx, eax
     pop eax
     add eax, ebx
+    push eax
+    mov eax, [ebp+8]
+    push eax
+    call fill_rect
+    add esp, 36
+    mov eax, [ebp+20]
+    push eax
+    mov eax, [ebp+16]
+    push eax
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 4013373
+    push eax
+    mov eax, 28
+    push eax
+    mov eax, 120
     push eax
     mov eax, 4
     mov ebx, eax
     pop eax
-    imul eax, ebx
-    mov [ebp-12], eax
-    mov eax, [ebp+16]
+    sub eax, ebx
     push eax
-    mov eax, [ebp-4]
+    mov eax, [ebp-8]
+    push eax
+    mov eax, 2
     mov ebx, eax
     pop eax
     add eax, ebx
+    push eax
+    mov eax, [ebp-4]
+    push eax
+    mov eax, 2
+    mov ebx, eax
+    pop eax
+    add eax, ebx
+    push eax
+    mov eax, [ebp+8]
+    push eax
+    call fill_rect
+    add esp, 36
+    mov eax, 12
     push eax
     mov eax, [ebp+24]
-    mov ebx, eax
-    pop eax
-    cmp eax, ebx
-    setl al
-    movzx eax, al
     push eax
     mov eax, [ebp+12]
     push eax
-    mov eax, [ebp-4]
+    mov eax, 4013373
+    push eax
+    mov eax, 16777215
+    push eax
+    lea eax, [rel str_12]
+    push eax
+    mov eax, [ebp-8]
+    push eax
+    mov eax, 10
     mov ebx, eax
     pop eax
     add eax, ebx
     push eax
+    mov eax, [ebp-4]
+    push eax
+    mov eax, 10
+    mov ebx, eax
+    pop eax
+    add eax, ebx
+    push eax
+    mov eax, [ebp+8]
+    push eax
+    call draw_text
+    add esp, 36
     mov eax, [ebp+20]
-    mov ebx, eax
-    pop eax
-    cmp eax, ebx
-    setl al
-    movzx eax, al
-    mov ebx, eax
-    pop eax
-    test eax, eax
-    jz and_short594
-    test ebx, ebx
-    jz and_short594
-    mov eax, 1
-    jmp and_end595
-and_short594:
-    xor eax, eax
-and_end595:
-    test eax, eax
-    jz else593
-    mov eax, 0
     push eax
-    mov eax, [ebp-12]
+    mov eax, [ebp+16]
     push eax
-    mov eax, [ebp+8]
+    mov eax, [ebp+12]
     push eax
-    mov eax, 19
+    mov eax, 4013373
     push eax
-    call syscall3
-    add esp, 16
-    mov eax, 4
+    mov eax, 28
     push eax
-    mov eax, [ebp+28]
-    push eax
-    mov eax, [ebp+8]
+    mov eax, 120
     push eax
     mov eax, 4
+    mov ebx, eax
+    pop eax
+    sub eax, ebx
     push eax
-    call syscall3
-    add esp, 16
-    jmp endif592
-else593:
-endif592:
-    jmp endif590
-else591:
-endif590:
-    mov eax, [ebp-4]
+    mov eax, [ebp-8]
     push eax
-    mov eax, 1
+    mov eax, 2
     mov ebx, eax
     pop eax
     add eax, ebx
-    mov [ebp-4], eax
-    jmp while_start584
-while_end585:
-draw_cursor_return:
+    push eax
+    mov eax, 28
+    mov ebx, eax
+    pop eax
+    add eax, ebx
+    push eax
+    mov eax, [ebp-4]
+    push eax
+    mov eax, 2
+    mov ebx, eax
+    pop eax
+    add eax, ebx
+    push eax
+    mov eax, [ebp+8]
+    push eax
+    call fill_rect
+    add esp, 36
+    mov eax, 12
+    push eax
+    mov eax, [ebp+24]
+    push eax
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 4013373
+    push eax
+    mov eax, 16777215
+    push eax
+    lea eax, [rel str_13]
+    push eax
+    mov eax, [ebp-8]
+    push eax
+    mov eax, 10
+    mov ebx, eax
+    pop eax
+    add eax, ebx
+    push eax
+    mov eax, 28
+    mov ebx, eax
+    pop eax
+    add eax, ebx
+    push eax
+    mov eax, [ebp-4]
+    push eax
+    mov eax, 10
+    mov ebx, eax
+    pop eax
+    add eax, ebx
+    push eax
+    mov eax, [ebp+8]
+    push eax
+    call draw_text
+    add esp, 36
+    mov eax, [ebp+20]
+    push eax
+    mov eax, [ebp+16]
+    push eax
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 4013373
+    push eax
+    mov eax, 28
+    push eax
+    mov eax, 120
+    push eax
+    mov eax, 4
+    mov ebx, eax
+    pop eax
+    sub eax, ebx
+    push eax
+    mov eax, [ebp-8]
+    push eax
+    mov eax, 2
+    mov ebx, eax
+    pop eax
+    add eax, ebx
+    push eax
+    mov eax, 28
+    push eax
+    mov eax, 2
+    mov ebx, eax
+    pop eax
+    imul eax, ebx
+    mov ebx, eax
+    pop eax
+    add eax, ebx
+    push eax
+    mov eax, [ebp-4]
+    push eax
+    mov eax, 2
+    mov ebx, eax
+    pop eax
+    add eax, ebx
+    push eax
+    mov eax, [ebp+8]
+    push eax
+    call fill_rect
+    add esp, 36
+    mov eax, 12
+    push eax
+    mov eax, [ebp+24]
+    push eax
+    mov eax, [ebp+12]
+    push eax
+    mov eax, 4013373
+    push eax
+    mov eax, 16777215
+    push eax
+    lea eax, [rel str_14]
+    push eax
+    mov eax, [ebp-8]
+    push eax
+    mov eax, 10
+    mov ebx, eax
+    pop eax
+    add eax, ebx
+    push eax
+    mov eax, 28
+    push eax
+    mov eax, 2
+    mov ebx, eax
+    pop eax
+    imul eax, ebx
+    mov ebx, eax
+    pop eax
+    add eax, ebx
+    push eax
+    mov eax, [ebp-4]
+    push eax
+    mov eax, 10
+    mov ebx, eax
+    pop eax
+    add eax, ebx
+    push eax
+    mov eax, [ebp+8]
+    push eax
+    call draw_text
+    add esp, 36
+draw_menu_return:
     mov esp, ebp
     pop ebp
     ret
@@ -6500,14 +10367,14 @@ point_in_rect:
     mov ebx, eax
     pop eax
     test eax, eax
-    jz and_short598
+    jz and_short1056
     test ebx, ebx
-    jz and_short598
+    jz and_short1056
     mov eax, 1
-    jmp and_end599
-and_short598:
+    jmp and_end1057
+and_short1056:
     xor eax, eax
-and_end599:
+and_end1057:
     push eax
     mov eax, [ebp+12]
     push eax
@@ -6520,14 +10387,14 @@ and_end599:
     mov ebx, eax
     pop eax
     test eax, eax
-    jz and_short600
+    jz and_short1058
     test ebx, ebx
-    jz and_short600
+    jz and_short1058
     mov eax, 1
-    jmp and_end601
-and_short600:
+    jmp and_end1059
+and_short1058:
     xor eax, eax
-and_end601:
+and_end1059:
     push eax
     mov eax, [ebp+12]
     push eax
@@ -6545,24 +10412,173 @@ and_end601:
     mov ebx, eax
     pop eax
     test eax, eax
-    jz and_short602
+    jz and_short1060
     test ebx, ebx
-    jz and_short602
+    jz and_short1060
     mov eax, 1
-    jmp and_end603
-and_short602:
+    jmp and_end1061
+and_short1060:
     xor eax, eax
-and_end603:
+and_end1061:
     test eax, eax
-    jz else597
+    jz else1055
     mov eax, 1
     jmp point_in_rect_return
-    jmp endif596
-else597:
-endif596:
+    jmp endif1054
+else1055:
+endif1054:
     mov eax, 0
     jmp point_in_rect_return
 point_in_rect_return:
+    mov esp, ebp
+    pop ebp
+    ret
+    
+hit_test_menu:
+    push ebp
+    mov ebp, esp
+    sub esp, 8
+    mov eax, 4
+    mov [ebp-4], eax
+    mov eax, [ebp+16]
+    push eax
+    mov eax, 32
+    mov ebx, eax
+    pop eax
+    sub eax, ebx
+    push eax
+    mov eax, 28
+    push eax
+    mov eax, 3
+    mov ebx, eax
+    pop eax
+    imul eax, ebx
+    mov ebx, eax
+    pop eax
+    sub eax, ebx
+    push eax
+    mov eax, 4
+    mov ebx, eax
+    pop eax
+    sub eax, ebx
+    mov [ebp-8], eax
+    mov eax, 28
+    push eax
+    mov eax, 120
+    push eax
+    mov eax, [ebp-8]
+    push eax
+    mov eax, 2
+    mov ebx, eax
+    pop eax
+    add eax, ebx
+    push eax
+    mov eax, [ebp-4]
+    push eax
+    mov eax, [ebp+12]
+    push eax
+    mov eax, [ebp+8]
+    push eax
+    call point_in_rect
+    add esp, 24
+    push eax
+    mov eax, 0
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    setne al
+    movzx eax, al
+    test eax, eax
+    jz else1063
+    mov eax, 1
+    jmp hit_test_menu_return
+    jmp endif1062
+else1063:
+endif1062:
+    mov eax, 28
+    push eax
+    mov eax, 120
+    push eax
+    mov eax, [ebp-8]
+    push eax
+    mov eax, 2
+    mov ebx, eax
+    pop eax
+    add eax, ebx
+    push eax
+    mov eax, 28
+    mov ebx, eax
+    pop eax
+    add eax, ebx
+    push eax
+    mov eax, [ebp-4]
+    push eax
+    mov eax, [ebp+12]
+    push eax
+    mov eax, [ebp+8]
+    push eax
+    call point_in_rect
+    add esp, 24
+    push eax
+    mov eax, 0
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    setne al
+    movzx eax, al
+    test eax, eax
+    jz else1065
+    mov eax, 2
+    jmp hit_test_menu_return
+    jmp endif1064
+else1065:
+endif1064:
+    mov eax, 28
+    push eax
+    mov eax, 120
+    push eax
+    mov eax, [ebp-8]
+    push eax
+    mov eax, 2
+    mov ebx, eax
+    pop eax
+    add eax, ebx
+    push eax
+    mov eax, 28
+    push eax
+    mov eax, 2
+    mov ebx, eax
+    pop eax
+    imul eax, ebx
+    mov ebx, eax
+    pop eax
+    add eax, ebx
+    push eax
+    mov eax, [ebp-4]
+    push eax
+    mov eax, [ebp+12]
+    push eax
+    mov eax, [ebp+8]
+    push eax
+    call point_in_rect
+    add esp, 24
+    push eax
+    mov eax, 0
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    setne al
+    movzx eax, al
+    test eax, eax
+    jz else1067
+    mov eax, 3
+    jmp hit_test_menu_return
+    jmp endif1066
+else1067:
+endif1066:
+    mov eax, 0
+    jmp hit_test_menu_return
+hit_test_menu_return:
     mov esp, ebp
     pop ebp
     ret
@@ -6601,21 +10617,21 @@ hit_test_window:
     mov ebx, eax
     pop eax
     test eax, eax
-    jnz or_short606
+    jnz or_short1070
     test ebx, ebx
-    jnz or_short606
+    jnz or_short1070
     xor eax, eax
-    jmp or_end607
-or_short606:
+    jmp or_end1071
+or_short1070:
     mov eax, 1
-or_end607:
+or_end1071:
     test eax, eax
-    jz else605
+    jz else1069
     mov eax, 0
     jmp hit_test_window_return
-    jmp endif604
-else605:
-endif604:
+    jmp endif1068
+else1069:
+endif1068:
     mov eax, 1
     push eax
     mov eax, [ebp+8]
@@ -6666,12 +10682,12 @@ endif604:
     sete al
     movzx eax, al
     test eax, eax
-    jz else609
+    jz else1073
     mov eax, 0
     jmp hit_test_window_return
-    jmp endif608
-else609:
-endif608:
+    jmp endif1072
+else1073:
+endif1072:
     mov eax, 16
     push eax
     mov eax, 16
@@ -6724,12 +10740,12 @@ endif608:
     setne al
     movzx eax, al
     test eax, eax
-    jz else611
+    jz else1075
     mov eax, 3
     jmp hit_test_window_return
-    jmp endif610
-else611:
-endif610:
+    jmp endif1074
+else1075:
+endif1074:
     mov eax, 16
     push eax
     mov eax, 16
@@ -6787,12 +10803,12 @@ endif610:
     setne al
     movzx eax, al
     test eax, eax
-    jz else613
+    jz else1077
     mov eax, 5
     jmp hit_test_window_return
-    jmp endif612
-else613:
-endif612:
+    jmp endif1076
+else1077:
+endif1076:
     mov eax, 24
     push eax
     mov eax, [ebp-12]
@@ -6835,12 +10851,12 @@ endif612:
     setne al
     movzx eax, al
     test eax, eax
-    jz else615
+    jz else1079
     mov eax, 2
     jmp hit_test_window_return
-    jmp endif614
-else615:
-endif614:
+    jmp endif1078
+else1079:
+endif1078:
     mov eax, 1
     jmp hit_test_window_return
 hit_test_window_return:
@@ -6868,13 +10884,13 @@ hit_test_taskbar:
     setl al
     movzx eax, al
     test eax, eax
-    jz else617
+    jz else1081
     mov eax, 2
     neg eax
     jmp hit_test_taskbar_return
-    jmp endif616
-else617:
-endif616:
+    jmp endif1080
+else1081:
+endif1080:
     mov eax, [ebp+8]
     push eax
     mov eax, 4
@@ -6900,22 +10916,22 @@ endif616:
     mov ebx, eax
     pop eax
     test eax, eax
-    jz and_short620
+    jz and_short1084
     test ebx, ebx
-    jz and_short620
+    jz and_short1084
     mov eax, 1
-    jmp and_end621
-and_short620:
+    jmp and_end1085
+and_short1084:
     xor eax, eax
-and_end621:
+and_end1085:
     test eax, eax
-    jz else619
+    jz else1083
     mov eax, 1
     neg eax
     jmp hit_test_taskbar_return
-    jmp endif618
-else619:
-endif618:
+    jmp endif1082
+else1083:
+endif1082:
     mov eax, 80
     push eax
     mov eax, 16
@@ -6925,7 +10941,7 @@ endif618:
     mov [ebp-8], eax
     mov eax, 0
     mov [ebp-12], eax
-while_start622:
+while_start1086:
     mov eax, [ebp-12]
     push eax
     mov eax, 16
@@ -6935,7 +10951,7 @@ while_start622:
     setl al
     movzx eax, al
     test eax, eax
-    jz while_end623
+    jz while_end1087
     mov eax, [ebp-12]
     push eax
     mov eax, [ebp+16]
@@ -6957,7 +10973,7 @@ while_start622:
     setne al
     movzx eax, al
     test eax, eax
-    jz else625
+    jz else1089
     mov eax, [ebp+8]
     push eax
     mov eax, [ebp-8]
@@ -6983,21 +10999,21 @@ while_start622:
     mov ebx, eax
     pop eax
     test eax, eax
-    jz and_short628
+    jz and_short1092
     test ebx, ebx
-    jz and_short628
+    jz and_short1092
     mov eax, 1
-    jmp and_end629
-and_short628:
+    jmp and_end1093
+and_short1092:
     xor eax, eax
-and_end629:
+and_end1093:
     test eax, eax
-    jz else627
+    jz else1091
     mov eax, [ebp-12]
     jmp hit_test_taskbar_return
-    jmp endif626
-else627:
-endif626:
+    jmp endif1090
+else1091:
+endif1090:
     mov eax, [ebp-8]
     push eax
     mov eax, 108
@@ -7005,9 +11021,9 @@ endif626:
     pop eax
     add eax, ebx
     mov [ebp-8], eax
-    jmp endif624
-else625:
-endif624:
+    jmp endif1088
+else1089:
+endif1088:
     mov eax, [ebp-12]
     push eax
     mov eax, 1
@@ -7015,8 +11031,8 @@ endif624:
     pop eax
     add eax, ebx
     mov [ebp-12], eax
-    jmp while_start622
-while_end623:
+    jmp while_start1086
+while_end1087:
     mov eax, 2
     neg eax
     jmp hit_test_taskbar_return
@@ -7028,7 +11044,7 @@ hit_test_taskbar_return:
 main:
     push ebp
     mov ebp, esp
-    sub esp, 232
+    sub esp, 256
     lea eax, [rel str_15]
     push eax
     call print_str
@@ -7055,7 +11071,7 @@ main:
     setl al
     movzx eax, al
     test eax, eax
-    jz else631
+    jz else1095
     lea eax, [rel str_18]
     push eax
     call print_str
@@ -7066,9 +11082,9 @@ main:
     push eax
     call syscall1
     add esp, 8
-    jmp endif630
-else631:
-endif630:
+    jmp endif1094
+else1095:
+endif1094:
     mov eax, 3
     push eax
     mov eax, [ebp-4]
@@ -7111,7 +11127,7 @@ endif630:
     setl al
     movzx eax, al
     test eax, eax
-    jz else633
+    jz else1097
     lea eax, [rel str_20]
     push eax
     call print_str
@@ -7122,9 +11138,9 @@ endif630:
     push eax
     call syscall1
     add esp, 8
-    jmp endif632
-else633:
-endif632:
+    jmp endif1096
+else1097:
+endif1096:
     mov eax, 0
     push eax
     mov eax, 45
@@ -7134,7 +11150,7 @@ endif632:
     mov [ebp-16], eax
     mov eax, [ebp-16]
     push eax
-    mov eax, 65536
+    mov eax, 131072
     mov ebx, eax
     pop eax
     add eax, ebx
@@ -7175,6 +11191,20 @@ endif632:
     pop eax
     add eax, ebx
     mov [ebp-40], eax
+    mov eax, [ebp-16]
+    push eax
+    mov eax, 32768
+    mov ebx, eax
+    pop eax
+    add eax, ebx
+    mov [ebp-44], eax
+    mov eax, [ebp-16]
+    push eax
+    mov eax, 65536
+    mov ebx, eax
+    pop eax
+    add eax, ebx
+    mov [ebp-48], eax
     mov eax, [ebp-24]
     push eax
     mov eax, 17920
@@ -7191,19 +11221,19 @@ endif632:
     shl ebx, 2
     add eax, ebx
     mov eax, [eax]
-    mov [ebp-44], eax
+    mov [ebp-52], eax
     mov eax, 1
     mov ebx, eax
     mov eax, [ebp-24]
     shl ebx, 2
     add eax, ebx
     mov eax, [eax]
-    mov [ebp-48], eax
+    mov [ebp-56], eax
     lea eax, [rel str_21]
     push eax
     call print_str
     add esp, 4
-    mov eax, [ebp-44]
+    mov eax, [ebp-52]
     push eax
     call print_num
     add esp, 4
@@ -7211,7 +11241,7 @@ endif632:
     push eax
     call print_str
     add esp, 4
-    mov eax, [ebp-48]
+    mov eax, [ebp-56]
     push eax
     call print_num
     add esp, 4
@@ -7220,9 +11250,9 @@ endif632:
     call print_str
     add esp, 4
     mov eax, 0
-    mov [ebp-52], eax
-while_start634:
-    mov eax, [ebp-52]
+    mov [ebp-60], eax
+while_start1098:
+    mov eax, [ebp-60]
     push eax
     mov eax, 16
     mov ebx, eax
@@ -7231,31 +11261,31 @@ while_start634:
     setl al
     movzx eax, al
     test eax, eax
-    jz while_end635
-    mov eax, [ebp-52]
+    jz while_end1099
+    mov eax, [ebp-60]
     push eax
     mov eax, [ebp-40]
     push eax
     call window_ptr
     add esp, 8
-    mov [ebp-56], eax
+    mov [ebp-64], eax
     mov eax, 0
     push eax
     mov eax, 0
     push eax
-    mov eax, [ebp-56]
+    mov eax, [ebp-64]
     push eax
     call win_set
     add esp, 12
-    mov eax, [ebp-52]
+    mov eax, [ebp-60]
     push eax
     mov eax, 1
     mov ebx, eax
     pop eax
     add eax, ebx
-    mov [ebp-52], eax
-    jmp while_start634
-while_end635:
+    mov [ebp-60], eax
+    jmp while_start1098
+while_end1099:
     mov eax, 1
     push eax
     mov eax, 15263976
@@ -7274,7 +11304,7 @@ while_end635:
     push eax
     call create_window
     add esp, 32
-    mov [ebp-60], eax
+    mov [ebp-68], eax
     mov eax, 2
     push eax
     mov eax, 15790320
@@ -7293,7 +11323,7 @@ while_end635:
     push eax
     call create_window
     add esp, 32
-    mov [ebp-64], eax
+    mov [ebp-72], eax
     mov eax, 3
     push eax
     mov eax, 15658734
@@ -7312,45 +11342,51 @@ while_end635:
     push eax
     call create_window
     add esp, 32
-    mov [ebp-68], eax
-    mov eax, [ebp-44]
-    push eax
-    mov eax, 2
-    mov ebx, eax
-    pop eax
-    xor edx, edx
-    idiv ebx
-    mov [ebp-72], eax
-    mov eax, [ebp-48]
-    push eax
-    mov eax, 2
-    mov ebx, eax
-    pop eax
-    xor edx, edx
-    idiv ebx
     mov [ebp-76], eax
-    mov eax, [ebp-68]
+    mov eax, [ebp-52]
+    push eax
+    mov eax, 2
+    mov ebx, eax
+    pop eax
+    xor edx, edx
+    idiv ebx
     mov [ebp-80], eax
-    mov eax, 0
+    mov eax, [ebp-56]
+    push eax
+    mov eax, 2
+    mov ebx, eax
+    pop eax
+    xor edx, edx
+    idiv ebx
     mov [ebp-84], eax
+    mov eax, [ebp-80]
+    mov [ebp-88], eax
+    mov eax, [ebp-84]
+    mov [ebp-92], eax
+    mov eax, [ebp-76]
+    mov [ebp-96], eax
+    mov eax, 0
+    mov [ebp-100], eax
     mov eax, 1
     neg eax
-    mov [ebp-88], eax
-    mov eax, 0
-    mov [ebp-92], eax
-    mov eax, 0
-    mov [ebp-96], eax
-    mov eax, 1
-    mov [ebp-100], eax
-    mov eax, 0
     mov [ebp-104], eax
     mov eax, 0
     mov [ebp-108], eax
-    mov eax, 1718874
+    mov eax, 0
     mov [ebp-112], eax
     mov eax, 1
     mov [ebp-116], eax
-    mov eax, [ebp-80]
+    mov eax, 0
+    mov [ebp-120], eax
+    mov eax, 0
+    mov [ebp-124], eax
+    mov eax, 1718874
+    mov [ebp-128], eax
+    mov eax, 0
+    mov [ebp-132], eax
+    mov eax, 0
+    mov [ebp-136], eax
+    mov eax, [ebp-96]
     push eax
     mov eax, 0
     mov ebx, eax
@@ -7359,29 +11395,29 @@ while_end635:
     setge al
     movzx eax, al
     test eax, eax
-    jz else637
-    mov eax, [ebp-80]
+    jz else1101
+    mov eax, [ebp-96]
     push eax
     mov eax, [ebp-40]
     push eax
     call window_ptr
     add esp, 8
-    mov [ebp-120], eax
+    mov [ebp-140], eax
     mov eax, 1
     push eax
     mov eax, 6
     push eax
-    mov eax, [ebp-120]
+    mov eax, [ebp-140]
     push eax
     call win_set
     add esp, 12
-    jmp endif636
-else637:
-endif636:
+    jmp endif1100
+else1101:
+endif1100:
     mov eax, 1
-    mov [ebp-124], eax
-while_start638:
-    mov eax, [ebp-124]
+    mov [ebp-144], eax
+while_start1102:
+    mov eax, [ebp-144]
     push eax
     mov eax, 0
     mov ebx, eax
@@ -7390,8 +11426,8 @@ while_start638:
     setne al
     movzx eax, al
     test eax, eax
-    jz while_end639
-    mov eax, [ebp-100]
+    jz while_end1103
+    mov eax, [ebp-116]
     push eax
     mov eax, 0
     mov ebx, eax
@@ -7400,18 +11436,18 @@ while_start638:
     setne al
     movzx eax, al
     test eax, eax
-    jz else641
-    mov eax, [ebp-112]
+    jz else1105
+    mov eax, [ebp-128]
     push eax
     mov eax, [ebp-32]
     push eax
     mov eax, [ebp-28]
     push eax
-    mov eax, [ebp-48]
+    mov eax, [ebp-56]
     push eax
-    mov eax, [ebp-44]
+    mov eax, [ebp-52]
     push eax
-    mov eax, [ebp-80]
+    mov eax, [ebp-96]
     push eax
     mov eax, [ebp-40]
     push eax
@@ -7423,9 +11459,9 @@ while_start638:
     push eax
     mov eax, [ebp-28]
     push eax
-    mov eax, [ebp-48]
+    mov eax, [ebp-56]
     push eax
-    mov eax, [ebp-44]
+    mov eax, [ebp-52]
     push eax
     mov eax, [ebp-40]
     push eax
@@ -7433,20 +11469,94 @@ while_start638:
     push eax
     call draw_taskbar
     add esp, 24
+    mov eax, [ebp-132]
+    push eax
     mov eax, 0
-    mov [ebp-100], eax
-    jmp endif640
-else641:
-endif640:
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    setne al
+    movzx eax, al
+    test eax, eax
+    jz else1107
     mov eax, [ebp-32]
     push eax
-    mov eax, [ebp-48]
+    mov eax, [ebp-28]
     push eax
+    mov eax, [ebp-56]
+    push eax
+    mov eax, [ebp-52]
+    push eax
+    mov eax, [ebp-12]
+    push eax
+    call draw_menu
+    add esp, 20
+    jmp endif1106
+else1107:
+endif1106:
+    mov eax, 0
+    mov [ebp-116], eax
+    mov eax, 0
+    mov [ebp-136], eax
+    jmp endif1104
+else1105:
+endif1104:
+    mov eax, [ebp-136]
+    push eax
+    mov eax, 0
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    setne al
+    movzx eax, al
+    test eax, eax
+    jz else1109
     mov eax, [ebp-44]
     push eax
-    mov eax, [ebp-76]
+    mov eax, [ebp-56]
     push eax
-    mov eax, [ebp-72]
+    mov eax, [ebp-52]
+    push eax
+    mov eax, [ebp-92]
+    push eax
+    mov eax, [ebp-88]
+    push eax
+    mov eax, [ebp-12]
+    push eax
+    call restore_cursor_area
+    add esp, 24
+    jmp endif1108
+else1109:
+endif1108:
+    mov eax, [ebp-44]
+    push eax
+    mov eax, [ebp-56]
+    push eax
+    mov eax, [ebp-52]
+    push eax
+    mov eax, [ebp-84]
+    push eax
+    mov eax, [ebp-80]
+    push eax
+    mov eax, [ebp-12]
+    push eax
+    call save_cursor_area
+    add esp, 24
+    mov eax, 1
+    mov [ebp-136], eax
+    mov eax, [ebp-80]
+    mov [ebp-88], eax
+    mov eax, [ebp-84]
+    mov [ebp-92], eax
+    mov eax, [ebp-32]
+    push eax
+    mov eax, [ebp-56]
+    push eax
+    mov eax, [ebp-52]
+    push eax
+    mov eax, [ebp-84]
+    push eax
+    mov eax, [ebp-80]
     push eax
     mov eax, [ebp-12]
     push eax
@@ -7462,8 +11572,8 @@ endif640:
     push eax
     call syscall3
     add esp, 16
-    mov [ebp-128], eax
-    mov eax, [ebp-128]
+    mov [ebp-148], eax
+    mov eax, [ebp-148]
     push eax
     mov eax, 3
     mov ebx, eax
@@ -7472,26 +11582,26 @@ endif640:
     sete al
     movzx eax, al
     test eax, eax
-    jz else643
+    jz else1111
     mov eax, 0
     mov ebx, eax
     mov eax, [ebp-36]
     add eax, ebx
     movzx eax, byte [eax]
-    mov [ebp-132], eax
+    mov [ebp-152], eax
     mov eax, 1
     mov ebx, eax
     mov eax, [ebp-36]
     add eax, ebx
     movzx eax, byte [eax]
-    mov [ebp-136], eax
+    mov [ebp-156], eax
     mov eax, 2
     mov ebx, eax
     mov eax, [ebp-36]
     add eax, ebx
     movzx eax, byte [eax]
-    mov [ebp-140], eax
-    mov eax, [ebp-132]
+    mov [ebp-160], eax
+    mov eax, [ebp-152]
     push eax
     mov eax, 16
     mov ebx, eax
@@ -7505,18 +11615,18 @@ endif640:
     setne al
     movzx eax, al
     test eax, eax
-    jz else645
-    mov eax, [ebp-136]
+    jz else1113
+    mov eax, [ebp-156]
     push eax
     mov eax, 256
     mov ebx, eax
     pop eax
     sub eax, ebx
-    mov [ebp-136], eax
-    jmp endif644
-else645:
-endif644:
-    mov eax, [ebp-132]
+    mov [ebp-156], eax
+    jmp endif1112
+else1113:
+endif1112:
+    mov eax, [ebp-152]
     push eax
     mov eax, 32
     mov ebx, eax
@@ -7530,39 +11640,39 @@ endif644:
     setne al
     movzx eax, al
     test eax, eax
-    jz else647
-    mov eax, [ebp-140]
+    jz else1115
+    mov eax, [ebp-160]
     push eax
     mov eax, 256
     mov ebx, eax
     pop eax
     sub eax, ebx
-    mov [ebp-140], eax
-    jmp endif646
-else647:
-endif646:
-    mov eax, [ebp-132]
+    mov [ebp-160], eax
+    jmp endif1114
+else1115:
+endif1114:
+    mov eax, [ebp-152]
     push eax
     mov eax, 1
     mov ebx, eax
     pop eax
     and eax, ebx
-    mov [ebp-144], eax
-    mov eax, [ebp-132]
+    mov [ebp-164], eax
+    mov eax, [ebp-152]
     push eax
     mov eax, 2
     mov ebx, eax
     pop eax
     and eax, ebx
-    mov [ebp-148], eax
-    mov eax, [ebp-132]
+    mov [ebp-168], eax
+    mov eax, [ebp-152]
     push eax
     mov eax, 4
     mov ebx, eax
     pop eax
     and eax, ebx
-    mov [ebp-152], eax
-    mov eax, [ebp-152]
+    mov [ebp-172], eax
+    mov eax, [ebp-172]
     push eax
     mov eax, 0
     mov ebx, eax
@@ -7571,62 +11681,27 @@ endif646:
     setne al
     movzx eax, al
     test eax, eax
-    jz else649
+    jz else1117
     mov eax, 0
-    mov [ebp-124], eax
-    jmp endif648
-else649:
-endif648:
-    mov eax, [ebp-136]
+    mov [ebp-144], eax
+    jmp endif1116
+else1117:
+endif1116:
+    mov eax, [ebp-80]
     push eax
-    mov eax, 0
-    mov ebx, eax
-    pop eax
-    cmp eax, ebx
-    setne al
-    movzx eax, al
-    push eax
-    mov eax, [ebp-140]
-    push eax
-    mov eax, 0
-    mov ebx, eax
-    pop eax
-    cmp eax, ebx
-    setne al
-    movzx eax, al
-    mov ebx, eax
-    pop eax
-    test eax, eax
-    jnz or_short652
-    test ebx, ebx
-    jnz or_short652
-    xor eax, eax
-    jmp or_end653
-or_short652:
-    mov eax, 1
-or_end653:
-    test eax, eax
-    jz else651
-    mov eax, 1
-    mov [ebp-100], eax
-    jmp endif650
-else651:
-endif650:
-    mov eax, [ebp-72]
-    push eax
-    mov eax, [ebp-136]
+    mov eax, [ebp-156]
     mov ebx, eax
     pop eax
     add eax, ebx
-    mov [ebp-72], eax
-    mov eax, [ebp-76]
+    mov [ebp-80], eax
+    mov eax, [ebp-84]
     push eax
-    mov eax, [ebp-140]
+    mov eax, [ebp-160]
     mov ebx, eax
     pop eax
     sub eax, ebx
-    mov [ebp-76], eax
-    mov eax, [ebp-72]
+    mov [ebp-84], eax
+    mov eax, [ebp-80]
     push eax
     mov eax, 0
     mov ebx, eax
@@ -7635,15 +11710,15 @@ endif650:
     setl al
     movzx eax, al
     test eax, eax
-    jz else655
+    jz else1119
     mov eax, 0
-    mov [ebp-72], eax
-    jmp endif654
-else655:
-endif654:
-    mov eax, [ebp-72]
+    mov [ebp-80], eax
+    jmp endif1118
+else1119:
+endif1118:
+    mov eax, [ebp-80]
     push eax
-    mov eax, [ebp-44]
+    mov eax, [ebp-52]
     push eax
     mov eax, 14
     mov ebx, eax
@@ -7655,18 +11730,18 @@ endif654:
     setge al
     movzx eax, al
     test eax, eax
-    jz else657
-    mov eax, [ebp-44]
+    jz else1121
+    mov eax, [ebp-52]
     push eax
     mov eax, 15
     mov ebx, eax
     pop eax
     sub eax, ebx
-    mov [ebp-72], eax
-    jmp endif656
-else657:
-endif656:
-    mov eax, [ebp-76]
+    mov [ebp-80], eax
+    jmp endif1120
+else1121:
+endif1120:
+    mov eax, [ebp-84]
     push eax
     mov eax, 0
     mov ebx, eax
@@ -7675,15 +11750,15 @@ endif656:
     setl al
     movzx eax, al
     test eax, eax
-    jz else659
+    jz else1123
     mov eax, 0
-    mov [ebp-76], eax
-    jmp endif658
-else659:
-endif658:
-    mov eax, [ebp-76]
+    mov [ebp-84], eax
+    jmp endif1122
+else1123:
+endif1122:
+    mov eax, [ebp-84]
     push eax
-    mov eax, [ebp-48]
+    mov eax, [ebp-56]
     push eax
     mov eax, 16
     mov ebx, eax
@@ -7695,18 +11770,18 @@ endif658:
     setge al
     movzx eax, al
     test eax, eax
-    jz else661
-    mov eax, [ebp-48]
+    jz else1125
+    mov eax, [ebp-56]
     push eax
     mov eax, 17
     mov ebx, eax
     pop eax
     sub eax, ebx
-    mov [ebp-76], eax
-    jmp endif660
-else661:
-endif660:
-    mov eax, [ebp-84]
+    mov [ebp-84], eax
+    jmp endif1124
+else1125:
+endif1124:
+    mov eax, [ebp-100]
     push eax
     mov eax, 0
     mov ebx, eax
@@ -7715,8 +11790,8 @@ endif660:
     setne al
     movzx eax, al
     test eax, eax
-    jz else663
-    mov eax, [ebp-144]
+    jz else1127
+    mov eax, [ebp-164]
     push eax
     mov eax, 0
     mov ebx, eax
@@ -7725,51 +11800,51 @@ endif660:
     setne al
     movzx eax, al
     test eax, eax
-    jz else665
-    mov eax, [ebp-88]
+    jz else1129
+    mov eax, [ebp-104]
     push eax
     mov eax, [ebp-40]
     push eax
     call window_ptr
     add esp, 8
-    mov [ebp-156], eax
-    mov eax, [ebp-72]
+    mov [ebp-176], eax
+    mov eax, [ebp-80]
     push eax
-    mov eax, [ebp-92]
+    mov eax, [ebp-108]
     mov ebx, eax
     pop eax
     sub eax, ebx
     push eax
     mov eax, 1
     push eax
-    mov eax, [ebp-156]
+    mov eax, [ebp-176]
     push eax
     call win_set
     add esp, 12
-    mov eax, [ebp-76]
+    mov eax, [ebp-84]
     push eax
-    mov eax, [ebp-96]
+    mov eax, [ebp-112]
     mov ebx, eax
     pop eax
     sub eax, ebx
     push eax
     mov eax, 2
     push eax
-    mov eax, [ebp-156]
+    mov eax, [ebp-176]
     push eax
     call win_set
     add esp, 12
     mov eax, 1
-    mov [ebp-100], eax
-    jmp endif664
-else665:
+    mov [ebp-116], eax
+    jmp endif1128
+else1129:
     mov eax, 0
-    mov [ebp-84], eax
-endif664:
-    jmp endif662
-else663:
-endif662:
-    mov eax, [ebp-144]
+    mov [ebp-100], eax
+endif1128:
+    jmp endif1126
+else1127:
+endif1126:
+    mov eax, [ebp-164]
     push eax
     mov eax, 0
     mov ebx, eax
@@ -7778,7 +11853,7 @@ endif662:
     setne al
     movzx eax, al
     push eax
-    mov eax, [ebp-104]
+    mov eax, [ebp-120]
     push eax
     mov eax, 0
     mov ebx, eax
@@ -7789,48 +11864,223 @@ endif662:
     mov ebx, eax
     pop eax
     test eax, eax
-    jz and_short668
+    jz and_short1132
     test ebx, ebx
-    jz and_short668
+    jz and_short1132
     mov eax, 1
-    jmp and_end669
-and_short668:
+    jmp and_end1133
+and_short1132:
     xor eax, eax
-and_end669:
+and_end1133:
+    push eax
+    mov eax, [ebp-100]
+    push eax
+    mov eax, 0
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    mov ebx, eax
+    pop eax
+    test eax, eax
+    jz and_short1134
+    test ebx, ebx
+    jz and_short1134
+    mov eax, 1
+    jmp and_end1135
+and_short1134:
+    xor eax, eax
+and_end1135:
+    test eax, eax
+    jz else1131
+    mov eax, [ebp-132]
+    push eax
+    mov eax, 0
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    setne al
+    movzx eax, al
+    test eax, eax
+    jz else1137
+    mov eax, [ebp-56]
     push eax
     mov eax, [ebp-84]
     push eax
+    mov eax, [ebp-80]
+    push eax
+    call hit_test_menu
+    add esp, 12
+    mov [ebp-180], eax
+    mov eax, [ebp-180]
+    push eax
     mov eax, 0
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    setg al
+    movzx eax, al
+    test eax, eax
+    jz else1139
+    mov eax, 100
+    push eax
+    mov eax, [ebp-180]
+    push eax
+    mov eax, 30
+    mov ebx, eax
+    pop eax
+    imul eax, ebx
+    mov ebx, eax
+    pop eax
+    add eax, ebx
+    mov [ebp-184], eax
+    mov eax, 80
+    push eax
+    mov eax, [ebp-180]
+    push eax
+    mov eax, 25
+    mov ebx, eax
+    pop eax
+    imul eax, ebx
+    mov ebx, eax
+    pop eax
+    add eax, ebx
+    mov [ebp-188], eax
+    mov eax, 2250154
+    mov [ebp-192], eax
+    mov eax, [ebp-180]
+    push eax
+    mov eax, 2
     mov ebx, eax
     pop eax
     cmp eax, ebx
     sete al
     movzx eax, al
+    test eax, eax
+    jz else1141
+    mov eax, 2271829
+    mov [ebp-192], eax
+    jmp endif1140
+else1141:
+endif1140:
+    mov eax, [ebp-180]
+    push eax
+    mov eax, 3
     mov ebx, eax
     pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
     test eax, eax
-    jz and_short670
-    test ebx, ebx
-    jz and_short670
-    mov eax, 1
-    jmp and_end671
-and_short670:
-    xor eax, eax
-and_end671:
-    test eax, eax
-    jz else667
-    mov eax, [ebp-48]
+    jz else1143
+    mov eax, 11162914
+    mov [ebp-192], eax
+    jmp endif1142
+else1143:
+endif1142:
+    mov eax, [ebp-180]
+    push eax
+    mov eax, 15790320
+    push eax
+    mov eax, [ebp-192]
+    push eax
+    mov eax, 260
+    push eax
+    mov eax, 350
+    push eax
+    mov eax, [ebp-188]
+    push eax
+    mov eax, [ebp-184]
     push eax
     mov eax, [ebp-40]
     push eax
-    mov eax, [ebp-76]
+    call create_window
+    add esp, 32
+    mov [ebp-196], eax
+    mov eax, [ebp-196]
     push eax
-    mov eax, [ebp-72]
+    mov eax, 0
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    setge al
+    movzx eax, al
+    test eax, eax
+    jz else1145
+    mov eax, [ebp-96]
+    push eax
+    mov eax, 0
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    setge al
+    movzx eax, al
+    test eax, eax
+    jz else1147
+    mov eax, [ebp-96]
+    push eax
+    mov eax, [ebp-40]
+    push eax
+    call window_ptr
+    add esp, 8
+    mov [ebp-200], eax
+    mov eax, 0
+    push eax
+    mov eax, 6
+    push eax
+    mov eax, [ebp-200]
+    push eax
+    call win_set
+    add esp, 12
+    jmp endif1146
+else1147:
+endif1146:
+    mov eax, [ebp-196]
+    mov [ebp-96], eax
+    mov eax, [ebp-196]
+    push eax
+    mov eax, [ebp-40]
+    push eax
+    call window_ptr
+    add esp, 8
+    mov [ebp-204], eax
+    mov eax, 1
+    push eax
+    mov eax, 6
+    push eax
+    mov eax, [ebp-204]
+    push eax
+    call win_set
+    add esp, 12
+    jmp endif1144
+else1145:
+endif1144:
+    mov eax, 0
+    mov [ebp-132], eax
+    mov eax, 1
+    mov [ebp-116], eax
+    jmp endif1138
+else1139:
+    mov eax, 0
+    mov [ebp-132], eax
+    mov eax, 1
+    mov [ebp-116], eax
+endif1138:
+    jmp endif1136
+else1137:
+    mov eax, [ebp-56]
+    push eax
+    mov eax, [ebp-40]
+    push eax
+    mov eax, [ebp-84]
+    push eax
+    mov eax, [ebp-80]
     push eax
     call hit_test_taskbar
     add esp, 16
-    mov [ebp-160], eax
-    mov eax, [ebp-160]
+    mov [ebp-208], eax
+    mov eax, [ebp-208]
     push eax
     mov eax, 1
     neg eax
@@ -7840,179 +12090,14 @@ and_end671:
     sete al
     movzx eax, al
     test eax, eax
-    jz else673
-    mov eax, 100
-    push eax
-    mov eax, [ebp-72]
-    push eax
-    mov eax, 50
-    mov ebx, eax
-    pop eax
-    xor edx, edx
-    idiv ebx
-    push eax
-    mov eax, 20
-    mov ebx, eax
-    pop eax
-    imul eax, ebx
-    mov ebx, eax
-    pop eax
-    add eax, ebx
-    mov [ebp-164], eax
-    mov eax, 80
-    push eax
-    mov eax, [ebp-76]
-    push eax
-    mov eax, 50
-    mov ebx, eax
-    pop eax
-    xor edx, edx
-    idiv ebx
-    push eax
-    mov eax, 15
-    mov ebx, eax
-    pop eax
-    imul eax, ebx
-    mov ebx, eax
-    pop eax
-    add eax, ebx
-    mov [ebp-168], eax
-    mov eax, 2250154
-    mov [ebp-172], eax
-    mov eax, [ebp-116]
-    push eax
-    mov eax, 2
-    mov ebx, eax
-    pop eax
-    cmp eax, ebx
-    sete al
-    movzx eax, al
-    test eax, eax
-    jz else675
-    mov eax, 2271829
-    mov [ebp-172], eax
-    jmp endif674
-else675:
-endif674:
-    mov eax, [ebp-116]
-    push eax
-    mov eax, 3
-    mov ebx, eax
-    pop eax
-    cmp eax, ebx
-    sete al
-    movzx eax, al
-    test eax, eax
-    jz else677
-    mov eax, 11162914
-    mov [ebp-172], eax
-    jmp endif676
-else677:
-endif676:
-    mov eax, [ebp-116]
-    push eax
-    mov eax, 15790320
-    push eax
-    mov eax, [ebp-172]
-    push eax
-    mov eax, 260
-    push eax
-    mov eax, 350
-    push eax
-    mov eax, [ebp-168]
-    push eax
-    mov eax, [ebp-164]
-    push eax
-    mov eax, [ebp-40]
-    push eax
-    call create_window
-    add esp, 32
-    mov [ebp-176], eax
-    mov eax, [ebp-176]
-    push eax
-    mov eax, 0
-    mov ebx, eax
-    pop eax
-    cmp eax, ebx
-    setge al
-    movzx eax, al
-    test eax, eax
-    jz else679
-    mov eax, [ebp-80]
-    push eax
-    mov eax, 0
-    mov ebx, eax
-    pop eax
-    cmp eax, ebx
-    setge al
-    movzx eax, al
-    test eax, eax
-    jz else681
-    mov eax, [ebp-80]
-    push eax
-    mov eax, [ebp-40]
-    push eax
-    call window_ptr
-    add esp, 8
-    mov [ebp-180], eax
-    mov eax, 0
-    push eax
-    mov eax, 6
-    push eax
-    mov eax, [ebp-180]
-    push eax
-    call win_set
-    add esp, 12
-    jmp endif680
-else681:
-endif680:
-    mov eax, [ebp-176]
-    mov [ebp-80], eax
-    mov eax, [ebp-176]
-    push eax
-    mov eax, [ebp-40]
-    push eax
-    call window_ptr
-    add esp, 8
-    mov [ebp-184], eax
+    jz else1149
     mov eax, 1
-    push eax
-    mov eax, 6
-    push eax
-    mov eax, [ebp-184]
-    push eax
-    call win_set
-    add esp, 12
-    mov eax, [ebp-116]
-    push eax
-    mov eax, 1
-    mov ebx, eax
-    pop eax
-    add eax, ebx
-    mov [ebp-116], eax
-    mov eax, [ebp-116]
-    push eax
-    mov eax, 3
-    mov ebx, eax
-    pop eax
-    cmp eax, ebx
-    setg al
-    movzx eax, al
-    test eax, eax
-    jz else683
+    mov [ebp-132], eax
     mov eax, 1
     mov [ebp-116], eax
-    jmp endif682
-else683:
-endif682:
-    mov eax, 1
-    mov [ebp-100], eax
-    jmp endif678
-else679:
-endif678:
-    jmp endif672
-else673:
-    mov eax, [ebp-160]
+    jmp endif1148
+else1149:
+    mov eax, [ebp-208]
     push eax
     mov eax, 0
     mov ebx, eax
@@ -8021,17 +12106,17 @@ else673:
     setge al
     movzx eax, al
     test eax, eax
-    jz else685
-    mov eax, [ebp-160]
+    jz else1151
+    mov eax, [ebp-208]
     push eax
     mov eax, [ebp-40]
     push eax
     call window_ptr
     add esp, 8
-    mov [ebp-188], eax
+    mov [ebp-212], eax
     mov eax, 7
     push eax
-    mov eax, [ebp-188]
+    mov eax, [ebp-212]
     push eax
     call win_get
     add esp, 8
@@ -8043,19 +12128,19 @@ else673:
     setne al
     movzx eax, al
     test eax, eax
-    jz else687
+    jz else1153
     mov eax, 0
     push eax
     mov eax, 7
     push eax
-    mov eax, [ebp-188]
+    mov eax, [ebp-212]
     push eax
     call win_set
     add esp, 12
-    jmp endif686
-else687:
-endif686:
-    mov eax, [ebp-80]
+    jmp endif1152
+else1153:
+endif1152:
+    mov eax, [ebp-96]
     push eax
     mov eax, 0
     mov ebx, eax
@@ -8064,9 +12149,9 @@ endif686:
     setge al
     movzx eax, al
     push eax
-    mov eax, [ebp-80]
+    mov eax, [ebp-96]
     push eax
-    mov eax, [ebp-160]
+    mov eax, [ebp-208]
     mov ebx, eax
     pop eax
     cmp eax, ebx
@@ -8075,51 +12160,51 @@ endif686:
     mov ebx, eax
     pop eax
     test eax, eax
-    jz and_short690
+    jz and_short1156
     test ebx, ebx
-    jz and_short690
+    jz and_short1156
     mov eax, 1
-    jmp and_end691
-and_short690:
+    jmp and_end1157
+and_short1156:
     xor eax, eax
-and_end691:
+and_end1157:
     test eax, eax
-    jz else689
-    mov eax, [ebp-80]
+    jz else1155
+    mov eax, [ebp-96]
     push eax
     mov eax, [ebp-40]
     push eax
     call window_ptr
     add esp, 8
-    mov [ebp-192], eax
+    mov [ebp-216], eax
     mov eax, 0
     push eax
     mov eax, 6
     push eax
-    mov eax, [ebp-192]
+    mov eax, [ebp-216]
     push eax
     call win_set
     add esp, 12
-    jmp endif688
-else689:
-endif688:
-    mov eax, [ebp-160]
-    mov [ebp-80], eax
+    jmp endif1154
+else1155:
+endif1154:
+    mov eax, [ebp-208]
+    mov [ebp-96], eax
     mov eax, 1
     push eax
     mov eax, 6
     push eax
-    mov eax, [ebp-188]
+    mov eax, [ebp-212]
     push eax
     call win_set
     add esp, 12
     mov eax, 1
-    mov [ebp-100], eax
-    jmp endif684
-else685:
+    mov [ebp-116], eax
+    jmp endif1150
+else1151:
     mov eax, 0
-    mov [ebp-196], eax
-    mov eax, [ebp-80]
+    mov [ebp-220], eax
+    mov eax, [ebp-96]
     push eax
     mov eax, 0
     mov ebx, eax
@@ -8128,7 +12213,7 @@ else685:
     setge al
     movzx eax, al
     push eax
-    mov eax, [ebp-196]
+    mov eax, [ebp-220]
     push eax
     mov eax, 0
     mov ebx, eax
@@ -8139,33 +12224,33 @@ else685:
     mov ebx, eax
     pop eax
     test eax, eax
-    jz and_short694
+    jz and_short1160
     test ebx, ebx
-    jz and_short694
+    jz and_short1160
     mov eax, 1
-    jmp and_end695
-and_short694:
+    jmp and_end1161
+and_short1160:
     xor eax, eax
-and_end695:
+and_end1161:
     test eax, eax
-    jz else693
-    mov eax, [ebp-80]
+    jz else1159
+    mov eax, [ebp-96]
     push eax
     mov eax, [ebp-40]
     push eax
     call window_ptr
     add esp, 8
-    mov [ebp-200], eax
-    mov eax, [ebp-76]
+    mov [ebp-224], eax
+    mov eax, [ebp-84]
     push eax
-    mov eax, [ebp-72]
+    mov eax, [ebp-80]
     push eax
-    mov eax, [ebp-200]
+    mov eax, [ebp-224]
     push eax
     call hit_test_window
     add esp, 12
-    mov [ebp-204], eax
-    mov eax, [ebp-204]
+    mov [ebp-228], eax
+    mov eax, [ebp-228]
     push eax
     mov eax, 3
     mov ebx, eax
@@ -8174,8 +12259,8 @@ and_end695:
     sete al
     movzx eax, al
     test eax, eax
-    jz else697
-    mov eax, [ebp-80]
+    jz else1163
+    mov eax, [ebp-96]
     push eax
     mov eax, [ebp-40]
     push eax
@@ -8183,16 +12268,16 @@ and_end695:
     add esp, 8
     mov eax, 1
     neg eax
-    mov [ebp-80], eax
+    mov [ebp-96], eax
     mov eax, 16
     push eax
     mov eax, 1
     mov ebx, eax
     pop eax
     sub eax, ebx
-    mov [ebp-52], eax
-while_start698:
-    mov eax, [ebp-52]
+    mov [ebp-60], eax
+while_start1164:
+    mov eax, [ebp-60]
     push eax
     mov eax, 0
     mov ebx, eax
@@ -8201,17 +12286,17 @@ while_start698:
     setge al
     movzx eax, al
     test eax, eax
-    jz while_end699
-    mov eax, [ebp-52]
+    jz while_end1165
+    mov eax, [ebp-60]
     push eax
     mov eax, [ebp-40]
     push eax
     call window_ptr
     add esp, 8
-    mov [ebp-208], eax
+    mov [ebp-232], eax
     mov eax, 0
     push eax
-    mov eax, [ebp-208]
+    mov eax, [ebp-232]
     push eax
     call win_get
     add esp, 8
@@ -8225,7 +12310,7 @@ while_start698:
     push eax
     mov eax, 7
     push eax
-    mov eax, [ebp-208]
+    mov eax, [ebp-232]
     push eax
     call win_get
     add esp, 8
@@ -8239,49 +12324,49 @@ while_start698:
     mov ebx, eax
     pop eax
     test eax, eax
-    jz and_short702
+    jz and_short1168
     test ebx, ebx
-    jz and_short702
+    jz and_short1168
     mov eax, 1
-    jmp and_end703
-and_short702:
+    jmp and_end1169
+and_short1168:
     xor eax, eax
-and_end703:
+and_end1169:
     test eax, eax
-    jz else701
-    mov eax, [ebp-52]
-    mov [ebp-80], eax
+    jz else1167
+    mov eax, [ebp-60]
+    mov [ebp-96], eax
     mov eax, 1
     push eax
     mov eax, 6
     push eax
-    mov eax, [ebp-208]
+    mov eax, [ebp-232]
     push eax
     call win_set
     add esp, 12
     mov eax, 1
     neg eax
-    mov [ebp-52], eax
-    jmp endif700
-else701:
-endif700:
-    mov eax, [ebp-52]
+    mov [ebp-60], eax
+    jmp endif1166
+else1167:
+endif1166:
+    mov eax, [ebp-60]
     push eax
     mov eax, 1
     mov ebx, eax
     pop eax
     sub eax, ebx
-    mov [ebp-52], eax
-    jmp while_start698
-while_end699:
+    mov [ebp-60], eax
+    jmp while_start1164
+while_end1165:
     mov eax, 1
-    mov [ebp-100], eax
+    mov [ebp-116], eax
     mov eax, 1
-    mov [ebp-196], eax
-    jmp endif696
-else697:
-endif696:
-    mov eax, [ebp-204]
+    mov [ebp-220], eax
+    jmp endif1162
+else1163:
+endif1162:
+    mov eax, [ebp-228]
     push eax
     mov eax, 5
     mov ebx, eax
@@ -8290,7 +12375,7 @@ endif696:
     sete al
     movzx eax, al
     push eax
-    mov eax, [ebp-196]
+    mov eax, [ebp-220]
     push eax
     mov eax, 0
     mov ebx, eax
@@ -8301,21 +12386,21 @@ endif696:
     mov ebx, eax
     pop eax
     test eax, eax
-    jz and_short706
+    jz and_short1172
     test ebx, ebx
-    jz and_short706
+    jz and_short1172
     mov eax, 1
-    jmp and_end707
-and_short706:
+    jmp and_end1173
+and_short1172:
     xor eax, eax
-and_end707:
+and_end1173:
     test eax, eax
-    jz else705
+    jz else1171
     mov eax, 1
     push eax
     mov eax, 7
     push eax
-    mov eax, [ebp-200]
+    mov eax, [ebp-224]
     push eax
     call win_set
     add esp, 12
@@ -8323,21 +12408,21 @@ and_end707:
     push eax
     mov eax, 6
     push eax
-    mov eax, [ebp-200]
+    mov eax, [ebp-224]
     push eax
     call win_set
     add esp, 12
     mov eax, 1
     neg eax
-    mov [ebp-80], eax
+    mov [ebp-96], eax
     mov eax, 1
-    mov [ebp-100], eax
+    mov [ebp-116], eax
     mov eax, 1
-    mov [ebp-196], eax
-    jmp endif704
-else705:
-endif704:
-    mov eax, [ebp-204]
+    mov [ebp-220], eax
+    jmp endif1170
+else1171:
+endif1170:
+    mov eax, [ebp-228]
     push eax
     mov eax, 2
     mov ebx, eax
@@ -8346,7 +12431,7 @@ endif704:
     sete al
     movzx eax, al
     push eax
-    mov eax, [ebp-196]
+    mov eax, [ebp-220]
     push eax
     mov eax, 0
     mov ebx, eax
@@ -8357,50 +12442,50 @@ endif704:
     mov ebx, eax
     pop eax
     test eax, eax
-    jz and_short710
+    jz and_short1176
     test ebx, ebx
-    jz and_short710
+    jz and_short1176
     mov eax, 1
-    jmp and_end711
-and_short710:
+    jmp and_end1177
+and_short1176:
     xor eax, eax
-and_end711:
+and_end1177:
     test eax, eax
-    jz else709
+    jz else1175
     mov eax, 1
-    mov [ebp-84], eax
+    mov [ebp-100], eax
+    mov eax, [ebp-96]
+    mov [ebp-104], eax
     mov eax, [ebp-80]
-    mov [ebp-88], eax
-    mov eax, [ebp-72]
     push eax
     mov eax, 1
     push eax
-    mov eax, [ebp-200]
+    mov eax, [ebp-224]
     push eax
     call win_get
     add esp, 8
     mov ebx, eax
     pop eax
     sub eax, ebx
-    mov [ebp-92], eax
-    mov eax, [ebp-76]
+    mov [ebp-108], eax
+    mov eax, [ebp-84]
     push eax
     mov eax, 2
     push eax
-    mov eax, [ebp-200]
+    mov eax, [ebp-224]
     push eax
     call win_get
     add esp, 8
     mov ebx, eax
     pop eax
     sub eax, ebx
-    mov [ebp-96], eax
+    mov [ebp-112], eax
     mov eax, 1
-    mov [ebp-196], eax
-    jmp endif708
-else709:
-endif708:
-    mov eax, [ebp-204]
+    mov [ebp-220], eax
+    jmp endif1174
+else1175:
+endif1174:
+    mov eax, [ebp-228]
     push eax
     mov eax, 0
     mov ebx, eax
@@ -8409,7 +12494,7 @@ endif708:
     setg al
     movzx eax, al
     push eax
-    mov eax, [ebp-196]
+    mov eax, [ebp-220]
     push eax
     mov eax, 0
     mov ebx, eax
@@ -8420,25 +12505,25 @@ endif708:
     mov ebx, eax
     pop eax
     test eax, eax
-    jz and_short714
+    jz and_short1180
     test ebx, ebx
-    jz and_short714
+    jz and_short1180
     mov eax, 1
-    jmp and_end715
-and_short714:
+    jmp and_end1181
+and_short1180:
     xor eax, eax
-and_end715:
+and_end1181:
     test eax, eax
-    jz else713
+    jz else1179
     mov eax, 1
-    mov [ebp-196], eax
-    jmp endif712
-else713:
-endif712:
-    jmp endif692
-else693:
-endif692:
-    mov eax, [ebp-196]
+    mov [ebp-220], eax
+    jmp endif1178
+else1179:
+endif1178:
+    jmp endif1158
+else1159:
+endif1158:
+    mov eax, [ebp-220]
     push eax
     mov eax, 0
     mov ebx, eax
@@ -8447,16 +12532,16 @@ endif692:
     sete al
     movzx eax, al
     test eax, eax
-    jz else717
+    jz else1183
     mov eax, 16
     push eax
     mov eax, 1
     mov ebx, eax
     pop eax
     sub eax, ebx
-    mov [ebp-52], eax
-while_start718:
-    mov eax, [ebp-52]
+    mov [ebp-60], eax
+while_start1184:
+    mov eax, [ebp-60]
     push eax
     mov eax, 0
     mov ebx, eax
@@ -8465,7 +12550,7 @@ while_start718:
     setge al
     movzx eax, al
     push eax
-    mov eax, [ebp-196]
+    mov eax, [ebp-220]
     push eax
     mov eax, 0
     mov ebx, eax
@@ -8476,43 +12561,43 @@ while_start718:
     mov ebx, eax
     pop eax
     test eax, eax
-    jz and_short720
+    jz and_short1186
     test ebx, ebx
-    jz and_short720
+    jz and_short1186
     mov eax, 1
-    jmp and_end721
-and_short720:
+    jmp and_end1187
+and_short1186:
     xor eax, eax
-and_end721:
+and_end1187:
     test eax, eax
-    jz while_end719
-    mov eax, [ebp-52]
+    jz while_end1185
+    mov eax, [ebp-60]
     push eax
-    mov eax, [ebp-80]
+    mov eax, [ebp-96]
     mov ebx, eax
     pop eax
     cmp eax, ebx
     setne al
     movzx eax, al
     test eax, eax
-    jz else723
-    mov eax, [ebp-52]
+    jz else1189
+    mov eax, [ebp-60]
     push eax
     mov eax, [ebp-40]
     push eax
     call window_ptr
     add esp, 8
-    mov [ebp-212], eax
-    mov eax, [ebp-76]
+    mov [ebp-236], eax
+    mov eax, [ebp-84]
     push eax
-    mov eax, [ebp-72]
+    mov eax, [ebp-80]
     push eax
-    mov eax, [ebp-212]
+    mov eax, [ebp-236]
     push eax
     call hit_test_window
     add esp, 12
-    mov [ebp-216], eax
-    mov eax, [ebp-216]
+    mov [ebp-240], eax
+    mov eax, [ebp-240]
     push eax
     mov eax, 0
     mov ebx, eax
@@ -8521,8 +12606,8 @@ and_end721:
     setg al
     movzx eax, al
     test eax, eax
-    jz else725
-    mov eax, [ebp-80]
+    jz else1191
+    mov eax, [ebp-96]
     push eax
     mov eax, 0
     mov ebx, eax
@@ -8531,63 +12616,64 @@ and_end721:
     setge al
     movzx eax, al
     test eax, eax
-    jz else727
-    mov eax, [ebp-80]
+    jz else1193
+    mov eax, [ebp-96]
     push eax
     mov eax, [ebp-40]
     push eax
     call window_ptr
     add esp, 8
-    mov [ebp-220], eax
+    mov [ebp-244], eax
     mov eax, 0
     push eax
     mov eax, 6
     push eax
-    mov eax, [ebp-220]
+    mov eax, [ebp-244]
     push eax
     call win_set
     add esp, 12
-    jmp endif726
-else727:
-endif726:
-    mov eax, [ebp-52]
-    mov [ebp-80], eax
+    jmp endif1192
+else1193:
+endif1192:
+    mov eax, [ebp-60]
+    mov [ebp-96], eax
     mov eax, 1
     push eax
     mov eax, 6
     push eax
-    mov eax, [ebp-212]
+    mov eax, [ebp-236]
     push eax
     call win_set
     add esp, 12
     mov eax, 1
-    mov [ebp-100], eax
+    mov [ebp-116], eax
     mov eax, 1
-    mov [ebp-196], eax
-    jmp endif724
-else725:
-endif724:
-    jmp endif722
-else723:
-endif722:
-    mov eax, [ebp-52]
+    mov [ebp-220], eax
+    jmp endif1190
+else1191:
+endif1190:
+    jmp endif1188
+else1189:
+endif1188:
+    mov eax, [ebp-60]
     push eax
     mov eax, 1
     mov ebx, eax
     pop eax
     sub eax, ebx
-    mov [ebp-52], eax
-    jmp while_start718
-while_end719:
-    jmp endif716
-else717:
-endif716:
-endif684:
-endif672:
-    jmp endif666
-else667:
-endif666:
-    mov eax, [ebp-148]
+    mov [ebp-60], eax
+    jmp while_start1184
+while_end1185:
+    jmp endif1182
+else1183:
+endif1182:
+endif1150:
+endif1148:
+endif1136:
+    jmp endif1130
+else1131:
+endif1130:
+    mov eax, [ebp-168]
     push eax
     mov eax, 0
     mov ebx, eax
@@ -8596,7 +12682,7 @@ endif666:
     setne al
     movzx eax, al
     push eax
-    mov eax, [ebp-108]
+    mov eax, [ebp-124]
     push eax
     mov eax, 0
     mov ebx, eax
@@ -8607,16 +12693,16 @@ endif666:
     mov ebx, eax
     pop eax
     test eax, eax
-    jz and_short730
+    jz and_short1196
     test ebx, ebx
-    jz and_short730
+    jz and_short1196
     mov eax, 1
-    jmp and_end731
-and_short730:
+    jmp and_end1197
+and_short1196:
     xor eax, eax
-and_end731:
+and_end1197:
     test eax, eax
-    jz else729
+    jz else1195
     mov eax, 0
     push eax
     mov eax, 16316664
@@ -8627,16 +12713,16 @@ and_end731:
     push eax
     mov eax, 300
     push eax
-    mov eax, [ebp-76]
+    mov eax, [ebp-84]
     push eax
-    mov eax, [ebp-72]
+    mov eax, [ebp-80]
     push eax
     mov eax, [ebp-40]
     push eax
     call create_window
     add esp, 32
-    mov [ebp-224], eax
-    mov eax, [ebp-224]
+    mov [ebp-248], eax
+    mov eax, [ebp-248]
     push eax
     mov eax, 0
     mov ebx, eax
@@ -8645,8 +12731,8 @@ and_end731:
     setge al
     movzx eax, al
     test eax, eax
-    jz else733
-    mov eax, [ebp-80]
+    jz else1199
+    mov eax, [ebp-96]
     push eax
     mov eax, 0
     mov ebx, eax
@@ -8655,59 +12741,85 @@ and_end731:
     setge al
     movzx eax, al
     test eax, eax
-    jz else735
-    mov eax, [ebp-80]
+    jz else1201
+    mov eax, [ebp-96]
     push eax
     mov eax, [ebp-40]
     push eax
     call window_ptr
     add esp, 8
-    mov [ebp-228], eax
+    mov [ebp-252], eax
     mov eax, 0
     push eax
     mov eax, 6
     push eax
-    mov eax, [ebp-228]
+    mov eax, [ebp-252]
     push eax
     call win_set
     add esp, 12
-    jmp endif734
-else735:
-endif734:
-    mov eax, [ebp-224]
-    mov [ebp-80], eax
-    mov eax, [ebp-224]
+    jmp endif1200
+else1201:
+endif1200:
+    mov eax, [ebp-248]
+    mov [ebp-96], eax
+    mov eax, [ebp-248]
     push eax
     mov eax, [ebp-40]
     push eax
     call window_ptr
     add esp, 8
-    mov [ebp-232], eax
+    mov [ebp-256], eax
     mov eax, 1
     push eax
     mov eax, 6
     push eax
-    mov eax, [ebp-232]
+    mov eax, [ebp-256]
     push eax
     call win_set
     add esp, 12
     mov eax, 1
-    mov [ebp-100], eax
-    jmp endif732
-else733:
-endif732:
-    jmp endif728
-else729:
-endif728:
-    mov eax, [ebp-144]
-    mov [ebp-104], eax
-    mov eax, [ebp-148]
-    mov [ebp-108], eax
-    jmp endif642
-else643:
-endif642:
-    jmp while_start638
-while_end639:
+    mov [ebp-116], eax
+    jmp endif1198
+else1199:
+endif1198:
+    jmp endif1194
+else1195:
+endif1194:
+    mov eax, [ebp-164]
+    mov [ebp-120], eax
+    mov eax, [ebp-168]
+    mov [ebp-124], eax
+    jmp endif1110
+else1111:
+    mov eax, 0
+    push eax
+    mov eax, 0
+    mov ebx, eax
+    mov eax, [ebp-48]
+    shl ebx, 2
+    add eax, ebx
+    pop ebx
+    mov [eax], ebx
+    mov eax, 5000000
+    push eax
+    mov eax, 1
+    mov ebx, eax
+    mov eax, [ebp-48]
+    shl ebx, 2
+    add eax, ebx
+    pop ebx
+    mov [eax], ebx
+    mov eax, 0
+    push eax
+    mov eax, [ebp-48]
+    push eax
+    mov eax, 162
+    push eax
+    call syscall2
+    add esp, 12
+endif1110:
+    jmp while_start1102
+while_end1103:
     mov eax, [ebp-12]
     push eax
     mov eax, 6

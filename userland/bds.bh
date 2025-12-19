@@ -1,11 +1,10 @@
-# bds - Brainhair Display Server v0.2
-# Core display server with window titles and app launching
+# bds - Brainhair Display Server v0.3
+# Core display server with complete font, smooth cursor, and dropdown menu
 #
 # Features:
-#   - Window titles rendered with 8x8 font
-#   - Launcher opens terminal, file manager, or editor
-#   - Proper cursor handling (full redraw)
-#   - Taskbar with labeled buttons
+#   - Complete 8x8 font (A-Z, a-z, 0-9, punctuation)
+#   - Smooth cursor (save/restore pixels - no flicker)
+#   - Dropdown launcher menu
 
 const SYS_read: int32 = 3
 const SYS_write: int32 = 4
@@ -16,9 +15,7 @@ const SYS_lseek: int32 = 19
 const SYS_exit: int32 = 1
 const SYS_brk: int32 = 45
 const SYS_fcntl: int32 = 55
-const SYS_fork: int32 = 2
-const SYS_execve: int32 = 11
-const SYS_waitpid: int32 = 7
+const SYS_nanosleep: int32 = 162
 
 const STDOUT: int32 = 1
 const O_RDONLY: int32 = 0
@@ -32,9 +29,8 @@ const SEEK_SET: int32 = 0
 # Window constants
 const MAX_WINDOWS: int32 = 16
 const WINDOW_STRUCT_SIZE: int32 = 128
-const MAX_TITLE_LEN: int32 = 32
 
-# Window struct offsets (int32 each = 4 bytes)
+# Window struct offsets
 const WIN_ACTIVE: int32 = 0
 const WIN_X: int32 = 1
 const WIN_Y: int32 = 2
@@ -46,7 +42,7 @@ const WIN_MINIMIZED: int32 = 7
 const WIN_TITLE_COLOR: int32 = 8
 const WIN_BODY_COLOR: int32 = 9
 const WIN_BORDER_COLOR: int32 = 10
-const WIN_TYPE: int32 = 11  # 0=normal, 1=term, 2=fm, 3=edit
+const WIN_TYPE: int32 = 11
 
 # Decoration constants
 const TITLE_HEIGHT: int32 = 24
@@ -58,6 +54,12 @@ const FONT_HEIGHT: int32 = 8
 # Shell constants
 const TASKBAR_HEIGHT: int32 = 32
 const LAUNCHER_WIDTH: int32 = 80
+const MENU_WIDTH: int32 = 120
+const MENU_ITEM_HEIGHT: int32 = 28
+
+# Cursor size
+const CURSOR_W: int32 = 16
+const CURSOR_H: int32 = 16
 
 extern proc syscall1(num: int32, arg1: int32): int32
 extern proc syscall2(num: int32, arg1: int32, arg2: int32): int32
@@ -96,7 +98,7 @@ proc print_num(n: int32) =
     k = k - 1
   print_str(buf)
 
-# ============ Font Data (8x8 bitmap) ============
+# ============ Complete Font Data (8x8 bitmap) ============
 
 proc get_font_row(c: int32, row: int32): int32 =
   if c == 32: return 0  # Space
@@ -183,6 +185,24 @@ proc get_font_row(c: int32, row: int32): int32 =
     if row == 5: return 0x18
     if row == 6: return 0x3C
     return 0
+  if c == 74:  # J
+    if row == 0: return 0x1E
+    if row == 1: return 0x0C
+    if row == 2: return 0x0C
+    if row == 3: return 0x0C
+    if row == 4: return 0x0C
+    if row == 5: return 0x6C
+    if row == 6: return 0x38
+    return 0
+  if c == 75:  # K
+    if row == 0: return 0x66
+    if row == 1: return 0x6C
+    if row == 2: return 0x78
+    if row == 3: return 0x70
+    if row == 4: return 0x78
+    if row == 5: return 0x6C
+    if row == 6: return 0x66
+    return 0
   if c == 76:  # L
     if row == 0: return 0x60
     if row == 1: return 0x60
@@ -228,6 +248,15 @@ proc get_font_row(c: int32, row: int32): int32 =
     if row == 5: return 0x60
     if row == 6: return 0x60
     return 0
+  if c == 81:  # Q
+    if row == 0: return 0x3C
+    if row == 1: return 0x66
+    if row == 2: return 0x66
+    if row == 3: return 0x66
+    if row == 4: return 0x6A
+    if row == 5: return 0x6C
+    if row == 6: return 0x36
+    return 0
   if c == 82:  # R
     if row == 0: return 0x7C
     if row == 1: return 0x66
@@ -264,6 +293,15 @@ proc get_font_row(c: int32, row: int32): int32 =
     if row == 5: return 0x66
     if row == 6: return 0x3C
     return 0
+  if c == 86:  # V
+    if row == 0: return 0x66
+    if row == 1: return 0x66
+    if row == 2: return 0x66
+    if row == 3: return 0x66
+    if row == 4: return 0x66
+    if row == 5: return 0x3C
+    if row == 6: return 0x18
+    return 0
   if c == 87:  # W
     if row == 0: return 0x63
     if row == 1: return 0x63
@@ -273,14 +311,57 @@ proc get_font_row(c: int32, row: int32): int32 =
     if row == 5: return 0x77
     if row == 6: return 0x63
     return 0
+  if c == 88:  # X
+    if row == 0: return 0x66
+    if row == 1: return 0x66
+    if row == 2: return 0x3C
+    if row == 3: return 0x18
+    if row == 4: return 0x3C
+    if row == 5: return 0x66
+    if row == 6: return 0x66
+    return 0
+  if c == 89:  # Y
+    if row == 0: return 0x66
+    if row == 1: return 0x66
+    if row == 2: return 0x66
+    if row == 3: return 0x3C
+    if row == 4: return 0x18
+    if row == 5: return 0x18
+    if row == 6: return 0x18
+    return 0
+  if c == 90:  # Z
+    if row == 0: return 0x7E
+    if row == 1: return 0x06
+    if row == 2: return 0x0C
+    if row == 3: return 0x18
+    if row == 4: return 0x30
+    if row == 5: return 0x60
+    if row == 6: return 0x7E
+    return 0
 
-  # Lowercase
+  # Lowercase a-z
   if c == 97:  # a
     if row == 2: return 0x3C
     if row == 3: return 0x06
     if row == 4: return 0x3E
     if row == 5: return 0x66
     if row == 6: return 0x3E
+    return 0
+  if c == 98:  # b
+    if row == 0: return 0x60
+    if row == 1: return 0x60
+    if row == 2: return 0x7C
+    if row == 3: return 0x66
+    if row == 4: return 0x66
+    if row == 5: return 0x66
+    if row == 6: return 0x7C
+    return 0
+  if c == 99:  # c
+    if row == 2: return 0x3C
+    if row == 3: return 0x66
+    if row == 4: return 0x60
+    if row == 5: return 0x66
+    if row == 6: return 0x3C
     return 0
   if c == 100:  # d
     if row == 0: return 0x06
@@ -298,6 +379,32 @@ proc get_font_row(c: int32, row: int32): int32 =
     if row == 5: return 0x60
     if row == 6: return 0x3C
     return 0
+  if c == 102:  # f
+    if row == 0: return 0x1C
+    if row == 1: return 0x30
+    if row == 2: return 0x7C
+    if row == 3: return 0x30
+    if row == 4: return 0x30
+    if row == 5: return 0x30
+    if row == 6: return 0x30
+    return 0
+  if c == 103:  # g
+    if row == 2: return 0x3E
+    if row == 3: return 0x66
+    if row == 4: return 0x66
+    if row == 5: return 0x3E
+    if row == 6: return 0x06
+    if row == 7: return 0x3C
+    return 0
+  if c == 104:  # h
+    if row == 0: return 0x60
+    if row == 1: return 0x60
+    if row == 2: return 0x7C
+    if row == 3: return 0x66
+    if row == 4: return 0x66
+    if row == 5: return 0x66
+    if row == 6: return 0x66
+    return 0
   if c == 105:  # i
     if row == 0: return 0x18
     if row == 2: return 0x38
@@ -305,6 +412,24 @@ proc get_font_row(c: int32, row: int32): int32 =
     if row == 4: return 0x18
     if row == 5: return 0x18
     if row == 6: return 0x3C
+    return 0
+  if c == 106:  # j
+    if row == 0: return 0x0C
+    if row == 2: return 0x1C
+    if row == 3: return 0x0C
+    if row == 4: return 0x0C
+    if row == 5: return 0x0C
+    if row == 6: return 0x6C
+    if row == 7: return 0x38
+    return 0
+  if c == 107:  # k
+    if row == 0: return 0x60
+    if row == 1: return 0x60
+    if row == 2: return 0x66
+    if row == 3: return 0x6C
+    if row == 4: return 0x78
+    if row == 5: return 0x6C
+    if row == 6: return 0x66
     return 0
   if c == 108:  # l
     if row == 0: return 0x38
@@ -336,12 +461,35 @@ proc get_font_row(c: int32, row: int32): int32 =
     if row == 5: return 0x66
     if row == 6: return 0x3C
     return 0
+  if c == 112:  # p
+    if row == 2: return 0x7C
+    if row == 3: return 0x66
+    if row == 4: return 0x66
+    if row == 5: return 0x7C
+    if row == 6: return 0x60
+    if row == 7: return 0x60
+    return 0
+  if c == 113:  # q
+    if row == 2: return 0x3E
+    if row == 3: return 0x66
+    if row == 4: return 0x66
+    if row == 5: return 0x3E
+    if row == 6: return 0x06
+    if row == 7: return 0x06
+    return 0
   if c == 114:  # r
     if row == 2: return 0x6C
     if row == 3: return 0x76
     if row == 4: return 0x60
     if row == 5: return 0x60
     if row == 6: return 0x60
+    return 0
+  if c == 115:  # s
+    if row == 2: return 0x3E
+    if row == 3: return 0x60
+    if row == 4: return 0x3C
+    if row == 5: return 0x06
+    if row == 6: return 0x7C
     return 0
   if c == 116:  # t
     if row == 0: return 0x30
@@ -359,8 +507,53 @@ proc get_font_row(c: int32, row: int32): int32 =
     if row == 5: return 0x66
     if row == 6: return 0x3E
     return 0
+  if c == 118:  # v
+    if row == 2: return 0x66
+    if row == 3: return 0x66
+    if row == 4: return 0x66
+    if row == 5: return 0x3C
+    if row == 6: return 0x18
+    return 0
+  if c == 119:  # w
+    if row == 2: return 0x63
+    if row == 3: return 0x63
+    if row == 4: return 0x6B
+    if row == 5: return 0x7F
+    if row == 6: return 0x36
+    return 0
+  if c == 120:  # x
+    if row == 2: return 0x66
+    if row == 3: return 0x3C
+    if row == 4: return 0x18
+    if row == 5: return 0x3C
+    if row == 6: return 0x66
+    return 0
+  if c == 121:  # y
+    if row == 2: return 0x66
+    if row == 3: return 0x66
+    if row == 4: return 0x66
+    if row == 5: return 0x3E
+    if row == 6: return 0x06
+    if row == 7: return 0x3C
+    return 0
+  if c == 122:  # z
+    if row == 2: return 0x7E
+    if row == 3: return 0x0C
+    if row == 4: return 0x18
+    if row == 5: return 0x30
+    if row == 6: return 0x7E
+    return 0
 
-  # Numbers
+  # Numbers 0-9
+  if c == 48:  # 0
+    if row == 0: return 0x3C
+    if row == 1: return 0x66
+    if row == 2: return 0x6E
+    if row == 3: return 0x76
+    if row == 4: return 0x66
+    if row == 5: return 0x66
+    if row == 6: return 0x3C
+    return 0
   if c == 49:  # 1
     if row == 0: return 0x18
     if row == 1: return 0x38
@@ -387,6 +580,72 @@ proc get_font_row(c: int32, row: int32): int32 =
     if row == 4: return 0x06
     if row == 5: return 0x66
     if row == 6: return 0x3C
+    return 0
+  if c == 52:  # 4
+    if row == 0: return 0x0C
+    if row == 1: return 0x1C
+    if row == 2: return 0x3C
+    if row == 3: return 0x6C
+    if row == 4: return 0x7E
+    if row == 5: return 0x0C
+    if row == 6: return 0x0C
+    return 0
+  if c == 53:  # 5
+    if row == 0: return 0x7E
+    if row == 1: return 0x60
+    if row == 2: return 0x7C
+    if row == 3: return 0x06
+    if row == 4: return 0x06
+    if row == 5: return 0x66
+    if row == 6: return 0x3C
+    return 0
+  if c == 54:  # 6
+    if row == 0: return 0x1C
+    if row == 1: return 0x30
+    if row == 2: return 0x60
+    if row == 3: return 0x7C
+    if row == 4: return 0x66
+    if row == 5: return 0x66
+    if row == 6: return 0x3C
+    return 0
+  if c == 55:  # 7
+    if row == 0: return 0x7E
+    if row == 1: return 0x06
+    if row == 2: return 0x0C
+    if row == 3: return 0x18
+    if row == 4: return 0x30
+    if row == 5: return 0x30
+    if row == 6: return 0x30
+    return 0
+  if c == 56:  # 8
+    if row == 0: return 0x3C
+    if row == 1: return 0x66
+    if row == 2: return 0x66
+    if row == 3: return 0x3C
+    if row == 4: return 0x66
+    if row == 5: return 0x66
+    if row == 6: return 0x3C
+    return 0
+  if c == 57:  # 9
+    if row == 0: return 0x3C
+    if row == 1: return 0x66
+    if row == 2: return 0x66
+    if row == 3: return 0x3E
+    if row == 4: return 0x06
+    if row == 5: return 0x0C
+    if row == 6: return 0x38
+    return 0
+
+  # Punctuation
+  if c == 45:  # -
+    if row == 3: return 0x7E
+    return 0
+  if c == 46:  # .
+    if row == 6: return 0x18
+    return 0
+  if c == 58:  # :
+    if row == 2: return 0x18
+    if row == 5: return 0x18
     return 0
 
   return 0  # Unknown char
@@ -435,6 +694,43 @@ proc draw_text(fd: int32, x: int32, y: int32, s: ptr uint8, fg: int32, bg: int32
     draw_char(fd, x + i * FONT_WIDTH, y, cast[int32](s[i]), fg, bg, xres, pixel_buf)
     i = i + 1
 
+# ============ Cursor Save/Restore ============
+
+proc save_cursor_area(fd: int32, x: int32, y: int32, xres: int32, yres: int32, cursor_save: ptr uint32) =
+  var row: int32 = 0
+  while row < CURSOR_H:
+    if y + row >= 0 and y + row < yres:
+      var offset: int32 = ((y + row) * xres + x) * 4
+      discard syscall3(SYS_lseek, fd, offset, SEEK_SET)
+      discard syscall3(SYS_read, fd, cast[int32](cursor_save) + row * CURSOR_W * 4, CURSOR_W * 4)
+    row = row + 1
+
+proc restore_cursor_area(fd: int32, x: int32, y: int32, xres: int32, yres: int32, cursor_save: ptr uint32) =
+  var row: int32 = 0
+  while row < CURSOR_H:
+    if y + row >= 0 and y + row < yres:
+      var offset: int32 = ((y + row) * xres + x) * 4
+      discard syscall3(SYS_lseek, fd, offset, SEEK_SET)
+      discard syscall3(SYS_write, fd, cast[int32](cursor_save) + row * CURSOR_W * 4, CURSOR_W * 4)
+    row = row + 1
+
+proc draw_cursor(fd: int32, x: int32, y: int32, xres: int32, yres: int32, pixel_buf: ptr uint32) =
+  # Simple arrow cursor
+  var i: int32 = 0
+  while i < 12:
+    # Vertical line
+    if y + i < yres and x < xres:
+      pixel_buf[0] = cast[uint32](0xFFFFFF)
+      var offset: int32 = ((y + i) * xres + x) * 4
+      discard syscall3(SYS_lseek, fd, offset, SEEK_SET)
+      discard syscall3(SYS_write, fd, cast[int32](pixel_buf), 4)
+    # Diagonal
+    if i < 8 and y + i < yres and x + i < xres:
+      var offset2: int32 = ((y + i) * xres + x + i) * 4
+      discard syscall3(SYS_lseek, fd, offset2, SEEK_SET)
+      discard syscall3(SYS_write, fd, cast[int32](pixel_buf), 4)
+    i = i + 1
+
 # ============ Window Registry ============
 
 proc window_ptr(windows: ptr int32, idx: int32): ptr int32 =
@@ -452,7 +748,7 @@ proc get_window_title(win_type: int32): ptr uint8 =
   if win_type == 2:
     return cast[ptr uint8]("Files")
   if win_type == 3:
-    return cast[ptr uint8]("Editor")
+    return cast[ptr uint8]("Text Editor")
   return cast[ptr uint8]("Window")
 
 proc create_window(windows: ptr int32, x: int32, y: int32, w: int32, h: int32, title_col: int32, body_col: int32, win_type: int32): int32 =
@@ -533,17 +829,14 @@ proc draw_window_body(fd: int32, win: ptr int32, xres: int32, yres: int32, line_
   # Draw placeholder text based on window type
   var text_fg: int32 = 0x606060
   if win_type == 1:
-    draw_text(fd, content_x + 8, content_y + 8, cast[ptr uint8]("Terminal Window"), text_fg, body_col, xres, pixel_buf, 20)
-    draw_text(fd, content_x + 8, content_y + 24, cast[ptr uint8]("Double-click to"), text_fg, body_col, xres, pixel_buf, 20)
-    draw_text(fd, content_x + 8, content_y + 40, cast[ptr uint8]("launch terminal"), text_fg, body_col, xres, pixel_buf, 20)
+    draw_text(fd, content_x + 8, content_y + 8, cast[ptr uint8]("Terminal"), text_fg, body_col, xres, pixel_buf, 20)
+    draw_text(fd, content_x + 8, content_y + 24, cast[ptr uint8]("Ready for input..."), text_fg, body_col, xres, pixel_buf, 20)
   if win_type == 2:
     draw_text(fd, content_x + 8, content_y + 8, cast[ptr uint8]("File Manager"), text_fg, body_col, xres, pixel_buf, 20)
-    draw_text(fd, content_x + 8, content_y + 24, cast[ptr uint8]("Double-click to"), text_fg, body_col, xres, pixel_buf, 20)
-    draw_text(fd, content_x + 8, content_y + 40, cast[ptr uint8]("launch files"), text_fg, body_col, xres, pixel_buf, 20)
+    draw_text(fd, content_x + 8, content_y + 24, cast[ptr uint8]("Home  Documents"), text_fg, body_col, xres, pixel_buf, 20)
   if win_type == 3:
     draw_text(fd, content_x + 8, content_y + 8, cast[ptr uint8]("Text Editor"), text_fg, body_col, xres, pixel_buf, 20)
-    draw_text(fd, content_x + 8, content_y + 24, cast[ptr uint8]("Double-click to"), text_fg, body_col, xres, pixel_buf, 20)
-    draw_text(fd, content_x + 8, content_y + 40, cast[ptr uint8]("launch editor"), text_fg, body_col, xres, pixel_buf, 20)
+    draw_text(fd, content_x + 8, content_y + 24, cast[ptr uint8]("New document"), text_fg, body_col, xres, pixel_buf, 20)
   if win_type == 0:
     draw_text(fd, content_x + 8, content_y + 8, cast[ptr uint8]("Demo Window"), text_fg, body_col, xres, pixel_buf, 20)
 
@@ -581,7 +874,7 @@ proc draw_taskbar(fd: int32, windows: ptr int32, xres: int32, yres: int32, line_
 
   # Launcher button with text
   fill_rect(fd, 4, taskbar_y + 4, LAUNCHER_WIDTH, TASKBAR_HEIGHT - 8, 0x0066AA, xres, yres, line_buf)
-  draw_text(fd, 12, taskbar_y + 12, cast[ptr uint8]("MENU"), 0xFFFFFF, 0x0066AA, xres, pixel_buf, 10)
+  draw_text(fd, 20, taskbar_y + 12, cast[ptr uint8]("Menu"), 0xFFFFFF, 0x0066AA, xres, pixel_buf, 10)
 
   # Window buttons
   var btn_x: int32 = LAUNCHER_WIDTH + 16
@@ -605,28 +898,41 @@ proc draw_taskbar(fd: int32, windows: ptr int32, xres: int32, yres: int32, line_
       btn_x = btn_x + 108
     i = i + 1
 
-# ============ Cursor ============
+proc draw_menu(fd: int32, xres: int32, yres: int32, line_buf: ptr uint32, pixel_buf: ptr uint32) =
+  var menu_x: int32 = 4
+  var menu_y: int32 = yres - TASKBAR_HEIGHT - MENU_ITEM_HEIGHT * 3 - 4
 
-proc draw_cursor(fd: int32, x: int32, y: int32, xres: int32, yres: int32, pixel_buf: ptr uint32) =
-  var i: int32 = 0
-  while i < 12:
-    pixel_buf[0] = cast[uint32](0xFFFFFF)
-    var offset: int32 = ((y + i) * xres + x) * 4
-    if y + i < yres and x < xres:
-      discard syscall3(SYS_lseek, fd, offset, SEEK_SET)
-      discard syscall3(SYS_write, fd, cast[int32](pixel_buf), 4)
-    if i < 8:
-      var offset2: int32 = ((y + i) * xres + x + i) * 4
-      if y + i < yres and x + i < xres:
-        discard syscall3(SYS_lseek, fd, offset2, SEEK_SET)
-        discard syscall3(SYS_write, fd, cast[int32](pixel_buf), 4)
-    i = i + 1
+  # Menu background
+  fill_rect(fd, menu_x, menu_y, MENU_WIDTH, MENU_ITEM_HEIGHT * 3 + 4, 0x404040, xres, yres, line_buf)
+  fill_rect(fd, menu_x + 1, menu_y + 1, MENU_WIDTH - 2, MENU_ITEM_HEIGHT * 3 + 2, 0x2D2D2D, xres, yres, line_buf)
+
+  # Menu items
+  fill_rect(fd, menu_x + 2, menu_y + 2, MENU_WIDTH - 4, MENU_ITEM_HEIGHT, 0x3D3D3D, xres, yres, line_buf)
+  draw_text(fd, menu_x + 10, menu_y + 10, cast[ptr uint8]("Terminal"), 0xFFFFFF, 0x3D3D3D, xres, pixel_buf, 12)
+
+  fill_rect(fd, menu_x + 2, menu_y + 2 + MENU_ITEM_HEIGHT, MENU_WIDTH - 4, MENU_ITEM_HEIGHT, 0x3D3D3D, xres, yres, line_buf)
+  draw_text(fd, menu_x + 10, menu_y + 10 + MENU_ITEM_HEIGHT, cast[ptr uint8]("Files"), 0xFFFFFF, 0x3D3D3D, xres, pixel_buf, 12)
+
+  fill_rect(fd, menu_x + 2, menu_y + 2 + MENU_ITEM_HEIGHT * 2, MENU_WIDTH - 4, MENU_ITEM_HEIGHT, 0x3D3D3D, xres, yres, line_buf)
+  draw_text(fd, menu_x + 10, menu_y + 10 + MENU_ITEM_HEIGHT * 2, cast[ptr uint8]("Editor"), 0xFFFFFF, 0x3D3D3D, xres, pixel_buf, 12)
 
 # ============ Hit Testing ============
 
 proc point_in_rect(px: int32, py: int32, x: int32, y: int32, w: int32, h: int32): int32 =
   if px >= x and px < x + w and py >= y and py < y + h:
     return 1
+  return 0
+
+proc hit_test_menu(px: int32, py: int32, yres: int32): int32 =
+  var menu_x: int32 = 4
+  var menu_y: int32 = yres - TASKBAR_HEIGHT - MENU_ITEM_HEIGHT * 3 - 4
+
+  if point_in_rect(px, py, menu_x, menu_y + 2, MENU_WIDTH, MENU_ITEM_HEIGHT) != 0:
+    return 1  # Terminal
+  if point_in_rect(px, py, menu_x, menu_y + 2 + MENU_ITEM_HEIGHT, MENU_WIDTH, MENU_ITEM_HEIGHT) != 0:
+    return 2  # Files
+  if point_in_rect(px, py, menu_x, menu_y + 2 + MENU_ITEM_HEIGHT * 2, MENU_WIDTH, MENU_ITEM_HEIGHT) != 0:
+    return 3  # Editor
   return 0
 
 proc hit_test_window(win: ptr int32, px: int32, py: int32): int32 =
@@ -666,8 +972,8 @@ proc hit_test_taskbar(px: int32, py: int32, windows: ptr int32, yres: int32): in
 # ============ Main ============
 
 proc main() =
-  print_str(cast[ptr uint8]("Brainhair Display Server v0.2\n"))
-  print_str(cast[ptr uint8]("Controls: Left=drag, Right=new, Middle=quit\n"))
+  print_str(cast[ptr uint8]("Brainhair Display Server v0.3\n"))
+  print_str(cast[ptr uint8]("Controls: Left=interact, Right=new, Middle=quit\n"))
 
   var mouse_fd: int32 = syscall2(SYS_open, cast[int32]("/dev/input/mice"), O_RDONLY)
   if mouse_fd < 0:
@@ -684,7 +990,7 @@ proc main() =
 
   # Allocate memory
   var old_brk: int32 = syscall1(SYS_brk, 0)
-  var new_brk: int32 = old_brk + 65536
+  var new_brk: int32 = old_brk + 131072
   discard syscall1(SYS_brk, new_brk)
 
   var vinfo: ptr uint32 = cast[ptr uint32](old_brk)
@@ -692,6 +998,8 @@ proc main() =
   var pixel_buf: ptr uint32 = cast[ptr uint32](old_brk + 16384)
   var mouse_buf: ptr uint8 = cast[ptr uint8](old_brk + 16392)
   var windows: ptr int32 = cast[ptr int32](old_brk + 16400)
+  var cursor_save: ptr uint32 = cast[ptr uint32](old_brk + 32768)
+  var sleep_buf: ptr int32 = cast[ptr int32](old_brk + 65536)
 
   discard syscall3(SYS_ioctl, fb_fd, FBIOGET_VSCREENINFO, cast[int32](vinfo))
   var xres: int32 = cast[int32](vinfo[0])
@@ -717,6 +1025,8 @@ proc main() =
 
   var cursor_x: int32 = xres / 2
   var cursor_y: int32 = yres / 2
+  var prev_cursor_x: int32 = cursor_x
+  var prev_cursor_y: int32 = cursor_y
   var focused: int32 = w3
   var dragging: int32 = 0
   var drag_win: int32 = -1
@@ -726,7 +1036,8 @@ proc main() =
   var prev_left: int32 = 0
   var prev_right: int32 = 0
   var bg_color: int32 = 0x1A3A5A
-  var next_win_type: int32 = 1
+  var menu_open: int32 = 0
+  var cursor_saved: int32 = 0
 
   if focused >= 0:
     var fwin: ptr int32 = window_ptr(windows, focused)
@@ -737,8 +1048,22 @@ proc main() =
     if needs_redraw != 0:
       composite(fb_fd, windows, focused, xres, yres, line_buf, pixel_buf, bg_color)
       draw_taskbar(fb_fd, windows, xres, yres, line_buf, pixel_buf)
+      if menu_open != 0:
+        draw_menu(fb_fd, xres, yres, line_buf, pixel_buf)
       needs_redraw = 0
+      cursor_saved = 0
 
+    # Restore previous cursor area if we saved it
+    if cursor_saved != 0:
+      restore_cursor_area(fb_fd, prev_cursor_x, prev_cursor_y, xres, yres, cursor_save)
+
+    # Save area under new cursor position
+    save_cursor_area(fb_fd, cursor_x, cursor_y, xres, yres, cursor_save)
+    cursor_saved = 1
+    prev_cursor_x = cursor_x
+    prev_cursor_y = cursor_y
+
+    # Draw cursor
     draw_cursor(fb_fd, cursor_x, cursor_y, xres, yres, pixel_buf)
 
     var bytes: int32 = syscall3(SYS_read, mouse_fd, cast[int32](mouse_buf), 3)
@@ -758,10 +1083,6 @@ proc main() =
       if middle != 0:
         running = 0
 
-      # Always redraw after mouse movement for clean cursor
-      if dx != 0 or dy != 0:
-        needs_redraw = 1
-
       cursor_x = cursor_x + dx
       cursor_y = cursor_y - dy
       if cursor_x < 0: cursor_x = 0
@@ -779,83 +1100,94 @@ proc main() =
           dragging = 0
 
       if left != 0 and prev_left == 0 and dragging == 0:
-        var tb_hit: int32 = hit_test_taskbar(cursor_x, cursor_y, windows, yres)
-        if tb_hit == -1:
-          # Launcher - create window with next type
-          var nx: int32 = 100 + (cursor_x / 50) * 20
-          var ny: int32 = 80 + (cursor_y / 50) * 15
-          var title_colors: int32 = 0x2255AA
-          if next_win_type == 2: title_colors = 0x22AA55
-          if next_win_type == 3: title_colors = 0xAA5522
-          var nw: int32 = create_window(windows, nx, ny, 350, 260, title_colors, 0xF0F0F0, next_win_type)
-          if nw >= 0:
-            if focused >= 0:
-              var old: ptr int32 = window_ptr(windows, focused)
-              win_set(old, WIN_FOCUSED, 0)
-            focused = nw
-            var new_win: ptr int32 = window_ptr(windows, nw)
-            win_set(new_win, WIN_FOCUSED, 1)
-            next_win_type = next_win_type + 1
-            if next_win_type > 3: next_win_type = 1
-            needs_redraw = 1
-        else:
-          if tb_hit >= 0:
-            var win: ptr int32 = window_ptr(windows, tb_hit)
-            if win_get(win, WIN_MINIMIZED) != 0:
-              win_set(win, WIN_MINIMIZED, 0)
-            if focused >= 0 and focused != tb_hit:
-              var old: ptr int32 = window_ptr(windows, focused)
-              win_set(old, WIN_FOCUSED, 0)
-            focused = tb_hit
-            win_set(win, WIN_FOCUSED, 1)
+        # Check menu first if open
+        if menu_open != 0:
+          var menu_hit: int32 = hit_test_menu(cursor_x, cursor_y, yres)
+          if menu_hit > 0:
+            # Create window of selected type
+            var nx: int32 = 100 + menu_hit * 30
+            var ny: int32 = 80 + menu_hit * 25
+            var title_colors: int32 = 0x2255AA
+            if menu_hit == 2: title_colors = 0x22AA55
+            if menu_hit == 3: title_colors = 0xAA5522
+            var nw: int32 = create_window(windows, nx, ny, 350, 260, title_colors, 0xF0F0F0, menu_hit)
+            if nw >= 0:
+              if focused >= 0:
+                var old: ptr int32 = window_ptr(windows, focused)
+                win_set(old, WIN_FOCUSED, 0)
+              focused = nw
+              var new_win: ptr int32 = window_ptr(windows, nw)
+              win_set(new_win, WIN_FOCUSED, 1)
+            menu_open = 0
             needs_redraw = 1
           else:
-            var found: int32 = 0
-            if focused >= 0 and found == 0:
-              var win: ptr int32 = window_ptr(windows, focused)
-              var hit: int32 = hit_test_window(win, cursor_x, cursor_y)
-              if hit == 3:
-                destroy_window(windows, focused)
-                focused = -1
+            # Click outside menu closes it
+            menu_open = 0
+            needs_redraw = 1
+        else:
+          var tb_hit: int32 = hit_test_taskbar(cursor_x, cursor_y, windows, yres)
+          if tb_hit == -1:
+            # Launcher clicked - toggle menu
+            menu_open = 1
+            needs_redraw = 1
+          else:
+            if tb_hit >= 0:
+              var win: ptr int32 = window_ptr(windows, tb_hit)
+              if win_get(win, WIN_MINIMIZED) != 0:
+                win_set(win, WIN_MINIMIZED, 0)
+              if focused >= 0 and focused != tb_hit:
+                var old: ptr int32 = window_ptr(windows, focused)
+                win_set(old, WIN_FOCUSED, 0)
+              focused = tb_hit
+              win_set(win, WIN_FOCUSED, 1)
+              needs_redraw = 1
+            else:
+              var found: int32 = 0
+              if focused >= 0 and found == 0:
+                var win: ptr int32 = window_ptr(windows, focused)
+                var hit: int32 = hit_test_window(win, cursor_x, cursor_y)
+                if hit == 3:
+                  destroy_window(windows, focused)
+                  focused = -1
+                  i = MAX_WINDOWS - 1
+                  while i >= 0:
+                    var w: ptr int32 = window_ptr(windows, i)
+                    if win_get(w, WIN_ACTIVE) != 0 and win_get(w, WIN_MINIMIZED) == 0:
+                      focused = i
+                      win_set(w, WIN_FOCUSED, 1)
+                      i = -1
+                    i = i - 1
+                  needs_redraw = 1
+                  found = 1
+                if hit == 5 and found == 0:
+                  win_set(win, WIN_MINIMIZED, 1)
+                  win_set(win, WIN_FOCUSED, 0)
+                  focused = -1
+                  needs_redraw = 1
+                  found = 1
+                if hit == 2 and found == 0:
+                  dragging = 1
+                  drag_win = focused
+                  drag_ox = cursor_x - win_get(win, WIN_X)
+                  drag_oy = cursor_y - win_get(win, WIN_Y)
+                  found = 1
+                if hit > 0 and found == 0:
+                  found = 1
+              if found == 0:
                 i = MAX_WINDOWS - 1
-                while i >= 0:
-                  var w: ptr int32 = window_ptr(windows, i)
-                  if win_get(w, WIN_ACTIVE) != 0 and win_get(w, WIN_MINIMIZED) == 0:
-                    focused = i
-                    win_set(w, WIN_FOCUSED, 1)
-                    i = -1
+                while i >= 0 and found == 0:
+                  if i != focused:
+                    var win: ptr int32 = window_ptr(windows, i)
+                    var hit: int32 = hit_test_window(win, cursor_x, cursor_y)
+                    if hit > 0:
+                      if focused >= 0:
+                        var old: ptr int32 = window_ptr(windows, focused)
+                        win_set(old, WIN_FOCUSED, 0)
+                      focused = i
+                      win_set(win, WIN_FOCUSED, 1)
+                      needs_redraw = 1
+                      found = 1
                   i = i - 1
-                needs_redraw = 1
-                found = 1
-              if hit == 5 and found == 0:
-                win_set(win, WIN_MINIMIZED, 1)
-                win_set(win, WIN_FOCUSED, 0)
-                focused = -1
-                needs_redraw = 1
-                found = 1
-              if hit == 2 and found == 0:
-                dragging = 1
-                drag_win = focused
-                drag_ox = cursor_x - win_get(win, WIN_X)
-                drag_oy = cursor_y - win_get(win, WIN_Y)
-                found = 1
-              if hit > 0 and found == 0:
-                found = 1
-            if found == 0:
-              i = MAX_WINDOWS - 1
-              while i >= 0 and found == 0:
-                if i != focused:
-                  var win: ptr int32 = window_ptr(windows, i)
-                  var hit: int32 = hit_test_window(win, cursor_x, cursor_y)
-                  if hit > 0:
-                    if focused >= 0:
-                      var old: ptr int32 = window_ptr(windows, focused)
-                      win_set(old, WIN_FOCUSED, 0)
-                    focused = i
-                    win_set(win, WIN_FOCUSED, 1)
-                    needs_redraw = 1
-                    found = 1
-                i = i - 1
 
       if right != 0 and prev_right == 0:
         var nw: int32 = create_window(windows, cursor_x, cursor_y, 300, 220, 0xAA2255, 0xF8F8F8, 0)
@@ -870,6 +1202,11 @@ proc main() =
 
       prev_left = left
       prev_right = right
+    else:
+      # Small sleep when no input to reduce CPU
+      sleep_buf[0] = 0
+      sleep_buf[1] = 5000000  # 5ms
+      discard syscall2(SYS_nanosleep, cast[int32](sleep_buf), 0)
 
   discard syscall1(SYS_close, fb_fd)
   discard syscall1(SYS_close, mouse_fd)
