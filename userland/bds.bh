@@ -1086,11 +1086,12 @@ proc main() =
     var fwin: ptr int32 = window_ptr(windows, focused)
     win_set(fwin, WIN_FOCUSED, 1)
 
-  var first_frame: int32 = 1
   var running: int32 = 1
+  var frame_count: int32 = 0
   while running != 0:
     # Full scene redraw when windows/menu changed
     if scene_dirty != 0:
+      print_str(cast[ptr uint8]("S"))  # Scene redraw
       # Redraw entire scene (without cursor)
       composite(backbuffer, windows, focused, xres, yres, bg_color)
       draw_taskbar(backbuffer, windows, xres, yres)
@@ -1105,9 +1106,9 @@ proc main() =
       old_cursor_y = cursor_y
       scene_dirty = 0
       cursor_moved = 0
-      first_frame = 0
     else:
       if cursor_moved != 0:
+        print_str(cast[ptr uint8]("."))  # Cursor only
         # Only cursor moved - update just the cursor regions (fast!)
         # 1. Flush old cursor region from backbuffer (shows clean background)
         flush_region(framebuffer, backbuffer, old_cursor_x, old_cursor_y, 16, 16, xres, yres)

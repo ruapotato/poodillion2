@@ -35,7 +35,9 @@ str_24: db "Error: Cannot mmap framebuffer", 10, "", 0
 str_25: db "Framebuffer mmap'd", 10, "", 0
 str_26: db "Backbuffer: ", 0
 str_27: db " bytes", 10, "", 0
-str_28: db "BDS exited", 10, "", 0
+str_28: db "S", 0
+str_29: db ".", 0
+str_30: db "BDS exited", 10, "", 0
 
 section .text
 global _start
@@ -11795,10 +11797,10 @@ else1139:
 endif1138:
     mov eax, 1
     mov [ebp-144], eax
-    mov eax, 1
+    mov eax, 0
     mov [ebp-148], eax
 while_start1140:
-    mov eax, [ebp-148]
+    mov eax, [ebp-144]
     push eax
     mov eax, 0
     mov ebx, eax
@@ -11818,6 +11820,10 @@ while_start1140:
     movzx eax, al
     test eax, eax
     jz else1143
+    lea eax, [rel str_28]
+    push eax
+    call print_str
+    add esp, 4
     mov eax, [ebp-132]
     push eax
     mov eax, [ebp-36]
@@ -11921,8 +11927,6 @@ endif1144:
     mov [ebp-116], eax
     mov eax, 0
     mov [ebp-120], eax
-    mov eax, 0
-    mov [ebp-144], eax
     jmp endif1142
 else1143:
     mov eax, [ebp-120]
@@ -11935,6 +11939,10 @@ else1143:
     movzx eax, al
     test eax, eax
     jz else1147
+    lea eax, [rel str_29]
+    push eax
+    call print_str
+    add esp, 4
     mov eax, [ebp-36]
     push eax
     mov eax, [ebp-32]
@@ -12182,7 +12190,7 @@ and_end1159:
     test eax, eax
     jz else1155
     mov eax, 0
-    mov [ebp-148], eax
+    mov [ebp-144], eax
     jmp endif1154
 else1155:
 endif1154:
@@ -13340,7 +13348,7 @@ while_end1141:
     push eax
     call syscall1
     add esp, 8
-    lea eax, [rel str_28]
+    lea eax, [rel str_30]
     push eax
     call print_str
     add esp, 4
