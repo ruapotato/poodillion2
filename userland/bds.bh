@@ -1079,30 +1079,16 @@ proc main() =
       draw_taskbar(backbuffer, windows, xres, yres)
       if menu_open != 0:
         draw_menu(backbuffer, xres, yres)
-      # Save area under cursor, draw cursor, flush all
+      scene_dirty = 0
+      cursor_moved = 1  # Force cursor redraw after scene change
+
+    if cursor_moved != 0:
+      # Draw cursor and flush entire buffer (single write = no tearing)
       save_cursor_area(backbuffer, cursor_save, cursor_x, cursor_y, xres, yres)
       draw_cursor(backbuffer, cursor_x, cursor_y, xres, yres)
       flush_buffer(fb_fd, backbuffer, xres, yres)
-      # Restore backbuffer (keep it cursor-free for partial updates)
       restore_cursor_area(backbuffer, cursor_save, cursor_x, cursor_y, xres, yres)
-      old_cursor_x = cursor_x
-      old_cursor_y = cursor_y
-      scene_dirty = 0
       cursor_moved = 0
-    else:
-      if cursor_moved != 0:
-        # Only cursor moved - fast partial update
-        # Flush old cursor area (backbuffer is clean there)
-        flush_rect(fb_fd, backbuffer, old_cursor_x, old_cursor_y, 16, 16, xres, yres)
-        # Save new cursor area, draw cursor, flush new area
-        save_cursor_area(backbuffer, cursor_save, cursor_x, cursor_y, xres, yres)
-        draw_cursor(backbuffer, cursor_x, cursor_y, xres, yres)
-        flush_rect(fb_fd, backbuffer, cursor_x, cursor_y, 16, 16, xres, yres)
-        # Restore backbuffer (keep it cursor-free)
-        restore_cursor_area(backbuffer, cursor_save, cursor_x, cursor_y, xres, yres)
-        old_cursor_x = cursor_x
-        old_cursor_y = cursor_y
-        cursor_moved = 0
 
     # Read 4 bytes for IntelliMouse protocol (scroll wheel mice)
     var bytes: int32 = syscall3(SYS_read, mouse_fd, cast[int32](mouse_buf), 4)

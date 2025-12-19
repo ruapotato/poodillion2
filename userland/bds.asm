@@ -11789,6 +11789,23 @@ while_start1136:
     jmp endif1140
 else1141:
 endif1140:
+    mov eax, 0
+    mov [ebp-112], eax
+    mov eax, 1
+    mov [ebp-116], eax
+    jmp endif1138
+else1139:
+endif1138:
+    mov eax, [ebp-116]
+    push eax
+    mov eax, 0
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    setne al
+    movzx eax, al
+    test eax, eax
+    jz else1143
     mov eax, [ebp-36]
     push eax
     mov eax, [ebp-32]
@@ -11839,112 +11856,11 @@ endif1140:
     push eax
     call restore_cursor_area
     add esp, 24
-    mov eax, [ebp-76]
-    mov [ebp-84], eax
-    mov eax, [ebp-80]
-    mov [ebp-88], eax
-    mov eax, 0
-    mov [ebp-112], eax
-    mov eax, 0
-    mov [ebp-116], eax
-    jmp endif1138
-else1139:
-    mov eax, [ebp-116]
-    push eax
-    mov eax, 0
-    mov ebx, eax
-    pop eax
-    cmp eax, ebx
-    setne al
-    movzx eax, al
-    test eax, eax
-    jz else1143
-    mov eax, [ebp-36]
-    push eax
-    mov eax, [ebp-32]
-    push eax
-    mov eax, 16
-    push eax
-    mov eax, 16
-    push eax
-    mov eax, [ebp-88]
-    push eax
-    mov eax, [ebp-84]
-    push eax
-    mov eax, [ebp-48]
-    push eax
-    mov eax, [ebp-12]
-    push eax
-    call flush_rect
-    add esp, 32
-    mov eax, [ebp-36]
-    push eax
-    mov eax, [ebp-32]
-    push eax
-    mov eax, [ebp-80]
-    push eax
-    mov eax, [ebp-76]
-    push eax
-    mov eax, [ebp-52]
-    push eax
-    mov eax, [ebp-48]
-    push eax
-    call save_cursor_area
-    add esp, 24
-    mov eax, [ebp-36]
-    push eax
-    mov eax, [ebp-32]
-    push eax
-    mov eax, [ebp-80]
-    push eax
-    mov eax, [ebp-76]
-    push eax
-    mov eax, [ebp-48]
-    push eax
-    call draw_cursor
-    add esp, 20
-    mov eax, [ebp-36]
-    push eax
-    mov eax, [ebp-32]
-    push eax
-    mov eax, 16
-    push eax
-    mov eax, 16
-    push eax
-    mov eax, [ebp-80]
-    push eax
-    mov eax, [ebp-76]
-    push eax
-    mov eax, [ebp-48]
-    push eax
-    mov eax, [ebp-12]
-    push eax
-    call flush_rect
-    add esp, 32
-    mov eax, [ebp-36]
-    push eax
-    mov eax, [ebp-32]
-    push eax
-    mov eax, [ebp-80]
-    push eax
-    mov eax, [ebp-76]
-    push eax
-    mov eax, [ebp-52]
-    push eax
-    mov eax, [ebp-48]
-    push eax
-    call restore_cursor_area
-    add esp, 24
-    mov eax, [ebp-76]
-    mov [ebp-84], eax
-    mov eax, [ebp-80]
-    mov [ebp-88], eax
     mov eax, 0
     mov [ebp-116], eax
     jmp endif1142
 else1143:
 endif1142:
-endif1138:
     mov eax, 4
     push eax
     mov eax, [ebp-24]
