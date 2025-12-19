@@ -105,6 +105,38 @@ psh> bin/ps
 - Pure syscalls, no graphics libraries
 - All shapes compile from Brainhair to x86
 
+**Desktop Environment** 🖥️ NEW (X11/Wayland alternative!):
+- **bds** (24KB) - Brainhair Display Server
+  - Integrated floating window manager
+  - Taskbar with window buttons and launcher
+  - Mouse-driven window management (drag, close, minimize)
+  - Layered compositing with focus handling
+- **term** (74KB) - Graphical Terminal Emulator
+  - PTY-based (/dev/ptmx master/slave)
+  - Fork/exec shell in child process
+  - Full 8x8 bitmap font (A-Z, a-z, 0-9, symbols)
+  - Non-blocking I/O for smooth operation
+- **fm** (55KB) - Graphical File Manager
+  - Directory browsing with folder/file icons
+  - Mouse navigation and selection
+  - Double-click to enter directories
+  - Current path display
+- **gedit** (65KB) - Graphical Text Editor
+  - Full text editing (insert, delete, navigation)
+  - File load/save with Ctrl+S
+  - Arrow key cursor movement
+  - Line-based scrolling for large files
+  - Syntax-inspired dark color scheme
+
+**Run on TTY** (not X11!):
+```bash
+# Switch to a TTY first (Ctrl+Alt+F3)
+sudo ./bin/bds   # Full desktop environment
+sudo ./bin/term  # Just the terminal
+sudo ./bin/fm    # Just the file manager
+sudo ./bin/gedit myfile.txt  # Just the editor
+```
+
 **Data-Oriented Tools** (working binary pipeline!):
 - **ps** (10.7KB) - Read real `/proc` data, output binary Process objects
 - **inspect** (9.6KB) - View schema and hex dump structured data
