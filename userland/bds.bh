@@ -698,8 +698,47 @@ proc draw_window_body(buf: ptr uint32, win: ptr int32, xres: int32, yres: int32)
   var w: int32 = win_get(win, WIN_WIDTH)
   var h: int32 = win_get(win, WIN_HEIGHT)
   var body_col: int32 = win_get(win, WIN_BODY_COLOR)
+  var win_type: int32 = win_get(win, WIN_TYPE)
 
-  fill_rect(buf, x + BORDER_SIZE, y + BORDER_SIZE + TITLE_HEIGHT, w - BORDER_SIZE * 2, h - BORDER_SIZE * 2 - TITLE_HEIGHT, body_col, xres, yres)
+  var content_x: int32 = x + BORDER_SIZE
+  var content_y: int32 = y + BORDER_SIZE + TITLE_HEIGHT
+  var content_w: int32 = w - BORDER_SIZE * 2
+  var content_h: int32 = h - BORDER_SIZE * 2 - TITLE_HEIGHT
+
+  fill_rect(buf, content_x, content_y, content_w, content_h, body_col, xres, yres)
+
+  # Draw content based on window type
+  if win_type == 1:
+    # Terminal - dark background with prompt
+    fill_rect(buf, content_x + 4, content_y + 4, content_w - 8, content_h - 8, 0x1A1A1A, xres, yres)
+    draw_text(buf, content_x + 8, content_y + 8, cast[ptr uint8]("Welcome to BDS Terminal"), 0x00FF00, 0x1A1A1A, xres, yres, 30)
+    draw_text(buf, content_x + 8, content_y + 24, cast[ptr uint8]("Type commands here"), 0x888888, 0x1A1A1A, xres, yres, 30)
+    draw_text(buf, content_x + 8, content_y + 48, cast[ptr uint8]("$ "), 0x00FF00, 0x1A1A1A, xres, yres, 30)
+    # Blinking cursor (always on for now)
+    fill_rect(buf, content_x + 8 + 16, content_y + 48, 8, 12, 0x00FF00, xres, yres)
+
+  if win_type == 2:
+    # Files - file list
+    draw_text(buf, content_x + 8, content_y + 8, cast[ptr uint8]("Home"), 0x000000, body_col, xres, yres, 20)
+    fill_rect(buf, content_x + 4, content_y + 24, content_w - 8, 1, 0xCCCCCC, xres, yres)
+    # Folder icons (simple squares)
+    fill_rect(buf, content_x + 12, content_y + 32, 16, 14, 0xE8C86A, xres, yres)
+    draw_text(buf, content_x + 34, content_y + 34, cast[ptr uint8]("Documents"), 0x000000, body_col, xres, yres, 15)
+    fill_rect(buf, content_x + 12, content_y + 52, 16, 14, 0xE8C86A, xres, yres)
+    draw_text(buf, content_x + 34, content_y + 54, cast[ptr uint8]("Downloads"), 0x000000, body_col, xres, yres, 15)
+    fill_rect(buf, content_x + 12, content_y + 72, 16, 14, 0xE8C86A, xres, yres)
+    draw_text(buf, content_x + 34, content_y + 74, cast[ptr uint8]("Pictures"), 0x000000, body_col, xres, yres, 15)
+    fill_rect(buf, content_x + 12, content_y + 92, 16, 14, 0x6A9BE8, xres, yres)
+    draw_text(buf, content_x + 34, content_y + 94, cast[ptr uint8]("readme.txt"), 0x000000, body_col, xres, yres, 15)
+
+  if win_type == 3:
+    # Editor - text area with sample text
+    fill_rect(buf, content_x + 4, content_y + 4, content_w - 8, content_h - 8, 0xFFFFFF, xres, yres)
+    draw_text(buf, content_x + 8, content_y + 8, cast[ptr uint8]("Untitled Document"), 0x000000, 0xFFFFFF, xres, yres, 25)
+    fill_rect(buf, content_x + 4, content_y + 24, content_w - 8, 1, 0xCCCCCC, xres, yres)
+    draw_text(buf, content_x + 8, content_y + 32, cast[ptr uint8]("Hello World"), 0x000000, 0xFFFFFF, xres, yres, 30)
+    draw_text(buf, content_x + 8, content_y + 48, cast[ptr uint8]("This is a text editor"), 0x000000, 0xFFFFFF, xres, yres, 30)
+    draw_text(buf, content_x + 8, content_y + 64, cast[ptr uint8]("You can type here"), 0x888888, 0xFFFFFF, xres, yres, 30)
 
 proc composite(buf: ptr uint32, windows: ptr int32, focused_idx: int32, xres: int32, yres: int32, bg_color: int32) =
   fill_rect(buf, 0, 0, xres, yres - TASKBAR_HEIGHT, bg_color, xres, yres)
@@ -721,12 +760,49 @@ proc composite(buf: ptr uint32, windows: ptr int32, focused_idx: int32, xres: in
         draw_decoration(buf, win, 1, xres, yres)
       draw_window_body(buf, win, xres, yres)
 
-proc draw_taskbar(buf: ptr uint32, windows: ptr int32, xres: int32, yres: int32) =
+proc draw_taskbar(buf: ptr uint32, windows: ptr int32, xres: int32, yres: int32, menu_open: int32) =
   var taskbar_y: int32 = yres - TASKBAR_HEIGHT
   fill_rect(buf, 0, taskbar_y, xres, TASKBAR_HEIGHT, 0x2D2D2D, xres, yres)
   fill_rect(buf, 0, taskbar_y, xres, 1, 0x505050, xres, yres)
-  fill_rect(buf, 4, taskbar_y + 4, LAUNCHER_WIDTH, TASKBAR_HEIGHT - 8, 0x0066AA, xres, yres)
-  draw_text(buf, 20, taskbar_y + 12, cast[ptr uint8]("Menu"), 0xFFFFFF, 0x0066AA, xres, yres, 10)
+  # Menu button - highlight if menu is open
+  var menu_color: int32 = 0x0066AA
+  if menu_open != 0:
+    menu_color = 0x0088DD
+  fill_rect(buf, 4, taskbar_y + 4, LAUNCHER_WIDTH, TASKBAR_HEIGHT - 8, menu_color, xres, yres)
+  draw_text(buf, 20, taskbar_y + 12, cast[ptr uint8]("Menu"), 0xFFFFFF, menu_color, xres, yres, 10)
+
+proc draw_menu(buf: ptr uint32, xres: int32, yres: int32) =
+  var menu_x: int32 = 4
+  var menu_y: int32 = yres - TASKBAR_HEIGHT - MENU_ITEM_HEIGHT * 3 - 4
+  # Menu background
+  fill_rect(buf, menu_x, menu_y, MENU_WIDTH, MENU_ITEM_HEIGHT * 3 + 4, 0x3D3D3D, xres, yres)
+  fill_rect(buf, menu_x + 1, menu_y + 1, MENU_WIDTH - 2, MENU_ITEM_HEIGHT * 3 + 2, 0x2D2D2D, xres, yres)
+  # Menu items
+  fill_rect(buf, menu_x + 2, menu_y + 2, MENU_WIDTH - 4, MENU_ITEM_HEIGHT, 0x404040, xres, yres)
+  draw_text(buf, menu_x + 10, menu_y + 10, cast[ptr uint8]("Terminal"), 0xFFFFFF, 0x404040, xres, yres, 10)
+  fill_rect(buf, menu_x + 2, menu_y + 2 + MENU_ITEM_HEIGHT, MENU_WIDTH - 4, MENU_ITEM_HEIGHT, 0x404040, xres, yres)
+  draw_text(buf, menu_x + 10, menu_y + 10 + MENU_ITEM_HEIGHT, cast[ptr uint8]("Files"), 0xFFFFFF, 0x404040, xres, yres, 10)
+  fill_rect(buf, menu_x + 2, menu_y + 2 + MENU_ITEM_HEIGHT * 2, MENU_WIDTH - 4, MENU_ITEM_HEIGHT, 0x404040, xres, yres)
+  draw_text(buf, menu_x + 10, menu_y + 10 + MENU_ITEM_HEIGHT * 2, cast[ptr uint8]("Editor"), 0xFFFFFF, 0x404040, xres, yres, 10)
+
+proc menu_item_at(px: int32, py: int32, xres: int32, yres: int32): int32 =
+  var menu_x: int32 = 4
+  var menu_y: int32 = yres - TASKBAR_HEIGHT - MENU_ITEM_HEIGHT * 3 - 4
+  if px >= menu_x and px < menu_x + MENU_WIDTH:
+    if py >= menu_y + 2 and py < menu_y + 2 + MENU_ITEM_HEIGHT:
+      return 1  # Terminal
+    if py >= menu_y + 2 + MENU_ITEM_HEIGHT and py < menu_y + 2 + MENU_ITEM_HEIGHT * 2:
+      return 2  # Files
+    if py >= menu_y + 2 + MENU_ITEM_HEIGHT * 2 and py < menu_y + 2 + MENU_ITEM_HEIGHT * 3:
+      return 3  # Editor
+  return 0
+
+proc point_in_menu_button(px: int32, py: int32, yres: int32): int32 =
+  var taskbar_y: int32 = yres - TASKBAR_HEIGHT
+  if px >= 4 and px < 4 + LAUNCHER_WIDTH:
+    if py >= taskbar_y + 4 and py < taskbar_y + TASKBAR_HEIGHT - 4:
+      return 1
+  return 0
 
 proc draw_cursor(buf: ptr uint32, x: int32, y: int32, xres: int32, yres: int32) =
   # Draw arrow cursor - 12x16 pixels
@@ -981,13 +1057,14 @@ proc main() =
   var mouse_btn: int32 = 0
   var prev_btn: int32 = 0
 
+  # Menu state
+  var menu_open: int32 = 0
+  var next_win_x: int32 = 100
+  var next_win_y: int32 = 80
+
   if focused >= 0:
     var fwin: ptr int32 = window_ptr(windows, focused)
     win_set(fwin, WIN_FOCUSED, 1)
-
-  # Initial scene render
-  composite(framebuffer, windows, focused, xres, yres, bg_color)
-  draw_taskbar(framebuffer, windows, xres, yres)
 
   # Set initial cursor position
   if use_hw_cursor != 0:
@@ -995,7 +1072,7 @@ proc main() =
 
   # Draw initial scene to backbuffer, then copy to framebuffer
   composite(backbuffer, windows, focused, xres, yres, bg_color)
-  draw_taskbar(backbuffer, windows, xres, yres)
+  draw_taskbar(backbuffer, windows, xres, yres, menu_open)
   draw_cursor(backbuffer, cursor_x, cursor_y, xres, yres)
   # Copy to screen
   fast_memcpy(cast[int32](framebuffer), cast[int32](backbuffer), buf_size)
@@ -1047,25 +1124,61 @@ proc main() =
       var left_released: int32 = (mouse_btn & 1) == 0 and (prev_btn & 1) != 0
 
       if left_pressed != 0:
-        # Check if clicking on a window
-        var clicked_win: int32 = find_window_at(windows, cursor_x, cursor_y, focused)
-        if clicked_win >= 0:
-          # Focus this window
-          if clicked_win != focused:
-            if focused >= 0:
-              var old_win: ptr int32 = window_ptr(windows, focused)
-              win_set(old_win, WIN_FOCUSED, 0)
-            focused = clicked_win
-            var new_win: ptr int32 = window_ptr(windows, focused)
-            win_set(new_win, WIN_FOCUSED, 1)
+        # Check if clicking menu button
+        if point_in_menu_button(cursor_x, cursor_y, yres) != 0:
+          menu_open = 1 - menu_open  # Toggle menu
+        else:
+          # Check if clicking on menu item
+          if menu_open != 0:
+            var item: int32 = menu_item_at(cursor_x, cursor_y, xres, yres)
+            if item > 0:
+              # Create new window based on menu item
+              var new_win_idx: int32 = -1
+              if item == 1:
+                new_win_idx = create_window(windows, next_win_x, next_win_y, 400, 300, 0x2255AA, 0xE8E8E8, 1)
+              if item == 2:
+                new_win_idx = create_window(windows, next_win_x, next_win_y, 380, 280, 0x22AA55, 0xF0F0F0, 2)
+              if item == 3:
+                new_win_idx = create_window(windows, next_win_x, next_win_y, 450, 320, 0xAA5522, 0xEEEEEE, 3)
+              if new_win_idx >= 0:
+                # Focus new window
+                if focused >= 0:
+                  var old_win: ptr int32 = window_ptr(windows, focused)
+                  win_set(old_win, WIN_FOCUSED, 0)
+                focused = new_win_idx
+                var nwin: ptr int32 = window_ptr(windows, new_win_idx)
+                win_set(nwin, WIN_FOCUSED, 1)
+                # Offset next window position
+                next_win_x = next_win_x + 30
+                next_win_y = next_win_y + 30
+                if next_win_x > xres - 200:
+                  next_win_x = 100
+                if next_win_y > yres - 200:
+                  next_win_y = 80
+              menu_open = 0
+            else:
+              # Clicked outside menu - close it
+              menu_open = 0
 
-          # Check if clicking on title bar - start drag
-          var win: ptr int32 = window_ptr(windows, clicked_win)
-          if point_in_titlebar(win, cursor_x, cursor_y) != 0:
-            dragging = 1
-            drag_win = clicked_win
-            drag_off_x = cursor_x - win_get(win, WIN_X)
-            drag_off_y = cursor_y - win_get(win, WIN_Y)
+          # Check if clicking on a window
+          var clicked_win: int32 = find_window_at(windows, cursor_x, cursor_y, focused)
+          if clicked_win >= 0:
+            # Focus this window
+            if clicked_win != focused:
+              if focused >= 0:
+                var old_win: ptr int32 = window_ptr(windows, focused)
+                win_set(old_win, WIN_FOCUSED, 0)
+              focused = clicked_win
+              var new_win: ptr int32 = window_ptr(windows, focused)
+              win_set(new_win, WIN_FOCUSED, 1)
+
+            # Check if clicking on title bar - start drag
+            var win: ptr int32 = window_ptr(windows, clicked_win)
+            if point_in_titlebar(win, cursor_x, cursor_y) != 0:
+              dragging = 1
+              drag_win = clicked_win
+              drag_off_x = cursor_x - win_get(win, WIN_X)
+              drag_off_y = cursor_y - win_get(win, WIN_Y)
 
       if left_released != 0:
         # Stop dragging
@@ -1080,7 +1193,9 @@ proc main() =
 
     # Draw to backbuffer
     composite(backbuffer, windows, focused, xres, yres, bg_color)
-    draw_taskbar(backbuffer, windows, xres, yres)
+    draw_taskbar(backbuffer, windows, xres, yres, menu_open)
+    if menu_open != 0:
+      draw_menu(backbuffer, xres, yres)
     draw_cursor(backbuffer, cursor_x, cursor_y, xres, yres)
     # Copy to screen in one fast operation (no flicker)
     fast_memcpy(cast[int32](framebuffer), cast[int32](backbuffer), buf_size)
