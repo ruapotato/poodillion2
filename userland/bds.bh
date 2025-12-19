@@ -10,6 +10,8 @@ const SYS_exit: int32 = 1
 const SYS_brk: int32 = 45
 const SYS_fcntl: int32 = 55
 const SYS_mmap2: int32 = 192
+const SYS_time: int32 = 13
+const SYS_nanosleep: int32 = 162
 
 const STDOUT: int32 = 1
 const O_RDWR: int32 = 2
@@ -25,6 +27,13 @@ const MAP_SHARED: int32 = 1
 const KDSETMODE: int32 = 0x4B3A
 const KD_TEXT: int32 = 0
 const KD_GRAPHICS: int32 = 1
+
+# VT switching
+const VT_SETMODE: int32 = 0x5602
+const VT_RELDISP: int32 = 0x5605
+const VT_ACKACQ: int32 = 0x02
+const VT_AUTO: int32 = 0
+const VT_PROCESS: int32 = 1
 
 # DRM ioctl numbers (from drm.h and drm_mode.h)
 # Base: 'd' << 8 = 0x6400
@@ -85,6 +94,8 @@ extern proc syscall2(num: int32, arg1: int32, arg2: int32): int32
 extern proc syscall3(num: int32, arg1: int32, arg2: int32, arg3: int32): int32
 extern proc syscall6(num: int32, arg1: int32, arg2: int32, arg3: int32, arg4: int32, arg5: int32, arg6: int32): int32
 extern proc fast_memcpy(dst: int32, src: int32, count_bytes: int32)
+extern proc get_argc(): int32
+extern proc get_argv(index: int32): ptr uint8
 
 proc print_str(s: ptr uint8) =
   var len: int32 = 0
@@ -125,6 +136,39 @@ proc print_num(n: int32) =
     j = j + 1
     k = k - 1
   print_str(buf)
+
+proc atoi(s: ptr uint8): int32 =
+  var result: int32 = 0
+  var i: int32 = 0
+  while s[i] >= cast[uint8](48) and s[i] <= cast[uint8](57):
+    result = result * 10 + cast[int32](s[i]) - 48
+    i = i + 1
+  return result
+
+proc streq(a: ptr uint8, b: ptr uint8): int32 =
+  var i: int32 = 0
+  while a[i] != cast[uint8](0) and b[i] != cast[uint8](0):
+    if a[i] != b[i]:
+      return 0
+    i = i + 1
+  if a[i] == b[i]:
+    return 1
+  return 0
+
+proc get_time(): int32 =
+  return syscall1(SYS_time, 0)
+
+# Global timespec buffer for sleep (avoid repeated brk calls)
+var g_timespec: ptr int32 = cast[ptr int32](0)
+
+proc sleep_ms(ms: int32) =
+  if g_timespec == cast[ptr int32](0):
+    var old_brk: int32 = syscall1(SYS_brk, 0)
+    discard syscall1(SYS_brk, old_brk + 16)
+    g_timespec = cast[ptr int32](old_brk)
+  g_timespec[0] = 0              # seconds
+  g_timespec[1] = ms * 1000000   # nanoseconds (ms * 1000000)
+  discard syscall2(SYS_nanosleep, cast[int32](g_timespec), 0)
 
 # ============ Drawing Primitives ============
 
@@ -364,6 +408,26 @@ proc draw_taskbar(buf: ptr uint32, windows: ptr int32, xres: int32, yres: int32)
 # ============ Main ============
 
 proc main() =
+  # Parse command line arguments
+  var timeout_seconds: int32 = 0
+  var argc: int32 = get_argc()
+  var i: int32 = 1
+  while i < argc:
+    var arg: ptr uint8 = get_argv(i)
+    if streq(arg, cast[ptr uint8]("--timeout")) != 0:
+      if i + 1 < argc:
+        var timeout_arg: ptr uint8 = get_argv(i + 1)
+        timeout_seconds = atoi(timeout_arg)
+        i = i + 1
+    i = i + 1
+
+  var start_time: int32 = get_time()
+
+  if timeout_seconds > 0:
+    print_str(cast[ptr uint8]("BDS starting with timeout: "))
+    print_num(timeout_seconds)
+    print_str(cast[ptr uint8](" seconds\n"))
+
   # Redirect output to debug file to avoid console text on screen
   var debug_fd: int32 = syscall3(SYS_open, cast[int32]("/tmp/bds_drm.log"), 66, 420)
   # 66 = O_RDWR|O_CREAT, 420 = 0644
@@ -418,10 +482,10 @@ proc main() =
     crtc_id = 41  # Common CRTC ID, may need to query
     use_hw_cursor = 1
 
-  # Switch console to graphics mode (no text overlay)
+  # Open TTY but DON'T set KD_GRAPHICS - this blocks VT switching
+  # Just leave console in text mode, the framebuffer will overwrite it
   var tty_fd: int32 = syscall2(SYS_open, cast[int32]("/dev/tty"), O_RDWR)
-  if tty_fd >= 0:
-    discard syscall3(SYS_ioctl, tty_fd, KDSETMODE, KD_GRAPHICS)
+  # Skip KD_GRAPHICS to allow VT switching with Ctrl+Alt+Fn
 
   # mmap framebuffer
   var buf_size: int32 = xres * yres * 4
@@ -432,9 +496,12 @@ proc main() =
   if mmap_unsigned < cast[uint32](0xFFFFF000):
     framebuffer = cast[ptr uint32](mmap_result)
   else:
-    if tty_fd >= 0:
-      discard syscall3(SYS_ioctl, tty_fd, KDSETMODE, KD_TEXT)
     discard syscall1(SYS_exit, 1)
+
+  # Allocate back buffer for double buffering (eliminates flicker)
+  var back_brk: int32 = syscall1(SYS_brk, 0)
+  discard syscall1(SYS_brk, back_brk + buf_size + 4096)
+  var backbuffer: ptr uint32 = cast[ptr uint32](back_brk)
 
   # Open mouse
   var mouse_fd: int32 = syscall2(SYS_open, cast[int32]("/dev/input/mice"), O_RDWR)
@@ -471,8 +538,27 @@ proc main() =
   if use_hw_cursor != 0:
     set_hardware_cursor(drm_fd, crtc_id, cursor_handle, cursor_x, cursor_y)
 
+  # Draw initial scene to backbuffer, then copy to framebuffer
+  composite(backbuffer, windows, focused, xres, yres, bg_color)
+  draw_taskbar(backbuffer, windows, xres, yres)
+  # Draw initial cursor
+  fill_rect(backbuffer, cursor_x, cursor_y, 2, 16, 0xFFFFFF, xres, yres)
+  fill_rect(backbuffer, cursor_x, cursor_y, 12, 2, 0xFFFFFF, xres, yres)
+  # Copy to screen
+  fast_memcpy(cast[int32](framebuffer), cast[int32](backbuffer), buf_size)
+
   var running: int32 = 1
+  var frame_count: int32 = 0
   while running != 0:
+    frame_count = frame_count + 1
+
+    # Check timeout
+    if timeout_seconds > 0:
+      var now: int32 = get_time()
+      if now - start_time >= timeout_seconds:
+        print_str(cast[ptr uint8]("Timeout reached, exiting...\n"))
+        running = 0
+
     # Batch mouse events
     var total_dx: int32 = 0
     var total_dy: int32 = 0
@@ -501,13 +587,17 @@ proc main() =
       if cursor_y < 0: cursor_y = 0
       if cursor_y >= yres: cursor_y = yres - 1
 
-      if use_hw_cursor != 0:
-        # Just one ioctl to move cursor - instant!
-        move_hardware_cursor(drm_fd, crtc_id, cursor_x, cursor_y)
+    # Draw to backbuffer
+    composite(backbuffer, windows, focused, xres, yres, bg_color)
+    draw_taskbar(backbuffer, windows, xres, yres)
+    # Draw cursor
+    fill_rect(backbuffer, cursor_x, cursor_y, 2, 16, 0xFFFFFF, xres, yres)
+    fill_rect(backbuffer, cursor_x, cursor_y, 12, 2, 0xFFFFFF, xres, yres)
+    # Copy to screen in one fast operation (no flicker)
+    fast_memcpy(cast[int32](framebuffer), cast[int32](backbuffer), buf_size)
 
-  # Restore text mode
+  # Close TTY
   if tty_fd >= 0:
-    discard syscall3(SYS_ioctl, tty_fd, KDSETMODE, KD_TEXT)
     discard syscall1(SYS_close, tty_fd)
 
   discard syscall1(SYS_close, drm_fd)
