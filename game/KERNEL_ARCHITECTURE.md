@@ -1,8 +1,8 @@
-# Poodillion 2 - Kernel Architecture Design
+# Brainhair 2 - Kernel Architecture Design
 
 ## Overview
 
-Poodillion 2 now uses a **true kernel/userland architecture** similar to real Unix systems:
+Brainhair 2 now uses a **true kernel/userland architecture** similar to real Unix systems:
 
 - **Python = Kernel**: Low-level syscalls only
 - **PooScript = Unix**: All commands, shell, and userland utilities
@@ -318,7 +318,7 @@ Proper permission checking:
 
 ## Conclusion
 
-This new architecture makes Poodillion 2 a true Unix emulator:
+This new architecture makes Brainhair 2 a true Unix emulator:
 
 1. **Python is the kernel** - provides low-level syscalls
 2. **PooScript is Unix** - implements all userland functionality

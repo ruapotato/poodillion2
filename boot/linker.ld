@@ -1,4 +1,4 @@
-/* linker.ld - Linker script for PoodillionOS kernel */
+/* linker.ld - Linker script for BrainhairOS kernel */
 
 ENTRY(_start)
 

@@ -2,7 +2,7 @@
 
 ## Overview
 
-Poodillion now has a complete client-server web architecture with:
+Brainhair now has a complete client-server web architecture with:
 - HTTP daemon (`httpd`) running on multiple servers
 - Web browser (`lynx`) for browsing sites over the network
 - Dynamic server-side content execution (.poo scripts like PHP/CGI)

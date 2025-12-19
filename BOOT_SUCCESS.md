@@ -1,6 +1,6 @@
 # 🎉 BOOT SUCCESS!
 
-## PoodillionOS v0.1.0 - First Boot
+## BrainhairOS v0.1.0 - First Boot
 
 **Date:** October 16, 2025
 **Status:** ✅ BOOTABLE
@@ -56,7 +56,7 @@ Halt
 ## Boot Screen
 
 ```
-PoodillionOS v0.1.0
+BrainhairOS v0.1.0
 ==================
 
 Kernel booted successfully!
@@ -99,7 +99,7 @@ make run-debug
 | Stage 1 | 512 bytes | Sector 0 (MBR) |
 | Stage 2 | 8 KB | Sectors 1-16 |
 | Kernel | 11 KB | Sectors 18+ (1MB in memory) |
-| Disk Image | 10 MB | build/poodillion.img |
+| Disk Image | 10 MB | build/brainhair.img |
 
 ---
 
@@ -184,8 +184,8 @@ The game architecture maps perfectly to real OS:
 ## Try It Yourself
 
 ```bash
-git clone https://github.com/ruapotato/poodillion2.git
-cd poodillion2
+git clone https://github.com/ruapotato/brainhair2.git
+cd brainhair2
 make check-tools  # Install: nasm, gcc, qemu
 make              # Build OS
 make run          # Boot it!

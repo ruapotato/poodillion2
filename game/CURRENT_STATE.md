@@ -1,4 +1,4 @@
-# Poodillion 2 - Current Implementation State
+# Brainhair 2 - Current Implementation State
 
 ## ✅ What's Working Now
 
@@ -187,7 +187,7 @@ icmp_packet = {
     'code': 0,
     'id': process.pid,
     'sequence': 1,
-    'data': b'poodillion'
+    'data': b'brainhair'
 }
 
 # Wrap in IP packet

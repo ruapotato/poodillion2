@@ -544,7 +544,7 @@ def _calculate_checksum(data: bytes) -> int:
     return checksum
 
 
-def build_icmp_echo_request(src_ip: str, dst_ip: str, icmp_id: int, sequence: int, data: bytes = b'poodillion') -> bytes:
+def build_icmp_echo_request(src_ip: str, dst_ip: str, icmp_id: int, sequence: int, data: bytes = b'brainhair') -> bytes:
     """
     Build complete ICMP Echo Request packet (IP + ICMP)
 

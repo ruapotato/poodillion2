@@ -1047,7 +1047,7 @@ def populate_repo_server(system):
     vfs.mkdir('/repo/packages', 0o777, 0, 0, 1)  # WORLD-WRITABLE! Vulnerability!
 
     # Create README explaining the "misconfiguration"
-    vfs.create_file('/repo/README', 0o644, 0, 0, """POODILLION PACKAGE REPOSITORY
+    vfs.create_file('/repo/README', 0o644, 0, 0, """BRAINHAIR PACKAGE REPOSITORY
 
 Server: packages.repo.net (192.168.6.10)
 Repository root: /repo/
@@ -1071,7 +1071,7 @@ For questions: repo-admin@packages.repo.net
 """.encode('utf-8'), 1)
 
     # Create the PACKAGES.txt index (will be served via HTTP)
-    vfs.create_file('/repo/PACKAGES.txt', 0o644, 0, 0, """# Poodillion Package Repository
+    vfs.create_file('/repo/PACKAGES.txt', 0o644, 0, 0, """# Brainhair Package Repository
 # Format: name|version|category|description|checksum
 #
 # Last updated: December 24, 1990
@@ -1102,7 +1102,7 @@ password-tools|1.1|hacking|Password cracking utilities|check9012
 
     # Create simple nethack package
     vfs.create_file('/repo/packages/nethack/3.0/nethack.poo-pkg', 0o644, 0, 0, """#!/usr/bin/pooscript
-# NetHack - Simple dungeon crawler for Poodillion
+# NetHack - Simple dungeon crawler for Brainhair
 print("NetHack 3.0 - Dungeon Exploration Game")
 print("Exploring the depths...")
 print("(This is a demo version)")

@@ -1,14 +1,14 @@
 #!/bin/bash
-# Create PoodillionOS initramfs
+# Create BrainhairOS initramfs
 # This creates a minimal initramfs for booting
 
 set -e
 
-INITRAMFS_DIR="${1:-/home/david/poodillion2/distro/initramfs}"
-OUTPUT="${2:-/home/david/poodillion2/distro/initramfs.cpio.gz}"
-BIN_DIR="/home/david/poodillion2/bin"
+INITRAMFS_DIR="${1:-/home/david/brainhair2/distro/initramfs}"
+OUTPUT="${2:-/home/david/brainhair2/distro/initramfs.cpio.gz}"
+BIN_DIR="/home/david/brainhair2/bin"
 
-echo "=== Creating PoodillionOS Initramfs ==="
+echo "=== Creating BrainhairOS Initramfs ==="
 
 # Clean and create structure
 rm -rf "$INITRAMFS_DIR"
@@ -33,7 +33,7 @@ ln -sf /bin/psh "$INITRAMFS_DIR/bin/sh"
 # Create init script (the actual /init that kernel runs)
 cat > "$INITRAMFS_DIR/init" << 'INITSCRIPT'
 #!/bin/psh
-# PoodillionOS initramfs init script
+# BrainhairOS initramfs init script
 
 # Mount essential filesystems
 /bin/mount -t proc proc /proc
@@ -41,7 +41,7 @@ cat > "$INITRAMFS_DIR/init" << 'INITSCRIPT'
 /bin/mount -t devtmpfs devtmpfs /dev
 
 # Display boot message
-/bin/echo "PoodillionOS initramfs starting..."
+/bin/echo "BrainhairOS initramfs starting..."
 /bin/echo ""
 
 # Try to find and mount root filesystem

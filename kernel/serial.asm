@@ -1,4 +1,4 @@
-; Serial port driver for Mini-Nim kernel
+; Serial port driver for Brainhair kernel
 ; COM1 at port 0x3F8
 bits 32
 

@@ -4,12 +4,12 @@
 
 set -e
 
-OUTPUT="/home/david/poodillion2/distro/poodillion.img"
+OUTPUT="/home/david/brainhair2/distro/brainhair.img"
 SIZE_MB=64
-BIN_DIR="/home/david/poodillion2/bin"
-ROOTFS_DIR="/home/david/poodillion2/distro/rootfs"
+BIN_DIR="/home/david/brainhair2/bin"
+ROOTFS_DIR="/home/david/brainhair2/distro/rootfs"
 
-echo "=== Creating PoodillionOS Disk Image ==="
+echo "=== Creating BrainhairOS Disk Image ==="
 echo "Output: $OUTPUT"
 echo "Size: ${SIZE_MB}MB"
 
@@ -25,7 +25,7 @@ if [ "$(id -u)" != "0" ]; then
     echo ""
 
     # Create a minimal test that can run with -kernel and -initrd
-    INITRD_DIR="/tmp/poodillion_initrd_$$"
+    INITRD_DIR="/tmp/brainhair_initrd_$$"
     mkdir -p "$INITRD_DIR"/{bin,sbin,etc,dev,proc,sys,tmp,root}
 
     # Copy all binaries
@@ -39,21 +39,21 @@ if [ "$(id -u)" != "0" ]; then
     # Create minimal config
     echo "root:x:0:0:root:/root:/bin/psh" > "$INITRD_DIR/etc/passwd"
     echo "root:x:0:" > "$INITRD_DIR/etc/group"
-    echo "poodillion" > "$INITRD_DIR/etc/hostname"
+    echo "brainhair" > "$INITRD_DIR/etc/hostname"
 
     # Create the initramfs
     cd "$INITRD_DIR"
-    find . | cpio -o -H newc 2>/dev/null | gzip > "/home/david/poodillion2/distro/poodillion-full.cpio.gz"
+    find . | cpio -o -H newc 2>/dev/null | gzip > "/home/david/brainhair2/distro/brainhair-full.cpio.gz"
     rm -rf "$INITRD_DIR"
 
-    SIZE=$(ls -lh /home/david/poodillion2/distro/poodillion-full.cpio.gz | awk '{print $5}')
-    echo "Created: /home/david/poodillion2/distro/poodillion-full.cpio.gz ($SIZE)"
+    SIZE=$(ls -lh /home/david/brainhair2/distro/brainhair-full.cpio.gz | awk '{print $5}')
+    echo "Created: /home/david/brainhair2/distro/brainhair-full.cpio.gz ($SIZE)"
     echo ""
     echo "To test with QEMU (serial console):"
     echo ""
     echo "  qemu-system-x86_64 -m 256M \\"
     echo "    -kernel /boot/vmlinuz-\$(uname -r) \\"
-    echo "    -initrd /home/david/poodillion2/distro/poodillion-full.cpio.gz \\"
+    echo "    -initrd /home/david/brainhair2/distro/brainhair-full.cpio.gz \\"
     echo "    -append 'console=ttyS0 rdinit=/init' \\"
     echo "    -nographic"
     echo ""
@@ -61,7 +61,7 @@ if [ "$(id -u)" != "0" ]; then
     echo ""
     echo "  qemu-system-x86_64 -m 256M \\"
     echo "    -kernel /boot/vmlinuz-\$(uname -r) \\"
-    echo "    -initrd /home/david/poodillion2/distro/poodillion-full.cpio.gz \\"
+    echo "    -initrd /home/david/brainhair2/distro/brainhair-full.cpio.gz \\"
     echo "    -append 'console=tty0 rdinit=/init'"
     exit 0
 fi
@@ -77,10 +77,10 @@ LOOP=$(losetup -f --show -P "$OUTPUT")
 echo "Loop device: $LOOP"
 
 # Format partition
-mkfs.ext2 -L POODILLION "${LOOP}p1"
+mkfs.ext2 -L BRAINHAIR "${LOOP}p1"
 
 # Mount and populate
-MOUNT_DIR="/tmp/poodillion_mount_$$"
+MOUNT_DIR="/tmp/brainhair_mount_$$"
 mkdir -p "$MOUNT_DIR"
 mount "${LOOP}p1" "$MOUNT_DIR"
 
@@ -94,8 +94,8 @@ if command -v extlinux &> /dev/null; then
 
     # Create extlinux config
     cat > "$MOUNT_DIR/boot/extlinux.conf" << EOF
-DEFAULT poodillion
-LABEL poodillion
+DEFAULT brainhair
+LABEL brainhair
     LINUX /boot/vmlinuz
     APPEND init=/bin/init root=/dev/sda1 console=tty0
 EOF

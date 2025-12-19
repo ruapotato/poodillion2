@@ -1,4 +1,4 @@
-# PoodillionOS Bootloader
+# BrainhairOS Bootloader
 
 GRUB multiboot2 configuration and boot assembly.
 
@@ -21,5 +21,5 @@ GRUB multiboot2 configuration and boot assembly.
 
 ```bash
 make iso
-qemu-system-x86_64 -cdrom poodillion.iso
+qemu-system-x86_64 -cdrom brainhair.iso
 ```

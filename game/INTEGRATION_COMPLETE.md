@@ -2,7 +2,7 @@
 
 ## What Was Built
 
-The PooScript-driven network architecture is now **fully integrated** into Poodillion 2. Python provides the "physical wire" while all network intelligence lives in hackable PooScript code.
+The PooScript-driven network architecture is now **fully integrated** into Brainhair 2. Python provides the "physical wire" while all network intelligence lives in hackable PooScript code.
 
 ## Architecture Overview
 

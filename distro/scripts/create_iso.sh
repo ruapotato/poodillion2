@@ -1,15 +1,15 @@
 #!/bin/bash
-# Create bootable PoodillionOS ISO
+# Create bootable BrainhairOS ISO
 # Requires: grub-mkrescue, xorriso
 
 set -e
 
-ISO_DIR="/home/david/poodillion2/distro/iso"
-OUTPUT="/home/david/poodillion2/distro/poodillion.iso"
-ROOTFS_DIR="/home/david/poodillion2/distro/rootfs"
+ISO_DIR="/home/david/brainhair2/distro/iso"
+OUTPUT="/home/david/brainhair2/distro/brainhair.iso"
+ROOTFS_DIR="/home/david/brainhair2/distro/rootfs"
 KERNEL="${KERNEL:-/boot/vmlinuz-$(uname -r)}"
 
-echo "=== Creating PoodillionOS ISO ==="
+echo "=== Creating BrainhairOS ISO ==="
 
 # Check for required tools
 if ! command -v grub-mkrescue &> /dev/null; then
@@ -19,7 +19,7 @@ fi
 
 # Clean and setup ISO structure
 rm -rf "$ISO_DIR"
-mkdir -p "$ISO_DIR"/{boot/grub,poodillion}
+mkdir -p "$ISO_DIR"/{boot/grub,brainhair}
 
 # Copy kernel
 if [ -f "$KERNEL" ]; then
@@ -40,12 +40,12 @@ INITRD_DIR="$ISO_DIR/initrd_tmp"
 mkdir -p "$INITRD_DIR"/{bin,sbin,etc,dev,proc,sys,tmp,root,home,var,mnt}
 
 # Copy all binaries
-cp /home/david/poodillion2/bin/* "$INITRD_DIR/bin/"
+cp /home/david/brainhair2/bin/* "$INITRD_DIR/bin/"
 ln -sf /bin/init "$INITRD_DIR/sbin/init"
 ln -sf /bin/psh "$INITRD_DIR/bin/sh"
 
 # CRITICAL: Kernel looks for /init at root of initramfs
-cp /home/david/poodillion2/bin/init "$INITRD_DIR/init"
+cp /home/david/brainhair2/bin/init "$INITRD_DIR/init"
 
 # Copy etc files
 if [ -d "$ROOTFS_DIR/etc" ]; then
@@ -54,7 +54,7 @@ else
     # Create minimal etc
     echo "root:x:0:0:root:/root:/bin/psh" > "$INITRD_DIR/etc/passwd"
     echo "root:x:0:" > "$INITRD_DIR/etc/group"
-    echo "poodillion" > "$INITRD_DIR/etc/hostname"
+    echo "brainhair" > "$INITRD_DIR/etc/hostname"
 fi
 
 # Create initramfs
@@ -67,17 +67,17 @@ cat > "$ISO_DIR/boot/grub/grub.cfg" << 'EOF'
 set timeout=5
 set default=0
 
-menuentry "PoodillionOS" {
+menuentry "BrainhairOS" {
     linux /boot/vmlinuz rdinit=/init console=tty0
     initrd /boot/initrd.img
 }
 
-menuentry "PoodillionOS (Serial Console)" {
+menuentry "BrainhairOS (Serial Console)" {
     linux /boot/vmlinuz rdinit=/init console=ttyS0,115200
     initrd /boot/initrd.img
 }
 
-menuentry "PoodillionOS (Debug)" {
+menuentry "BrainhairOS (Debug)" {
     linux /boot/vmlinuz rdinit=/init console=tty0 debug
     initrd /boot/initrd.img
 }

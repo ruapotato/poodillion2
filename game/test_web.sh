@@ -1,7 +1,7 @@
 #!/bin/bash
 # Quick test to verify web server can start
 
-echo "Testing Poodillion Web Server..."
+echo "Testing Brainhair Web Server..."
 echo ""
 
 # Test Python imports

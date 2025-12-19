@@ -1,0 +1,185 @@
+# bhall - Build all Brainhair userland utilities
+# Scans userland/ directory and builds each .bh file
+
+const SYS_read: int32 = 3
+const SYS_write: int32 = 4
+const SYS_exit: int32 = 1
+const SYS_fork: int32 = 2
+const SYS_execve: int32 = 11
+const SYS_waitpid: int32 = 7
+const SYS_brk: int32 = 45
+const SYS_open: int32 = 5
+const SYS_close: int32 = 6
+const SYS_getdents64: int32 = 220
+
+const O_RDONLY: int32 = 0
+const O_DIRECTORY: int32 = 65536
+
+const STDIN: int32 = 0
+const STDOUT: int32 = 1
+const STDERR: int32 = 2
+
+extern proc syscall1(num: int32, arg1: int32): int32
+extern proc syscall2(num: int32, arg1: int32, arg2: int32): int32
+extern proc syscall3(num: int32, arg1: int32, arg2: int32, arg3: int32): int32
+
+proc print(msg: ptr uint8) =
+  var len: int32 = 0
+  while msg[len] != cast[uint8](0):
+    len = len + 1
+  discard syscall3(SYS_write, STDOUT, cast[int32](msg), len)
+
+proc println(msg: ptr uint8) =
+  print(msg)
+  discard syscall3(SYS_write, STDOUT, cast[int32]("\n"), 1)
+
+proc strlen(s: ptr uint8): int32 =
+  var len: int32 = 0
+  while s[len] != cast[uint8](0):
+    len = len + 1
+  return len
+
+proc strcpy(dest: ptr uint8, src: ptr uint8) =
+  var i: int32 = 0
+  while src[i] != cast[uint8](0):
+    dest[i] = src[i]
+    i = i + 1
+  dest[i] = cast[uint8](0)
+
+proc strcat(dest: ptr uint8, src: ptr uint8) =
+  var dest_len: int32 = strlen(dest)
+  strcpy(cast[ptr uint8](cast[int32](dest) + dest_len), src)
+
+# Check if filename ends with .bh
+proc ends_with_bh(name: ptr uint8): int32 =
+  var len: int32 = strlen(name)
+  if len < 3:
+    return 0
+  if name[len - 3] == cast[uint8](46):  # '.'
+    if name[len - 2] == cast[uint8](98):  # 'b'
+      if name[len - 1] == cast[uint8](104):  # 'h'
+        return 1
+  return 0
+
+# Get base name (remove .bh)
+proc get_basename(name: ptr uint8, out: ptr uint8) =
+  var len: int32 = strlen(name)
+  var i: int32 = 0
+  while i < len - 3:
+    out[i] = name[i]
+    i = i + 1
+  out[i] = cast[uint8](0)
+
+# Run bhbuild for a file
+proc build_file(source: ptr uint8): int32 =
+  var pid: int32 = syscall1(SYS_fork, 0)
+
+  if pid == 0:
+    # Child - exec bhbuild
+    var argv: array[3, int32]
+    argv[0] = cast[int32]("bin/bhbuild")
+    argv[1] = cast[int32](source)
+    argv[2] = 0
+    var envp: array[1, int32]
+    envp[0] = 0
+    discard syscall3(SYS_execve, cast[int32]("bin/bhbuild"), cast[int32](addr(argv)), cast[int32](addr(envp)))
+    discard syscall1(SYS_exit, 127)
+
+  if pid < 0:
+    return 1
+
+  var status: int32 = 0
+  discard syscall3(SYS_waitpid, pid, cast[int32](addr(status)), 0)
+  var exit_code: int32 = (status >> 8) & 255
+  return exit_code
+
+proc print_num(n: int32) =
+  var buf: array[12, uint8]
+  var i: int32 = 10
+  buf[11] = cast[uint8](0)
+
+  if n == 0:
+    buf[10] = cast[uint8](48)
+    i = 10
+  else:
+    var num: int32 = n
+    if num < 0:
+      num = 0 - num
+    while num > 0 and i > 0:
+      buf[i] = cast[uint8](48 + (num % 10))
+      num = num / 10
+      i = i - 1
+    i = i + 1
+
+  print(cast[ptr uint8](cast[int32](addr(buf)) + i))
+
+proc main(): int32 =
+  println(cast[ptr uint8]("bhall - Build All Brainhair Utilities"))
+  println(cast[ptr uint8]("======================================"))
+  println(cast[ptr uint8](""))
+
+  # Allocate working memory
+  var old_brk: int32 = syscall1(SYS_brk, 0)
+  var new_brk: int32 = old_brk + 65536
+  discard syscall1(SYS_brk, new_brk)
+
+  var dir_buf: ptr uint8 = cast[ptr uint8](old_brk)
+  var path_buf: ptr uint8 = cast[ptr uint8](old_brk + 32768)
+  var base_buf: ptr uint8 = cast[ptr uint8](old_brk + 33024)
+
+  # Open userland directory
+  var fd: int32 = syscall3(SYS_open, cast[int32]("userland"), O_RDONLY | O_DIRECTORY, 0)
+  if fd < 0:
+    println(cast[ptr uint8]("Error: cannot open userland directory"))
+    return 1
+
+  var built: int32 = 0
+  var failed: int32 = 0
+
+  # Read directory entries
+  var nread: int32 = syscall3(SYS_getdents64, fd, cast[int32](dir_buf), 32000)
+  while nread > 0:
+    var pos: int32 = 0
+    while pos < nread:
+      # struct linux_dirent64:
+      #   uint64 d_ino (8 bytes)
+      #   uint64 d_off (8 bytes)
+      #   uint16 d_reclen (2 bytes)
+      #   uint8  d_type (1 byte)
+      #   char   d_name[] (variable)
+      var reclen_ptr: ptr uint16 = cast[ptr uint16](cast[int32](dir_buf) + pos + 16)
+      var reclen: int32 = cast[int32](reclen_ptr[0])
+      var name: ptr uint8 = cast[ptr uint8](cast[int32](dir_buf) + pos + 19)
+
+      # Check if it's a .bh file
+      if ends_with_bh(name) == 1:
+        # Build path: userland/filename
+        strcpy(path_buf, cast[ptr uint8]("userland/"))
+        strcat(path_buf, name)
+
+        # Build it
+        var result: int32 = build_file(path_buf)
+        if result == 0:
+          built = built + 1
+        else:
+          failed = failed + 1
+          print(cast[ptr uint8]("FAILED: "))
+          println(name)
+
+      pos = pos + reclen
+
+    nread = syscall3(SYS_getdents64, fd, cast[int32](dir_buf), 32000)
+
+  discard syscall1(SYS_close, fd)
+
+  println(cast[ptr uint8](""))
+  println(cast[ptr uint8]("======================================"))
+  print(cast[ptr uint8]("Built: "))
+  print_num(built)
+  print(cast[ptr uint8](" programs, Failed: "))
+  print_num(failed)
+  println(cast[ptr uint8](""))
+
+  if failed > 0:
+    return 1
+  return 0

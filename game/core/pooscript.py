@@ -1,8 +1,8 @@
 """
-PooScript - Safe Python-like scripting language for Poodillion game binaries
+PooScript - Safe Python-like scripting language for Brainhair game binaries
 Allows players to create and modify executable scripts in the virtual filesystem
 
-PooScript is the heart of Poodillion - it's what makes every command, even the
+PooScript is the heart of Brainhair - it's what makes every command, even the
 shell itself, into a modifiable, exploitable, and hackable program!
 """
 

@@ -229,7 +229,7 @@ if random.random() < 0.3:
 
 ## Conclusion
 
-The interactive mode makes Poodillion feel like a **real, living world** instead of a static test environment. You can:
+The interactive mode makes Brainhair feel like a **real, living world** instead of a static test environment. You can:
 
 - ✅ Explore naturally
 - ✅ React to events

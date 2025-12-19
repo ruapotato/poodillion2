@@ -1,4 +1,4 @@
-; PS/2 Keyboard Driver for PoodillionOS
+; PS/2 Keyboard Driver for BrainhairOS
 ; Handles PS/2 keyboard input via 8042 controller
 ; Port 0x60: Data port
 ; Port 0x64: Status/Command port

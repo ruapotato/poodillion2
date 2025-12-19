@@ -1,4 +1,4 @@
-# PoodillionOS Graphics Plan
+# BrainhairOS Graphics Plan
 
 ## Phase 1: Framebuffer Access (Week 1-2)
 
@@ -269,7 +269,7 @@ proc clear_screen(color: uint32) =
 3. **Test constantly**: Visual feedback is immediate!
 4. **Reuse existing code**: Your syscall library already has most of what you need
 
-The beauty is that this fits perfectly with PoodillionOS philosophy:
+The beauty is that this fits perfectly with BrainhairOS philosophy:
 - **Minimal**: Just framebuffer, no complex drivers
 - **Syscalls only**: No libc needed
 - **Small binaries**: Each utility does one thing

@@ -1,4 +1,4 @@
-; stage1.asm - PoodillionOS Stage 1 Bootloader
+; stage1.asm - BrainhairOS Stage 1 Bootloader
 ; This is the first 512 bytes loaded by BIOS
 ; Loads stage 2 and jumps to it
 
@@ -65,7 +65,7 @@ print_string:
 
 ; Data
 boot_drive: db 0            ; BIOS passes boot drive in DL
-msg_boot:   db 'PoodillionOS Stage 1...', 13, 10, 0
+msg_boot:   db 'BrainhairOS Stage 1...', 13, 10, 0
 msg_loaded: db 'Stage 2 loaded', 13, 10, 0
 msg_error:  db 'Disk read error!', 13, 10, 0
 

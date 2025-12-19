@@ -1,6 +1,6 @@
-# 🖥️ Poodillion Web Interface
+# 🖥️ Brainhair Web Interface
 
-A Windows 95-style web interface for Poodillion!
+A Windows 95-style web interface for Brainhair!
 
 ## 🚀 Quick Start
 
@@ -122,7 +122,7 @@ emit('output', {
 │  └──────────────────────────────┘   │
 │            ↕                         │
 │  ┌──────────────────────────────┐   │
-│  │  Poodillion Core             │   │
+│  │  Brainhair Core             │   │
 │  │  - VFS, Processes, Network   │   │
 │  │  - PooScript Interpreter     │   │
 │  │  - Shell Executor            │   │

@@ -1,4 +1,4 @@
-# Poodillion: December 1990
+# Brainhair: December 1990
 
 **An Immersive BBS-Era Hacking Experience**
 

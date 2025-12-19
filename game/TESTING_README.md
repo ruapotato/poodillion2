@@ -1,10 +1,10 @@
-# Poodillion 2 - Testing Guide
+# Brainhair 2 - Testing Guide
 
 ## 🎉 Complete Testing Results
 
 **Status: ✅ ALL SYSTEMS OPERATIONAL**
 
-Poodillion 2 has been thoroughly tested and successfully creates a **100-computer simulated internet** with full Unix emulation, networking, and SSH connectivity.
+Brainhair 2 has been thoroughly tested and successfully creates a **100-computer simulated internet** with full Unix emulation, networking, and SSH connectivity.
 
 ---
 
@@ -469,7 +469,7 @@ python3 play.py
 
 ### 🏆 **Mission Accomplished**
 
-**Goal:** Create a simulation so good we can emulate a tiny internet made up of 100 or so computers, some hosting sites, some acting as networking gear, all with SSH running and a full poodillion OS.
+**Goal:** Create a simulation so good we can emulate a tiny internet made up of 100 or so computers, some hosting sites, some acting as networking gear, all with SSH running and a full brainhair OS.
 
 **Result:** ✅ **EXCEEDED EXPECTATIONS**
 

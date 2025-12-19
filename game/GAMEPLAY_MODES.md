@@ -1,4 +1,4 @@
-# Poodillion 2 - Gameplay Modes
+# Brainhair 2 - Gameplay Modes
 
 The game supports **two distinct gameplay modes** using the same core engine:
 

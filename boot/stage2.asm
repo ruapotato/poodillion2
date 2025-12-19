@@ -1,4 +1,4 @@
-; stage2.asm - PoodillionOS Stage 2 Bootloader
+; stage2.asm - BrainhairOS Stage 2 Bootloader
 ; Loads kernel from disk and enters protected mode
 
 [BITS 16]

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Demo of new features in Poodillion 2
+Demo of new features in Brainhair 2
 - chmod, chown, ln, cp, mv commands
 - Execute permission enforcement
 - SUID/SGID privilege escalation
@@ -12,7 +12,7 @@ from core.system import UnixSystem
 
 def main():
     print("=" * 70)
-    print(" POODILLION 2 - New Features Demo")
+    print(" BRAINHAIR 2 - New Features Demo")
     print("=" * 70)
 
     system = UnixSystem('demo-system')

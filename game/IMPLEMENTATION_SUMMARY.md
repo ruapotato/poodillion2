@@ -1,4 +1,4 @@
-# Poodillion 2 - Implementation Summary
+# Brainhair 2 - Implementation Summary
 
 ## Completed Features
 

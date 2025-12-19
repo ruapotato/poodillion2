@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Poodillion Web Server
-Flask-based web interface for the Poodillion hacking game
+Brainhair Web Server
+Flask-based web interface for the Brainhair hacking game
 """
 
 from flask import Flask, render_template, session, request, jsonify
@@ -17,7 +17,7 @@ from core.shell import Shell
 from world_1990 import create_december_1990_world
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'poodillion-secret-key-change-in-production'
+app.config['SECRET_KEY'] = 'brainhair-secret-key-change-in-production'
 socketio = SocketIO(app, cors_allowed_origins="*")
 
 # Session storage: session_id -> GameSession
@@ -284,7 +284,7 @@ def handle_create_shell():
     # Send initial welcome and prompt
     emit('shell_created', {
         'shell_id': shell_id,
-        'data': f"Welcome to Poodillion - The 1990s Hacking Simulator\n"
+        'data': f"Welcome to Brainhair - The 1990s Hacking Simulator\n"
                 f"Type 'help' for available commands\n\n"
                 f"{game_session.get_prompt(shell_id)}"
     })
@@ -428,7 +428,7 @@ def api_browse():
 
 if __name__ == '__main__':
     print("=" * 60)
-    print("Poodillion Web Server")
+    print("Brainhair Web Server")
     print("=" * 60)
     print("\nStarting server on http://localhost:5000")
     print("Press Ctrl+C to stop\n")

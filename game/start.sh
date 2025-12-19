@@ -1,8 +1,8 @@
 #!/bin/bash
-# Quick start script for Poodillion Web Server
+# Quick start script for Brainhair Web Server
 
 echo "================================================"
-echo "    🖥️  POODILLION WEB SERVER"
+echo "    🖥️  BRAINHAIR WEB SERVER"
 echo "================================================"
 echo ""
 
@@ -25,7 +25,7 @@ echo "✓ Dependencies installed"
 echo ""
 
 # Start server
-echo "🚀 Starting Poodillion Web Server..."
+echo "🚀 Starting Brainhair Web Server..."
 echo ""
 echo "   Open your browser to: http://localhost:5000"
 echo "   Press Ctrl+C to stop"

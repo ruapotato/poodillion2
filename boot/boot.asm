@@ -1,4 +1,4 @@
-; boot.asm - PoodillionOS Kernel Entry Point
+; boot.asm - BrainhairOS Kernel Entry Point
 ; For custom bootloader (no multiboot needed)
 
 [BITS 32]

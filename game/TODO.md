@@ -1,4 +1,4 @@
-# Poodillion TODO - Making it the Ultimate 1990s Hacking Sandbox
+# Brainhair TODO - Making it the Ultimate 1990s Hacking Sandbox
 
 ## PRIORITY 1: Tool Building & Replacement (THE CORE FEATURE)
 
@@ -48,7 +48,7 @@
   - [ ] Files to install (binaries, docs, configs)
   - [ ] Install/remove scripts
   - [ ] Checksums for integrity
-- [ ] Implement `/bin/pooget` command (like apt-get but Poodillion-style!)
+- [ ] Implement `/bin/pooget` command (like apt-get but Brainhair-style!)
   - [ ] `pooget install <name>` - Install package
   - [ ] `pooget remove <name>` - Remove package
   - [ ] `pooget update` - Update package list

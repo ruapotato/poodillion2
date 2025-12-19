@@ -26,10 +26,10 @@ chmod +x interactive_test.py
 
 ```
 ╔═══════════════════════════════════════════════════════════════════╗
-║            POODILLION INTERACTIVE TEST ENVIRONMENT                ║
+║            BRAINHAIR INTERACTIVE TEST ENVIRONMENT                ║
 ╚═══════════════════════════════════════════════════════════════════╝
 
-INITIALIZING POODILLION WORLD...
+INITIALIZING BRAINHAIR WORLD...
 
 ✓ World initialized
 ✓ Connected as root on kali-box (192.168.13.37)

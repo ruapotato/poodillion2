@@ -29,7 +29,7 @@ def get_command_not_found_message(command: str) -> str:
         'q': "This isn't vim. Try 'exit' instead.",
         ':q': "This isn't vim. Try 'exit' instead.",
         ':wq': "This isn't vim. Try 'exit' instead.",
-        'help': "You're in Poodillion. Try 'ls /bin' to see available commands, or just... explore!",
+        'help': "You're in Brainhair. Try 'ls /bin' to see available commands, or just... explore!",
         'man': "There are no manuals here, only mysteries. Try commands and see what happens!",
         'apt': "This ain't Debian! But I like your style. Try 'ls /bin' instead.",
         'yum': "This ain't RedHat! But yum... Try 'ls /bin' for tasty commands.",

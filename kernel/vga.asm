@@ -1,4 +1,4 @@
-; VGA Text Mode Driver for PoodillionOS
+; VGA Text Mode Driver for BrainhairOS
 ; Handles 80x25 color text display
 ; Base address: 0xB8000
 

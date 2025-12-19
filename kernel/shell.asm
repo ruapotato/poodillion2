@@ -1,4 +1,4 @@
-; Interactive Shell for PoodillionOS
+; Interactive Shell for BrainhairOS
 ; Provides command-line interface with basic Unix-like commands
 
 bits 32
@@ -19,12 +19,12 @@ global shell_run
 section .data
     ; Boot banner
     banner db 10, "========================================", 10
-           db "  PoodillionOS v0.1 - Interactive Shell", 10
+           db "  BrainhairOS v0.1 - Interactive Shell", 10
            db "========================================", 10, 10
            db "Type 'help' for available commands", 10, 10, 0
 
     ; Shell prompt
-    prompt db "root@poodillion:~# ", 0
+    prompt db "root@brainhair:~# ", 0
 
     ; Command buffer (max 80 characters)
     cmd_buffer times 81 db 0
@@ -41,8 +41,8 @@ section .data
              db "  ls      - List files (demo)", 10
              db "  cat     - Display file contents (demo)", 10, 0
 
-    msg_uname db "PoodillionOS 0.1 i386", 10
-              db "Kernel: Mini-Nim 0.1", 10
+    msg_uname db "BrainhairOS 0.1 i386", 10
+              db "Kernel: Brainhair 0.1", 10
               db "Built: 2025-10-16", 10, 0
 
     msg_uptime db "System uptime: Just booted!", 10, 0

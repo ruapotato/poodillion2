@@ -296,7 +296,7 @@ VirtualScript is now a **complete systems programming language** suitable for:
 
 **The language is powerful enough that the in-game shell could be implemented entirely in VirtualScript!**
 
-This makes Poodillion 2 a true **Unix hacking simulator** where players can:
+This makes Brainhair 2 a true **Unix hacking simulator** where players can:
 - Modify any system component
 - Create custom tools
 - Learn real systems programming

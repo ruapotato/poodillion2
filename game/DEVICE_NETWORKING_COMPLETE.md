@@ -2,7 +2,7 @@
 
 ## Summary
 
-Network operations in Poodillion now work entirely through virtual devices (`/dev/net/*`) and dynamic proc files (`/proc/net/*`), making everything fully hackable via the filesystem!
+Network operations in Brainhair now work entirely through virtual devices (`/dev/net/*`) and dynamic proc files (`/proc/net/*`), making everything fully hackable via the filesystem!
 
 ## What Was Implemented
 
@@ -312,7 +312,7 @@ if response:
 
 ✅ **Device-based networking is PRODUCTION READY!**
 
-All network operations now work through the virtual filesystem, making Poodillion's networking truly hackable at every level. Players can:
+All network operations now work through the virtual filesystem, making Brainhair's networking truly hackable at every level. Players can:
 
 - Read and write raw packets
 - View network state in /proc/net/*
@@ -320,7 +320,7 @@ All network operations now work through the virtual filesystem, making Poodillio
 - Sniff and inject traffic
 - Learn real networking protocols
 
-The implementation is **educational, realistic, and fully exploitable** - exactly what Poodillion needs for an engaging hacking simulation!
+The implementation is **educational, realistic, and fully exploitable** - exactly what Brainhair needs for an engaging hacking simulation!
 
 ---
 

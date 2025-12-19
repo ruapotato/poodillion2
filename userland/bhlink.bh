@@ -197,9 +197,14 @@ proc write_u16(buf: ptr uint8, offset: int32, val: int32) =
 
 # Find or add a symbol
 proc find_or_add_symbol(name: ptr uint8, value: int32, section: int32): int32 =
+  # Don't merge empty-named section symbols - each needs its own entry
+  var skip_search: int32 = 0
+  if name[0] == cast[uint8](0):
+    skip_search = 1
+
   # Search for existing symbol (use read_u32 to avoid ptr indexing bug)
   var i: int32 = 0
-  while i < g_sym_count:
+  while i < g_sym_count and skip_search == 0:
     var name_off: int32 = read_u32(cast[ptr uint8](g_sym_offsets), i * 4)
     var sym_name: ptr uint8 = cast[ptr uint8](cast[int32](g_sym_names) + name_off)
     if streq(sym_name, name) == 1:
@@ -325,7 +330,10 @@ proc parse_object_file(filename: ptr uint8, file_buf: ptr uint8, file_len: int32
   var sym_count: int32 = symtab_size / symtab_entsize
 
   # Calculate where bss starts for this file (after its data section)
+  # Align to 4 bytes for proper BSS placement
   var bss_base: int32 = g_data_len + data_sh_size
+  if bss_base % 4 != 0:
+    bss_base = bss_base + (4 - (bss_base % 4))
 
   # Process symbols - use the recorded section indices
   i = 0
@@ -356,6 +364,14 @@ proc parse_object_file(filename: ptr uint8, file_buf: ptr uint8, file_len: int32
           if st_shndx == bss_sh_idx:
             section = 3  # .bss - store offset relative to data segment
             value = bss_base + st_value
+            # DEBUG: print BSS symbol info
+            print(cast[ptr uint8]("  BSS symbol: "))
+            print(name)
+            print(cast[ptr uint8](" value="))
+            print_num(value)
+            print(cast[ptr uint8](" bss_base="))
+            print_num(bss_base)
+            println(cast[ptr uint8](""))
 
     # Skip null symbol
     if i > 0:
@@ -445,6 +461,17 @@ proc apply_relocations(): int32 =
         if sym_section == 3:
           # bss follows data, sym_value already includes data offset
           final_addr = DATA_ADDR + sym_value
+          # DEBUG: print BSS relocation
+          if offset < 100:
+            print(cast[ptr uint8]("  BSS reloc at "))
+            print_num(offset)
+            print(cast[ptr uint8](" sym_idx="))
+            print_num(sym_idx)
+            print(cast[ptr uint8](" sym_value="))
+            print_num(sym_value)
+            print(cast[ptr uint8](" final="))
+            print_hex(final_addr)
+            println(cast[ptr uint8](""))
 
     # Read current value at relocation site (addend)
     var addend: int32 = read_u32(g_text, offset)
@@ -552,7 +579,11 @@ proc write_program_headers() =
   write_u32(phdr, 8, DATA_ADDR)
   write_u32(phdr, 12, DATA_ADDR)
   write_u32(phdr, 16, g_data_len)
-  write_u32(phdr, 20, g_data_len + g_bss_len)
+  # Align data for BSS placement (BSS symbols calculated with aligned base)
+  var aligned_data_len: int32 = g_data_len
+  if aligned_data_len % 4 != 0:
+    aligned_data_len = aligned_data_len + (4 - (aligned_data_len % 4))
+  write_u32(phdr, 20, aligned_data_len + g_bss_len)
   write_u32(phdr, 24, 6)           # Flags: R+W
   write_u32(phdr, 28, 0x1000)
 

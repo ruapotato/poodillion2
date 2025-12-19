@@ -1,13 +1,13 @@
 #!/bin/bash
-# Create PoodillionOS root filesystem
+# Create BrainhairOS root filesystem
 # Run with sudo
 
 set -e
 
-ROOTFS_DIR="${1:-/home/david/poodillion2/distro/rootfs}"
-BIN_DIR="/home/david/poodillion2/bin"
+ROOTFS_DIR="${1:-/home/david/brainhair2/distro/rootfs}"
+BIN_DIR="/home/david/brainhair2/bin"
 
-echo "=== Creating PoodillionOS Root Filesystem ==="
+echo "=== Creating BrainhairOS Root Filesystem ==="
 echo "Target: $ROOTFS_DIR"
 
 # Create directory structure
@@ -47,12 +47,12 @@ EOF
 chmod 600 "$ROOTFS_DIR/etc/shadow"
 
 # Create /etc/hostname
-echo "poodillion" > "$ROOTFS_DIR/etc/hostname"
+echo "brainhair" > "$ROOTFS_DIR/etc/hostname"
 
 # Create /etc/hosts
 cat > "$ROOTFS_DIR/etc/hosts" << 'EOF'
 127.0.0.1   localhost
-127.0.1.1   poodillion
+127.0.1.1   brainhair
 EOF
 
 # Create /etc/fstab
@@ -65,7 +65,7 @@ EOF
 
 # Create /etc/inittab (for our init)
 cat > "$ROOTFS_DIR/etc/inittab" << 'EOF'
-# PoodillionOS inittab
+# BrainhairOS inittab
 # Format: id:runlevels:action:process
 
 # System initialization
@@ -84,13 +84,13 @@ EOF
 
 # Create /etc/profile
 cat > "$ROOTFS_DIR/etc/profile" << 'EOF'
-# PoodillionOS system profile
+# BrainhairOS system profile
 export PATH=/bin:/sbin:/usr/bin:/usr/sbin
 export HOME=/root
-export PS1='poodillion# '
+export PS1='brainhair# '
 export TERM=linux
 
-echo "Welcome to PoodillionOS!"
+echo "Welcome to BrainhairOS!"
 echo "Type 'help' for available commands."
 EOF
 
@@ -104,7 +104,7 @@ cat > "$ROOTFS_DIR/etc/motd" << 'EOF'
  |_|   \___/ \___/ \__,_|_|_|_|_|\___/|_| |_|\___/|____/
 
   A Data-Oriented Operating System with Typed Pipelines
-  Built entirely in Mini-Nim with direct Linux syscalls
+  Built entirely in Brainhair with direct Linux syscalls
 
 EOF
 

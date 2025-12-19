@@ -1,5 +1,5 @@
 /*
- * keyboard.c - PS/2 Keyboard Driver for PoodillionOS
+ * keyboard.c - PS/2 Keyboard Driver for BrainhairOS
  *
  * Simple PS/2 keyboard driver using polling (no interrupts yet)
  */

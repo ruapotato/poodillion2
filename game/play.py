@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Poodillion 2 - Virtual Unix Hacking Game
+Brainhair 2 - Virtual Unix Hacking Game
 December 1990 - The Early Internet
 
 Auto-starts into an immersive hacking world.

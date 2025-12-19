@@ -1,6 +1,6 @@
-# Poodillion Web Deployment Guide
+# Brainhair Web Deployment Guide
 
-Deploy Poodillion as a web-based hacking game that anyone can access from their browser!
+Deploy Brainhair as a web-based hacking game that anyone can access from their browser!
 
 ## 🚀 Quick Start (Local Development)
 
@@ -21,13 +21,13 @@ python web_server.py
 1. Fork/clone this repository
 2. Sign up at [railway.app](https://railway.app)
 3. Click "New Project" → "Deploy from GitHub repo"
-4. Select your Poodillion repository
+4. Select your Brainhair repository
 5. Railway auto-detects Python and deploys!
 
 **Environment Variables:**
 - `FLASK_SECRET_KEY` - Set to a random string
 
-**That's it!** Railway gives you a URL like `poodillion.up.railway.app`
+**That's it!** Railway gives you a URL like `brainhair.up.railway.app`
 
 ---
 
@@ -56,7 +56,7 @@ python web_server.py
 heroku login
 
 # Create app
-heroku create your-poodillion-game
+heroku create your-brainhair-game
 
 # Deploy
 git push heroku main
@@ -93,17 +93,17 @@ apt update && apt upgrade -y
 apt install -y python3 python3-pip python3-venv nginx git
 
 # Create user
-adduser poodillion
-usermod -aG sudo poodillion
-su - poodillion
+adduser brainhair
+usermod -aG sudo brainhair
+su - brainhair
 ```
 
 #### Step 3: Deploy Application
 
 ```bash
 # Clone repository
-git clone https://github.com/yourusername/poodillion2.git
-cd poodillion2
+git clone https://github.com/yourusername/brainhair2.git
+cd brainhair2
 
 # Create virtual environment
 python3 -m venv venv
@@ -119,19 +119,19 @@ nano .env  # Edit configuration
 
 #### Step 4: Run with systemd
 
-Create `/etc/systemd/system/poodillion.service`:
+Create `/etc/systemd/system/brainhair.service`:
 
 ```ini
 [Unit]
-Description=Poodillion Web Game
+Description=Brainhair Web Game
 After=network.target
 
 [Service]
 Type=simple
-User=poodillion
-WorkingDirectory=/home/poodillion/poodillion2
-Environment="PATH=/home/poodillion/poodillion2/venv/bin"
-ExecStart=/home/poodillion/poodillion2/venv/bin/python web_server.py
+User=brainhair
+WorkingDirectory=/home/brainhair/brainhair2
+Environment="PATH=/home/brainhair/brainhair2/venv/bin"
+ExecStart=/home/brainhair/brainhair2/venv/bin/python web_server.py
 Restart=always
 
 [Install]
@@ -141,14 +141,14 @@ WantedBy=multi-user.target
 ```bash
 # Enable and start service
 sudo systemctl daemon-reload
-sudo systemctl enable poodillion
-sudo systemctl start poodillion
-sudo systemctl status poodillion
+sudo systemctl enable brainhair
+sudo systemctl start brainhair
+sudo systemctl status brainhair
 ```
 
 #### Step 5: Setup Nginx Reverse Proxy
 
-Create `/etc/nginx/sites-available/poodillion`:
+Create `/etc/nginx/sites-available/brainhair`:
 
 ```nginx
 server {
@@ -173,7 +173,7 @@ server {
 
 ```bash
 # Enable site
-sudo ln -s /etc/nginx/sites-available/poodillion /etc/nginx/sites-enabled/
+sudo ln -s /etc/nginx/sites-available/brainhair /etc/nginx/sites-enabled/
 sudo nginx -t
 sudo systemctl restart nginx
 ```
@@ -198,10 +198,10 @@ sudo certbot --nginx -d your-domain.com
 
 ```bash
 # Build image
-docker build -t poodillion .
+docker build -t brainhair .
 
 # Run container
-docker run -p 5000:5000 -e FLASK_SECRET_KEY="random-key" poodillion
+docker run -p 5000:5000 -e FLASK_SECRET_KEY="random-key" brainhair
 ```
 
 #### Docker Compose
@@ -212,7 +212,7 @@ Create `docker-compose.yml`:
 version: '3.8'
 
 services:
-  poodillion:
+  brainhair:
     build: .
     ports:
       - "5000:5000"
@@ -287,14 +287,14 @@ sudo ufw enable
 ### Check Server Status
 
 ```bash
-sudo systemctl status poodillion
+sudo systemctl status brainhair
 ```
 
 ### View Logs
 
 ```bash
 # Systemd logs
-sudo journalctl -u poodillion -f
+sudo journalctl -u brainhair -f
 
 # Nginx logs
 sudo tail -f /var/log/nginx/access.log
@@ -312,7 +312,7 @@ curl http://localhost:5000/stats
 ### Restart Service
 
 ```bash
-sudo systemctl restart poodillion
+sudo systemctl restart brainhair
 ```
 
 ---
@@ -387,9 +387,9 @@ Multiple game sessions can use RAM. Consider:
 ### Pull Latest Changes
 
 ```bash
-cd ~/poodillion2
+cd ~/brainhair2
 git pull
-sudo systemctl restart poodillion
+sudo systemctl restart brainhair
 ```
 
 ### Backup Game State (Future Feature)
@@ -397,7 +397,7 @@ sudo systemctl restart poodillion
 When save/load is implemented, back up session data:
 
 ```bash
-tar -czf poodillion-backup.tar.gz ~/poodillion2/data/
+tar -czf brainhair-backup.tar.gz ~/brainhair2/data/
 ```
 
 ---

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Poodillion 2 - Realistic Hacking Scenario
+Brainhair 2 - Realistic Hacking Scenario
 Demonstrates all new features in a game context
 """
 
@@ -59,7 +59,7 @@ except Exception as e:
 def demonstrate_exploitation():
     """Show a realistic exploitation scenario"""
     print("=" * 70)
-    print(" POODILLION 2 - Hacking Scenario Demo")
+    print(" BRAINHAIR 2 - Hacking Scenario Demo")
     print(" Scenario: Exploit a vulnerable webserver")
     print("=" * 70)
 

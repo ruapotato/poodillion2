@@ -1,9 +1,9 @@
-# bds - Brainhair Display Server v0.3
-# Core display server with complete font, smooth cursor, and dropdown menu
+# bds - Brainhair Display Server v0.4
+# Core display server with double buffering for flicker-free graphics
 #
 # Features:
 #   - Complete 8x8 font (A-Z, a-z, 0-9, punctuation)
-#   - Smooth cursor (save/restore pixels - no flicker)
+#   - Double buffering (no flicker on mouse movement)
 #   - Dropdown launcher menu
 
 const SYS_read: int32 = 3
@@ -645,9 +645,15 @@ proc get_font_row(c: int32, row: int32): int32 =
 
   return 0  # Unknown char
 
-# ============ Drawing ============
+# ============ Double-Buffered Drawing ============
 
-proc fill_rect(fd: int32, x: int32, y: int32, w: int32, h: int32, color: int32, xres: int32, yres: int32, line_buf: ptr uint32) =
+# All drawing goes to backbuffer, then flushed to screen
+
+proc buf_pixel(buf: ptr uint32, x: int32, y: int32, color: int32, xres: int32, yres: int32) =
+  if x >= 0 and x < xres and y >= 0 and y < yres:
+    buf[y * xres + x] = cast[uint32](color)
+
+proc fill_rect(buf: ptr uint32, x: int32, y: int32, w: int32, h: int32, color: int32, xres: int32, yres: int32) =
   var cy: int32 = y
   while cy < y + h:
     if cy >= 0 and cy < yres:
@@ -655,18 +661,13 @@ proc fill_rect(fd: int32, x: int32, y: int32, w: int32, h: int32, color: int32, 
       var ex: int32 = x + w
       if sx < 0: sx = 0
       if ex > xres: ex = xres
-      if sx < ex:
-        var width: int32 = ex - sx
-        var i: int32 = 0
-        while i < width:
-          line_buf[i] = cast[uint32](color)
-          i = i + 1
-        var offset: int32 = (cy * xres + sx) * 4
-        discard syscall3(SYS_lseek, fd, offset, SEEK_SET)
-        discard syscall3(SYS_write, fd, cast[int32](line_buf), width * 4)
+      var cx: int32 = sx
+      while cx < ex:
+        buf[cy * xres + cx] = cast[uint32](color)
+        cx = cx + 1
     cy = cy + 1
 
-proc draw_char(fd: int32, x: int32, y: int32, c: int32, fg: int32, bg: int32, xres: int32, pixel_buf: ptr uint32) =
+proc draw_char(buf: ptr uint32, x: int32, y: int32, c: int32, fg: int32, bg: int32, xres: int32, yres: int32) =
   var row: int32 = 0
   while row < 8:
     var bitmap: int32 = get_font_row(c, row)
@@ -676,35 +677,39 @@ proc draw_char(fd: int32, x: int32, y: int32, c: int32, fg: int32, bg: int32, xr
       var color: int32 = bg
       if bit != 0:
         color = fg
-      pixel_buf[col] = cast[uint32](color)
+      var px: int32 = x + col
+      var py: int32 = y + row
+      if px >= 0 and px < xres and py >= 0 and py < yres:
+        buf[py * xres + px] = cast[uint32](color)
       col = col + 1
-    var offset: int32 = ((y + row) * xres + x) * 4
-    discard syscall3(SYS_lseek, fd, offset, SEEK_SET)
-    discard syscall3(SYS_write, fd, cast[int32](pixel_buf), 32)
     row = row + 1
 
-proc draw_text(fd: int32, x: int32, y: int32, s: ptr uint8, fg: int32, bg: int32, xres: int32, pixel_buf: ptr uint32, max_chars: int32) =
+proc draw_text(buf: ptr uint32, x: int32, y: int32, s: ptr uint8, fg: int32, bg: int32, xres: int32, yres: int32, max_chars: int32) =
   var i: int32 = 0
   while s[i] != cast[uint8](0) and i < max_chars:
-    draw_char(fd, x + i * FONT_WIDTH, y, cast[int32](s[i]), fg, bg, xres, pixel_buf)
+    draw_char(buf, x + i * FONT_WIDTH, y, cast[int32](s[i]), fg, bg, xres, yres)
     i = i + 1
 
-proc draw_cursor(fd: int32, x: int32, y: int32, xres: int32, yres: int32, pixel_buf: ptr uint32) =
-  # Simple arrow cursor
+proc draw_cursor(buf: ptr uint32, x: int32, y: int32, xres: int32, yres: int32) =
+  # Arrow cursor with black outline for visibility
   var i: int32 = 0
   while i < 12:
-    # Vertical line
-    if y + i < yres and x < xres:
-      pixel_buf[0] = cast[uint32](0xFFFFFF)
-      var offset: int32 = ((y + i) * xres + x) * 4
-      discard syscall3(SYS_lseek, fd, offset, SEEK_SET)
-      discard syscall3(SYS_write, fd, cast[int32](pixel_buf), 4)
-    # Diagonal
-    if i < 8 and y + i < yres and x + i < xres:
-      var offset2: int32 = ((y + i) * xres + x + i) * 4
-      discard syscall3(SYS_lseek, fd, offset2, SEEK_SET)
-      discard syscall3(SYS_write, fd, cast[int32](pixel_buf), 4)
+    # Outline (black)
+    if i < 11:
+      buf_pixel(buf, x + 1, y + i, 0x000000, xres, yres)
+    if i < 8:
+      buf_pixel(buf, x + i + 1, y + i, 0x000000, xres, yres)
+    # White center
+    buf_pixel(buf, x, y + i, 0xFFFFFF, xres, yres)
+    if i < 8:
+      buf_pixel(buf, x + i, y + i, 0xFFFFFF, xres, yres)
     i = i + 1
+
+proc flush_buffer(fd: int32, buf: ptr uint32, xres: int32, yres: int32) =
+  # Write entire buffer to framebuffer
+  var size: int32 = xres * yres * 4
+  discard syscall3(SYS_lseek, fd, 0, SEEK_SET)
+  discard syscall3(SYS_write, fd, cast[int32](buf), size)
 
 # ============ Window Registry ============
 
@@ -752,9 +757,9 @@ proc destroy_window(windows: ptr int32, idx: int32) =
     var win: ptr int32 = window_ptr(windows, idx)
     win_set(win, WIN_ACTIVE, 0)
 
-# ============ Compositor ============
+# ============ Compositor (Double-Buffered) ============
 
-proc draw_decoration(fd: int32, win: ptr int32, focused: int32, xres: int32, yres: int32, line_buf: ptr uint32, pixel_buf: ptr uint32) =
+proc draw_decoration(buf: ptr uint32, win: ptr int32, focused: int32, xres: int32, yres: int32) =
   var x: int32 = win_get(win, WIN_X)
   var y: int32 = win_get(win, WIN_Y)
   var w: int32 = win_get(win, WIN_WIDTH)
@@ -768,25 +773,25 @@ proc draw_decoration(fd: int32, win: ptr int32, focused: int32, xres: int32, yre
     title_col = title_col | 0x202020
 
   # Outer border
-  fill_rect(fd, x, y, w, BORDER_SIZE, border_col, xres, yres, line_buf)
-  fill_rect(fd, x, y + h - BORDER_SIZE, w, BORDER_SIZE, border_col, xres, yres, line_buf)
-  fill_rect(fd, x, y, BORDER_SIZE, h, border_col, xres, yres, line_buf)
-  fill_rect(fd, x + w - BORDER_SIZE, y, BORDER_SIZE, h, border_col, xres, yres, line_buf)
+  fill_rect(buf, x, y, w, BORDER_SIZE, border_col, xres, yres)
+  fill_rect(buf, x, y + h - BORDER_SIZE, w, BORDER_SIZE, border_col, xres, yres)
+  fill_rect(buf, x, y, BORDER_SIZE, h, border_col, xres, yres)
+  fill_rect(buf, x + w - BORDER_SIZE, y, BORDER_SIZE, h, border_col, xres, yres)
 
   # Title bar
-  fill_rect(fd, x + BORDER_SIZE, y + BORDER_SIZE, w - BORDER_SIZE * 2, TITLE_HEIGHT, title_col, xres, yres, line_buf)
+  fill_rect(buf, x + BORDER_SIZE, y + BORDER_SIZE, w - BORDER_SIZE * 2, TITLE_HEIGHT, title_col, xres, yres)
 
   # Window title text
   var title: ptr uint8 = get_window_title(win_type)
-  draw_text(fd, x + BORDER_SIZE + 8, y + BORDER_SIZE + 8, title, 0xFFFFFF, title_col, xres, pixel_buf, 20)
+  draw_text(buf, x + BORDER_SIZE + 8, y + BORDER_SIZE + 8, title, 0xFFFFFF, title_col, xres, yres, 20)
 
   # Close button (red)
-  fill_rect(fd, x + w - BORDER_SIZE - BUTTON_SIZE - 4, y + BORDER_SIZE + 4, BUTTON_SIZE, BUTTON_SIZE, 0xDD4444, xres, yres, line_buf)
+  fill_rect(buf, x + w - BORDER_SIZE - BUTTON_SIZE - 4, y + BORDER_SIZE + 4, BUTTON_SIZE, BUTTON_SIZE, 0xDD4444, xres, yres)
 
   # Minimize button (yellow)
-  fill_rect(fd, x + w - BORDER_SIZE - BUTTON_SIZE * 2 - 8, y + BORDER_SIZE + 4, BUTTON_SIZE, BUTTON_SIZE, 0xDDDD44, xres, yres, line_buf)
+  fill_rect(buf, x + w - BORDER_SIZE - BUTTON_SIZE * 2 - 8, y + BORDER_SIZE + 4, BUTTON_SIZE, BUTTON_SIZE, 0xDDDD44, xres, yres)
 
-proc draw_window_body(fd: int32, win: ptr int32, xres: int32, yres: int32, line_buf: ptr uint32, pixel_buf: ptr uint32) =
+proc draw_window_body(buf: ptr uint32, win: ptr int32, xres: int32, yres: int32) =
   var x: int32 = win_get(win, WIN_X)
   var y: int32 = win_get(win, WIN_Y)
   var w: int32 = win_get(win, WIN_WIDTH)
@@ -799,25 +804,25 @@ proc draw_window_body(fd: int32, win: ptr int32, xres: int32, yres: int32, line_
   var content_w: int32 = w - BORDER_SIZE * 2
   var content_h: int32 = h - BORDER_SIZE * 2 - TITLE_HEIGHT
 
-  fill_rect(fd, content_x, content_y, content_w, content_h, body_col, xres, yres, line_buf)
+  fill_rect(buf, content_x, content_y, content_w, content_h, body_col, xres, yres)
 
   # Draw placeholder text based on window type
   var text_fg: int32 = 0x606060
   if win_type == 1:
-    draw_text(fd, content_x + 8, content_y + 8, cast[ptr uint8]("Terminal"), text_fg, body_col, xres, pixel_buf, 20)
-    draw_text(fd, content_x + 8, content_y + 24, cast[ptr uint8]("Ready for input..."), text_fg, body_col, xres, pixel_buf, 20)
+    draw_text(buf, content_x + 8, content_y + 8, cast[ptr uint8]("Terminal"), text_fg, body_col, xres, yres, 20)
+    draw_text(buf, content_x + 8, content_y + 24, cast[ptr uint8]("Ready for input..."), text_fg, body_col, xres, yres, 20)
   if win_type == 2:
-    draw_text(fd, content_x + 8, content_y + 8, cast[ptr uint8]("File Manager"), text_fg, body_col, xres, pixel_buf, 20)
-    draw_text(fd, content_x + 8, content_y + 24, cast[ptr uint8]("Home  Documents"), text_fg, body_col, xres, pixel_buf, 20)
+    draw_text(buf, content_x + 8, content_y + 8, cast[ptr uint8]("File Manager"), text_fg, body_col, xres, yres, 20)
+    draw_text(buf, content_x + 8, content_y + 24, cast[ptr uint8]("Home  Documents"), text_fg, body_col, xres, yres, 20)
   if win_type == 3:
-    draw_text(fd, content_x + 8, content_y + 8, cast[ptr uint8]("Text Editor"), text_fg, body_col, xres, pixel_buf, 20)
-    draw_text(fd, content_x + 8, content_y + 24, cast[ptr uint8]("New document"), text_fg, body_col, xres, pixel_buf, 20)
+    draw_text(buf, content_x + 8, content_y + 8, cast[ptr uint8]("Text Editor"), text_fg, body_col, xres, yres, 20)
+    draw_text(buf, content_x + 8, content_y + 24, cast[ptr uint8]("New document"), text_fg, body_col, xres, yres, 20)
   if win_type == 0:
-    draw_text(fd, content_x + 8, content_y + 8, cast[ptr uint8]("Demo Window"), text_fg, body_col, xres, pixel_buf, 20)
+    draw_text(buf, content_x + 8, content_y + 8, cast[ptr uint8]("Demo Window"), text_fg, body_col, xres, yres, 20)
 
-proc composite(fd: int32, windows: ptr int32, focused_idx: int32, xres: int32, yres: int32, line_buf: ptr uint32, pixel_buf: ptr uint32, bg_color: int32) =
+proc composite(buf: ptr uint32, windows: ptr int32, focused_idx: int32, xres: int32, yres: int32, bg_color: int32) =
   # Draw background
-  fill_rect(fd, 0, 0, xres, yres - TASKBAR_HEIGHT, bg_color, xres, yres, line_buf)
+  fill_rect(buf, 0, 0, xres, yres - TASKBAR_HEIGHT, bg_color, xres, yres)
 
   # Draw unfocused windows
   var i: int32 = 0
@@ -826,8 +831,8 @@ proc composite(fd: int32, windows: ptr int32, focused_idx: int32, xres: int32, y
       var win: ptr int32 = window_ptr(windows, i)
       if win_get(win, WIN_ACTIVE) != 0 and win_get(win, WIN_MINIMIZED) == 0:
         if win_get(win, WIN_DECORATED) != 0:
-          draw_decoration(fd, win, 0, xres, yres, line_buf, pixel_buf)
-        draw_window_body(fd, win, xres, yres, line_buf, pixel_buf)
+          draw_decoration(buf, win, 0, xres, yres)
+        draw_window_body(buf, win, xres, yres)
     i = i + 1
 
   # Draw focused window on top
@@ -835,21 +840,21 @@ proc composite(fd: int32, windows: ptr int32, focused_idx: int32, xres: int32, y
     var win: ptr int32 = window_ptr(windows, focused_idx)
     if win_get(win, WIN_ACTIVE) != 0 and win_get(win, WIN_MINIMIZED) == 0:
       if win_get(win, WIN_DECORATED) != 0:
-        draw_decoration(fd, win, 1, xres, yres, line_buf, pixel_buf)
-      draw_window_body(fd, win, xres, yres, line_buf, pixel_buf)
+        draw_decoration(buf, win, 1, xres, yres)
+      draw_window_body(buf, win, xres, yres)
 
 # ============ Desktop Shell ============
 
-proc draw_taskbar(fd: int32, windows: ptr int32, xres: int32, yres: int32, line_buf: ptr uint32, pixel_buf: ptr uint32) =
+proc draw_taskbar(buf: ptr uint32, windows: ptr int32, xres: int32, yres: int32) =
   var taskbar_y: int32 = yres - TASKBAR_HEIGHT
 
   # Taskbar background
-  fill_rect(fd, 0, taskbar_y, xres, TASKBAR_HEIGHT, 0x2D2D2D, xres, yres, line_buf)
-  fill_rect(fd, 0, taskbar_y, xres, 1, 0x505050, xres, yres, line_buf)
+  fill_rect(buf, 0, taskbar_y, xres, TASKBAR_HEIGHT, 0x2D2D2D, xres, yres)
+  fill_rect(buf, 0, taskbar_y, xres, 1, 0x505050, xres, yres)
 
   # Launcher button with text
-  fill_rect(fd, 4, taskbar_y + 4, LAUNCHER_WIDTH, TASKBAR_HEIGHT - 8, 0x0066AA, xres, yres, line_buf)
-  draw_text(fd, 20, taskbar_y + 12, cast[ptr uint8]("Menu"), 0xFFFFFF, 0x0066AA, xres, pixel_buf, 10)
+  fill_rect(buf, 4, taskbar_y + 4, LAUNCHER_WIDTH, TASKBAR_HEIGHT - 8, 0x0066AA, xres, yres)
+  draw_text(buf, 20, taskbar_y + 12, cast[ptr uint8]("Menu"), 0xFFFFFF, 0x0066AA, xres, yres, 10)
 
   # Window buttons
   var btn_x: int32 = LAUNCHER_WIDTH + 16
@@ -863,33 +868,33 @@ proc draw_taskbar(fd: int32, windows: ptr int32, xres: int32, yres: int32, line_
       if win_get(win, WIN_MINIMIZED) != 0:
         btn_color = 0x353535
 
-      fill_rect(fd, btn_x, taskbar_y + 4, 100, TASKBAR_HEIGHT - 8, btn_color, xres, yres, line_buf)
+      fill_rect(buf, btn_x, taskbar_y + 4, 100, TASKBAR_HEIGHT - 8, btn_color, xres, yres)
 
       # Window title in taskbar
       var win_type: int32 = win_get(win, WIN_TYPE)
       var title: ptr uint8 = get_window_title(win_type)
-      draw_text(fd, btn_x + 8, taskbar_y + 12, title, 0xCCCCCC, btn_color, xres, pixel_buf, 10)
+      draw_text(buf, btn_x + 8, taskbar_y + 12, title, 0xCCCCCC, btn_color, xres, yres, 10)
 
       btn_x = btn_x + 108
     i = i + 1
 
-proc draw_menu(fd: int32, xres: int32, yres: int32, line_buf: ptr uint32, pixel_buf: ptr uint32) =
+proc draw_menu(buf: ptr uint32, xres: int32, yres: int32) =
   var menu_x: int32 = 4
   var menu_y: int32 = yres - TASKBAR_HEIGHT - MENU_ITEM_HEIGHT * 3 - 4
 
   # Menu background
-  fill_rect(fd, menu_x, menu_y, MENU_WIDTH, MENU_ITEM_HEIGHT * 3 + 4, 0x404040, xres, yres, line_buf)
-  fill_rect(fd, menu_x + 1, menu_y + 1, MENU_WIDTH - 2, MENU_ITEM_HEIGHT * 3 + 2, 0x2D2D2D, xres, yres, line_buf)
+  fill_rect(buf, menu_x, menu_y, MENU_WIDTH, MENU_ITEM_HEIGHT * 3 + 4, 0x404040, xres, yres)
+  fill_rect(buf, menu_x + 1, menu_y + 1, MENU_WIDTH - 2, MENU_ITEM_HEIGHT * 3 + 2, 0x2D2D2D, xres, yres)
 
   # Menu items
-  fill_rect(fd, menu_x + 2, menu_y + 2, MENU_WIDTH - 4, MENU_ITEM_HEIGHT, 0x3D3D3D, xres, yres, line_buf)
-  draw_text(fd, menu_x + 10, menu_y + 10, cast[ptr uint8]("Terminal"), 0xFFFFFF, 0x3D3D3D, xres, pixel_buf, 12)
+  fill_rect(buf, menu_x + 2, menu_y + 2, MENU_WIDTH - 4, MENU_ITEM_HEIGHT, 0x3D3D3D, xres, yres)
+  draw_text(buf, menu_x + 10, menu_y + 10, cast[ptr uint8]("Terminal"), 0xFFFFFF, 0x3D3D3D, xres, yres, 12)
 
-  fill_rect(fd, menu_x + 2, menu_y + 2 + MENU_ITEM_HEIGHT, MENU_WIDTH - 4, MENU_ITEM_HEIGHT, 0x3D3D3D, xres, yres, line_buf)
-  draw_text(fd, menu_x + 10, menu_y + 10 + MENU_ITEM_HEIGHT, cast[ptr uint8]("Files"), 0xFFFFFF, 0x3D3D3D, xres, pixel_buf, 12)
+  fill_rect(buf, menu_x + 2, menu_y + 2 + MENU_ITEM_HEIGHT, MENU_WIDTH - 4, MENU_ITEM_HEIGHT, 0x3D3D3D, xres, yres)
+  draw_text(buf, menu_x + 10, menu_y + 10 + MENU_ITEM_HEIGHT, cast[ptr uint8]("Files"), 0xFFFFFF, 0x3D3D3D, xres, yres, 12)
 
-  fill_rect(fd, menu_x + 2, menu_y + 2 + MENU_ITEM_HEIGHT * 2, MENU_WIDTH - 4, MENU_ITEM_HEIGHT, 0x3D3D3D, xres, yres, line_buf)
-  draw_text(fd, menu_x + 10, menu_y + 10 + MENU_ITEM_HEIGHT * 2, cast[ptr uint8]("Editor"), 0xFFFFFF, 0x3D3D3D, xres, pixel_buf, 12)
+  fill_rect(buf, menu_x + 2, menu_y + 2 + MENU_ITEM_HEIGHT * 2, MENU_WIDTH - 4, MENU_ITEM_HEIGHT, 0x3D3D3D, xres, yres)
+  draw_text(buf, menu_x + 10, menu_y + 10 + MENU_ITEM_HEIGHT * 2, cast[ptr uint8]("Editor"), 0xFFFFFF, 0x3D3D3D, xres, yres, 12)
 
 # ============ Hit Testing ============
 
@@ -947,8 +952,8 @@ proc hit_test_taskbar(px: int32, py: int32, windows: ptr int32, yres: int32): in
 # ============ Main ============
 
 proc main() =
-  print_str(cast[ptr uint8]("Brainhair Display Server v0.3\n"))
-  print_str(cast[ptr uint8]("Controls: Left=interact, Right=new, Middle=quit\n"))
+  print_str(cast[ptr uint8]("Brainhair Display Server v0.4\n"))
+  print_str(cast[ptr uint8]("Controls: Left=interact, Right=new, L+R+M=quit\n"))
 
   var mouse_fd: int32 = syscall2(SYS_open, cast[int32]("/dev/input/mice"), O_RDONLY)
   if mouse_fd < 0:
@@ -963,16 +968,13 @@ proc main() =
     print_str(cast[ptr uint8]("Error: Cannot open fb0\n"))
     discard syscall1(SYS_exit, 1)
 
-  # Allocate memory
+  # Allocate initial memory for vinfo
   var old_brk: int32 = syscall1(SYS_brk, 0)
-  var new_brk: int32 = old_brk + 131072
-  discard syscall1(SYS_brk, new_brk)
+  discard syscall1(SYS_brk, old_brk + 4096)
 
   var vinfo: ptr uint32 = cast[ptr uint32](old_brk)
-  var line_buf: ptr uint32 = cast[ptr uint32](old_brk + 256)
-  var pixel_buf: ptr uint32 = cast[ptr uint32](old_brk + 16384)
-  var mouse_buf: ptr uint8 = cast[ptr uint8](old_brk + 16392)
-  var windows: ptr int32 = cast[ptr int32](old_brk + 16400)
+  var mouse_buf: ptr uint8 = cast[ptr uint8](old_brk + 256)
+  var windows: ptr int32 = cast[ptr int32](old_brk + 512)
 
   discard syscall3(SYS_ioctl, fb_fd, FBIOGET_VSCREENINFO, cast[int32](vinfo))
   var xres: int32 = cast[int32](vinfo[0])
@@ -983,6 +985,15 @@ proc main() =
   print_str(cast[ptr uint8]("x"))
   print_num(yres)
   print_str(cast[ptr uint8]("\n"))
+
+  # Allocate backbuffer (xres * yres * 4 bytes)
+  var buf_size: int32 = xres * yres * 4
+  var buf_brk: int32 = syscall1(SYS_brk, 0)
+  discard syscall1(SYS_brk, buf_brk + buf_size)
+  var backbuffer: ptr uint32 = cast[ptr uint32](buf_brk)
+  print_str(cast[ptr uint8]("Backbuffer: "))
+  print_num(buf_size)
+  print_str(cast[ptr uint8](" bytes\n"))
 
   # Init windows
   var i: int32 = 0
@@ -1015,16 +1026,17 @@ proc main() =
 
   var running: int32 = 1
   while running != 0:
-    # Only redraw when something changed
+    # Redraw when needed OR mouse moved (for clean cursor)
     if needs_redraw != 0:
-      composite(fb_fd, windows, focused, xres, yres, line_buf, pixel_buf, bg_color)
-      draw_taskbar(fb_fd, windows, xres, yres, line_buf, pixel_buf)
+      composite(backbuffer, windows, focused, xres, yres, bg_color)
+      draw_taskbar(backbuffer, windows, xres, yres)
       if menu_open != 0:
-        draw_menu(fb_fd, xres, yres, line_buf, pixel_buf)
+        draw_menu(backbuffer, xres, yres)
+      # Draw cursor on top
+      draw_cursor(backbuffer, cursor_x, cursor_y, xres, yres)
+      # Flush to screen
+      flush_buffer(fb_fd, backbuffer, xres, yres)
       needs_redraw = 0
-
-    # Always draw cursor on top
-    draw_cursor(fb_fd, cursor_x, cursor_y, xres, yres, pixel_buf)
 
     # Read 4 bytes for IntelliMouse protocol (scroll wheel mice)
     var bytes: int32 = syscall3(SYS_read, mouse_fd, cast[int32](mouse_buf), 4)

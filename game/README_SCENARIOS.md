@@ -1,4 +1,4 @@
-# Poodillion 2 - Network Scenarios
+# Brainhair 2 - Network Scenarios
 
 ## How to Play
 

@@ -386,7 +386,7 @@ Complete documentation available:
 
 The PooScript network architecture is **production-ready**:
 
-✅ Fully integrated into Poodillion 2
+✅ Fully integrated into Brainhair 2
 ✅ All 4 scenarios working
 ✅ End-to-end packet transmission verified
 ✅ Network daemons starting on boot

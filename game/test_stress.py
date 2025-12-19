@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Comprehensive Stress Testing for Poodillion
+Comprehensive Stress Testing for Brainhair
 Tests the system under extreme load and edge cases
 """
 
@@ -12,7 +12,7 @@ def stress_test_all():
     """Run all stress tests"""
 
     print("\n" + "="*80)
-    print(" " * 20 + "POODILLION COMPREHENSIVE STRESS TESTS")
+    print(" " * 20 + "BRAINHAIR COMPREHENSIVE STRESS TESTS")
     print("="*80 + "\n")
 
     # Create the internet

@@ -1,5 +1,5 @@
-; Serial-only shell wrapper for Mini-Nim
-; Provides external functions that Mini-Nim can call
+; Serial-only shell wrapper for Brainhair
+; Provides external functions that Brainhair can call
 
 bits 32
 
@@ -13,16 +13,16 @@ global os_putchar
 
 section .data
     banner db 10, "========================================", 10
-           db "  PoodillionOS v0.1 - Mini-Nim Shell", 10
+           db "  BrainhairOS v0.1 - Brainhair Shell", 10
            db "========================================", 10, 10
-           db "Built with Mini-Nim compiler!", 10
+           db "Built with Brainhair compiler!", 10
            db "Commands: ls, cat, echo, help", 10, 10, 0
 
-    prompt db "root@poodillion:~# ", 0
+    prompt db "root@brainhair:~# ", 0
 
     msg_ls db "bin/  home/  root/  usr/  tmp/", 10, 0
-    msg_cat db "Welcome to PoodillionOS!", 10
-            db "A real operating system written in Mini-Nim", 10, 0
+    msg_cat db "Welcome to BrainhairOS!", 10
+            db "A real operating system written in Brainhair", 10, 0
     msg_help db "Available commands:", 10
              db "  ls    - List files", 10
              db "  cat   - Display file", 10
@@ -71,7 +71,7 @@ kernel_main:
     hlt
     jmp .halt
 
-; External function for Mini-Nim: os_print(char* str)
+; External function for Brainhair: os_print(char* str)
 ; Prints a null-terminated string to serial port
 os_print:
     push ebp
@@ -86,7 +86,7 @@ os_print:
     pop ebp
     ret
 
-; External function for Mini-Nim: os_putchar(char c)
+; External function for Brainhair: os_putchar(char c)
 ; Prints a single character to serial port
 os_putchar:
     push ebp

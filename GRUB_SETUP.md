@@ -1,4 +1,4 @@
-# GRUB Multiboot Setup for PoodillionOS
+# GRUB Multiboot Setup for BrainhairOS
 
 ## Summary
 
@@ -88,7 +88,7 @@ Use GRUB for now and focus on kernel features. The bootloader can be debugged la
 ## Files Structure
 
 ```
-poodillion2/
+brainhair2/
 ├── boot/
 │   ├── stage1.asm           # MBR bootloader (512 bytes)
 │   ├── stage2.asm           # Second stage (has pmode bug)
@@ -111,7 +111,7 @@ poodillion2/
 When you run `make run-grub`, you should see a QEMU window displaying:
 
 ```
-BOOTLOADER WORKS! Mini-Nim coming soon...
+BOOTLOADER WORKS! Brainhair coming soon...
 ```
 
 in green text on a black background.

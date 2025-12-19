@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Game scenarios for Poodillion 2
+Game scenarios for Brainhair 2
 Each scenario creates a realistic network topology with multiple systems
 """
 
@@ -27,7 +27,7 @@ def create_scenario_zero():
         '/root/README.txt',
         0o644, 0, 0,
         b'=== SSH TRAINING SCENARIO ===\n\n'
-        b'Welcome to Poodillion 2!\n\n'
+        b'Welcome to Brainhair 2!\n\n'
         b'This scenario teaches you how to SSH between systems.\n'
         b'All systems on this network:\n'
         b'  - training-box (192.168.1.100) <- YOU ARE HERE\n'

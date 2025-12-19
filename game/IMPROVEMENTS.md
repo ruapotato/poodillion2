@@ -1,4 +1,4 @@
-# Poodillion 2 - Realism Improvements Completed ✅
+# Brainhair 2 - Realism Improvements Completed ✅
 
 ## Summary
 Made the virtual Unix system behave exactly like a real Unix system. Actions now have real consequences!
@@ -189,7 +189,7 @@ Return stdout/stderr
 
 ## 🎉 Conclusion
 
-Poodillion 2 now behaves like a real Unix system! These improvements make the game:
+Brainhair 2 now behaves like a real Unix system! These improvements make the game:
 - **More educational** - teaches real Unix concepts
 - **More challenging** - actions have consequences
 - **More fun** - enables creative hacking strategies

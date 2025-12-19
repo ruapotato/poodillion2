@@ -1,4 +1,4 @@
-# PoodillionOS Kernel
+# BrainhairOS Kernel
 
 Microkernel written in C/Rust providing core OS functionality.
 

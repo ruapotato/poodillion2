@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Automated Demo/Walkthrough
-Shows off the key features of Poodillion with pauses and explanations
+Shows off the key features of Brainhair with pauses and explanations
 """
 
 import time
@@ -27,13 +27,13 @@ def run_demo():
     print("""
 ╔═══════════════════════════════════════════════════════════════════╗
 ║                                                                   ║
-║                   POODILLION DEMO & WALKTHROUGH                   ║
+║                   BRAINHAIR DEMO & WALKTHROUGH                   ║
 ║                                                                   ║
 ║              December 24, 1990 - 03:47:22 GMT                     ║
 ║                                                                   ║
 ╚═══════════════════════════════════════════════════════════════════╝
 
-Welcome to Poodillion - a virtual Unix hacking environment set in 1990.
+Welcome to Brainhair - a virtual Unix hacking environment set in 1990.
 
 This demo will showcase:
   • Network exploration and mapping

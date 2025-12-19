@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Test script for new fun features in Poodillion OS
+Test script for new fun features in Brainhair OS
 Tests: fun commands, error messages, websites, Easter eggs
 """
 
@@ -16,7 +16,7 @@ def test_fun_features():
     """Test all the fun new features"""
 
     print("=" * 60)
-    print("TESTING FUN FEATURES IN POODILLION OS")
+    print("TESTING FUN FEATURES IN BRAINHAIR OS")
     print("=" * 60)
     print()
 
@@ -48,7 +48,7 @@ def test_fun_features():
 
     fun_commands = [
         'fortune',
-        'cowsay Hello from Poodillion!',
+        'cowsay Hello from Brainhair!',
         'banner HELLO',
         'whoami',
         'uptime',

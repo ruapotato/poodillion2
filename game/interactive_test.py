@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Interactive Test Environment for Poodillion
+Interactive Test Environment for Brainhair
 Provides a better way to explore and test the virtual world
 """
 
@@ -14,7 +14,7 @@ from core.world_life import WorldLife
 class InteractiveWorld:
     def __init__(self):
         print("="*70)
-        print("INITIALIZING POODILLION WORLD...")
+        print("INITIALIZING BRAINHAIR WORLD...")
         print("="*70)
 
         # Create world
@@ -225,7 +225,7 @@ def main():
     print("""
 ╔═══════════════════════════════════════════════════════════════════╗
 ║                                                                   ║
-║            POODILLION INTERACTIVE TEST ENVIRONMENT                ║
+║            BRAINHAIR INTERACTIVE TEST ENVIRONMENT                ║
 ║                                                                   ║
 ║          A better way to explore the virtual world!               ║
 ║                                                                   ║

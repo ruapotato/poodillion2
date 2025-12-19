@@ -1,5 +1,5 @@
 """
-Poodillion Kernel - Core syscall interface
+Brainhair Kernel - Core syscall interface
 
 This module provides the kernel layer that PooScript userland programs call.
 Think of this as the Linux kernel - it provides low-level operations only.
@@ -66,7 +66,7 @@ class Syscall(IntEnum):
 
 class Kernel:
     """
-    The Poodillion kernel
+    The Brainhair kernel
 
     Provides low-level syscalls for:
     - Filesystem operations (VFS)

@@ -1,4 +1,4 @@
-; Shell Kernel Wrapper for PoodillionOS
+; Shell Kernel Wrapper for BrainhairOS
 ; This is the entry point called by GRUB
 ; Sets up the stack and calls the shell
 

@@ -1,4 +1,4 @@
-# PoodillionOS Userspace
+# BrainhairOS Userspace
 
 User programs and utilities compiled from PooScript.
 

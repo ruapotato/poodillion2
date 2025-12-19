@@ -9,7 +9,7 @@ def test_all_scenarios():
     """Test all scenarios"""
 
     print("=" * 80)
-    print("TESTING ALL POODILLION 2 SCENARIOS")
+    print("TESTING ALL BRAINHAIR 2 SCENARIOS")
     print("=" * 80)
 
     for key, create_scenario in SCENARIOS.items():

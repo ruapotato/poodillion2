@@ -9,7 +9,7 @@ Creates a realistic mini-internet with:
 - Mail servers
 - Home users
 - Network gear (routers, switches, firewalls)
-All running SSH and full poodillion OS
+All running SSH and full brainhair OS
 """
 
 from core.system import UnixSystem

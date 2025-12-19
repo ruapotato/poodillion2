@@ -68,7 +68,7 @@ void kernel_main(void) {
     // Print to serial (visible with -nographic or -serial stdio)
     serial_print("\n\n");
     serial_print("========================================\n");
-    serial_print("  PoodillionOS Kernel Booted!\n");
+    serial_print("  BrainhairOS Kernel Booted!\n");
     serial_print("========================================\n");
     serial_print("\n");
     serial_print("Status: GRUB multiboot successful!\n");
@@ -79,16 +79,16 @@ void kernel_main(void) {
 
     // Also write to VGA for GUI display
     uint16_t* vga = (uint16_t*)0xB8000;
-    const char* msg = "BOOTLOADER WORKS! Mini-Nim coming soon...";
+    const char* msg = "BOOTLOADER WORKS! Brainhair coming soon...";
     uint8_t color = 0x0A; // Green on black
 
     for (int i = 0; msg[i] != '\0'; i++) {
         vga[i] = (uint16_t)msg[i] | (uint16_t)(color << 8);
     }
 
-    serial_print("  \"BOOTLOADER WORKS! Mini-Nim coming soon...\"\n");
+    serial_print("  \"BOOTLOADER WORKS! Brainhair coming soon...\"\n");
     serial_print("\n");
-    serial_print("Next: Implement Mini-Nim compiler backend!\n");
+    serial_print("Next: Implement Brainhair compiler backend!\n");
     serial_print("\n");
     serial_print("Kernel halted. Press Ctrl-A X to exit QEMU.\n");
 

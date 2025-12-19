@@ -1,6 +1,6 @@
 # Packet-Based Network Emulation
 
-Poodillion 2 now features a **complete packet-based network stack** that emulates real network communication between virtual Unix systems.
+Brainhair 2 now features a **complete packet-based network stack** that emulates real network communication between virtual Unix systems.
 
 ## Overview
 
@@ -96,7 +96,7 @@ PING 192.168.1.10 56(84) bytes of data.
 
 Packets flow:
 1. Build IP packet (src=attacker IP, dst=target IP, protocol=ICMP, TTL=64)
-2. Build ICMP Echo Request (type=8, seq=1, data="poodillion")
+2. Build ICMP Echo Request (type=8, seq=1, data="brainhair")
 3. Write to `/dev/net/packet`
 4. Network routes packet hop-by-hop
 5. Target auto-responds with Echo Reply
@@ -294,7 +294,7 @@ From 192.168.1.100 icmp_seq=1 Destination Host Unreachable
 
 ## Conclusion
 
-Poodillion 2's packet-based network provides a **realistic, deep emulation** of network communication. Players interact with actual packet streams, enabling sophisticated network hacking scenarios that feel like working on real Unix systems.
+Brainhair 2's packet-based network provides a **realistic, deep emulation** of network communication. Players interact with actual packet streams, enabling sophisticated network hacking scenarios that feel like working on real Unix systems.
 
 The integration with system lifecycle (shutdown detection) ensures that network behavior matches reality - when a router dies, packets stop flowing and connections terminate.
 

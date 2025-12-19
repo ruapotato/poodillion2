@@ -1,4 +1,4 @@
-# Poodillion 2: Virtual Unix Hacking Game
+# Brainhair 2: Virtual Unix Hacking Game
 
 A terminal-based hacking game featuring a complete Unix-like operating system emulation written in pure Python. Set in the early 1990s, players navigate a realistic command-line environment to solve hacking challenges, exploit vulnerabilities, and infiltrate virtual networks.
 
@@ -93,7 +93,7 @@ for name in entries:
 No dependencies required! Just Python 3.7+
 
 ```bash
-cd poodillion2
+cd brainhair2
 python3 demo.py
 ```
 
@@ -158,7 +158,7 @@ test
 ## Architecture
 
 ```
-poodillion2/
+brainhair2/
 ├── core/
 │   ├── vfs.py          # Virtual Filesystem (inodes, directories, files)
 │   ├── permissions.py  # User/group/permission management

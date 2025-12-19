@@ -1,8 +1,8 @@
-# Poodillion OS - Fun Features Guide
+# Brainhair OS - Fun Features Guide
 
 ## Overview
 
-Poodillion OS is now filled with personality, humor, and hidden treasures! This guide covers all the fun features added to make exploring the system delightful.
+Brainhair OS is now filled with personality, humor, and hidden treasures! This guide covers all the fun features added to make exploring the system delightful.
 
 ---
 
@@ -47,9 +47,9 @@ $ fortune
 #### `cowsay <message>`
 Have an ASCII cow say anything:
 ```bash
-$ cowsay Hello Poodillion!
+$ cowsay Hello Brainhair!
  ___________________
-< Hello Poodillion! >
+< Hello Brainhair! >
  -------------------
         \   ^__^
          \  (oo)\_______
@@ -87,7 +87,7 @@ Wake up, Neo...
 Follow the white rabbit...
 ```
 
-### Poodillion Special Commands
+### Brainhair Special Commands
 
 #### `cake`
 Discover the truth about cake:
@@ -172,7 +172,7 @@ Browse virtual websites using `curl`!
 #### `curl index.html`
 Main directory of available sites:
 ```
-Welcome to the POODILLION INTERNET!
+Welcome to the BRAINHAIR INTERNET!
 Available Sites:
 - news.poo
 - hackernews.poo
@@ -184,7 +184,7 @@ Available Sites:
 ```
 
 #### `curl news.poo`
-Poodillion Daily News with satirical tech news:
+Brainhair Daily News with satirical tech news:
 ```
 BREAKING: Local Sysadmin Forgets Root Password
 UPDATE: They tried "password123" and got in.
@@ -201,7 +201,7 @@ Hacker News parody:
 #### `curl bank.poo`
 Fictional bank with "security":
 ```
-FIRST BANK OF POODILLION
+FIRST BANK OF BRAINHAIR
 "Your Money is Safe (Probably)"
 
 <!-- Test credentials for developers -->
@@ -225,9 +225,9 @@ Condition: Partly Cloudy (AWS Outage)
 ```
 
 #### `curl wiki.poo`
-Poodipedia - encyclopedia of the Poodillion world:
+Poodipedia - encyclopedia of the Brainhair world:
 ```
-Article: Poodillion Operating System
+Article: Brainhair Operating System
 History, Features, Easter Eggs...
 ```
 
@@ -236,7 +236,7 @@ Restricted access... but with hints:
 ```
 403 FORBIDDEN
 Hint: Try finding credentials in the system...
-<!-- Secret Easter Egg: The password is "poodillion123" -->
+<!-- Secret Easter Egg: The password is "brainhair123" -->
 ```
 
 ---
@@ -283,7 +283,7 @@ A suspiciously named log file:
 ```bash
 $ cat /var/log/definitely_not_passwords.log | grep -i password
 [2024-01-15 10:25:33] DEBUG: Credential: admin:admin123
-[2024-01-15 10:30:28] DEBUG: Password: poodillion123
+[2024-01-15 10:30:28] DEBUG: Password: brainhair123
 [2024-01-15 10:55:12] DEBUG: Backup password: backup_pass_2024
 ```
 
@@ -292,7 +292,7 @@ Cached secrets:
 ```
 🔐 SECRET CACHE 🔐
 session_token: abc123xyz789
-api_endpoint: https://api.poodillion.internal
+api_endpoint: https://api.brainhair.internal
 username: admin
 ```
 
@@ -303,12 +303,12 @@ Custom Message of the Day:
 ```bash
 $ cat /etc/motd
 ╔══════════════════════════════════════════════════════╗
-║     Welcome to POODILLION OS v2.0                    ║
+║     Welcome to BRAINHAIR OS v2.0                    ║
 ║     "Where Unix Meets Whimsy"                        ║
 ╚══════════════════════════════════════════════════════╝
 
 Today's Fortune:
-"In Poodillion, the file system is both your playground
+"In Brainhair, the file system is both your playground
 and your puzzle. Explore. Break things. Learn. Have fun!"
 ```
 
@@ -368,7 +368,7 @@ hacker:x:1337:1337:Elite Hacker:/home/hacker:/bin/sh
    ```bash
    fortune
    cowsay "Moo!"
-   banner POODILLION
+   banner BRAINHAIR
    matrix
    cake
    hack
@@ -426,7 +426,7 @@ python3 play.py
 
 # Try these commands in order:
 fortune
-cowsay "I love Poodillion!"
+cowsay "I love Brainhair!"
 sl
 curl index.html
 ls -a /secrets
@@ -481,7 +481,7 @@ Ideas for additional fun features:
 
 ## 📚 Summary
 
-Poodillion OS now offers:
+Brainhair OS now offers:
 - **20+ fun commands** (fortune, cowsay, sl, matrix, cake, etc.)
 - **8 virtual websites** to browse
 - **10+ Easter eggs** hidden throughout

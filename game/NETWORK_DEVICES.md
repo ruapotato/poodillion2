@@ -2,7 +2,7 @@
 
 ## Philosophy
 
-Everything in Poodillion should be **hackable via the virtual filesystem**. Network operations should work through virtual devices, not hidden Python APIs.
+Everything in Brainhair should be **hackable via the virtual filesystem**. Network operations should work through virtual devices, not hidden Python APIs.
 
 ## Virtual Network Devices
 
@@ -242,4 +242,4 @@ echo "192.168.1.0/24 via 10.0.0.100" > /proc/net/route
 4. Test and iterate
 5. Migrate remaining commands
 
-This makes Poodillion's networking truly hackable at every level!
+This makes Brainhair's networking truly hackable at every level!
