@@ -10772,7 +10772,7 @@ hit_test_taskbar_return:
 main:
     push ebp
     mov ebp, esp
-    sub esp, 244
+    sub esp, 236
     lea eax, [rel str_15]
     push eax
     call print_str
@@ -10919,13 +10919,6 @@ endif1084:
     pop eax
     add eax, ebx
     mov [ebp-40], eax
-    mov eax, [ebp-16]
-    push eax
-    mov eax, 32768
-    mov ebx, eax
-    pop eax
-    add eax, ebx
-    mov [ebp-44], eax
     mov eax, [ebp-24]
     push eax
     mov eax, 17920
@@ -10942,19 +10935,19 @@ endif1084:
     shl ebx, 2
     add eax, ebx
     mov eax, [eax]
-    mov [ebp-48], eax
+    mov [ebp-44], eax
     mov eax, 1
     mov ebx, eax
     mov eax, [ebp-24]
     shl ebx, 2
     add eax, ebx
     mov eax, [eax]
-    mov [ebp-52], eax
+    mov [ebp-48], eax
     lea eax, [rel str_21]
     push eax
     call print_str
     add esp, 4
-    mov eax, [ebp-48]
+    mov eax, [ebp-44]
     push eax
     call print_num
     add esp, 4
@@ -10962,7 +10955,7 @@ endif1084:
     push eax
     call print_str
     add esp, 4
-    mov eax, [ebp-52]
+    mov eax, [ebp-48]
     push eax
     call print_num
     add esp, 4
@@ -10971,9 +10964,9 @@ endif1084:
     call print_str
     add esp, 4
     mov eax, 0
-    mov [ebp-56], eax
+    mov [ebp-52], eax
 while_start1086:
-    mov eax, [ebp-56]
+    mov eax, [ebp-52]
     push eax
     mov eax, 16
     mov ebx, eax
@@ -10983,28 +10976,28 @@ while_start1086:
     movzx eax, al
     test eax, eax
     jz while_end1087
-    mov eax, [ebp-56]
+    mov eax, [ebp-52]
     push eax
     mov eax, [ebp-40]
     push eax
     call window_ptr
     add esp, 8
-    mov [ebp-60], eax
+    mov [ebp-56], eax
     mov eax, 0
     push eax
     mov eax, 0
     push eax
-    mov eax, [ebp-60]
+    mov eax, [ebp-56]
     push eax
     call win_set
     add esp, 12
-    mov eax, [ebp-56]
+    mov eax, [ebp-52]
     push eax
     mov eax, 1
     mov ebx, eax
     pop eax
     add eax, ebx
-    mov [ebp-56], eax
+    mov [ebp-52], eax
     jmp while_start1086
 while_end1087:
     mov eax, 1
@@ -11025,7 +11018,7 @@ while_end1087:
     push eax
     call create_window
     add esp, 32
-    mov [ebp-64], eax
+    mov [ebp-60], eax
     mov eax, 2
     push eax
     mov eax, 15790320
@@ -11044,7 +11037,7 @@ while_end1087:
     push eax
     call create_window
     add esp, 32
-    mov [ebp-68], eax
+    mov [ebp-64], eax
     mov eax, 3
     push eax
     mov eax, 15658734
@@ -11063,6 +11056,14 @@ while_end1087:
     push eax
     call create_window
     add esp, 32
+    mov [ebp-68], eax
+    mov eax, [ebp-44]
+    push eax
+    mov eax, 2
+    mov ebx, eax
+    pop eax
+    xor edx, edx
+    idiv ebx
     mov [ebp-72], eax
     mov eax, [ebp-48]
     push eax
@@ -11072,38 +11073,28 @@ while_end1087:
     xor edx, edx
     idiv ebx
     mov [ebp-76], eax
-    mov eax, [ebp-52]
-    push eax
-    mov eax, 2
-    mov ebx, eax
-    pop eax
-    xor edx, edx
-    idiv ebx
+    mov eax, [ebp-68]
     mov [ebp-80], eax
-    mov eax, [ebp-72]
-    mov [ebp-84], eax
     mov eax, 0
-    mov [ebp-88], eax
+    mov [ebp-84], eax
     mov eax, 1
     neg eax
+    mov [ebp-88], eax
+    mov eax, 0
     mov [ebp-92], eax
     mov eax, 0
     mov [ebp-96], eax
-    mov eax, 0
-    mov [ebp-100], eax
     mov eax, 1
+    mov [ebp-100], eax
+    mov eax, 0
     mov [ebp-104], eax
     mov eax, 0
     mov [ebp-108], eax
-    mov eax, 0
-    mov [ebp-112], eax
     mov eax, 1718874
+    mov [ebp-112], eax
+    mov eax, 0
     mov [ebp-116], eax
-    mov eax, 0
-    mov [ebp-120], eax
-    mov eax, 0
-    mov [ebp-124], eax
-    mov eax, [ebp-84]
+    mov eax, [ebp-80]
     push eax
     mov eax, 0
     mov ebx, eax
@@ -11113,18 +11104,18 @@ while_end1087:
     movzx eax, al
     test eax, eax
     jz else1089
-    mov eax, [ebp-84]
+    mov eax, [ebp-80]
     push eax
     mov eax, [ebp-40]
     push eax
     call window_ptr
     add esp, 8
-    mov [ebp-128], eax
+    mov [ebp-120], eax
     mov eax, 1
     push eax
     mov eax, 6
     push eax
-    mov eax, [ebp-128]
+    mov eax, [ebp-120]
     push eax
     call win_set
     add esp, 12
@@ -11132,9 +11123,9 @@ while_end1087:
 else1089:
 endif1088:
     mov eax, 1
-    mov [ebp-132], eax
+    mov [ebp-124], eax
 while_start1090:
-    mov eax, [ebp-132]
+    mov eax, [ebp-124]
     push eax
     mov eax, 0
     mov ebx, eax
@@ -11144,7 +11135,7 @@ while_start1090:
     movzx eax, al
     test eax, eax
     jz while_end1091
-    mov eax, [ebp-104]
+    mov eax, [ebp-100]
     push eax
     mov eax, 0
     mov ebx, eax
@@ -11154,17 +11145,17 @@ while_start1090:
     movzx eax, al
     test eax, eax
     jz else1093
-    mov eax, [ebp-116]
+    mov eax, [ebp-112]
     push eax
     mov eax, [ebp-32]
     push eax
     mov eax, [ebp-28]
     push eax
-    mov eax, [ebp-52]
-    push eax
     mov eax, [ebp-48]
     push eax
-    mov eax, [ebp-84]
+    mov eax, [ebp-44]
+    push eax
+    mov eax, [ebp-80]
     push eax
     mov eax, [ebp-40]
     push eax
@@ -11176,9 +11167,9 @@ while_start1090:
     push eax
     mov eax, [ebp-28]
     push eax
-    mov eax, [ebp-52]
-    push eax
     mov eax, [ebp-48]
+    push eax
+    mov eax, [ebp-44]
     push eax
     mov eax, [ebp-40]
     push eax
@@ -11186,7 +11177,7 @@ while_start1090:
     push eax
     call draw_taskbar
     add esp, 24
-    mov eax, [ebp-120]
+    mov eax, [ebp-116]
     push eax
     mov eax, 0
     mov ebx, eax
@@ -11200,9 +11191,9 @@ while_start1090:
     push eax
     mov eax, [ebp-28]
     push eax
-    mov eax, [ebp-52]
-    push eax
     mov eax, [ebp-48]
+    push eax
+    mov eax, [ebp-44]
     push eax
     mov eax, [ebp-12]
     push eax
@@ -11212,19 +11203,19 @@ while_start1090:
 else1095:
 endif1094:
     mov eax, 0
-    mov [ebp-104], eax
+    mov [ebp-100], eax
     jmp endif1092
 else1093:
 endif1092:
     mov eax, [ebp-32]
     push eax
-    mov eax, [ebp-52]
-    push eax
     mov eax, [ebp-48]
     push eax
-    mov eax, [ebp-80]
+    mov eax, [ebp-44]
     push eax
     mov eax, [ebp-76]
+    push eax
+    mov eax, [ebp-72]
     push eax
     mov eax, [ebp-12]
     push eax
@@ -11240,8 +11231,8 @@ endif1092:
     push eax
     call syscall3
     add esp, 16
-    mov [ebp-136], eax
-    mov eax, [ebp-136]
+    mov [ebp-128], eax
+    mov eax, [ebp-128]
     push eax
     mov eax, 3
     mov ebx, eax
@@ -11256,20 +11247,20 @@ endif1092:
     mov eax, [ebp-36]
     add eax, ebx
     movzx eax, byte [eax]
-    mov [ebp-140], eax
+    mov [ebp-132], eax
     mov eax, 1
     mov ebx, eax
     mov eax, [ebp-36]
     add eax, ebx
     movzx eax, byte [eax]
-    mov [ebp-144], eax
+    mov [ebp-136], eax
     mov eax, 2
     mov ebx, eax
     mov eax, [ebp-36]
     add eax, ebx
     movzx eax, byte [eax]
-    mov [ebp-148], eax
-    mov eax, [ebp-140]
+    mov [ebp-140], eax
+    mov eax, [ebp-132]
     push eax
     mov eax, 16
     mov ebx, eax
@@ -11284,17 +11275,17 @@ endif1092:
     movzx eax, al
     test eax, eax
     jz else1099
-    mov eax, [ebp-144]
+    mov eax, [ebp-136]
     push eax
     mov eax, 256
     mov ebx, eax
     pop eax
     sub eax, ebx
-    mov [ebp-144], eax
+    mov [ebp-136], eax
     jmp endif1098
 else1099:
 endif1098:
-    mov eax, [ebp-140]
+    mov eax, [ebp-132]
     push eax
     mov eax, 32
     mov ebx, eax
@@ -11309,38 +11300,38 @@ endif1098:
     movzx eax, al
     test eax, eax
     jz else1101
-    mov eax, [ebp-148]
+    mov eax, [ebp-140]
     push eax
     mov eax, 256
     mov ebx, eax
     pop eax
     sub eax, ebx
-    mov [ebp-148], eax
+    mov [ebp-140], eax
     jmp endif1100
 else1101:
 endif1100:
-    mov eax, [ebp-140]
+    mov eax, [ebp-132]
     push eax
     mov eax, 1
     mov ebx, eax
     pop eax
     and eax, ebx
-    mov [ebp-152], eax
-    mov eax, [ebp-140]
+    mov [ebp-144], eax
+    mov eax, [ebp-132]
     push eax
     mov eax, 2
     mov ebx, eax
     pop eax
     and eax, ebx
-    mov [ebp-156], eax
-    mov eax, [ebp-140]
+    mov [ebp-148], eax
+    mov eax, [ebp-132]
     push eax
     mov eax, 4
     mov ebx, eax
     pop eax
     and eax, ebx
-    mov [ebp-160], eax
-    mov eax, [ebp-160]
+    mov [ebp-152], eax
+    mov eax, [ebp-152]
     push eax
     mov eax, 0
     mov ebx, eax
@@ -11351,25 +11342,60 @@ endif1100:
     test eax, eax
     jz else1103
     mov eax, 0
-    mov [ebp-132], eax
+    mov [ebp-124], eax
     jmp endif1102
 else1103:
 endif1102:
-    mov eax, [ebp-76]
+    mov eax, [ebp-136]
     push eax
-    mov eax, [ebp-144]
+    mov eax, 0
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    setne al
+    movzx eax, al
+    push eax
+    mov eax, [ebp-140]
+    push eax
+    mov eax, 0
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    setne al
+    movzx eax, al
+    mov ebx, eax
+    pop eax
+    test eax, eax
+    jnz or_short1106
+    test ebx, ebx
+    jnz or_short1106
+    xor eax, eax
+    jmp or_end1107
+or_short1106:
+    mov eax, 1
+or_end1107:
+    test eax, eax
+    jz else1105
+    mov eax, 1
+    mov [ebp-100], eax
+    jmp endif1104
+else1105:
+endif1104:
+    mov eax, [ebp-72]
+    push eax
+    mov eax, [ebp-136]
     mov ebx, eax
     pop eax
     add eax, ebx
-    mov [ebp-76], eax
-    mov eax, [ebp-80]
+    mov [ebp-72], eax
+    mov eax, [ebp-76]
     push eax
-    mov eax, [ebp-148]
+    mov eax, [ebp-140]
     mov ebx, eax
     pop eax
     sub eax, ebx
-    mov [ebp-80], eax
-    mov eax, [ebp-76]
+    mov [ebp-76], eax
+    mov eax, [ebp-72]
     push eax
     mov eax, 0
     mov ebx, eax
@@ -11378,15 +11404,15 @@ endif1102:
     setl al
     movzx eax, al
     test eax, eax
-    jz else1105
+    jz else1109
     mov eax, 0
-    mov [ebp-76], eax
-    jmp endif1104
-else1105:
-endif1104:
-    mov eax, [ebp-76]
+    mov [ebp-72], eax
+    jmp endif1108
+else1109:
+endif1108:
+    mov eax, [ebp-72]
     push eax
-    mov eax, [ebp-48]
+    mov eax, [ebp-44]
     push eax
     mov eax, 14
     mov ebx, eax
@@ -11398,18 +11424,18 @@ endif1104:
     setge al
     movzx eax, al
     test eax, eax
-    jz else1107
-    mov eax, [ebp-48]
+    jz else1111
+    mov eax, [ebp-44]
     push eax
     mov eax, 15
     mov ebx, eax
     pop eax
     sub eax, ebx
-    mov [ebp-76], eax
-    jmp endif1106
-else1107:
-endif1106:
-    mov eax, [ebp-80]
+    mov [ebp-72], eax
+    jmp endif1110
+else1111:
+endif1110:
+    mov eax, [ebp-76]
     push eax
     mov eax, 0
     mov ebx, eax
@@ -11418,15 +11444,15 @@ endif1106:
     setl al
     movzx eax, al
     test eax, eax
-    jz else1109
+    jz else1113
     mov eax, 0
-    mov [ebp-80], eax
-    jmp endif1108
-else1109:
-endif1108:
-    mov eax, [ebp-80]
+    mov [ebp-76], eax
+    jmp endif1112
+else1113:
+endif1112:
+    mov eax, [ebp-76]
     push eax
-    mov eax, [ebp-52]
+    mov eax, [ebp-48]
     push eax
     mov eax, 16
     mov ebx, eax
@@ -11438,75 +11464,28 @@ endif1108:
     setge al
     movzx eax, al
     test eax, eax
-    jz else1111
-    mov eax, [ebp-52]
+    jz else1115
+    mov eax, [ebp-48]
     push eax
     mov eax, 17
     mov ebx, eax
     pop eax
     sub eax, ebx
-    mov [ebp-80], eax
-    jmp endif1110
-else1111:
-endif1110:
-    mov eax, [ebp-144]
+    mov [ebp-76], eax
+    jmp endif1114
+else1115:
+endif1114:
+    mov eax, [ebp-84]
     push eax
     mov eax, 0
     mov ebx, eax
     pop eax
     cmp eax, ebx
     setne al
-    movzx eax, al
-    push eax
-    mov eax, [ebp-148]
-    push eax
-    mov eax, 0
-    mov ebx, eax
-    pop eax
-    cmp eax, ebx
-    setne al
-    movzx eax, al
-    mov ebx, eax
-    pop eax
-    test eax, eax
-    jnz or_short1114
-    test ebx, ebx
-    jnz or_short1114
-    xor eax, eax
-    jmp or_end1115
-or_short1114:
-    mov eax, 1
-or_end1115:
-    test eax, eax
-    jz else1113
-    mov eax, [ebp-124]
-    push eax
-    mov eax, 1
-    mov ebx, eax
-    pop eax
-    add eax, ebx
-    mov [ebp-124], eax
-    mov eax, [ebp-124]
-    push eax
-    mov eax, 8
-    mov ebx, eax
-    pop eax
-    cmp eax, ebx
-    setg al
     movzx eax, al
     test eax, eax
     jz else1117
-    mov eax, 1
-    mov [ebp-104], eax
-    mov eax, 0
-    mov [ebp-124], eax
-    jmp endif1116
-else1117:
-endif1116:
-    jmp endif1112
-else1113:
-endif1112:
-    mov eax, [ebp-88]
+    mov eax, [ebp-144]
     push eax
     mov eax, 0
     mov ebx, eax
@@ -11516,7 +11495,100 @@ endif1112:
     movzx eax, al
     test eax, eax
     jz else1119
-    mov eax, [ebp-152]
+    mov eax, [ebp-88]
+    push eax
+    mov eax, [ebp-40]
+    push eax
+    call window_ptr
+    add esp, 8
+    mov [ebp-156], eax
+    mov eax, [ebp-72]
+    push eax
+    mov eax, [ebp-92]
+    mov ebx, eax
+    pop eax
+    sub eax, ebx
+    push eax
+    mov eax, 1
+    push eax
+    mov eax, [ebp-156]
+    push eax
+    call win_set
+    add esp, 12
+    mov eax, [ebp-76]
+    push eax
+    mov eax, [ebp-96]
+    mov ebx, eax
+    pop eax
+    sub eax, ebx
+    push eax
+    mov eax, 2
+    push eax
+    mov eax, [ebp-156]
+    push eax
+    call win_set
+    add esp, 12
+    mov eax, 1
+    mov [ebp-100], eax
+    jmp endif1118
+else1119:
+    mov eax, 0
+    mov [ebp-84], eax
+endif1118:
+    jmp endif1116
+else1117:
+endif1116:
+    mov eax, [ebp-144]
+    push eax
+    mov eax, 0
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    setne al
+    movzx eax, al
+    push eax
+    mov eax, [ebp-104]
+    push eax
+    mov eax, 0
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    mov ebx, eax
+    pop eax
+    test eax, eax
+    jz and_short1122
+    test ebx, ebx
+    jz and_short1122
+    mov eax, 1
+    jmp and_end1123
+and_short1122:
+    xor eax, eax
+and_end1123:
+    push eax
+    mov eax, [ebp-84]
+    push eax
+    mov eax, 0
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    mov ebx, eax
+    pop eax
+    test eax, eax
+    jz and_short1124
+    test ebx, ebx
+    jz and_short1124
+    mov eax, 1
+    jmp and_end1125
+and_short1124:
+    xor eax, eax
+and_end1125:
+    test eax, eax
+    jz else1121
+    mov eax, [ebp-116]
     push eax
     mov eax, 0
     mov ebx, eax
@@ -11525,51 +11597,777 @@ endif1112:
     setne al
     movzx eax, al
     test eax, eax
-    jz else1121
-    mov eax, [ebp-92]
+    jz else1127
+    mov eax, [ebp-48]
+    push eax
+    mov eax, [ebp-76]
+    push eax
+    mov eax, [ebp-72]
+    push eax
+    call hit_test_menu
+    add esp, 12
+    mov [ebp-160], eax
+    mov eax, [ebp-160]
+    push eax
+    mov eax, 0
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    setg al
+    movzx eax, al
+    test eax, eax
+    jz else1129
+    mov eax, 100
+    push eax
+    mov eax, [ebp-160]
+    push eax
+    mov eax, 30
+    mov ebx, eax
+    pop eax
+    imul eax, ebx
+    mov ebx, eax
+    pop eax
+    add eax, ebx
+    mov [ebp-164], eax
+    mov eax, 80
+    push eax
+    mov eax, [ebp-160]
+    push eax
+    mov eax, 25
+    mov ebx, eax
+    pop eax
+    imul eax, ebx
+    mov ebx, eax
+    pop eax
+    add eax, ebx
+    mov [ebp-168], eax
+    mov eax, 2250154
+    mov [ebp-172], eax
+    mov eax, [ebp-160]
+    push eax
+    mov eax, 2
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else1131
+    mov eax, 2271829
+    mov [ebp-172], eax
+    jmp endif1130
+else1131:
+endif1130:
+    mov eax, [ebp-160]
+    push eax
+    mov eax, 3
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else1133
+    mov eax, 11162914
+    mov [ebp-172], eax
+    jmp endif1132
+else1133:
+endif1132:
+    mov eax, [ebp-160]
+    push eax
+    mov eax, 15790320
+    push eax
+    mov eax, [ebp-172]
+    push eax
+    mov eax, 260
+    push eax
+    mov eax, 350
+    push eax
+    mov eax, [ebp-168]
+    push eax
+    mov eax, [ebp-164]
+    push eax
+    mov eax, [ebp-40]
+    push eax
+    call create_window
+    add esp, 32
+    mov [ebp-176], eax
+    mov eax, [ebp-176]
+    push eax
+    mov eax, 0
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    setge al
+    movzx eax, al
+    test eax, eax
+    jz else1135
+    mov eax, [ebp-80]
+    push eax
+    mov eax, 0
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    setge al
+    movzx eax, al
+    test eax, eax
+    jz else1137
+    mov eax, [ebp-80]
     push eax
     mov eax, [ebp-40]
     push eax
     call window_ptr
     add esp, 8
-    mov [ebp-164], eax
-    mov eax, [ebp-76]
+    mov [ebp-180], eax
+    mov eax, 0
     push eax
-    mov eax, [ebp-96]
-    mov ebx, eax
-    pop eax
-    sub eax, ebx
+    mov eax, 6
     push eax
-    mov eax, 1
-    push eax
-    mov eax, [ebp-164]
+    mov eax, [ebp-180]
     push eax
     call win_set
     add esp, 12
+    jmp endif1136
+else1137:
+endif1136:
+    mov eax, [ebp-176]
+    mov [ebp-80], eax
+    mov eax, [ebp-176]
+    push eax
+    mov eax, [ebp-40]
+    push eax
+    call window_ptr
+    add esp, 8
+    mov [ebp-184], eax
+    mov eax, 1
+    push eax
+    mov eax, 6
+    push eax
+    mov eax, [ebp-184]
+    push eax
+    call win_set
+    add esp, 12
+    jmp endif1134
+else1135:
+endif1134:
+    mov eax, 0
+    mov [ebp-116], eax
+    mov eax, 1
+    mov [ebp-100], eax
+    jmp endif1128
+else1129:
+    mov eax, 0
+    mov [ebp-116], eax
+    mov eax, 1
+    mov [ebp-100], eax
+endif1128:
+    jmp endif1126
+else1127:
+    mov eax, [ebp-48]
+    push eax
+    mov eax, [ebp-40]
+    push eax
+    mov eax, [ebp-76]
+    push eax
+    mov eax, [ebp-72]
+    push eax
+    call hit_test_taskbar
+    add esp, 16
+    mov [ebp-188], eax
+    mov eax, [ebp-188]
+    push eax
+    mov eax, 1
+    neg eax
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else1139
+    mov eax, 1
+    mov [ebp-116], eax
+    mov eax, 1
+    mov [ebp-100], eax
+    jmp endif1138
+else1139:
+    mov eax, [ebp-188]
+    push eax
+    mov eax, 0
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    setge al
+    movzx eax, al
+    test eax, eax
+    jz else1141
+    mov eax, [ebp-188]
+    push eax
+    mov eax, [ebp-40]
+    push eax
+    call window_ptr
+    add esp, 8
+    mov [ebp-192], eax
+    mov eax, 7
+    push eax
+    mov eax, [ebp-192]
+    push eax
+    call win_get
+    add esp, 8
+    push eax
+    mov eax, 0
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    setne al
+    movzx eax, al
+    test eax, eax
+    jz else1143
+    mov eax, 0
+    push eax
+    mov eax, 7
+    push eax
+    mov eax, [ebp-192]
+    push eax
+    call win_set
+    add esp, 12
+    jmp endif1142
+else1143:
+endif1142:
     mov eax, [ebp-80]
     push eax
-    mov eax, [ebp-100]
+    mov eax, 0
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    setge al
+    movzx eax, al
+    push eax
+    mov eax, [ebp-80]
+    push eax
+    mov eax, [ebp-188]
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    setne al
+    movzx eax, al
+    mov ebx, eax
+    pop eax
+    test eax, eax
+    jz and_short1146
+    test ebx, ebx
+    jz and_short1146
+    mov eax, 1
+    jmp and_end1147
+and_short1146:
+    xor eax, eax
+and_end1147:
+    test eax, eax
+    jz else1145
+    mov eax, [ebp-80]
+    push eax
+    mov eax, [ebp-40]
+    push eax
+    call window_ptr
+    add esp, 8
+    mov [ebp-196], eax
+    mov eax, 0
+    push eax
+    mov eax, 6
+    push eax
+    mov eax, [ebp-196]
+    push eax
+    call win_set
+    add esp, 12
+    jmp endif1144
+else1145:
+endif1144:
+    mov eax, [ebp-188]
+    mov [ebp-80], eax
+    mov eax, 1
+    push eax
+    mov eax, 6
+    push eax
+    mov eax, [ebp-192]
+    push eax
+    call win_set
+    add esp, 12
+    mov eax, 1
+    mov [ebp-100], eax
+    jmp endif1140
+else1141:
+    mov eax, 0
+    mov [ebp-200], eax
+    mov eax, [ebp-80]
+    push eax
+    mov eax, 0
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    setge al
+    movzx eax, al
+    push eax
+    mov eax, [ebp-200]
+    push eax
+    mov eax, 0
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    mov ebx, eax
+    pop eax
+    test eax, eax
+    jz and_short1150
+    test ebx, ebx
+    jz and_short1150
+    mov eax, 1
+    jmp and_end1151
+and_short1150:
+    xor eax, eax
+and_end1151:
+    test eax, eax
+    jz else1149
+    mov eax, [ebp-80]
+    push eax
+    mov eax, [ebp-40]
+    push eax
+    call window_ptr
+    add esp, 8
+    mov [ebp-204], eax
+    mov eax, [ebp-76]
+    push eax
+    mov eax, [ebp-72]
+    push eax
+    mov eax, [ebp-204]
+    push eax
+    call hit_test_window
+    add esp, 12
+    mov [ebp-208], eax
+    mov eax, [ebp-208]
+    push eax
+    mov eax, 3
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else1153
+    mov eax, [ebp-80]
+    push eax
+    mov eax, [ebp-40]
+    push eax
+    call destroy_window
+    add esp, 8
+    mov eax, 1
+    neg eax
+    mov [ebp-80], eax
+    mov eax, 16
+    push eax
+    mov eax, 1
     mov ebx, eax
     pop eax
     sub eax, ebx
+    mov [ebp-52], eax
+while_start1154:
+    mov eax, [ebp-52]
+    push eax
+    mov eax, 0
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    setge al
+    movzx eax, al
+    test eax, eax
+    jz while_end1155
+    mov eax, [ebp-52]
+    push eax
+    mov eax, [ebp-40]
+    push eax
+    call window_ptr
+    add esp, 8
+    mov [ebp-212], eax
+    mov eax, 0
+    push eax
+    mov eax, [ebp-212]
+    push eax
+    call win_get
+    add esp, 8
+    push eax
+    mov eax, 0
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    setne al
+    movzx eax, al
+    push eax
+    mov eax, 7
+    push eax
+    mov eax, [ebp-212]
+    push eax
+    call win_get
+    add esp, 8
+    push eax
+    mov eax, 0
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    mov ebx, eax
+    pop eax
+    test eax, eax
+    jz and_short1158
+    test ebx, ebx
+    jz and_short1158
+    mov eax, 1
+    jmp and_end1159
+and_short1158:
+    xor eax, eax
+and_end1159:
+    test eax, eax
+    jz else1157
+    mov eax, [ebp-52]
+    mov [ebp-80], eax
+    mov eax, 1
+    push eax
+    mov eax, 6
+    push eax
+    mov eax, [ebp-212]
+    push eax
+    call win_set
+    add esp, 12
+    mov eax, 1
+    neg eax
+    mov [ebp-52], eax
+    jmp endif1156
+else1157:
+endif1156:
+    mov eax, [ebp-52]
+    push eax
+    mov eax, 1
+    mov ebx, eax
+    pop eax
+    sub eax, ebx
+    mov [ebp-52], eax
+    jmp while_start1154
+while_end1155:
+    mov eax, 1
+    mov [ebp-100], eax
+    mov eax, 1
+    mov [ebp-200], eax
+    jmp endif1152
+else1153:
+endif1152:
+    mov eax, [ebp-208]
+    push eax
+    mov eax, 5
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    push eax
+    mov eax, [ebp-200]
+    push eax
+    mov eax, 0
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    mov ebx, eax
+    pop eax
+    test eax, eax
+    jz and_short1162
+    test ebx, ebx
+    jz and_short1162
+    mov eax, 1
+    jmp and_end1163
+and_short1162:
+    xor eax, eax
+and_end1163:
+    test eax, eax
+    jz else1161
+    mov eax, 1
+    push eax
+    mov eax, 7
+    push eax
+    mov eax, [ebp-204]
+    push eax
+    call win_set
+    add esp, 12
+    mov eax, 0
+    push eax
+    mov eax, 6
+    push eax
+    mov eax, [ebp-204]
+    push eax
+    call win_set
+    add esp, 12
+    mov eax, 1
+    neg eax
+    mov [ebp-80], eax
+    mov eax, 1
+    mov [ebp-100], eax
+    mov eax, 1
+    mov [ebp-200], eax
+    jmp endif1160
+else1161:
+endif1160:
+    mov eax, [ebp-208]
+    push eax
+    mov eax, 2
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    push eax
+    mov eax, [ebp-200]
+    push eax
+    mov eax, 0
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    mov ebx, eax
+    pop eax
+    test eax, eax
+    jz and_short1166
+    test ebx, ebx
+    jz and_short1166
+    mov eax, 1
+    jmp and_end1167
+and_short1166:
+    xor eax, eax
+and_end1167:
+    test eax, eax
+    jz else1165
+    mov eax, 1
+    mov [ebp-84], eax
+    mov eax, [ebp-80]
+    mov [ebp-88], eax
+    mov eax, [ebp-72]
+    push eax
+    mov eax, 1
+    push eax
+    mov eax, [ebp-204]
+    push eax
+    call win_get
+    add esp, 8
+    mov ebx, eax
+    pop eax
+    sub eax, ebx
+    mov [ebp-92], eax
+    mov eax, [ebp-76]
     push eax
     mov eax, 2
     push eax
-    mov eax, [ebp-164]
+    mov eax, [ebp-204]
+    push eax
+    call win_get
+    add esp, 8
+    mov ebx, eax
+    pop eax
+    sub eax, ebx
+    mov [ebp-96], eax
+    mov eax, 1
+    mov [ebp-200], eax
+    jmp endif1164
+else1165:
+endif1164:
+    mov eax, [ebp-208]
+    push eax
+    mov eax, 0
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    setg al
+    movzx eax, al
+    push eax
+    mov eax, [ebp-200]
+    push eax
+    mov eax, 0
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    mov ebx, eax
+    pop eax
+    test eax, eax
+    jz and_short1170
+    test ebx, ebx
+    jz and_short1170
+    mov eax, 1
+    jmp and_end1171
+and_short1170:
+    xor eax, eax
+and_end1171:
+    test eax, eax
+    jz else1169
+    mov eax, 1
+    mov [ebp-200], eax
+    jmp endif1168
+else1169:
+endif1168:
+    jmp endif1148
+else1149:
+endif1148:
+    mov eax, [ebp-200]
+    push eax
+    mov eax, 0
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    test eax, eax
+    jz else1173
+    mov eax, 16
+    push eax
+    mov eax, 1
+    mov ebx, eax
+    pop eax
+    sub eax, ebx
+    mov [ebp-52], eax
+while_start1174:
+    mov eax, [ebp-52]
+    push eax
+    mov eax, 0
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    setge al
+    movzx eax, al
+    push eax
+    mov eax, [ebp-200]
+    push eax
+    mov eax, 0
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    mov ebx, eax
+    pop eax
+    test eax, eax
+    jz and_short1176
+    test ebx, ebx
+    jz and_short1176
+    mov eax, 1
+    jmp and_end1177
+and_short1176:
+    xor eax, eax
+and_end1177:
+    test eax, eax
+    jz while_end1175
+    mov eax, [ebp-52]
+    push eax
+    mov eax, [ebp-80]
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    setne al
+    movzx eax, al
+    test eax, eax
+    jz else1179
+    mov eax, [ebp-52]
+    push eax
+    mov eax, [ebp-40]
+    push eax
+    call window_ptr
+    add esp, 8
+    mov [ebp-216], eax
+    mov eax, [ebp-76]
+    push eax
+    mov eax, [ebp-72]
+    push eax
+    mov eax, [ebp-216]
+    push eax
+    call hit_test_window
+    add esp, 12
+    mov [ebp-220], eax
+    mov eax, [ebp-220]
+    push eax
+    mov eax, 0
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    setg al
+    movzx eax, al
+    test eax, eax
+    jz else1181
+    mov eax, [ebp-80]
+    push eax
+    mov eax, 0
+    mov ebx, eax
+    pop eax
+    cmp eax, ebx
+    setge al
+    movzx eax, al
+    test eax, eax
+    jz else1183
+    mov eax, [ebp-80]
+    push eax
+    mov eax, [ebp-40]
+    push eax
+    call window_ptr
+    add esp, 8
+    mov [ebp-224], eax
+    mov eax, 0
+    push eax
+    mov eax, 6
+    push eax
+    mov eax, [ebp-224]
+    push eax
+    call win_set
+    add esp, 12
+    jmp endif1182
+else1183:
+endif1182:
+    mov eax, [ebp-52]
+    mov [ebp-80], eax
+    mov eax, 1
+    push eax
+    mov eax, 6
+    push eax
+    mov eax, [ebp-216]
     push eax
     call win_set
     add esp, 12
     mov eax, 1
-    mov [ebp-104], eax
+    mov [ebp-100], eax
+    mov eax, 1
+    mov [ebp-200], eax
+    jmp endif1180
+else1181:
+endif1180:
+    jmp endif1178
+else1179:
+endif1178:
+    mov eax, [ebp-52]
+    push eax
+    mov eax, 1
+    mov ebx, eax
+    pop eax
+    sub eax, ebx
+    mov [ebp-52], eax
+    jmp while_start1174
+while_end1175:
+    jmp endif1172
+else1173:
+endif1172:
+endif1140:
+endif1138:
+endif1126:
     jmp endif1120
 else1121:
-    mov eax, 0
-    mov [ebp-88], eax
 endif1120:
-    jmp endif1118
-else1119:
-endif1118:
-    mov eax, [ebp-152]
+    mov eax, [ebp-148]
     push eax
     mov eax, 0
     mov ebx, eax
@@ -11589,738 +12387,34 @@ endif1118:
     mov ebx, eax
     pop eax
     test eax, eax
-    jz and_short1124
+    jz and_short1186
     test ebx, ebx
-    jz and_short1124
+    jz and_short1186
     mov eax, 1
-    jmp and_end1125
-and_short1124:
+    jmp and_end1187
+and_short1186:
     xor eax, eax
-and_end1125:
-    push eax
-    mov eax, [ebp-88]
-    push eax
+and_end1187:
+    test eax, eax
+    jz else1185
     mov eax, 0
-    mov ebx, eax
-    pop eax
-    cmp eax, ebx
-    sete al
-    movzx eax, al
-    mov ebx, eax
-    pop eax
-    test eax, eax
-    jz and_short1126
-    test ebx, ebx
-    jz and_short1126
-    mov eax, 1
-    jmp and_end1127
-and_short1126:
-    xor eax, eax
-and_end1127:
-    test eax, eax
-    jz else1123
-    mov eax, [ebp-120]
     push eax
-    mov eax, 0
-    mov ebx, eax
-    pop eax
-    cmp eax, ebx
-    setne al
-    movzx eax, al
-    test eax, eax
-    jz else1129
-    mov eax, [ebp-52]
+    mov eax, 16316664
     push eax
-    mov eax, [ebp-80]
+    mov eax, 11149909
+    push eax
+    mov eax, 220
+    push eax
+    mov eax, 300
     push eax
     mov eax, [ebp-76]
     push eax
-    call hit_test_menu
-    add esp, 12
-    mov [ebp-168], eax
-    mov eax, [ebp-168]
-    push eax
-    mov eax, 0
-    mov ebx, eax
-    pop eax
-    cmp eax, ebx
-    setg al
-    movzx eax, al
-    test eax, eax
-    jz else1131
-    mov eax, 100
-    push eax
-    mov eax, [ebp-168]
-    push eax
-    mov eax, 30
-    mov ebx, eax
-    pop eax
-    imul eax, ebx
-    mov ebx, eax
-    pop eax
-    add eax, ebx
-    mov [ebp-172], eax
-    mov eax, 80
-    push eax
-    mov eax, [ebp-168]
-    push eax
-    mov eax, 25
-    mov ebx, eax
-    pop eax
-    imul eax, ebx
-    mov ebx, eax
-    pop eax
-    add eax, ebx
-    mov [ebp-176], eax
-    mov eax, 2250154
-    mov [ebp-180], eax
-    mov eax, [ebp-168]
-    push eax
-    mov eax, 2
-    mov ebx, eax
-    pop eax
-    cmp eax, ebx
-    sete al
-    movzx eax, al
-    test eax, eax
-    jz else1133
-    mov eax, 2271829
-    mov [ebp-180], eax
-    jmp endif1132
-else1133:
-endif1132:
-    mov eax, [ebp-168]
-    push eax
-    mov eax, 3
-    mov ebx, eax
-    pop eax
-    cmp eax, ebx
-    sete al
-    movzx eax, al
-    test eax, eax
-    jz else1135
-    mov eax, 11162914
-    mov [ebp-180], eax
-    jmp endif1134
-else1135:
-endif1134:
-    mov eax, [ebp-168]
-    push eax
-    mov eax, 15790320
-    push eax
-    mov eax, [ebp-180]
-    push eax
-    mov eax, 260
-    push eax
-    mov eax, 350
-    push eax
-    mov eax, [ebp-176]
-    push eax
-    mov eax, [ebp-172]
+    mov eax, [ebp-72]
     push eax
     mov eax, [ebp-40]
     push eax
     call create_window
     add esp, 32
-    mov [ebp-184], eax
-    mov eax, [ebp-184]
-    push eax
-    mov eax, 0
-    mov ebx, eax
-    pop eax
-    cmp eax, ebx
-    setge al
-    movzx eax, al
-    test eax, eax
-    jz else1137
-    mov eax, [ebp-84]
-    push eax
-    mov eax, 0
-    mov ebx, eax
-    pop eax
-    cmp eax, ebx
-    setge al
-    movzx eax, al
-    test eax, eax
-    jz else1139
-    mov eax, [ebp-84]
-    push eax
-    mov eax, [ebp-40]
-    push eax
-    call window_ptr
-    add esp, 8
-    mov [ebp-188], eax
-    mov eax, 0
-    push eax
-    mov eax, 6
-    push eax
-    mov eax, [ebp-188]
-    push eax
-    call win_set
-    add esp, 12
-    jmp endif1138
-else1139:
-endif1138:
-    mov eax, [ebp-184]
-    mov [ebp-84], eax
-    mov eax, [ebp-184]
-    push eax
-    mov eax, [ebp-40]
-    push eax
-    call window_ptr
-    add esp, 8
-    mov [ebp-192], eax
-    mov eax, 1
-    push eax
-    mov eax, 6
-    push eax
-    mov eax, [ebp-192]
-    push eax
-    call win_set
-    add esp, 12
-    jmp endif1136
-else1137:
-endif1136:
-    mov eax, 0
-    mov [ebp-120], eax
-    mov eax, 1
-    mov [ebp-104], eax
-    jmp endif1130
-else1131:
-    mov eax, 0
-    mov [ebp-120], eax
-    mov eax, 1
-    mov [ebp-104], eax
-endif1130:
-    jmp endif1128
-else1129:
-    mov eax, [ebp-52]
-    push eax
-    mov eax, [ebp-40]
-    push eax
-    mov eax, [ebp-80]
-    push eax
-    mov eax, [ebp-76]
-    push eax
-    call hit_test_taskbar
-    add esp, 16
-    mov [ebp-196], eax
-    mov eax, [ebp-196]
-    push eax
-    mov eax, 1
-    neg eax
-    mov ebx, eax
-    pop eax
-    cmp eax, ebx
-    sete al
-    movzx eax, al
-    test eax, eax
-    jz else1141
-    mov eax, 1
-    mov [ebp-120], eax
-    mov eax, 1
-    mov [ebp-104], eax
-    jmp endif1140
-else1141:
-    mov eax, [ebp-196]
-    push eax
-    mov eax, 0
-    mov ebx, eax
-    pop eax
-    cmp eax, ebx
-    setge al
-    movzx eax, al
-    test eax, eax
-    jz else1143
-    mov eax, [ebp-196]
-    push eax
-    mov eax, [ebp-40]
-    push eax
-    call window_ptr
-    add esp, 8
-    mov [ebp-200], eax
-    mov eax, 7
-    push eax
-    mov eax, [ebp-200]
-    push eax
-    call win_get
-    add esp, 8
-    push eax
-    mov eax, 0
-    mov ebx, eax
-    pop eax
-    cmp eax, ebx
-    setne al
-    movzx eax, al
-    test eax, eax
-    jz else1145
-    mov eax, 0
-    push eax
-    mov eax, 7
-    push eax
-    mov eax, [ebp-200]
-    push eax
-    call win_set
-    add esp, 12
-    jmp endif1144
-else1145:
-endif1144:
-    mov eax, [ebp-84]
-    push eax
-    mov eax, 0
-    mov ebx, eax
-    pop eax
-    cmp eax, ebx
-    setge al
-    movzx eax, al
-    push eax
-    mov eax, [ebp-84]
-    push eax
-    mov eax, [ebp-196]
-    mov ebx, eax
-    pop eax
-    cmp eax, ebx
-    setne al
-    movzx eax, al
-    mov ebx, eax
-    pop eax
-    test eax, eax
-    jz and_short1148
-    test ebx, ebx
-    jz and_short1148
-    mov eax, 1
-    jmp and_end1149
-and_short1148:
-    xor eax, eax
-and_end1149:
-    test eax, eax
-    jz else1147
-    mov eax, [ebp-84]
-    push eax
-    mov eax, [ebp-40]
-    push eax
-    call window_ptr
-    add esp, 8
-    mov [ebp-204], eax
-    mov eax, 0
-    push eax
-    mov eax, 6
-    push eax
-    mov eax, [ebp-204]
-    push eax
-    call win_set
-    add esp, 12
-    jmp endif1146
-else1147:
-endif1146:
-    mov eax, [ebp-196]
-    mov [ebp-84], eax
-    mov eax, 1
-    push eax
-    mov eax, 6
-    push eax
-    mov eax, [ebp-200]
-    push eax
-    call win_set
-    add esp, 12
-    mov eax, 1
-    mov [ebp-104], eax
-    jmp endif1142
-else1143:
-    mov eax, 0
-    mov [ebp-208], eax
-    mov eax, [ebp-84]
-    push eax
-    mov eax, 0
-    mov ebx, eax
-    pop eax
-    cmp eax, ebx
-    setge al
-    movzx eax, al
-    push eax
-    mov eax, [ebp-208]
-    push eax
-    mov eax, 0
-    mov ebx, eax
-    pop eax
-    cmp eax, ebx
-    sete al
-    movzx eax, al
-    mov ebx, eax
-    pop eax
-    test eax, eax
-    jz and_short1152
-    test ebx, ebx
-    jz and_short1152
-    mov eax, 1
-    jmp and_end1153
-and_short1152:
-    xor eax, eax
-and_end1153:
-    test eax, eax
-    jz else1151
-    mov eax, [ebp-84]
-    push eax
-    mov eax, [ebp-40]
-    push eax
-    call window_ptr
-    add esp, 8
-    mov [ebp-212], eax
-    mov eax, [ebp-80]
-    push eax
-    mov eax, [ebp-76]
-    push eax
-    mov eax, [ebp-212]
-    push eax
-    call hit_test_window
-    add esp, 12
-    mov [ebp-216], eax
-    mov eax, [ebp-216]
-    push eax
-    mov eax, 3
-    mov ebx, eax
-    pop eax
-    cmp eax, ebx
-    sete al
-    movzx eax, al
-    test eax, eax
-    jz else1155
-    mov eax, [ebp-84]
-    push eax
-    mov eax, [ebp-40]
-    push eax
-    call destroy_window
-    add esp, 8
-    mov eax, 1
-    neg eax
-    mov [ebp-84], eax
-    mov eax, 16
-    push eax
-    mov eax, 1
-    mov ebx, eax
-    pop eax
-    sub eax, ebx
-    mov [ebp-56], eax
-while_start1156:
-    mov eax, [ebp-56]
-    push eax
-    mov eax, 0
-    mov ebx, eax
-    pop eax
-    cmp eax, ebx
-    setge al
-    movzx eax, al
-    test eax, eax
-    jz while_end1157
-    mov eax, [ebp-56]
-    push eax
-    mov eax, [ebp-40]
-    push eax
-    call window_ptr
-    add esp, 8
-    mov [ebp-220], eax
-    mov eax, 0
-    push eax
-    mov eax, [ebp-220]
-    push eax
-    call win_get
-    add esp, 8
-    push eax
-    mov eax, 0
-    mov ebx, eax
-    pop eax
-    cmp eax, ebx
-    setne al
-    movzx eax, al
-    push eax
-    mov eax, 7
-    push eax
-    mov eax, [ebp-220]
-    push eax
-    call win_get
-    add esp, 8
-    push eax
-    mov eax, 0
-    mov ebx, eax
-    pop eax
-    cmp eax, ebx
-    sete al
-    movzx eax, al
-    mov ebx, eax
-    pop eax
-    test eax, eax
-    jz and_short1160
-    test ebx, ebx
-    jz and_short1160
-    mov eax, 1
-    jmp and_end1161
-and_short1160:
-    xor eax, eax
-and_end1161:
-    test eax, eax
-    jz else1159
-    mov eax, [ebp-56]
-    mov [ebp-84], eax
-    mov eax, 1
-    push eax
-    mov eax, 6
-    push eax
-    mov eax, [ebp-220]
-    push eax
-    call win_set
-    add esp, 12
-    mov eax, 1
-    neg eax
-    mov [ebp-56], eax
-    jmp endif1158
-else1159:
-endif1158:
-    mov eax, [ebp-56]
-    push eax
-    mov eax, 1
-    mov ebx, eax
-    pop eax
-    sub eax, ebx
-    mov [ebp-56], eax
-    jmp while_start1156
-while_end1157:
-    mov eax, 1
-    mov [ebp-104], eax
-    mov eax, 1
-    mov [ebp-208], eax
-    jmp endif1154
-else1155:
-endif1154:
-    mov eax, [ebp-216]
-    push eax
-    mov eax, 5
-    mov ebx, eax
-    pop eax
-    cmp eax, ebx
-    sete al
-    movzx eax, al
-    push eax
-    mov eax, [ebp-208]
-    push eax
-    mov eax, 0
-    mov ebx, eax
-    pop eax
-    cmp eax, ebx
-    sete al
-    movzx eax, al
-    mov ebx, eax
-    pop eax
-    test eax, eax
-    jz and_short1164
-    test ebx, ebx
-    jz and_short1164
-    mov eax, 1
-    jmp and_end1165
-and_short1164:
-    xor eax, eax
-and_end1165:
-    test eax, eax
-    jz else1163
-    mov eax, 1
-    push eax
-    mov eax, 7
-    push eax
-    mov eax, [ebp-212]
-    push eax
-    call win_set
-    add esp, 12
-    mov eax, 0
-    push eax
-    mov eax, 6
-    push eax
-    mov eax, [ebp-212]
-    push eax
-    call win_set
-    add esp, 12
-    mov eax, 1
-    neg eax
-    mov [ebp-84], eax
-    mov eax, 1
-    mov [ebp-104], eax
-    mov eax, 1
-    mov [ebp-208], eax
-    jmp endif1162
-else1163:
-endif1162:
-    mov eax, [ebp-216]
-    push eax
-    mov eax, 2
-    mov ebx, eax
-    pop eax
-    cmp eax, ebx
-    sete al
-    movzx eax, al
-    push eax
-    mov eax, [ebp-208]
-    push eax
-    mov eax, 0
-    mov ebx, eax
-    pop eax
-    cmp eax, ebx
-    sete al
-    movzx eax, al
-    mov ebx, eax
-    pop eax
-    test eax, eax
-    jz and_short1168
-    test ebx, ebx
-    jz and_short1168
-    mov eax, 1
-    jmp and_end1169
-and_short1168:
-    xor eax, eax
-and_end1169:
-    test eax, eax
-    jz else1167
-    mov eax, 1
-    mov [ebp-88], eax
-    mov eax, [ebp-84]
-    mov [ebp-92], eax
-    mov eax, [ebp-76]
-    push eax
-    mov eax, 1
-    push eax
-    mov eax, [ebp-212]
-    push eax
-    call win_get
-    add esp, 8
-    mov ebx, eax
-    pop eax
-    sub eax, ebx
-    mov [ebp-96], eax
-    mov eax, [ebp-80]
-    push eax
-    mov eax, 2
-    push eax
-    mov eax, [ebp-212]
-    push eax
-    call win_get
-    add esp, 8
-    mov ebx, eax
-    pop eax
-    sub eax, ebx
-    mov [ebp-100], eax
-    mov eax, 1
-    mov [ebp-208], eax
-    jmp endif1166
-else1167:
-endif1166:
-    mov eax, [ebp-216]
-    push eax
-    mov eax, 0
-    mov ebx, eax
-    pop eax
-    cmp eax, ebx
-    setg al
-    movzx eax, al
-    push eax
-    mov eax, [ebp-208]
-    push eax
-    mov eax, 0
-    mov ebx, eax
-    pop eax
-    cmp eax, ebx
-    sete al
-    movzx eax, al
-    mov ebx, eax
-    pop eax
-    test eax, eax
-    jz and_short1172
-    test ebx, ebx
-    jz and_short1172
-    mov eax, 1
-    jmp and_end1173
-and_short1172:
-    xor eax, eax
-and_end1173:
-    test eax, eax
-    jz else1171
-    mov eax, 1
-    mov [ebp-208], eax
-    jmp endif1170
-else1171:
-endif1170:
-    jmp endif1150
-else1151:
-endif1150:
-    mov eax, [ebp-208]
-    push eax
-    mov eax, 0
-    mov ebx, eax
-    pop eax
-    cmp eax, ebx
-    sete al
-    movzx eax, al
-    test eax, eax
-    jz else1175
-    mov eax, 16
-    push eax
-    mov eax, 1
-    mov ebx, eax
-    pop eax
-    sub eax, ebx
-    mov [ebp-56], eax
-while_start1176:
-    mov eax, [ebp-56]
-    push eax
-    mov eax, 0
-    mov ebx, eax
-    pop eax
-    cmp eax, ebx
-    setge al
-    movzx eax, al
-    push eax
-    mov eax, [ebp-208]
-    push eax
-    mov eax, 0
-    mov ebx, eax
-    pop eax
-    cmp eax, ebx
-    sete al
-    movzx eax, al
-    mov ebx, eax
-    pop eax
-    test eax, eax
-    jz and_short1178
-    test ebx, ebx
-    jz and_short1178
-    mov eax, 1
-    jmp and_end1179
-and_short1178:
-    xor eax, eax
-and_end1179:
-    test eax, eax
-    jz while_end1177
-    mov eax, [ebp-56]
-    push eax
-    mov eax, [ebp-84]
-    mov ebx, eax
-    pop eax
-    cmp eax, ebx
-    setne al
-    movzx eax, al
-    test eax, eax
-    jz else1181
-    mov eax, [ebp-56]
-    push eax
-    mov eax, [ebp-40]
-    push eax
-    call window_ptr
-    add esp, 8
-    mov [ebp-224], eax
-    mov eax, [ebp-80]
-    push eax
-    mov eax, [ebp-76]
-    push eax
-    mov eax, [ebp-224]
-    push eax
-    call hit_test_window
-    add esp, 12
     mov [ebp-228], eax
     mov eax, [ebp-228]
     push eax
@@ -12328,11 +12422,11 @@ and_end1179:
     mov ebx, eax
     pop eax
     cmp eax, ebx
-    setg al
+    setge al
     movzx eax, al
     test eax, eax
-    jz else1183
-    mov eax, [ebp-84]
+    jz else1189
+    mov eax, [ebp-80]
     push eax
     mov eax, 0
     mov ebx, eax
@@ -12341,8 +12435,8 @@ and_end1179:
     setge al
     movzx eax, al
     test eax, eax
-    jz else1185
-    mov eax, [ebp-84]
+    jz else1191
+    mov eax, [ebp-80]
     push eax
     mov eax, [ebp-40]
     push eax
@@ -12357,191 +12451,40 @@ and_end1179:
     push eax
     call win_set
     add esp, 12
-    jmp endif1184
-else1185:
-endif1184:
-    mov eax, [ebp-56]
-    mov [ebp-84], eax
-    mov eax, 1
-    push eax
-    mov eax, 6
-    push eax
-    mov eax, [ebp-224]
-    push eax
-    call win_set
-    add esp, 12
-    mov eax, 1
-    mov [ebp-104], eax
-    mov eax, 1
-    mov [ebp-208], eax
-    jmp endif1182
-else1183:
-endif1182:
-    jmp endif1180
-else1181:
-endif1180:
-    mov eax, [ebp-56]
-    push eax
-    mov eax, 1
-    mov ebx, eax
-    pop eax
-    sub eax, ebx
-    mov [ebp-56], eax
-    jmp while_start1176
-while_end1177:
-    jmp endif1174
-else1175:
-endif1174:
-endif1142:
-endif1140:
-endif1128:
-    jmp endif1122
-else1123:
-endif1122:
-    mov eax, [ebp-156]
-    push eax
-    mov eax, 0
-    mov ebx, eax
-    pop eax
-    cmp eax, ebx
-    setne al
-    movzx eax, al
-    push eax
-    mov eax, [ebp-112]
-    push eax
-    mov eax, 0
-    mov ebx, eax
-    pop eax
-    cmp eax, ebx
-    sete al
-    movzx eax, al
-    mov ebx, eax
-    pop eax
-    test eax, eax
-    jz and_short1188
-    test ebx, ebx
-    jz and_short1188
-    mov eax, 1
-    jmp and_end1189
-and_short1188:
-    xor eax, eax
-and_end1189:
-    test eax, eax
-    jz else1187
-    mov eax, 0
-    push eax
-    mov eax, 16316664
-    push eax
-    mov eax, 11149909
-    push eax
-    mov eax, 220
-    push eax
-    mov eax, 300
-    push eax
-    mov eax, [ebp-80]
-    push eax
-    mov eax, [ebp-76]
-    push eax
-    mov eax, [ebp-40]
-    push eax
-    call create_window
-    add esp, 32
-    mov [ebp-236], eax
-    mov eax, [ebp-236]
-    push eax
-    mov eax, 0
-    mov ebx, eax
-    pop eax
-    cmp eax, ebx
-    setge al
-    movzx eax, al
-    test eax, eax
-    jz else1191
-    mov eax, [ebp-84]
-    push eax
-    mov eax, 0
-    mov ebx, eax
-    pop eax
-    cmp eax, ebx
-    setge al
-    movzx eax, al
-    test eax, eax
-    jz else1193
-    mov eax, [ebp-84]
-    push eax
-    mov eax, [ebp-40]
-    push eax
-    call window_ptr
-    add esp, 8
-    mov [ebp-240], eax
-    mov eax, 0
-    push eax
-    mov eax, 6
-    push eax
-    mov eax, [ebp-240]
-    push eax
-    call win_set
-    add esp, 12
-    jmp endif1192
-else1193:
-endif1192:
-    mov eax, [ebp-236]
-    mov [ebp-84], eax
-    mov eax, [ebp-236]
-    push eax
-    mov eax, [ebp-40]
-    push eax
-    call window_ptr
-    add esp, 8
-    mov [ebp-244], eax
-    mov eax, 1
-    push eax
-    mov eax, 6
-    push eax
-    mov eax, [ebp-244]
-    push eax
-    call win_set
-    add esp, 12
-    mov eax, 1
-    mov [ebp-104], eax
     jmp endif1190
 else1191:
 endif1190:
-    jmp endif1186
-else1187:
-endif1186:
-    mov eax, [ebp-152]
+    mov eax, [ebp-228]
+    mov [ebp-80], eax
+    mov eax, [ebp-228]
+    push eax
+    mov eax, [ebp-40]
+    push eax
+    call window_ptr
+    add esp, 8
+    mov [ebp-236], eax
+    mov eax, 1
+    push eax
+    mov eax, 6
+    push eax
+    mov eax, [ebp-236]
+    push eax
+    call win_set
+    add esp, 12
+    mov eax, 1
+    mov [ebp-100], eax
+    jmp endif1188
+else1189:
+endif1188:
+    jmp endif1184
+else1185:
+endif1184:
+    mov eax, [ebp-144]
+    mov [ebp-104], eax
+    mov eax, [ebp-148]
     mov [ebp-108], eax
-    mov eax, [ebp-156]
-    mov [ebp-112], eax
     jmp endif1096
 else1097:
-    mov eax, 0
-    push eax
-    mov eax, 0
-    mov ebx, eax
-    mov eax, [ebp-44]
-    shl ebx, 2
-    add eax, ebx
-    pop ebx
-    mov [eax], ebx
-    mov eax, 5000000
-    push eax
-    mov eax, 1
-    mov ebx, eax
-    mov eax, [ebp-44]
-    shl ebx, 2
-    add eax, ebx
-    pop ebx
-    mov [eax], ebx
-    mov eax, 0
-    push eax
-    mov eax, [ebp-44]
-    push eax
-    mov eax, 162
-    push eax
-    call syscall2
-    add esp, 12
 endif1096:
     jmp while_start1090
 while_end1091:

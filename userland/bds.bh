@@ -15,7 +15,6 @@ const SYS_lseek: int32 = 19
 const SYS_exit: int32 = 1
 const SYS_brk: int32 = 45
 const SYS_fcntl: int32 = 55
-const SYS_nanosleep: int32 = 162
 
 const STDOUT: int32 = 1
 const O_RDONLY: int32 = 0
@@ -974,7 +973,6 @@ proc main() =
   var pixel_buf: ptr uint32 = cast[ptr uint32](old_brk + 16384)
   var mouse_buf: ptr uint8 = cast[ptr uint8](old_brk + 16392)
   var windows: ptr int32 = cast[ptr int32](old_brk + 16400)
-  var sleep_buf: ptr int32 = cast[ptr int32](old_brk + 32768)
 
   discard syscall3(SYS_ioctl, fb_fd, FBIOGET_VSCREENINFO, cast[int32](vinfo))
   var xres: int32 = cast[int32](vinfo[0])
@@ -1010,7 +1008,6 @@ proc main() =
   var prev_right: int32 = 0
   var bg_color: int32 = 0x1A3A5A
   var menu_open: int32 = 0
-  var frame_count: int32 = 0
 
   if focused >= 0:
     var fwin: ptr int32 = window_ptr(windows, focused)
@@ -1046,19 +1043,16 @@ proc main() =
       if middle != 0:
         running = 0
 
+      # Always redraw after mouse movement for clean cursor
+      if dx != 0 or dy != 0:
+        needs_redraw = 1
+
       cursor_x = cursor_x + dx
       cursor_y = cursor_y - dy
       if cursor_x < 0: cursor_x = 0
       if cursor_x >= xres - 14: cursor_x = xres - 15
       if cursor_y < 0: cursor_y = 0
       if cursor_y >= yres - 16: cursor_y = yres - 17
-
-      # Redraw periodically when cursor moves to clean up trails
-      if dx != 0 or dy != 0:
-        frame_count = frame_count + 1
-        if frame_count > 8:
-          needs_redraw = 1
-          frame_count = 0
 
       if dragging != 0:
         if left != 0:
@@ -1172,11 +1166,6 @@ proc main() =
 
       prev_left = left
       prev_right = right
-    else:
-      # Small sleep when no input to reduce CPU
-      sleep_buf[0] = 0
-      sleep_buf[1] = 5000000  # 5ms
-      discard syscall2(SYS_nanosleep, cast[int32](sleep_buf), 0)
 
   discard syscall1(SYS_close, fb_fd)
   discard syscall1(SYS_close, mouse_fd)
