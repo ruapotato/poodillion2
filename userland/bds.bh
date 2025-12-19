@@ -191,18 +191,341 @@ proc fill_rect(buf: ptr uint32, x: int32, y: int32, w: int32, h: int32, color: i
     cy = cy + 1
 
 proc get_font_row(c: int32, row: int32): int32 =
-  if c == 32: return 0
-  # Simplified font - just uppercase letters for now
-  if c >= 65 and c <= 90:
-    # Basic block letters
-    if row >= 1 and row <= 5: return 0x7E
+  # 8x8 bitmap font - returns 8 bits for each row
+  if c == 32: return 0  # space
+
+  # Uppercase letters A-Z (65-90)
+  if c == 65:  # A
+    if row == 0: return 0x18
+    if row == 1: return 0x3C
+    if row == 2: return 0x66
+    if row == 3: return 0x66
+    if row == 4: return 0x7E
+    if row == 5: return 0x66
+    if row == 6: return 0x66
     return 0
+  if c == 66:  # B
+    if row == 0: return 0x7C
+    if row == 1: return 0x66
+    if row == 2: return 0x66
+    if row == 3: return 0x7C
+    if row == 4: return 0x66
+    if row == 5: return 0x66
+    if row == 6: return 0x7C
+    return 0
+  if c == 67:  # C
+    if row == 0: return 0x3C
+    if row == 1: return 0x66
+    if row == 2: return 0x60
+    if row == 3: return 0x60
+    if row == 4: return 0x60
+    if row == 5: return 0x66
+    if row == 6: return 0x3C
+    return 0
+  if c == 68:  # D
+    if row == 0: return 0x78
+    if row == 1: return 0x6C
+    if row == 2: return 0x66
+    if row == 3: return 0x66
+    if row == 4: return 0x66
+    if row == 5: return 0x6C
+    if row == 6: return 0x78
+    return 0
+  if c == 69:  # E
+    if row == 0: return 0x7E
+    if row == 1: return 0x60
+    if row == 2: return 0x60
+    if row == 3: return 0x7C
+    if row == 4: return 0x60
+    if row == 5: return 0x60
+    if row == 6: return 0x7E
+    return 0
+  if c == 70:  # F
+    if row == 0: return 0x7E
+    if row == 1: return 0x60
+    if row == 2: return 0x60
+    if row == 3: return 0x7C
+    if row == 4: return 0x60
+    if row == 5: return 0x60
+    if row == 6: return 0x60
+    return 0
+  if c == 71:  # G
+    if row == 0: return 0x3C
+    if row == 1: return 0x66
+    if row == 2: return 0x60
+    if row == 3: return 0x6E
+    if row == 4: return 0x66
+    if row == 5: return 0x66
+    if row == 6: return 0x3C
+    return 0
+  if c == 72:  # H
+    if row == 0: return 0x66
+    if row == 1: return 0x66
+    if row == 2: return 0x66
+    if row == 3: return 0x7E
+    if row == 4: return 0x66
+    if row == 5: return 0x66
+    if row == 6: return 0x66
+    return 0
+  if c == 73:  # I
+    if row == 0: return 0x3C
+    if row == 1: return 0x18
+    if row == 2: return 0x18
+    if row == 3: return 0x18
+    if row == 4: return 0x18
+    if row == 5: return 0x18
+    if row == 6: return 0x3C
+    return 0
+  if c == 74:  # J
+    if row == 0: return 0x1E
+    if row == 1: return 0x0C
+    if row == 2: return 0x0C
+    if row == 3: return 0x0C
+    if row == 4: return 0x0C
+    if row == 5: return 0x6C
+    if row == 6: return 0x38
+    return 0
+  if c == 75:  # K
+    if row == 0: return 0x66
+    if row == 1: return 0x6C
+    if row == 2: return 0x78
+    if row == 3: return 0x70
+    if row == 4: return 0x78
+    if row == 5: return 0x6C
+    if row == 6: return 0x66
+    return 0
+  if c == 76:  # L
+    if row == 0: return 0x60
+    if row == 1: return 0x60
+    if row == 2: return 0x60
+    if row == 3: return 0x60
+    if row == 4: return 0x60
+    if row == 5: return 0x60
+    if row == 6: return 0x7E
+    return 0
+  if c == 77:  # M
+    if row == 0: return 0x63
+    if row == 1: return 0x77
+    if row == 2: return 0x7F
+    if row == 3: return 0x6B
+    if row == 4: return 0x63
+    if row == 5: return 0x63
+    if row == 6: return 0x63
+    return 0
+  if c == 78:  # N
+    if row == 0: return 0x66
+    if row == 1: return 0x76
+    if row == 2: return 0x7E
+    if row == 3: return 0x7E
+    if row == 4: return 0x6E
+    if row == 5: return 0x66
+    if row == 6: return 0x66
+    return 0
+  if c == 79:  # O
+    if row == 0: return 0x3C
+    if row == 1: return 0x66
+    if row == 2: return 0x66
+    if row == 3: return 0x66
+    if row == 4: return 0x66
+    if row == 5: return 0x66
+    if row == 6: return 0x3C
+    return 0
+  if c == 80:  # P
+    if row == 0: return 0x7C
+    if row == 1: return 0x66
+    if row == 2: return 0x66
+    if row == 3: return 0x7C
+    if row == 4: return 0x60
+    if row == 5: return 0x60
+    if row == 6: return 0x60
+    return 0
+  if c == 81:  # Q
+    if row == 0: return 0x3C
+    if row == 1: return 0x66
+    if row == 2: return 0x66
+    if row == 3: return 0x66
+    if row == 4: return 0x6A
+    if row == 5: return 0x6C
+    if row == 6: return 0x36
+    return 0
+  if c == 82:  # R
+    if row == 0: return 0x7C
+    if row == 1: return 0x66
+    if row == 2: return 0x66
+    if row == 3: return 0x7C
+    if row == 4: return 0x6C
+    if row == 5: return 0x66
+    if row == 6: return 0x66
+    return 0
+  if c == 83:  # S
+    if row == 0: return 0x3C
+    if row == 1: return 0x66
+    if row == 2: return 0x60
+    if row == 3: return 0x3C
+    if row == 4: return 0x06
+    if row == 5: return 0x66
+    if row == 6: return 0x3C
+    return 0
+  if c == 84:  # T
+    if row == 0: return 0x7E
+    if row == 1: return 0x18
+    if row == 2: return 0x18
+    if row == 3: return 0x18
+    if row == 4: return 0x18
+    if row == 5: return 0x18
+    if row == 6: return 0x18
+    return 0
+  if c == 85:  # U
+    if row == 0: return 0x66
+    if row == 1: return 0x66
+    if row == 2: return 0x66
+    if row == 3: return 0x66
+    if row == 4: return 0x66
+    if row == 5: return 0x66
+    if row == 6: return 0x3C
+    return 0
+  if c == 86:  # V
+    if row == 0: return 0x66
+    if row == 1: return 0x66
+    if row == 2: return 0x66
+    if row == 3: return 0x66
+    if row == 4: return 0x66
+    if row == 5: return 0x3C
+    if row == 6: return 0x18
+    return 0
+  if c == 87:  # W
+    if row == 0: return 0x63
+    if row == 1: return 0x63
+    if row == 2: return 0x63
+    if row == 3: return 0x6B
+    if row == 4: return 0x7F
+    if row == 5: return 0x77
+    if row == 6: return 0x63
+    return 0
+  if c == 88:  # X
+    if row == 0: return 0x66
+    if row == 1: return 0x66
+    if row == 2: return 0x3C
+    if row == 3: return 0x18
+    if row == 4: return 0x3C
+    if row == 5: return 0x66
+    if row == 6: return 0x66
+    return 0
+  if c == 89:  # Y
+    if row == 0: return 0x66
+    if row == 1: return 0x66
+    if row == 2: return 0x66
+    if row == 3: return 0x3C
+    if row == 4: return 0x18
+    if row == 5: return 0x18
+    if row == 6: return 0x18
+    return 0
+  if c == 90:  # Z
+    if row == 0: return 0x7E
+    if row == 1: return 0x06
+    if row == 2: return 0x0C
+    if row == 3: return 0x18
+    if row == 4: return 0x30
+    if row == 5: return 0x60
+    if row == 6: return 0x7E
+    return 0
+
+  # Lowercase letters - use same as uppercase for simplicity
   if c >= 97 and c <= 122:
-    if row >= 2 and row <= 6: return 0x7E
+    return get_font_row(c - 32, row)
+
+  # Numbers 0-9 (48-57)
+  if c == 48:  # 0
+    if row == 0: return 0x3C
+    if row == 1: return 0x66
+    if row == 2: return 0x6E
+    if row == 3: return 0x76
+    if row == 4: return 0x66
+    if row == 5: return 0x66
+    if row == 6: return 0x3C
     return 0
-  if c >= 48 and c <= 57:
-    if row >= 0 and row <= 6: return 0x3C
+  if c == 49:  # 1
+    if row == 0: return 0x18
+    if row == 1: return 0x38
+    if row == 2: return 0x18
+    if row == 3: return 0x18
+    if row == 4: return 0x18
+    if row == 5: return 0x18
+    if row == 6: return 0x7E
     return 0
+  if c == 50:  # 2
+    if row == 0: return 0x3C
+    if row == 1: return 0x66
+    if row == 2: return 0x06
+    if row == 3: return 0x0C
+    if row == 4: return 0x18
+    if row == 5: return 0x30
+    if row == 6: return 0x7E
+    return 0
+  if c == 51:  # 3
+    if row == 0: return 0x3C
+    if row == 1: return 0x66
+    if row == 2: return 0x06
+    if row == 3: return 0x1C
+    if row == 4: return 0x06
+    if row == 5: return 0x66
+    if row == 6: return 0x3C
+    return 0
+  if c == 52:  # 4
+    if row == 0: return 0x0C
+    if row == 1: return 0x1C
+    if row == 2: return 0x3C
+    if row == 3: return 0x6C
+    if row == 4: return 0x7E
+    if row == 5: return 0x0C
+    if row == 6: return 0x0C
+    return 0
+  if c == 53:  # 5
+    if row == 0: return 0x7E
+    if row == 1: return 0x60
+    if row == 2: return 0x7C
+    if row == 3: return 0x06
+    if row == 4: return 0x06
+    if row == 5: return 0x66
+    if row == 6: return 0x3C
+    return 0
+  if c == 54:  # 6
+    if row == 0: return 0x1C
+    if row == 1: return 0x30
+    if row == 2: return 0x60
+    if row == 3: return 0x7C
+    if row == 4: return 0x66
+    if row == 5: return 0x66
+    if row == 6: return 0x3C
+    return 0
+  if c == 55:  # 7
+    if row == 0: return 0x7E
+    if row == 1: return 0x06
+    if row == 2: return 0x0C
+    if row == 3: return 0x18
+    if row == 4: return 0x18
+    if row == 5: return 0x18
+    if row == 6: return 0x18
+    return 0
+  if c == 56:  # 8
+    if row == 0: return 0x3C
+    if row == 1: return 0x66
+    if row == 2: return 0x66
+    if row == 3: return 0x3C
+    if row == 4: return 0x66
+    if row == 5: return 0x66
+    if row == 6: return 0x3C
+    return 0
+  if c == 57:  # 9
+    if row == 0: return 0x3C
+    if row == 1: return 0x66
+    if row == 2: return 0x66
+    if row == 3: return 0x3E
+    if row == 4: return 0x06
+    if row == 5: return 0x0C
+    if row == 6: return 0x38
+    return 0
+
   return 0
 
 proc draw_char(buf: ptr uint32, x: int32, y: int32, c: int32, fg: int32, bg: int32, xres: int32, yres: int32) =
@@ -405,6 +728,130 @@ proc draw_taskbar(buf: ptr uint32, windows: ptr int32, xres: int32, yres: int32)
   fill_rect(buf, 4, taskbar_y + 4, LAUNCHER_WIDTH, TASKBAR_HEIGHT - 8, 0x0066AA, xres, yres)
   draw_text(buf, 20, taskbar_y + 12, cast[ptr uint8]("Menu"), 0xFFFFFF, 0x0066AA, xres, yres, 10)
 
+proc draw_cursor(buf: ptr uint32, x: int32, y: int32, xres: int32, yres: int32) =
+  # Draw arrow cursor - 12x16 pixels
+  # Row 0: X
+  buf_pixel(buf, x, y, 0x000000, xres, yres)
+  # Row 1: XX
+  buf_pixel(buf, x, y+1, 0x000000, xres, yres)
+  buf_pixel(buf, x+1, y+1, 0x000000, xres, yres)
+  # Row 2: XWX
+  buf_pixel(buf, x, y+2, 0x000000, xres, yres)
+  buf_pixel(buf, x+1, y+2, 0xFFFFFF, xres, yres)
+  buf_pixel(buf, x+2, y+2, 0x000000, xres, yres)
+  # Row 3: XWWX
+  buf_pixel(buf, x, y+3, 0x000000, xres, yres)
+  buf_pixel(buf, x+1, y+3, 0xFFFFFF, xres, yres)
+  buf_pixel(buf, x+2, y+3, 0xFFFFFF, xres, yres)
+  buf_pixel(buf, x+3, y+3, 0x000000, xres, yres)
+  # Row 4: XWWWX
+  buf_pixel(buf, x, y+4, 0x000000, xres, yres)
+  buf_pixel(buf, x+1, y+4, 0xFFFFFF, xres, yres)
+  buf_pixel(buf, x+2, y+4, 0xFFFFFF, xres, yres)
+  buf_pixel(buf, x+3, y+4, 0xFFFFFF, xres, yres)
+  buf_pixel(buf, x+4, y+4, 0x000000, xres, yres)
+  # Row 5: XWWWWX
+  buf_pixel(buf, x, y+5, 0x000000, xres, yres)
+  buf_pixel(buf, x+1, y+5, 0xFFFFFF, xres, yres)
+  buf_pixel(buf, x+2, y+5, 0xFFFFFF, xres, yres)
+  buf_pixel(buf, x+3, y+5, 0xFFFFFF, xres, yres)
+  buf_pixel(buf, x+4, y+5, 0xFFFFFF, xres, yres)
+  buf_pixel(buf, x+5, y+5, 0x000000, xres, yres)
+  # Row 6: XWWWWWX
+  buf_pixel(buf, x, y+6, 0x000000, xres, yres)
+  buf_pixel(buf, x+1, y+6, 0xFFFFFF, xres, yres)
+  buf_pixel(buf, x+2, y+6, 0xFFFFFF, xres, yres)
+  buf_pixel(buf, x+3, y+6, 0xFFFFFF, xres, yres)
+  buf_pixel(buf, x+4, y+6, 0xFFFFFF, xres, yres)
+  buf_pixel(buf, x+5, y+6, 0xFFFFFF, xres, yres)
+  buf_pixel(buf, x+6, y+6, 0x000000, xres, yres)
+  # Row 7: XWWWWWWX
+  buf_pixel(buf, x, y+7, 0x000000, xres, yres)
+  buf_pixel(buf, x+1, y+7, 0xFFFFFF, xres, yres)
+  buf_pixel(buf, x+2, y+7, 0xFFFFFF, xres, yres)
+  buf_pixel(buf, x+3, y+7, 0xFFFFFF, xres, yres)
+  buf_pixel(buf, x+4, y+7, 0xFFFFFF, xres, yres)
+  buf_pixel(buf, x+5, y+7, 0xFFFFFF, xres, yres)
+  buf_pixel(buf, x+6, y+7, 0xFFFFFF, xres, yres)
+  buf_pixel(buf, x+7, y+7, 0x000000, xres, yres)
+  # Row 8: XWWWWWWWX
+  buf_pixel(buf, x, y+8, 0x000000, xres, yres)
+  buf_pixel(buf, x+1, y+8, 0xFFFFFF, xres, yres)
+  buf_pixel(buf, x+2, y+8, 0xFFFFFF, xres, yres)
+  buf_pixel(buf, x+3, y+8, 0xFFFFFF, xres, yres)
+  buf_pixel(buf, x+4, y+8, 0xFFFFFF, xres, yres)
+  buf_pixel(buf, x+5, y+8, 0xFFFFFF, xres, yres)
+  buf_pixel(buf, x+6, y+8, 0xFFFFFF, xres, yres)
+  buf_pixel(buf, x+7, y+8, 0xFFFFFF, xres, yres)
+  buf_pixel(buf, x+8, y+8, 0x000000, xres, yres)
+  # Row 9: XWWWWXXXXX
+  buf_pixel(buf, x, y+9, 0x000000, xres, yres)
+  buf_pixel(buf, x+1, y+9, 0xFFFFFF, xres, yres)
+  buf_pixel(buf, x+2, y+9, 0xFFFFFF, xres, yres)
+  buf_pixel(buf, x+3, y+9, 0xFFFFFF, xres, yres)
+  buf_pixel(buf, x+4, y+9, 0xFFFFFF, xres, yres)
+  buf_pixel(buf, x+5, y+9, 0x000000, xres, yres)
+  # Row 10: XWWX XWX
+  buf_pixel(buf, x, y+10, 0x000000, xres, yres)
+  buf_pixel(buf, x+1, y+10, 0xFFFFFF, xres, yres)
+  buf_pixel(buf, x+2, y+10, 0xFFFFFF, xres, yres)
+  buf_pixel(buf, x+3, y+10, 0x000000, xres, yres)
+  buf_pixel(buf, x+5, y+10, 0x000000, xres, yres)
+  buf_pixel(buf, x+6, y+10, 0xFFFFFF, xres, yres)
+  buf_pixel(buf, x+7, y+10, 0x000000, xres, yres)
+  # Row 11: XWX  XWX
+  buf_pixel(buf, x, y+11, 0x000000, xres, yres)
+  buf_pixel(buf, x+1, y+11, 0xFFFFFF, xres, yres)
+  buf_pixel(buf, x+2, y+11, 0x000000, xres, yres)
+  buf_pixel(buf, x+6, y+11, 0x000000, xres, yres)
+  buf_pixel(buf, x+7, y+11, 0xFFFFFF, xres, yres)
+  buf_pixel(buf, x+8, y+11, 0x000000, xres, yres)
+  # Row 12: XX   XWX
+  buf_pixel(buf, x, y+12, 0x000000, xres, yres)
+  buf_pixel(buf, x+1, y+12, 0x000000, xres, yres)
+  buf_pixel(buf, x+6, y+12, 0x000000, xres, yres)
+  buf_pixel(buf, x+7, y+12, 0xFFFFFF, xres, yres)
+  buf_pixel(buf, x+8, y+12, 0x000000, xres, yres)
+  # Row 13:       XX
+  buf_pixel(buf, x+7, y+13, 0x000000, xres, yres)
+  buf_pixel(buf, x+8, y+13, 0x000000, xres, yres)
+
+proc point_in_titlebar(win: ptr int32, px: int32, py: int32): int32 =
+  var x: int32 = win_get(win, WIN_X)
+  var y: int32 = win_get(win, WIN_Y)
+  var w: int32 = win_get(win, WIN_WIDTH)
+  if px >= x + BORDER_SIZE and px < x + w - BORDER_SIZE:
+    if py >= y + BORDER_SIZE and py < y + BORDER_SIZE + TITLE_HEIGHT:
+      return 1
+  return 0
+
+proc point_in_window(win: ptr int32, px: int32, py: int32): int32 =
+  var x: int32 = win_get(win, WIN_X)
+  var y: int32 = win_get(win, WIN_Y)
+  var w: int32 = win_get(win, WIN_WIDTH)
+  var h: int32 = win_get(win, WIN_HEIGHT)
+  if px >= x and px < x + w and py >= y and py < y + h:
+    return 1
+  return 0
+
+proc find_window_at(windows: ptr int32, px: int32, py: int32, focused: int32): int32 =
+  # Check focused window first (it's on top)
+  if focused >= 0 and focused < MAX_WINDOWS:
+    var win: ptr int32 = window_ptr(windows, focused)
+    if win_get(win, WIN_ACTIVE) != 0 and win_get(win, WIN_MINIMIZED) == 0:
+      if point_in_window(win, px, py) != 0:
+        return focused
+  # Check other windows
+  var i: int32 = MAX_WINDOWS - 1
+  while i >= 0:
+    if i != focused:
+      var win: ptr int32 = window_ptr(windows, i)
+      if win_get(win, WIN_ACTIVE) != 0 and win_get(win, WIN_MINIMIZED) == 0:
+        if point_in_window(win, px, py) != 0:
+          return i
+    i = i - 1
+  return -1
+
 # ============ Main ============
 
 proc main() =
@@ -526,6 +973,14 @@ proc main() =
   var cursor_y: int32 = yres / 2
   var bg_color: int32 = 0x1A3A5A
 
+  # Drag state
+  var dragging: int32 = 0
+  var drag_win: int32 = -1
+  var drag_off_x: int32 = 0
+  var drag_off_y: int32 = 0
+  var mouse_btn: int32 = 0
+  var prev_btn: int32 = 0
+
   if focused >= 0:
     var fwin: ptr int32 = window_ptr(windows, focused)
     win_set(fwin, WIN_FOCUSED, 1)
@@ -541,9 +996,7 @@ proc main() =
   # Draw initial scene to backbuffer, then copy to framebuffer
   composite(backbuffer, windows, focused, xres, yres, bg_color)
   draw_taskbar(backbuffer, windows, xres, yres)
-  # Draw initial cursor
-  fill_rect(backbuffer, cursor_x, cursor_y, 2, 16, 0xFFFFFF, xres, yres)
-  fill_rect(backbuffer, cursor_x, cursor_y, 12, 2, 0xFFFFFF, xres, yres)
+  draw_cursor(backbuffer, cursor_x, cursor_y, xres, yres)
   # Copy to screen
   fast_memcpy(cast[int32](framebuffer), cast[int32](backbuffer), buf_size)
 
@@ -563,6 +1016,7 @@ proc main() =
     var total_dx: int32 = 0
     var total_dy: int32 = 0
     var got_mouse: int32 = 0
+    prev_btn = mouse_btn
 
     var bytes: int32 = syscall3(SYS_read, mouse_fd, cast[int32](mouse_buf), 4)
     while bytes >= 3:
@@ -576,6 +1030,7 @@ proc main() =
 
       total_dx = total_dx + dx
       total_dy = total_dy + dy
+      mouse_btn = btns & 0x07  # Lower 3 bits are buttons
 
       bytes = syscall3(SYS_read, mouse_fd, cast[int32](mouse_buf), 4)
 
@@ -587,12 +1042,46 @@ proc main() =
       if cursor_y < 0: cursor_y = 0
       if cursor_y >= yres: cursor_y = yres - 1
 
+      # Handle mouse button press (left button = bit 0)
+      var left_pressed: int32 = (mouse_btn & 1) != 0 and (prev_btn & 1) == 0
+      var left_released: int32 = (mouse_btn & 1) == 0 and (prev_btn & 1) != 0
+
+      if left_pressed != 0:
+        # Check if clicking on a window
+        var clicked_win: int32 = find_window_at(windows, cursor_x, cursor_y, focused)
+        if clicked_win >= 0:
+          # Focus this window
+          if clicked_win != focused:
+            if focused >= 0:
+              var old_win: ptr int32 = window_ptr(windows, focused)
+              win_set(old_win, WIN_FOCUSED, 0)
+            focused = clicked_win
+            var new_win: ptr int32 = window_ptr(windows, focused)
+            win_set(new_win, WIN_FOCUSED, 1)
+
+          # Check if clicking on title bar - start drag
+          var win: ptr int32 = window_ptr(windows, clicked_win)
+          if point_in_titlebar(win, cursor_x, cursor_y) != 0:
+            dragging = 1
+            drag_win = clicked_win
+            drag_off_x = cursor_x - win_get(win, WIN_X)
+            drag_off_y = cursor_y - win_get(win, WIN_Y)
+
+      if left_released != 0:
+        # Stop dragging
+        dragging = 0
+        drag_win = -1
+
+      # Handle dragging
+      if dragging != 0 and drag_win >= 0:
+        var win: ptr int32 = window_ptr(windows, drag_win)
+        win_set(win, WIN_X, cursor_x - drag_off_x)
+        win_set(win, WIN_Y, cursor_y - drag_off_y)
+
     # Draw to backbuffer
     composite(backbuffer, windows, focused, xres, yres, bg_color)
     draw_taskbar(backbuffer, windows, xres, yres)
-    # Draw cursor
-    fill_rect(backbuffer, cursor_x, cursor_y, 2, 16, 0xFFFFFF, xres, yres)
-    fill_rect(backbuffer, cursor_x, cursor_y, 12, 2, 0xFFFFFF, xres, yres)
+    draw_cursor(backbuffer, cursor_x, cursor_y, xres, yres)
     # Copy to screen in one fast operation (no flicker)
     fast_memcpy(cast[int32](framebuffer), cast[int32](backbuffer), buf_size)
 
