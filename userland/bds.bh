@@ -722,20 +722,18 @@ proc flush_buffer(fb: ptr uint32, buf: ptr uint32, xres: int32, yres: int32) =
   var count: int32 = xres * yres
   memcpy32(fb, buf, count)
 
-proc flush_rect(fd: int32, buf: ptr uint32, x: int32, y: int32, w: int32, h: int32, xres: int32, yres: int32) =
-  # Write only a rectangle to framebuffer (much faster for cursor updates)
-  var cy: int32 = y
-  while cy < y + h:
-    if cy >= 0 and cy < yres:
-      var sx: int32 = x
-      if sx < 0: sx = 0
-      var ex: int32 = x + w
-      if ex > xres: ex = xres
-      if sx < ex:
-        var offset: int32 = (cy * xres + sx) * 4
-        var line_size: int32 = (ex - sx) * 4
-        discard syscall3(SYS_lseek, fd, offset, SEEK_SET)
-        discard syscall3(SYS_write, fd, cast[int32](buf) + offset, line_size)
+proc flush_region(fb: ptr uint32, buf: ptr uint32, x: int32, y: int32, w: int32, h: int32, xres: int32, yres: int32) =
+  # Copy small region from backbuffer to mmap'd framebuffer (for cursor updates)
+  var cy: int32 = 0
+  while cy < h:
+    var py: int32 = y + cy
+    if py >= 0 and py < yres:
+      var cx: int32 = 0
+      while cx < w:
+        var px: int32 = x + cx
+        if px >= 0 and px < xres:
+          fb[py * xres + px] = buf[py * xres + px]
+        cx = cx + 1
     cy = cy + 1
 
 proc save_cursor_area(buf: ptr uint32, save: ptr uint32, x: int32, y: int32, xres: int32, yres: int32) =
@@ -1088,6 +1086,7 @@ proc main() =
     var fwin: ptr int32 = window_ptr(windows, focused)
     win_set(fwin, WIN_FOCUSED, 1)
 
+  var first_frame: int32 = 1
   var running: int32 = 1
   while running != 0:
     # Full scene redraw when windows/menu changed
@@ -1097,16 +1096,31 @@ proc main() =
       draw_taskbar(backbuffer, windows, xres, yres)
       if menu_open != 0:
         draw_menu(backbuffer, xres, yres)
-      scene_dirty = 0
-      cursor_moved = 1  # Force cursor redraw after scene change
-
-    if cursor_moved != 0:
-      # Draw cursor and copy to mmap'd framebuffer (direct memcpy = fast)
+      # Draw cursor and flush entire buffer
       save_cursor_area(backbuffer, cursor_save, cursor_x, cursor_y, xres, yres)
       draw_cursor(backbuffer, cursor_x, cursor_y, xres, yres)
       flush_buffer(framebuffer, backbuffer, xres, yres)
       restore_cursor_area(backbuffer, cursor_save, cursor_x, cursor_y, xres, yres)
+      old_cursor_x = cursor_x
+      old_cursor_y = cursor_y
+      scene_dirty = 0
       cursor_moved = 0
+      first_frame = 0
+    else:
+      if cursor_moved != 0:
+        # Only cursor moved - update just the cursor regions (fast!)
+        # 1. Flush old cursor region from backbuffer (shows clean background)
+        flush_region(framebuffer, backbuffer, old_cursor_x, old_cursor_y, 16, 16, xres, yres)
+        # 2. Draw cursor at new position in backbuffer
+        save_cursor_area(backbuffer, cursor_save, cursor_x, cursor_y, xres, yres)
+        draw_cursor(backbuffer, cursor_x, cursor_y, xres, yres)
+        # 3. Flush new cursor region (shows cursor)
+        flush_region(framebuffer, backbuffer, cursor_x, cursor_y, 16, 16, xres, yres)
+        # 4. Restore backbuffer (keep it clean)
+        restore_cursor_area(backbuffer, cursor_save, cursor_x, cursor_y, xres, yres)
+        old_cursor_x = cursor_x
+        old_cursor_y = cursor_y
+        cursor_moved = 0
 
     # Read 4 bytes for IntelliMouse protocol (scroll wheel mice)
     var bytes: int32 = syscall3(SYS_read, mouse_fd, cast[int32](mouse_buf), 4)
