@@ -143,6 +143,23 @@ proc parse_register(name: ptr uint8): int32 =
     return REG_ESI
   if strcmp(name, cast[ptr uint8]("edi")) == 0:
     return REG_EDI
+  # 16-bit registers (use same numbers, instruction encoders know the size)
+  if strcmp(name, cast[ptr uint8]("ax")) == 0:
+    return REG_EAX
+  if strcmp(name, cast[ptr uint8]("cx")) == 0:
+    return REG_ECX
+  if strcmp(name, cast[ptr uint8]("dx")) == 0:
+    return REG_EDX
+  if strcmp(name, cast[ptr uint8]("bx")) == 0:
+    return REG_EBX
+  if strcmp(name, cast[ptr uint8]("sp")) == 0:
+    return REG_ESP
+  if strcmp(name, cast[ptr uint8]("bp")) == 0:
+    return REG_EBP
+  if strcmp(name, cast[ptr uint8]("si")) == 0:
+    return REG_ESI
+  if strcmp(name, cast[ptr uint8]("di")) == 0:
+    return REG_EDI
   # 8-bit registers (use same numbers, instruction encoders know the size)
   if strcmp(name, cast[ptr uint8]("al")) == 0:
     return REG_EAX
@@ -374,6 +391,22 @@ proc set_symbol_section(idx: int32, section: int32) =
   var section_ptr: ptr int32 = cast[ptr int32](cast[int32](entry) + 8)
   section_ptr[0] = section
 
+proc get_symbol_pass2_defined(idx: int32): int32 =
+  var entry: ptr uint8 = cast[ptr uint8](cast[int32](g_symbols) + idx * 32)
+  var flag_ptr: ptr int32 = cast[ptr int32](cast[int32](entry) + 16)
+  return flag_ptr[0]
+
+proc set_symbol_pass2_defined(idx: int32, defined: int32) =
+  var entry: ptr uint8 = cast[ptr uint8](cast[int32](g_symbols) + idx * 32)
+  var flag_ptr: ptr int32 = cast[ptr int32](cast[int32](entry) + 16)
+  flag_ptr[0] = defined
+
+proc clear_all_pass2_flags() =
+  var i: int32 = 0
+  while i < g_sym_count:
+    set_symbol_pass2_defined(i, 0)
+    i = i + 1
+
 # ============================================================================
 # Code Emission
 # ============================================================================
@@ -505,9 +538,46 @@ proc encode_mov_mem_reg8(base: int32, src: int32) =
     else:
       emit_byte(modrm(0, src, base))
 
+# Encode mov byte [reg+disp], reg8
+proc encode_mov_mem_disp_reg8(base: int32, disp: int32, src: int32) =
+  emit_byte(cast[uint8](0x88))  # MOV r/m8, r8
+  if disp >= -128 and disp <= 127:
+    if base == REG_ESP:
+      emit_byte(modrm(1, src, 4))
+      emit_byte(cast[uint8](0x24))
+    else:
+      emit_byte(modrm(1, src, base))
+    emit_byte(cast[uint8](disp & 255))
+  else:
+    if base == REG_ESP:
+      emit_byte(modrm(2, src, 4))
+      emit_byte(cast[uint8](0x24))
+    else:
+      emit_byte(modrm(2, src, base))
+    emit_dword(disp)
+
 # Encode mov [reg+disp], reg
 proc encode_mov_mem_disp_reg(base: int32, disp: int32, src: int32) =
   emit_byte(cast[uint8](0x89))  # MOV r/m32, r32
+  if disp >= -128 and disp <= 127:
+    if base == REG_ESP:
+      emit_byte(modrm(1, src, 4))
+      emit_byte(cast[uint8](0x24))
+    else:
+      emit_byte(modrm(1, src, base))
+    emit_byte(cast[uint8](disp & 255))
+  else:
+    if base == REG_ESP:
+      emit_byte(modrm(2, src, 4))
+      emit_byte(cast[uint8](0x24))
+    else:
+      emit_byte(modrm(2, src, base))
+    emit_dword(disp)
+
+# Encode mov word [reg+disp], reg16 (16-bit)
+proc encode_mov_mem_disp_reg16(base: int32, disp: int32, src: int32) =
+  emit_byte(cast[uint8](0x66))  # Operand size override prefix
+  emit_byte(cast[uint8](0x89))  # MOV r/m16, r16
   if disp >= -128 and disp <= 127:
     if base == REG_ESP:
       emit_byte(modrm(1, src, 4))
@@ -721,46 +791,145 @@ proc encode_cmp_reg_imm(dst: int32, imm: int32) =
       emit_dword(imm)
 
 # Jump encodings (short and near)
+# These functions resolve local labels at assembly time when possible,
+# using short jumps (2 bytes) when offset fits in signed byte range
+
 proc encode_jmp_rel(sym_idx: int32) =
-  emit_byte(cast[uint8](0xE9))
-  add_reloc(g_text_len, sym_idx, R_386_PC32, -4)
-  emit_dword(-4)  # Addend for REL-style relocations
+  var section: int32 = get_symbol_section(sym_idx)
+  var target: int32 = get_symbol_value(sym_idx)
+  # Only resolve backward jumps (target already seen in pass 2)
+  # Forward jumps have stale values from pass 1, use pass2_defined flag
+  if section == SYM_TEXT and get_symbol_pass2_defined(sym_idx) == 1:
+    # Backward jump - resolve at assembly time
+    # Try short jump first (2 bytes: opcode + rel8)
+    var offset_short: int32 = target - (g_text_len + 2)
+    if offset_short >= -128 and offset_short <= 127:
+      emit_byte(cast[uint8](0xEB))  # JMP rel8
+      emit_byte(cast[uint8](offset_short & 255))
+    else:
+      # Near jump (5 bytes: opcode + rel32)
+      var offset_near: int32 = target - (g_text_len + 5)
+      emit_byte(cast[uint8](0xE9))  # JMP rel32
+      emit_dword(offset_near)
+  else:
+    # External/undefined/forward - emit relocation
+    emit_byte(cast[uint8](0xE9))
+    add_reloc(g_text_len, sym_idx, R_386_PC32, -4)
+    emit_dword(-4)
 
 proc encode_je_rel(sym_idx: int32) =
-  emit_byte(cast[uint8](0x0F))
-  emit_byte(cast[uint8](0x84))
-  add_reloc(g_text_len, sym_idx, R_386_PC32, -4)
-  emit_dword(-4)
+  var section: int32 = get_symbol_section(sym_idx)
+  var target: int32 = get_symbol_value(sym_idx)
+  if section == SYM_TEXT and get_symbol_pass2_defined(sym_idx) == 1:
+    var offset_short: int32 = target - (g_text_len + 2)
+    if offset_short >= -128 and offset_short <= 127:
+      emit_byte(cast[uint8](0x74))  # JE rel8
+      emit_byte(cast[uint8](offset_short & 255))
+    else:
+      var offset_near: int32 = target - (g_text_len + 6)
+      emit_byte(cast[uint8](0x0F))
+      emit_byte(cast[uint8](0x84))  # JE rel32
+      emit_dword(offset_near)
+  else:
+    emit_byte(cast[uint8](0x0F))
+    emit_byte(cast[uint8](0x84))
+    add_reloc(g_text_len, sym_idx, R_386_PC32, -4)
+    emit_dword(-4)
 
 proc encode_jne_rel(sym_idx: int32) =
-  emit_byte(cast[uint8](0x0F))
-  emit_byte(cast[uint8](0x85))
-  add_reloc(g_text_len, sym_idx, R_386_PC32, -4)
-  emit_dword(-4)
+  var section: int32 = get_symbol_section(sym_idx)
+  var target: int32 = get_symbol_value(sym_idx)
+  if section == SYM_TEXT and get_symbol_pass2_defined(sym_idx) == 1:
+    var offset_short: int32 = target - (g_text_len + 2)
+    if offset_short >= -128 and offset_short <= 127:
+      emit_byte(cast[uint8](0x75))  # JNE rel8
+      emit_byte(cast[uint8](offset_short & 255))
+    else:
+      var offset_near: int32 = target - (g_text_len + 6)
+      emit_byte(cast[uint8](0x0F))
+      emit_byte(cast[uint8](0x85))  # JNE rel32
+      emit_dword(offset_near)
+  else:
+    emit_byte(cast[uint8](0x0F))
+    emit_byte(cast[uint8](0x85))
+    add_reloc(g_text_len, sym_idx, R_386_PC32, -4)
+    emit_dword(-4)
 
 proc encode_jl_rel(sym_idx: int32) =
-  emit_byte(cast[uint8](0x0F))
-  emit_byte(cast[uint8](0x8C))
-  add_reloc(g_text_len, sym_idx, R_386_PC32, -4)
-  emit_dword(-4)
+  var section: int32 = get_symbol_section(sym_idx)
+  var target: int32 = get_symbol_value(sym_idx)
+  if section == SYM_TEXT and get_symbol_pass2_defined(sym_idx) == 1:
+    var offset_short: int32 = target - (g_text_len + 2)
+    if offset_short >= -128 and offset_short <= 127:
+      emit_byte(cast[uint8](0x7C))  # JL rel8
+      emit_byte(cast[uint8](offset_short & 255))
+    else:
+      var offset_near: int32 = target - (g_text_len + 6)
+      emit_byte(cast[uint8](0x0F))
+      emit_byte(cast[uint8](0x8C))  # JL rel32
+      emit_dword(offset_near)
+  else:
+    emit_byte(cast[uint8](0x0F))
+    emit_byte(cast[uint8](0x8C))
+    add_reloc(g_text_len, sym_idx, R_386_PC32, -4)
+    emit_dword(-4)
 
 proc encode_jg_rel(sym_idx: int32) =
-  emit_byte(cast[uint8](0x0F))
-  emit_byte(cast[uint8](0x8F))
-  add_reloc(g_text_len, sym_idx, R_386_PC32, -4)
-  emit_dword(-4)
+  var section: int32 = get_symbol_section(sym_idx)
+  var target: int32 = get_symbol_value(sym_idx)
+  if section == SYM_TEXT and get_symbol_pass2_defined(sym_idx) == 1:
+    var offset_short: int32 = target - (g_text_len + 2)
+    if offset_short >= -128 and offset_short <= 127:
+      emit_byte(cast[uint8](0x7F))  # JG rel8
+      emit_byte(cast[uint8](offset_short & 255))
+    else:
+      var offset_near: int32 = target - (g_text_len + 6)
+      emit_byte(cast[uint8](0x0F))
+      emit_byte(cast[uint8](0x8F))  # JG rel32
+      emit_dword(offset_near)
+  else:
+    emit_byte(cast[uint8](0x0F))
+    emit_byte(cast[uint8](0x8F))
+    add_reloc(g_text_len, sym_idx, R_386_PC32, -4)
+    emit_dword(-4)
 
 proc encode_jle_rel(sym_idx: int32) =
-  emit_byte(cast[uint8](0x0F))
-  emit_byte(cast[uint8](0x8E))
-  add_reloc(g_text_len, sym_idx, R_386_PC32, -4)
-  emit_dword(-4)
+  var section: int32 = get_symbol_section(sym_idx)
+  var target: int32 = get_symbol_value(sym_idx)
+  if section == SYM_TEXT and get_symbol_pass2_defined(sym_idx) == 1:
+    var offset_short: int32 = target - (g_text_len + 2)
+    if offset_short >= -128 and offset_short <= 127:
+      emit_byte(cast[uint8](0x7E))  # JLE rel8
+      emit_byte(cast[uint8](offset_short & 255))
+    else:
+      var offset_near: int32 = target - (g_text_len + 6)
+      emit_byte(cast[uint8](0x0F))
+      emit_byte(cast[uint8](0x8E))  # JLE rel32
+      emit_dword(offset_near)
+  else:
+    emit_byte(cast[uint8](0x0F))
+    emit_byte(cast[uint8](0x8E))
+    add_reloc(g_text_len, sym_idx, R_386_PC32, -4)
+    emit_dword(-4)
 
 proc encode_jge_rel(sym_idx: int32) =
-  emit_byte(cast[uint8](0x0F))
-  emit_byte(cast[uint8](0x8D))
-  add_reloc(g_text_len, sym_idx, R_386_PC32, -4)
-  emit_dword(-4)
+  var section: int32 = get_symbol_section(sym_idx)
+  var target: int32 = get_symbol_value(sym_idx)
+  if section == SYM_TEXT and get_symbol_pass2_defined(sym_idx) == 1:
+    var offset_short: int32 = target - (g_text_len + 2)
+    if offset_short >= -128 and offset_short <= 127:
+      emit_byte(cast[uint8](0x7D))  # JGE rel8
+      emit_byte(cast[uint8](offset_short & 255))
+    else:
+      var offset_near: int32 = target - (g_text_len + 6)
+      emit_byte(cast[uint8](0x0F))
+      emit_byte(cast[uint8](0x8D))  # JGE rel32
+      emit_dword(offset_near)
+  else:
+    emit_byte(cast[uint8](0x0F))
+    emit_byte(cast[uint8](0x8D))
+    add_reloc(g_text_len, sym_idx, R_386_PC32, -4)
+    emit_dword(-4)
 
 proc encode_jz_rel(sym_idx: int32) =
   encode_je_rel(sym_idx)
@@ -1251,6 +1420,7 @@ proc parse_line_pass2() =
     if sym_idx >= 0:
       set_symbol_value(sym_idx, current_offset())
       set_symbol_section(sym_idx, g_current_section)
+      set_symbol_pass2_defined(sym_idx, 1)
     g_pos = g_pos + 1
     skip_whitespace()
     if g_source[g_pos] == cast[uint8](10) or g_pos >= g_source_len:
@@ -1396,7 +1566,13 @@ proc parse_line_pass2() =
           encode_mov_mem_reg(dst_reg, g_op_reg)
       else:
         if dst_type == 3:  # dst is [reg+disp]
-          encode_mov_mem_disp_reg(dst_reg, dst_disp, g_op_reg)
+          if dst_size == 1:
+            encode_mov_mem_disp_reg8(dst_reg, dst_disp, g_op_reg)
+          else:
+            if dst_size == 2:
+              encode_mov_mem_disp_reg16(dst_reg, dst_disp, g_op_reg)
+            else:
+              encode_mov_mem_disp_reg(dst_reg, dst_disp, g_op_reg)
         else:
           if dst_type == 4:  # dst is symbol
             encode_mov_sym_reg(dst_sym, g_op_reg)
@@ -2272,6 +2448,7 @@ proc main(): int32 =
   g_text_len = 0
   g_data_len = 0
   g_bss_len = 0
+  clear_all_pass2_flags()
 
   # Pass 2: Generate code
   println(cast[ptr uint8]("  Pass 2: Generating code..."))

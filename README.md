@@ -522,12 +522,17 @@ source.bh → python3 brainhair.py → .asm
           → bin/bhlink (Brainhair) → executable
 
 Build tools written in Brainhair:
-- basm (64KB)   - x86 assembler with SIB addressing, all x86 modes
+- basm (71KB)   - x86 assembler with SIB addressing, all x86 modes
 - bhlink (24KB) - ELF32 linker with symbol resolution, R_386_PC32/R_386_32
 - bhbuild (9KB) - Build orchestrator (compile → assemble → link)
 ```
 
 **No external assembler or linker required** (except for compiler itself)!
+
+### Recent Bug Fixes
+
+- **basm**: Fixed `mov byte [reg+disp], reg8` encoding - was generating dword opcodes (0x89) instead of byte opcodes (0x88)
+- **ls**: Fixed buffer overflow on large directories - increased allocation from 64KB to 512KB to handle 16K+ files
 
 ### Compiler Pipeline
 
