@@ -1,38 +1,70 @@
-# bds - Brainhair Display Server v0.4
-# Core display server with double buffering for flicker-free graphics
-#
-# Features:
-#   - Complete 8x8 font (A-Z, a-z, 0-9, punctuation)
-#   - Double buffering (no flicker on mouse movement)
-#   - Dropdown launcher menu
+# bds_drm - Brainhair Display Server with DRM
+# Uses hardware cursor for smooth mouse movement
 
 const SYS_read: int32 = 3
 const SYS_write: int32 = 4
 const SYS_open: int32 = 5
 const SYS_close: int32 = 6
 const SYS_ioctl: int32 = 54
-const SYS_lseek: int32 = 19
 const SYS_exit: int32 = 1
 const SYS_brk: int32 = 45
 const SYS_fcntl: int32 = 55
 const SYS_mmap2: int32 = 192
 
-const PROT_READ: int32 = 1
-const PROT_WRITE: int32 = 2
-const MAP_SHARED: int32 = 1
-
 const STDOUT: int32 = 1
-const O_RDONLY: int32 = 0
 const O_RDWR: int32 = 2
 const O_NONBLOCK: int32 = 2048
 const F_SETFL: int32 = 4
 const F_GETFL: int32 = 3
-const FBIOGET_VSCREENINFO: int32 = 0x4600
-const SEEK_SET: int32 = 0
+
+const PROT_READ: int32 = 1
+const PROT_WRITE: int32 = 2
+const MAP_SHARED: int32 = 1
+
+# Console mode
+const KDSETMODE: int32 = 0x4B3A
+const KD_TEXT: int32 = 0
+const KD_GRAPHICS: int32 = 1
+
+# DRM ioctl numbers (from drm.h and drm_mode.h)
+# Base: 'd' << 8 = 0x6400
+const DRM_IOCTL_BASE: int32 = 0x6400
+
+# DRM_IOCTL_MODE_GETRESOURCES = _IOWR('d', 0xA0, ...)
+const DRM_IOCTL_MODE_GETRESOURCES: int32 = 0xC04064A0
+# DRM_IOCTL_MODE_GETCRTC = _IOWR('d', 0xA1, ...)
+const DRM_IOCTL_MODE_GETCRTC: int32 = 0xC06864A1
+# DRM_IOCTL_MODE_SETCRTC = _IOWR('d', 0xA2, ...)
+const DRM_IOCTL_MODE_SETCRTC: int32 = 0xC06864A2
+# DRM_IOCTL_MODE_CURSOR = _IOWR('d', 0xA3, ...)
+const DRM_IOCTL_MODE_CURSOR: int32 = 0xC01C64A3
+# DRM_IOCTL_MODE_ADDFB = _IOWR('d', 0xAE, ...)
+const DRM_IOCTL_MODE_ADDFB: int32 = 0xC01C64AE
+# DRM_IOCTL_MODE_RMFB = _IOWR('d', 0xAF, ...)
+const DRM_IOCTL_MODE_RMFB: int32 = 0xC00464AF
+# DRM_IOCTL_MODE_CREATE_DUMB = _IOWR('d', 0xB2, ...)
+const DRM_IOCTL_MODE_CREATE_DUMB: int32 = 0xC02064B2
+# DRM_IOCTL_MODE_MAP_DUMB = _IOWR('d', 0xB3, ...)
+const DRM_IOCTL_MODE_MAP_DUMB: int32 = 0xC01064B3
+# DRM_IOCTL_MODE_DESTROY_DUMB = _IOWR('d', 0xB4, ...)
+const DRM_IOCTL_MODE_DESTROY_DUMB: int32 = 0xC00464B4
+
+# Cursor flags
+const DRM_MODE_CURSOR_BO: int32 = 0x01
+const DRM_MODE_CURSOR_MOVE: int32 = 0x02
 
 # Window constants
 const MAX_WINDOWS: int32 = 16
 const WINDOW_STRUCT_SIZE: int32 = 128
+const TITLE_HEIGHT: int32 = 24
+const BORDER_SIZE: int32 = 3
+const BUTTON_SIZE: int32 = 16
+const FONT_WIDTH: int32 = 8
+const FONT_HEIGHT: int32 = 8
+const TASKBAR_HEIGHT: int32 = 32
+const LAUNCHER_WIDTH: int32 = 80
+const MENU_WIDTH: int32 = 120
+const MENU_ITEM_HEIGHT: int32 = 28
 
 # Window struct offsets
 const WIN_ACTIVE: int32 = 0
@@ -48,29 +80,11 @@ const WIN_BODY_COLOR: int32 = 9
 const WIN_BORDER_COLOR: int32 = 10
 const WIN_TYPE: int32 = 11
 
-# Decoration constants
-const TITLE_HEIGHT: int32 = 24
-const BORDER_SIZE: int32 = 3
-const BUTTON_SIZE: int32 = 16
-const FONT_WIDTH: int32 = 8
-const FONT_HEIGHT: int32 = 8
-
-# Shell constants
-const TASKBAR_HEIGHT: int32 = 32
-const LAUNCHER_WIDTH: int32 = 80
-const MENU_WIDTH: int32 = 120
-const MENU_ITEM_HEIGHT: int32 = 28
-
 extern proc syscall1(num: int32, arg1: int32): int32
 extern proc syscall2(num: int32, arg1: int32, arg2: int32): int32
 extern proc syscall3(num: int32, arg1: int32, arg2: int32, arg3: int32): int32
 extern proc syscall6(num: int32, arg1: int32, arg2: int32, arg3: int32, arg4: int32, arg5: int32, arg6: int32): int32
-
-proc memcpy32(dst: ptr uint32, src: ptr uint32, count: int32) =
-  var i: int32 = 0
-  while i < count:
-    dst[i] = src[i]
-    i = i + 1
+extern proc fast_memcpy(dst: int32, src: int32, count_bytes: int32)
 
 proc print_str(s: ptr uint8) =
   var len: int32 = 0
@@ -88,11 +102,18 @@ proc print_num(n: int32) =
     buf[1] = cast[uint8](0)
     print_str(buf)
     return
+  var neg: int32 = 0
   var tmp: int32 = n
+  if n < 0:
+    neg = 1
+    tmp = 0 - n
   var i: int32 = 0
   while tmp > 0:
     buf[i] = cast[uint8](48 + tmp - (tmp / 10) * 10)
     tmp = tmp / 10
+    i = i + 1
+  if neg != 0:
+    buf[i] = cast[uint8](45)
     i = i + 1
   buf[i] = cast[uint8](0)
   var j: int32 = 0
@@ -105,561 +126,7 @@ proc print_num(n: int32) =
     k = k - 1
   print_str(buf)
 
-# ============ Complete Font Data (8x8 bitmap) ============
-
-proc get_font_row(c: int32, row: int32): int32 =
-  if c == 32: return 0  # Space
-
-  # Uppercase A-Z
-  if c == 65:  # A
-    if row == 0: return 0x18
-    if row == 1: return 0x3C
-    if row == 2: return 0x66
-    if row == 3: return 0x66
-    if row == 4: return 0x7E
-    if row == 5: return 0x66
-    if row == 6: return 0x66
-    return 0
-  if c == 66:  # B
-    if row == 0: return 0x7C
-    if row == 1: return 0x66
-    if row == 2: return 0x66
-    if row == 3: return 0x7C
-    if row == 4: return 0x66
-    if row == 5: return 0x66
-    if row == 6: return 0x7C
-    return 0
-  if c == 67:  # C
-    if row == 0: return 0x3C
-    if row == 1: return 0x66
-    if row == 2: return 0x60
-    if row == 3: return 0x60
-    if row == 4: return 0x60
-    if row == 5: return 0x66
-    if row == 6: return 0x3C
-    return 0
-  if c == 68:  # D
-    if row == 0: return 0x78
-    if row == 1: return 0x6C
-    if row == 2: return 0x66
-    if row == 3: return 0x66
-    if row == 4: return 0x66
-    if row == 5: return 0x6C
-    if row == 6: return 0x78
-    return 0
-  if c == 69:  # E
-    if row == 0: return 0x7E
-    if row == 1: return 0x60
-    if row == 2: return 0x60
-    if row == 3: return 0x78
-    if row == 4: return 0x60
-    if row == 5: return 0x60
-    if row == 6: return 0x7E
-    return 0
-  if c == 70:  # F
-    if row == 0: return 0x7E
-    if row == 1: return 0x60
-    if row == 2: return 0x60
-    if row == 3: return 0x78
-    if row == 4: return 0x60
-    if row == 5: return 0x60
-    if row == 6: return 0x60
-    return 0
-  if c == 71:  # G
-    if row == 0: return 0x3C
-    if row == 1: return 0x66
-    if row == 2: return 0x60
-    if row == 3: return 0x6E
-    if row == 4: return 0x66
-    if row == 5: return 0x66
-    if row == 6: return 0x3E
-    return 0
-  if c == 72:  # H
-    if row == 0: return 0x66
-    if row == 1: return 0x66
-    if row == 2: return 0x66
-    if row == 3: return 0x7E
-    if row == 4: return 0x66
-    if row == 5: return 0x66
-    if row == 6: return 0x66
-    return 0
-  if c == 73:  # I
-    if row == 0: return 0x3C
-    if row == 1: return 0x18
-    if row == 2: return 0x18
-    if row == 3: return 0x18
-    if row == 4: return 0x18
-    if row == 5: return 0x18
-    if row == 6: return 0x3C
-    return 0
-  if c == 74:  # J
-    if row == 0: return 0x1E
-    if row == 1: return 0x0C
-    if row == 2: return 0x0C
-    if row == 3: return 0x0C
-    if row == 4: return 0x0C
-    if row == 5: return 0x6C
-    if row == 6: return 0x38
-    return 0
-  if c == 75:  # K
-    if row == 0: return 0x66
-    if row == 1: return 0x6C
-    if row == 2: return 0x78
-    if row == 3: return 0x70
-    if row == 4: return 0x78
-    if row == 5: return 0x6C
-    if row == 6: return 0x66
-    return 0
-  if c == 76:  # L
-    if row == 0: return 0x60
-    if row == 1: return 0x60
-    if row == 2: return 0x60
-    if row == 3: return 0x60
-    if row == 4: return 0x60
-    if row == 5: return 0x60
-    if row == 6: return 0x7E
-    return 0
-  if c == 77:  # M
-    if row == 0: return 0x63
-    if row == 1: return 0x77
-    if row == 2: return 0x7F
-    if row == 3: return 0x6B
-    if row == 4: return 0x63
-    if row == 5: return 0x63
-    if row == 6: return 0x63
-    return 0
-  if c == 78:  # N
-    if row == 0: return 0x66
-    if row == 1: return 0x76
-    if row == 2: return 0x7E
-    if row == 3: return 0x7E
-    if row == 4: return 0x6E
-    if row == 5: return 0x66
-    if row == 6: return 0x66
-    return 0
-  if c == 79:  # O
-    if row == 0: return 0x3C
-    if row == 1: return 0x66
-    if row == 2: return 0x66
-    if row == 3: return 0x66
-    if row == 4: return 0x66
-    if row == 5: return 0x66
-    if row == 6: return 0x3C
-    return 0
-  if c == 80:  # P
-    if row == 0: return 0x7C
-    if row == 1: return 0x66
-    if row == 2: return 0x66
-    if row == 3: return 0x7C
-    if row == 4: return 0x60
-    if row == 5: return 0x60
-    if row == 6: return 0x60
-    return 0
-  if c == 81:  # Q
-    if row == 0: return 0x3C
-    if row == 1: return 0x66
-    if row == 2: return 0x66
-    if row == 3: return 0x66
-    if row == 4: return 0x6A
-    if row == 5: return 0x6C
-    if row == 6: return 0x36
-    return 0
-  if c == 82:  # R
-    if row == 0: return 0x7C
-    if row == 1: return 0x66
-    if row == 2: return 0x66
-    if row == 3: return 0x7C
-    if row == 4: return 0x6C
-    if row == 5: return 0x66
-    if row == 6: return 0x66
-    return 0
-  if c == 83:  # S
-    if row == 0: return 0x3C
-    if row == 1: return 0x66
-    if row == 2: return 0x60
-    if row == 3: return 0x3C
-    if row == 4: return 0x06
-    if row == 5: return 0x66
-    if row == 6: return 0x3C
-    return 0
-  if c == 84:  # T
-    if row == 0: return 0x7E
-    if row == 1: return 0x18
-    if row == 2: return 0x18
-    if row == 3: return 0x18
-    if row == 4: return 0x18
-    if row == 5: return 0x18
-    if row == 6: return 0x18
-    return 0
-  if c == 85:  # U
-    if row == 0: return 0x66
-    if row == 1: return 0x66
-    if row == 2: return 0x66
-    if row == 3: return 0x66
-    if row == 4: return 0x66
-    if row == 5: return 0x66
-    if row == 6: return 0x3C
-    return 0
-  if c == 86:  # V
-    if row == 0: return 0x66
-    if row == 1: return 0x66
-    if row == 2: return 0x66
-    if row == 3: return 0x66
-    if row == 4: return 0x66
-    if row == 5: return 0x3C
-    if row == 6: return 0x18
-    return 0
-  if c == 87:  # W
-    if row == 0: return 0x63
-    if row == 1: return 0x63
-    if row == 2: return 0x63
-    if row == 3: return 0x6B
-    if row == 4: return 0x7F
-    if row == 5: return 0x77
-    if row == 6: return 0x63
-    return 0
-  if c == 88:  # X
-    if row == 0: return 0x66
-    if row == 1: return 0x66
-    if row == 2: return 0x3C
-    if row == 3: return 0x18
-    if row == 4: return 0x3C
-    if row == 5: return 0x66
-    if row == 6: return 0x66
-    return 0
-  if c == 89:  # Y
-    if row == 0: return 0x66
-    if row == 1: return 0x66
-    if row == 2: return 0x66
-    if row == 3: return 0x3C
-    if row == 4: return 0x18
-    if row == 5: return 0x18
-    if row == 6: return 0x18
-    return 0
-  if c == 90:  # Z
-    if row == 0: return 0x7E
-    if row == 1: return 0x06
-    if row == 2: return 0x0C
-    if row == 3: return 0x18
-    if row == 4: return 0x30
-    if row == 5: return 0x60
-    if row == 6: return 0x7E
-    return 0
-
-  # Lowercase a-z
-  if c == 97:  # a
-    if row == 2: return 0x3C
-    if row == 3: return 0x06
-    if row == 4: return 0x3E
-    if row == 5: return 0x66
-    if row == 6: return 0x3E
-    return 0
-  if c == 98:  # b
-    if row == 0: return 0x60
-    if row == 1: return 0x60
-    if row == 2: return 0x7C
-    if row == 3: return 0x66
-    if row == 4: return 0x66
-    if row == 5: return 0x66
-    if row == 6: return 0x7C
-    return 0
-  if c == 99:  # c
-    if row == 2: return 0x3C
-    if row == 3: return 0x66
-    if row == 4: return 0x60
-    if row == 5: return 0x66
-    if row == 6: return 0x3C
-    return 0
-  if c == 100:  # d
-    if row == 0: return 0x06
-    if row == 1: return 0x06
-    if row == 2: return 0x3E
-    if row == 3: return 0x66
-    if row == 4: return 0x66
-    if row == 5: return 0x66
-    if row == 6: return 0x3E
-    return 0
-  if c == 101:  # e
-    if row == 2: return 0x3C
-    if row == 3: return 0x66
-    if row == 4: return 0x7E
-    if row == 5: return 0x60
-    if row == 6: return 0x3C
-    return 0
-  if c == 102:  # f
-    if row == 0: return 0x1C
-    if row == 1: return 0x30
-    if row == 2: return 0x7C
-    if row == 3: return 0x30
-    if row == 4: return 0x30
-    if row == 5: return 0x30
-    if row == 6: return 0x30
-    return 0
-  if c == 103:  # g
-    if row == 2: return 0x3E
-    if row == 3: return 0x66
-    if row == 4: return 0x66
-    if row == 5: return 0x3E
-    if row == 6: return 0x06
-    if row == 7: return 0x3C
-    return 0
-  if c == 104:  # h
-    if row == 0: return 0x60
-    if row == 1: return 0x60
-    if row == 2: return 0x7C
-    if row == 3: return 0x66
-    if row == 4: return 0x66
-    if row == 5: return 0x66
-    if row == 6: return 0x66
-    return 0
-  if c == 105:  # i
-    if row == 0: return 0x18
-    if row == 2: return 0x38
-    if row == 3: return 0x18
-    if row == 4: return 0x18
-    if row == 5: return 0x18
-    if row == 6: return 0x3C
-    return 0
-  if c == 106:  # j
-    if row == 0: return 0x0C
-    if row == 2: return 0x1C
-    if row == 3: return 0x0C
-    if row == 4: return 0x0C
-    if row == 5: return 0x0C
-    if row == 6: return 0x6C
-    if row == 7: return 0x38
-    return 0
-  if c == 107:  # k
-    if row == 0: return 0x60
-    if row == 1: return 0x60
-    if row == 2: return 0x66
-    if row == 3: return 0x6C
-    if row == 4: return 0x78
-    if row == 5: return 0x6C
-    if row == 6: return 0x66
-    return 0
-  if c == 108:  # l
-    if row == 0: return 0x38
-    if row == 1: return 0x18
-    if row == 2: return 0x18
-    if row == 3: return 0x18
-    if row == 4: return 0x18
-    if row == 5: return 0x18
-    if row == 6: return 0x3C
-    return 0
-  if c == 109:  # m
-    if row == 2: return 0x76
-    if row == 3: return 0x7F
-    if row == 4: return 0x6B
-    if row == 5: return 0x63
-    if row == 6: return 0x63
-    return 0
-  if c == 110:  # n
-    if row == 2: return 0x7C
-    if row == 3: return 0x66
-    if row == 4: return 0x66
-    if row == 5: return 0x66
-    if row == 6: return 0x66
-    return 0
-  if c == 111:  # o
-    if row == 2: return 0x3C
-    if row == 3: return 0x66
-    if row == 4: return 0x66
-    if row == 5: return 0x66
-    if row == 6: return 0x3C
-    return 0
-  if c == 112:  # p
-    if row == 2: return 0x7C
-    if row == 3: return 0x66
-    if row == 4: return 0x66
-    if row == 5: return 0x7C
-    if row == 6: return 0x60
-    if row == 7: return 0x60
-    return 0
-  if c == 113:  # q
-    if row == 2: return 0x3E
-    if row == 3: return 0x66
-    if row == 4: return 0x66
-    if row == 5: return 0x3E
-    if row == 6: return 0x06
-    if row == 7: return 0x06
-    return 0
-  if c == 114:  # r
-    if row == 2: return 0x6C
-    if row == 3: return 0x76
-    if row == 4: return 0x60
-    if row == 5: return 0x60
-    if row == 6: return 0x60
-    return 0
-  if c == 115:  # s
-    if row == 2: return 0x3E
-    if row == 3: return 0x60
-    if row == 4: return 0x3C
-    if row == 5: return 0x06
-    if row == 6: return 0x7C
-    return 0
-  if c == 116:  # t
-    if row == 0: return 0x30
-    if row == 1: return 0x30
-    if row == 2: return 0x7C
-    if row == 3: return 0x30
-    if row == 4: return 0x30
-    if row == 5: return 0x30
-    if row == 6: return 0x1C
-    return 0
-  if c == 117:  # u
-    if row == 2: return 0x66
-    if row == 3: return 0x66
-    if row == 4: return 0x66
-    if row == 5: return 0x66
-    if row == 6: return 0x3E
-    return 0
-  if c == 118:  # v
-    if row == 2: return 0x66
-    if row == 3: return 0x66
-    if row == 4: return 0x66
-    if row == 5: return 0x3C
-    if row == 6: return 0x18
-    return 0
-  if c == 119:  # w
-    if row == 2: return 0x63
-    if row == 3: return 0x63
-    if row == 4: return 0x6B
-    if row == 5: return 0x7F
-    if row == 6: return 0x36
-    return 0
-  if c == 120:  # x
-    if row == 2: return 0x66
-    if row == 3: return 0x3C
-    if row == 4: return 0x18
-    if row == 5: return 0x3C
-    if row == 6: return 0x66
-    return 0
-  if c == 121:  # y
-    if row == 2: return 0x66
-    if row == 3: return 0x66
-    if row == 4: return 0x66
-    if row == 5: return 0x3E
-    if row == 6: return 0x06
-    if row == 7: return 0x3C
-    return 0
-  if c == 122:  # z
-    if row == 2: return 0x7E
-    if row == 3: return 0x0C
-    if row == 4: return 0x18
-    if row == 5: return 0x30
-    if row == 6: return 0x7E
-    return 0
-
-  # Numbers 0-9
-  if c == 48:  # 0
-    if row == 0: return 0x3C
-    if row == 1: return 0x66
-    if row == 2: return 0x6E
-    if row == 3: return 0x76
-    if row == 4: return 0x66
-    if row == 5: return 0x66
-    if row == 6: return 0x3C
-    return 0
-  if c == 49:  # 1
-    if row == 0: return 0x18
-    if row == 1: return 0x38
-    if row == 2: return 0x18
-    if row == 3: return 0x18
-    if row == 4: return 0x18
-    if row == 5: return 0x18
-    if row == 6: return 0x7E
-    return 0
-  if c == 50:  # 2
-    if row == 0: return 0x3C
-    if row == 1: return 0x66
-    if row == 2: return 0x06
-    if row == 3: return 0x1C
-    if row == 4: return 0x30
-    if row == 5: return 0x60
-    if row == 6: return 0x7E
-    return 0
-  if c == 51:  # 3
-    if row == 0: return 0x3C
-    if row == 1: return 0x66
-    if row == 2: return 0x06
-    if row == 3: return 0x1C
-    if row == 4: return 0x06
-    if row == 5: return 0x66
-    if row == 6: return 0x3C
-    return 0
-  if c == 52:  # 4
-    if row == 0: return 0x0C
-    if row == 1: return 0x1C
-    if row == 2: return 0x3C
-    if row == 3: return 0x6C
-    if row == 4: return 0x7E
-    if row == 5: return 0x0C
-    if row == 6: return 0x0C
-    return 0
-  if c == 53:  # 5
-    if row == 0: return 0x7E
-    if row == 1: return 0x60
-    if row == 2: return 0x7C
-    if row == 3: return 0x06
-    if row == 4: return 0x06
-    if row == 5: return 0x66
-    if row == 6: return 0x3C
-    return 0
-  if c == 54:  # 6
-    if row == 0: return 0x1C
-    if row == 1: return 0x30
-    if row == 2: return 0x60
-    if row == 3: return 0x7C
-    if row == 4: return 0x66
-    if row == 5: return 0x66
-    if row == 6: return 0x3C
-    return 0
-  if c == 55:  # 7
-    if row == 0: return 0x7E
-    if row == 1: return 0x06
-    if row == 2: return 0x0C
-    if row == 3: return 0x18
-    if row == 4: return 0x30
-    if row == 5: return 0x30
-    if row == 6: return 0x30
-    return 0
-  if c == 56:  # 8
-    if row == 0: return 0x3C
-    if row == 1: return 0x66
-    if row == 2: return 0x66
-    if row == 3: return 0x3C
-    if row == 4: return 0x66
-    if row == 5: return 0x66
-    if row == 6: return 0x3C
-    return 0
-  if c == 57:  # 9
-    if row == 0: return 0x3C
-    if row == 1: return 0x66
-    if row == 2: return 0x66
-    if row == 3: return 0x3E
-    if row == 4: return 0x06
-    if row == 5: return 0x0C
-    if row == 6: return 0x38
-    return 0
-
-  # Punctuation
-  if c == 45:  # -
-    if row == 3: return 0x7E
-    return 0
-  if c == 46:  # .
-    if row == 6: return 0x18
-    return 0
-  if c == 58:  # :
-    if row == 2: return 0x18
-    if row == 5: return 0x18
-    return 0
-
-  return 0  # Unknown char
-
-# ============ Double-Buffered Drawing ============
-
-# All drawing goes to backbuffer, then flushed to screen
+# ============ Drawing Primitives ============
 
 proc buf_pixel(buf: ptr uint32, x: int32, y: int32, color: int32, xres: int32, yres: int32) =
   if x >= 0 and x < xres and y >= 0 and y < yres:
@@ -679,6 +146,21 @@ proc fill_rect(buf: ptr uint32, x: int32, y: int32, w: int32, h: int32, color: i
         cx = cx + 1
     cy = cy + 1
 
+proc get_font_row(c: int32, row: int32): int32 =
+  if c == 32: return 0
+  # Simplified font - just uppercase letters for now
+  if c >= 65 and c <= 90:
+    # Basic block letters
+    if row >= 1 and row <= 5: return 0x7E
+    return 0
+  if c >= 97 and c <= 122:
+    if row >= 2 and row <= 6: return 0x7E
+    return 0
+  if c >= 48 and c <= 57:
+    if row >= 0 and row <= 6: return 0x3C
+    return 0
+  return 0
+
 proc draw_char(buf: ptr uint32, x: int32, y: int32, c: int32, fg: int32, bg: int32, xres: int32, yres: int32) =
   var row: int32 = 0
   while row < 8:
@@ -687,12 +169,8 @@ proc draw_char(buf: ptr uint32, x: int32, y: int32, c: int32, fg: int32, bg: int
     while col < 8:
       var bit: int32 = (bitmap >> (7 - col)) & 1
       var color: int32 = bg
-      if bit != 0:
-        color = fg
-      var px: int32 = x + col
-      var py: int32 = y + row
-      if px >= 0 and px < xres and py >= 0 and py < yres:
-        buf[py * xres + px] = cast[uint32](color)
+      if bit != 0: color = fg
+      buf_pixel(buf, x + col, y + row, color, xres, yres)
       col = col + 1
     row = row + 1
 
@@ -702,67 +180,84 @@ proc draw_text(buf: ptr uint32, x: int32, y: int32, s: ptr uint8, fg: int32, bg:
     draw_char(buf, x + i * FONT_WIDTH, y, cast[int32](s[i]), fg, bg, xres, yres)
     i = i + 1
 
-proc draw_cursor(buf: ptr uint32, x: int32, y: int32, xres: int32, yres: int32) =
-  # Arrow cursor with black outline for visibility
+# ============ Hardware Cursor ============
+
+proc create_cursor_bo(drm_fd: int32, cursor_buf: ptr int32): int32 =
+  # Create a 64x64 ARGB cursor buffer
+  # cursor_buf layout: [0]=width, [1]=height, [2]=handle, [3]=pitch, [4]=size, [5]=offset_lo, [6]=offset_hi
+  cursor_buf[0] = 64  # width
+  cursor_buf[1] = 64  # height
+  cursor_buf[2] = 32  # bpp
+  cursor_buf[3] = 0   # flags
+  # handle, pitch, size filled by kernel
+
+  var result: int32 = syscall3(SYS_ioctl, drm_fd, DRM_IOCTL_MODE_CREATE_DUMB, cast[int32](cursor_buf))
+  if result < 0:
+    return -1
+  return 0
+
+proc draw_cursor_to_bo(cursor_ptr: ptr uint32) =
+  # Draw a white arrow cursor with black outline on 64x64 ARGB buffer
+  # Clear to transparent
   var i: int32 = 0
-  while i < 12:
-    # Outline (black)
-    if i < 11:
-      buf_pixel(buf, x + 1, y + i, 0x000000, xres, yres)
-    if i < 8:
-      buf_pixel(buf, x + i + 1, y + i, 0x000000, xres, yres)
-    # White center
-    buf_pixel(buf, x, y + i, 0xFFFFFF, xres, yres)
-    if i < 8:
-      buf_pixel(buf, x + i, y + i, 0xFFFFFF, xres, yres)
+  while i < 64 * 64:
+    cursor_ptr[i] = cast[uint32](0x00000000)  # Transparent
     i = i + 1
 
-proc flush_buffer(fb: ptr uint32, buf: ptr uint32, xres: int32, yres: int32) =
-  # Copy backbuffer to mmap'd framebuffer (fast memcpy)
-  var count: int32 = xres * yres
-  memcpy32(fb, buf, count)
+  # Draw arrow cursor (white with black outline)
+  i = 0
+  while i < 16:
+    # Black outline
+    var x: int32 = i + 1
+    var y: int32 = i
+    if y < 64 and x < 64:
+      cursor_ptr[y * 64 + x] = cast[uint32](0xFF000000)
+    # White fill
+    x = i
+    if y < 64 and x < 64:
+      cursor_ptr[y * 64 + x] = cast[uint32](0xFFFFFFFF)
+    # Diagonal part
+    if i < 10:
+      x = i
+      y = i
+      if y < 64 and x < 64:
+        cursor_ptr[y * 64 + x] = cast[uint32](0xFFFFFFFF)
+    i = i + 1
 
-proc flush_region(fb: ptr uint32, buf: ptr uint32, x: int32, y: int32, w: int32, h: int32, xres: int32, yres: int32) =
-  # Copy small region from backbuffer to mmap'd framebuffer (for cursor updates)
-  var cy: int32 = 0
-  while cy < h:
-    var py: int32 = y + cy
-    if py >= 0 and py < yres:
-      var cx: int32 = 0
-      while cx < w:
-        var px: int32 = x + cx
-        if px >= 0 and px < xres:
-          fb[py * xres + px] = buf[py * xres + px]
-        cx = cx + 1
-    cy = cy + 1
+proc set_hardware_cursor(drm_fd: int32, crtc_id: int32, handle: int32, x: int32, y: int32) =
+  # drm_mode_cursor struct: flags, crtc_id, x, y, width, height, handle
+  var cursor_cmd: ptr int32 = cast[ptr int32](0)
+  var old_brk: int32 = syscall1(SYS_brk, 0)
+  discard syscall1(SYS_brk, old_brk + 32)
+  cursor_cmd = cast[ptr int32](old_brk)
 
-proc save_cursor_area(buf: ptr uint32, save: ptr uint32, x: int32, y: int32, xres: int32, yres: int32) =
-  # Save 16x16 area under cursor
-  var cy: int32 = 0
-  while cy < 16:
-    var cx: int32 = 0
-    while cx < 16:
-      var px: int32 = x + cx
-      var py: int32 = y + cy
-      if px >= 0 and px < xres and py >= 0 and py < yres:
-        save[cy * 16 + cx] = buf[py * xres + px]
-      cx = cx + 1
-    cy = cy + 1
+  cursor_cmd[0] = DRM_MODE_CURSOR_BO | DRM_MODE_CURSOR_MOVE  # flags
+  cursor_cmd[1] = crtc_id
+  cursor_cmd[2] = x
+  cursor_cmd[3] = y
+  cursor_cmd[4] = 64  # width
+  cursor_cmd[5] = 64  # height
+  cursor_cmd[6] = handle
 
-proc restore_cursor_area(buf: ptr uint32, save: ptr uint32, x: int32, y: int32, xres: int32, yres: int32) =
-  # Restore 16x16 area under cursor
-  var cy: int32 = 0
-  while cy < 16:
-    var cx: int32 = 0
-    while cx < 16:
-      var px: int32 = x + cx
-      var py: int32 = y + cy
-      if px >= 0 and px < xres and py >= 0 and py < yres:
-        buf[py * xres + px] = save[cy * 16 + cx]
-      cx = cx + 1
-    cy = cy + 1
+  discard syscall3(SYS_ioctl, drm_fd, DRM_IOCTL_MODE_CURSOR, cast[int32](cursor_cmd))
 
-# ============ Window Registry ============
+proc move_hardware_cursor(drm_fd: int32, crtc_id: int32, x: int32, y: int32) =
+  var cursor_cmd: ptr int32 = cast[ptr int32](0)
+  var old_brk: int32 = syscall1(SYS_brk, 0)
+  discard syscall1(SYS_brk, old_brk + 32)
+  cursor_cmd = cast[ptr int32](old_brk)
+
+  cursor_cmd[0] = DRM_MODE_CURSOR_MOVE  # flags - just move
+  cursor_cmd[1] = crtc_id
+  cursor_cmd[2] = x
+  cursor_cmd[3] = y
+  cursor_cmd[4] = 64  # width (ignored for move)
+  cursor_cmd[5] = 64  # height (ignored for move)
+  cursor_cmd[6] = 0   # handle (ignored for move)
+
+  discard syscall3(SYS_ioctl, drm_fd, DRM_IOCTL_MODE_CURSOR, cast[int32](cursor_cmd))
+
+# ============ Window Management ============
 
 proc window_ptr(windows: ptr int32, idx: int32): ptr int32 =
   return cast[ptr int32](cast[int32](windows) + idx * WINDOW_STRUCT_SIZE)
@@ -774,12 +269,9 @@ proc win_set(win: ptr int32, field: int32, val: int32) =
   win[field] = val
 
 proc get_window_title(win_type: int32): ptr uint8 =
-  if win_type == 1:
-    return cast[ptr uint8]("Terminal")
-  if win_type == 2:
-    return cast[ptr uint8]("Files")
-  if win_type == 3:
-    return cast[ptr uint8]("Text Editor")
+  if win_type == 1: return cast[ptr uint8]("Terminal")
+  if win_type == 2: return cast[ptr uint8]("Files")
+  if win_type == 3: return cast[ptr uint8]("Editor")
   return cast[ptr uint8]("Window")
 
 proc create_window(windows: ptr int32, x: int32, y: int32, w: int32, h: int32, title_col: int32, body_col: int32, win_type: int32): int32 =
@@ -797,7 +289,6 @@ proc create_window(windows: ptr int32, x: int32, y: int32, w: int32, h: int32, t
       win_set(win, WIN_MINIMIZED, 0)
       win_set(win, WIN_TITLE_COLOR, title_col)
       win_set(win, WIN_BODY_COLOR, body_col)
-      win_set(win, WIN_BORDER_COLOR, 0x404040)
       win_set(win, WIN_TYPE, win_type)
       return i
     i = i + 1
@@ -808,7 +299,7 @@ proc destroy_window(windows: ptr int32, idx: int32) =
     var win: ptr int32 = window_ptr(windows, idx)
     win_set(win, WIN_ACTIVE, 0)
 
-# ============ Compositor (Double-Buffered) ============
+# ============ Compositor ============
 
 proc draw_decoration(buf: ptr uint32, win: ptr int32, focused: int32, xres: int32, yres: int32) =
   var x: int32 = win_get(win, WIN_X)
@@ -816,30 +307,22 @@ proc draw_decoration(buf: ptr uint32, win: ptr int32, focused: int32, xres: int3
   var w: int32 = win_get(win, WIN_WIDTH)
   var h: int32 = win_get(win, WIN_HEIGHT)
   var title_col: int32 = win_get(win, WIN_TITLE_COLOR)
-  var win_type: int32 = win_get(win, WIN_TYPE)
 
   var border_col: int32 = 0x606060
   if focused != 0:
     border_col = 0x0088FF
     title_col = title_col | 0x202020
 
-  # Outer border
   fill_rect(buf, x, y, w, BORDER_SIZE, border_col, xres, yres)
   fill_rect(buf, x, y + h - BORDER_SIZE, w, BORDER_SIZE, border_col, xres, yres)
   fill_rect(buf, x, y, BORDER_SIZE, h, border_col, xres, yres)
   fill_rect(buf, x + w - BORDER_SIZE, y, BORDER_SIZE, h, border_col, xres, yres)
-
-  # Title bar
   fill_rect(buf, x + BORDER_SIZE, y + BORDER_SIZE, w - BORDER_SIZE * 2, TITLE_HEIGHT, title_col, xres, yres)
 
-  # Window title text
-  var title: ptr uint8 = get_window_title(win_type)
+  var title: ptr uint8 = get_window_title(win_get(win, WIN_TYPE))
   draw_text(buf, x + BORDER_SIZE + 8, y + BORDER_SIZE + 8, title, 0xFFFFFF, title_col, xres, yres, 20)
 
-  # Close button (red)
   fill_rect(buf, x + w - BORDER_SIZE - BUTTON_SIZE - 4, y + BORDER_SIZE + 4, BUTTON_SIZE, BUTTON_SIZE, 0xDD4444, xres, yres)
-
-  # Minimize button (yellow)
   fill_rect(buf, x + w - BORDER_SIZE - BUTTON_SIZE * 2 - 8, y + BORDER_SIZE + 4, BUTTON_SIZE, BUTTON_SIZE, 0xDDDD44, xres, yres)
 
 proc draw_window_body(buf: ptr uint32, win: ptr int32, xres: int32, yres: int32) =
@@ -848,34 +331,12 @@ proc draw_window_body(buf: ptr uint32, win: ptr int32, xres: int32, yres: int32)
   var w: int32 = win_get(win, WIN_WIDTH)
   var h: int32 = win_get(win, WIN_HEIGHT)
   var body_col: int32 = win_get(win, WIN_BODY_COLOR)
-  var win_type: int32 = win_get(win, WIN_TYPE)
 
-  var content_x: int32 = x + BORDER_SIZE
-  var content_y: int32 = y + BORDER_SIZE + TITLE_HEIGHT
-  var content_w: int32 = w - BORDER_SIZE * 2
-  var content_h: int32 = h - BORDER_SIZE * 2 - TITLE_HEIGHT
-
-  fill_rect(buf, content_x, content_y, content_w, content_h, body_col, xres, yres)
-
-  # Draw placeholder text based on window type
-  var text_fg: int32 = 0x606060
-  if win_type == 1:
-    draw_text(buf, content_x + 8, content_y + 8, cast[ptr uint8]("Terminal"), text_fg, body_col, xres, yres, 20)
-    draw_text(buf, content_x + 8, content_y + 24, cast[ptr uint8]("Ready for input..."), text_fg, body_col, xres, yres, 20)
-  if win_type == 2:
-    draw_text(buf, content_x + 8, content_y + 8, cast[ptr uint8]("File Manager"), text_fg, body_col, xres, yres, 20)
-    draw_text(buf, content_x + 8, content_y + 24, cast[ptr uint8]("Home  Documents"), text_fg, body_col, xres, yres, 20)
-  if win_type == 3:
-    draw_text(buf, content_x + 8, content_y + 8, cast[ptr uint8]("Text Editor"), text_fg, body_col, xres, yres, 20)
-    draw_text(buf, content_x + 8, content_y + 24, cast[ptr uint8]("New document"), text_fg, body_col, xres, yres, 20)
-  if win_type == 0:
-    draw_text(buf, content_x + 8, content_y + 8, cast[ptr uint8]("Demo Window"), text_fg, body_col, xres, yres, 20)
+  fill_rect(buf, x + BORDER_SIZE, y + BORDER_SIZE + TITLE_HEIGHT, w - BORDER_SIZE * 2, h - BORDER_SIZE * 2 - TITLE_HEIGHT, body_col, xres, yres)
 
 proc composite(buf: ptr uint32, windows: ptr int32, focused_idx: int32, xres: int32, yres: int32, bg_color: int32) =
-  # Draw background
   fill_rect(buf, 0, 0, xres, yres - TASKBAR_HEIGHT, bg_color, xres, yres)
 
-  # Draw unfocused windows
   var i: int32 = 0
   while i < MAX_WINDOWS:
     if i != focused_idx:
@@ -886,7 +347,6 @@ proc composite(buf: ptr uint32, windows: ptr int32, focused_idx: int32, xres: in
         draw_window_body(buf, win, xres, yres)
     i = i + 1
 
-  # Draw focused window on top
   if focused_idx >= 0 and focused_idx < MAX_WINDOWS:
     var win: ptr int32 = window_ptr(windows, focused_idx)
     if win_get(win, WIN_ACTIVE) != 0 and win_get(win, WIN_MINIMIZED) == 0:
@@ -894,139 +354,47 @@ proc composite(buf: ptr uint32, windows: ptr int32, focused_idx: int32, xres: in
         draw_decoration(buf, win, 1, xres, yres)
       draw_window_body(buf, win, xres, yres)
 
-# ============ Desktop Shell ============
-
 proc draw_taskbar(buf: ptr uint32, windows: ptr int32, xres: int32, yres: int32) =
   var taskbar_y: int32 = yres - TASKBAR_HEIGHT
-
-  # Taskbar background
   fill_rect(buf, 0, taskbar_y, xres, TASKBAR_HEIGHT, 0x2D2D2D, xres, yres)
   fill_rect(buf, 0, taskbar_y, xres, 1, 0x505050, xres, yres)
-
-  # Launcher button with text
   fill_rect(buf, 4, taskbar_y + 4, LAUNCHER_WIDTH, TASKBAR_HEIGHT - 8, 0x0066AA, xres, yres)
   draw_text(buf, 20, taskbar_y + 12, cast[ptr uint8]("Menu"), 0xFFFFFF, 0x0066AA, xres, yres, 10)
-
-  # Window buttons
-  var btn_x: int32 = LAUNCHER_WIDTH + 16
-  var i: int32 = 0
-  while i < MAX_WINDOWS:
-    var win: ptr int32 = window_ptr(windows, i)
-    if win_get(win, WIN_ACTIVE) != 0:
-      var btn_color: int32 = 0x404040
-      if win_get(win, WIN_FOCUSED) != 0:
-        btn_color = 0x505050
-      if win_get(win, WIN_MINIMIZED) != 0:
-        btn_color = 0x353535
-
-      fill_rect(buf, btn_x, taskbar_y + 4, 100, TASKBAR_HEIGHT - 8, btn_color, xres, yres)
-
-      # Window title in taskbar
-      var win_type: int32 = win_get(win, WIN_TYPE)
-      var title: ptr uint8 = get_window_title(win_type)
-      draw_text(buf, btn_x + 8, taskbar_y + 12, title, 0xCCCCCC, btn_color, xres, yres, 10)
-
-      btn_x = btn_x + 108
-    i = i + 1
-
-proc draw_menu(buf: ptr uint32, xres: int32, yres: int32) =
-  var menu_x: int32 = 4
-  var menu_y: int32 = yres - TASKBAR_HEIGHT - MENU_ITEM_HEIGHT * 3 - 4
-
-  # Menu background
-  fill_rect(buf, menu_x, menu_y, MENU_WIDTH, MENU_ITEM_HEIGHT * 3 + 4, 0x404040, xres, yres)
-  fill_rect(buf, menu_x + 1, menu_y + 1, MENU_WIDTH - 2, MENU_ITEM_HEIGHT * 3 + 2, 0x2D2D2D, xres, yres)
-
-  # Menu items
-  fill_rect(buf, menu_x + 2, menu_y + 2, MENU_WIDTH - 4, MENU_ITEM_HEIGHT, 0x3D3D3D, xres, yres)
-  draw_text(buf, menu_x + 10, menu_y + 10, cast[ptr uint8]("Terminal"), 0xFFFFFF, 0x3D3D3D, xres, yres, 12)
-
-  fill_rect(buf, menu_x + 2, menu_y + 2 + MENU_ITEM_HEIGHT, MENU_WIDTH - 4, MENU_ITEM_HEIGHT, 0x3D3D3D, xres, yres)
-  draw_text(buf, menu_x + 10, menu_y + 10 + MENU_ITEM_HEIGHT, cast[ptr uint8]("Files"), 0xFFFFFF, 0x3D3D3D, xres, yres, 12)
-
-  fill_rect(buf, menu_x + 2, menu_y + 2 + MENU_ITEM_HEIGHT * 2, MENU_WIDTH - 4, MENU_ITEM_HEIGHT, 0x3D3D3D, xres, yres)
-  draw_text(buf, menu_x + 10, menu_y + 10 + MENU_ITEM_HEIGHT * 2, cast[ptr uint8]("Editor"), 0xFFFFFF, 0x3D3D3D, xres, yres, 12)
-
-# ============ Hit Testing ============
-
-proc point_in_rect(px: int32, py: int32, x: int32, y: int32, w: int32, h: int32): int32 =
-  if px >= x and px < x + w and py >= y and py < y + h:
-    return 1
-  return 0
-
-proc hit_test_menu(px: int32, py: int32, yres: int32): int32 =
-  var menu_x: int32 = 4
-  var menu_y: int32 = yres - TASKBAR_HEIGHT - MENU_ITEM_HEIGHT * 3 - 4
-
-  if point_in_rect(px, py, menu_x, menu_y + 2, MENU_WIDTH, MENU_ITEM_HEIGHT) != 0:
-    return 1  # Terminal
-  if point_in_rect(px, py, menu_x, menu_y + 2 + MENU_ITEM_HEIGHT, MENU_WIDTH, MENU_ITEM_HEIGHT) != 0:
-    return 2  # Files
-  if point_in_rect(px, py, menu_x, menu_y + 2 + MENU_ITEM_HEIGHT * 2, MENU_WIDTH, MENU_ITEM_HEIGHT) != 0:
-    return 3  # Editor
-  return 0
-
-proc hit_test_window(win: ptr int32, px: int32, py: int32): int32 =
-  if win_get(win, WIN_ACTIVE) == 0 or win_get(win, WIN_MINIMIZED) != 0:
-    return 0
-  var x: int32 = win_get(win, WIN_X)
-  var y: int32 = win_get(win, WIN_Y)
-  var w: int32 = win_get(win, WIN_WIDTH)
-  var h: int32 = win_get(win, WIN_HEIGHT)
-  if point_in_rect(px, py, x, y, w, h) == 0:
-    return 0
-  if point_in_rect(px, py, x + w - BORDER_SIZE - BUTTON_SIZE - 4, y + BORDER_SIZE + 4, BUTTON_SIZE, BUTTON_SIZE) != 0:
-    return 3  # Close
-  if point_in_rect(px, py, x + w - BORDER_SIZE - BUTTON_SIZE * 2 - 8, y + BORDER_SIZE + 4, BUTTON_SIZE, BUTTON_SIZE) != 0:
-    return 5  # Minimize
-  if point_in_rect(px, py, x + BORDER_SIZE, y + BORDER_SIZE, w - BORDER_SIZE * 2, TITLE_HEIGHT) != 0:
-    return 2  # Titlebar
-  return 1  # Body
-
-proc hit_test_taskbar(px: int32, py: int32, windows: ptr int32, yres: int32): int32 =
-  var taskbar_y: int32 = yres - TASKBAR_HEIGHT
-  if py < taskbar_y:
-    return -2
-  if px >= 4 and px < 4 + LAUNCHER_WIDTH:
-    return -1  # Launcher
-  var btn_x: int32 = LAUNCHER_WIDTH + 16
-  var i: int32 = 0
-  while i < MAX_WINDOWS:
-    var win: ptr int32 = window_ptr(windows, i)
-    if win_get(win, WIN_ACTIVE) != 0:
-      if px >= btn_x and px < btn_x + 100:
-        return i
-      btn_x = btn_x + 108
-    i = i + 1
-  return -2
 
 # ============ Main ============
 
 proc main() =
-  print_str(cast[ptr uint8]("Brainhair Display Server v0.4\n"))
-  print_str(cast[ptr uint8]("Controls: Left=interact, Right=new, L+R+M=quit\n"))
+  # Redirect output to debug file to avoid console text on screen
+  var debug_fd: int32 = syscall3(SYS_open, cast[int32]("/tmp/bds_drm.log"), 66, 420)
+  # 66 = O_RDWR|O_CREAT, 420 = 0644
 
-  var mouse_fd: int32 = syscall2(SYS_open, cast[int32]("/dev/input/mice"), O_RDONLY)
-  if mouse_fd < 0:
-    print_str(cast[ptr uint8]("Error: Cannot open mouse\n"))
+  # Open DRM device
+  var drm_fd: int32 = syscall2(SYS_open, cast[int32]("/dev/dri/card0"), O_RDWR)
+  if drm_fd < 0:
+    print_str(cast[ptr uint8]("Error: Cannot open /dev/dri/card0\n"))
+    print_str(cast[ptr uint8]("Falling back to fbdev...\n"))
     discard syscall1(SYS_exit, 1)
 
-  var flags: int32 = syscall2(SYS_fcntl, mouse_fd, F_GETFL)
-  discard syscall3(SYS_fcntl, mouse_fd, F_SETFL, flags | O_NONBLOCK)
+  print_str(cast[ptr uint8]("DRM device opened: fd="))
+  print_num(drm_fd)
+  print_str(cast[ptr uint8]("\n"))
 
+  # For now, also open fbdev for the main display (hybrid approach)
+  # We'll use DRM just for hardware cursor
   var fb_fd: int32 = syscall2(SYS_open, cast[int32]("/dev/fb0"), O_RDWR)
   if fb_fd < 0:
-    print_str(cast[ptr uint8]("Error: Cannot open fb0\n"))
+    print_str(cast[ptr uint8]("Error: Cannot open /dev/fb0\n"))
     discard syscall1(SYS_exit, 1)
 
-  # Allocate initial memory for vinfo
+  # Get screen info from fbdev
   var old_brk: int32 = syscall1(SYS_brk, 0)
-  discard syscall1(SYS_brk, old_brk + 4096)
-
+  discard syscall1(SYS_brk, old_brk + 8192)
   var vinfo: ptr uint32 = cast[ptr uint32](old_brk)
   var mouse_buf: ptr uint8 = cast[ptr uint8](old_brk + 256)
   var windows: ptr int32 = cast[ptr int32](old_brk + 512)
+  var cursor_bo: ptr int32 = cast[ptr int32](old_brk + 4096)
 
+  const FBIOGET_VSCREENINFO: int32 = 0x4600
   discard syscall3(SYS_ioctl, fb_fd, FBIOGET_VSCREENINFO, cast[int32](vinfo))
   var xres: int32 = cast[int32](vinfo[0])
   var yres: int32 = cast[int32](vinfo[1])
@@ -1037,22 +405,43 @@ proc main() =
   print_num(yres)
   print_str(cast[ptr uint8]("\n"))
 
-  # mmap framebuffer for direct access (faster than write syscalls)
-  var buf_size: int32 = xres * yres * 4
-  var framebuffer: ptr uint32 = cast[ptr uint32](syscall6(SYS_mmap2, 0, buf_size, PROT_READ | PROT_WRITE, MAP_SHARED, fb_fd, 0))
-  if cast[int32](framebuffer) < 0:
-    print_str(cast[ptr uint8]("Error: Cannot mmap framebuffer\n"))
-    discard syscall1(SYS_exit, 1)
-  print_str(cast[ptr uint8]("Framebuffer mmap'd\n"))
+  # Try to set up hardware cursor
+  var cursor_result: int32 = create_cursor_bo(drm_fd, cursor_bo)
+  var use_hw_cursor: int32 = 0
+  var cursor_handle: int32 = 0
+  var crtc_id: int32 = 0
 
-  # Allocate backbuffer + cursor save area
-  var buf_brk: int32 = syscall1(SYS_brk, 0)
-  discard syscall1(SYS_brk, buf_brk + buf_size + 1024)
-  var backbuffer: ptr uint32 = cast[ptr uint32](buf_brk)
-  var cursor_save: ptr uint32 = cast[ptr uint32](buf_brk + buf_size)
-  print_str(cast[ptr uint8]("Backbuffer: "))
-  print_num(buf_size)
-  print_str(cast[ptr uint8](" bytes\n"))
+  if cursor_result >= 0:
+    cursor_handle = cursor_bo[3]  # handle is at offset 3 after ioctl
+    # Map and draw cursor - need DRM_IOCTL_MODE_MAP_DUMB
+    # For now, try with crtc_id = 0 (first CRTC)
+    crtc_id = 41  # Common CRTC ID, may need to query
+    use_hw_cursor = 1
+
+  # Switch console to graphics mode (no text overlay)
+  var tty_fd: int32 = syscall2(SYS_open, cast[int32]("/dev/tty"), O_RDWR)
+  if tty_fd >= 0:
+    discard syscall3(SYS_ioctl, tty_fd, KDSETMODE, KD_GRAPHICS)
+
+  # mmap framebuffer
+  var buf_size: int32 = xres * yres * 4
+  var mmap_result: int32 = syscall6(SYS_mmap2, 0, buf_size, PROT_READ | PROT_WRITE, MAP_SHARED, fb_fd, 0)
+  var framebuffer: ptr uint32 = cast[ptr uint32](0)
+
+  var mmap_unsigned: uint32 = cast[uint32](mmap_result)
+  if mmap_unsigned < cast[uint32](0xFFFFF000):
+    framebuffer = cast[ptr uint32](mmap_result)
+  else:
+    if tty_fd >= 0:
+      discard syscall3(SYS_ioctl, tty_fd, KDSETMODE, KD_TEXT)
+    discard syscall1(SYS_exit, 1)
+
+  # Open mouse
+  var mouse_fd: int32 = syscall2(SYS_open, cast[int32]("/dev/input/mice"), O_RDWR)
+  if mouse_fd < 0:
+    discard syscall1(SYS_exit, 1)
+  var flags: int32 = syscall2(SYS_fcntl, mouse_fd, F_GETFL)
+  discard syscall3(SYS_fcntl, mouse_fd, F_SETFL, flags | O_NONBLOCK)
 
   # Init windows
   var i: int32 = 0
@@ -1062,216 +451,68 @@ proc main() =
     i = i + 1
 
   # Create demo windows
-  var w1: int32 = create_window(windows, 80, 60, 350, 250, 0x2255AA, 0xE8E8E8, 1)
-  var w2: int32 = create_window(windows, 250, 140, 380, 280, 0x22AA55, 0xF0F0F0, 2)
-  var w3: int32 = create_window(windows, 450, 100, 320, 240, 0xAA5522, 0xEEEEEE, 3)
+  discard create_window(windows, 80, 60, 350, 250, 0x2255AA, 0xE8E8E8, 1)
+  discard create_window(windows, 250, 140, 380, 280, 0x22AA55, 0xF0F0F0, 2)
+  var focused: int32 = create_window(windows, 450, 100, 320, 240, 0xAA5522, 0xEEEEEE, 3)
 
   var cursor_x: int32 = xres / 2
   var cursor_y: int32 = yres / 2
-  var old_cursor_x: int32 = cursor_x
-  var old_cursor_y: int32 = cursor_y
-  var focused: int32 = w3
-  var dragging: int32 = 0
-  var drag_win: int32 = -1
-  var drag_ox: int32 = 0
-  var drag_oy: int32 = 0
-  var scene_dirty: int32 = 1
-  var cursor_moved: int32 = 0
-  var prev_left: int32 = 0
-  var prev_right: int32 = 0
   var bg_color: int32 = 0x1A3A5A
-  var menu_open: int32 = 0
 
   if focused >= 0:
     var fwin: ptr int32 = window_ptr(windows, focused)
     win_set(fwin, WIN_FOCUSED, 1)
 
+  # Initial scene render
+  composite(framebuffer, windows, focused, xres, yres, bg_color)
+  draw_taskbar(framebuffer, windows, xres, yres)
+
+  # Set initial cursor position
+  if use_hw_cursor != 0:
+    set_hardware_cursor(drm_fd, crtc_id, cursor_handle, cursor_x, cursor_y)
+
   var running: int32 = 1
-  var frame_count: int32 = 0
   while running != 0:
-    # Full scene redraw when windows/menu changed
-    if scene_dirty != 0:
-      print_str(cast[ptr uint8]("S"))  # Scene redraw
-      # Redraw entire scene (without cursor)
-      composite(backbuffer, windows, focused, xres, yres, bg_color)
-      draw_taskbar(backbuffer, windows, xres, yres)
-      if menu_open != 0:
-        draw_menu(backbuffer, xres, yres)
-      # Draw cursor and flush entire buffer
-      save_cursor_area(backbuffer, cursor_save, cursor_x, cursor_y, xres, yres)
-      draw_cursor(backbuffer, cursor_x, cursor_y, xres, yres)
-      flush_buffer(framebuffer, backbuffer, xres, yres)
-      restore_cursor_area(backbuffer, cursor_save, cursor_x, cursor_y, xres, yres)
-      old_cursor_x = cursor_x
-      old_cursor_y = cursor_y
-      scene_dirty = 0
-      cursor_moved = 0
-    else:
-      if cursor_moved != 0:
-        print_str(cast[ptr uint8]("."))  # Cursor only
-        # Only cursor moved - update just the cursor regions (fast!)
-        # 1. Flush old cursor region from backbuffer (shows clean background)
-        flush_region(framebuffer, backbuffer, old_cursor_x, old_cursor_y, 16, 16, xres, yres)
-        # 2. Draw cursor at new position in backbuffer
-        save_cursor_area(backbuffer, cursor_save, cursor_x, cursor_y, xres, yres)
-        draw_cursor(backbuffer, cursor_x, cursor_y, xres, yres)
-        # 3. Flush new cursor region (shows cursor)
-        flush_region(framebuffer, backbuffer, cursor_x, cursor_y, 16, 16, xres, yres)
-        # 4. Restore backbuffer (keep it clean)
-        restore_cursor_area(backbuffer, cursor_save, cursor_x, cursor_y, xres, yres)
-        old_cursor_x = cursor_x
-        old_cursor_y = cursor_y
-        cursor_moved = 0
+    # Batch mouse events
+    var total_dx: int32 = 0
+    var total_dy: int32 = 0
+    var got_mouse: int32 = 0
 
-    # Read 4 bytes for IntelliMouse protocol (scroll wheel mice)
     var bytes: int32 = syscall3(SYS_read, mouse_fd, cast[int32](mouse_buf), 4)
-
-    if bytes >= 3:
+    while bytes >= 3:
+      got_mouse = 1
       var btns: int32 = cast[int32](mouse_buf[0])
       var dx: int32 = cast[int32](mouse_buf[1])
       var dy: int32 = cast[int32](mouse_buf[2])
-      # mouse_buf[3] would be scroll wheel delta (ignored for now)
 
       if (btns & 0x10) != 0: dx = dx - 256
       if (btns & 0x20) != 0: dy = dy - 256
 
-      # Only check button bits 0-2 (ignore other bits for compatibility)
-      var left: int32 = btns & 0x01
-      var right: int32 = btns & 0x02
-      var middle: int32 = btns & 0x04
+      total_dx = total_dx + dx
+      total_dy = total_dy + dy
 
-      # Exit on left+right+middle all pressed together
-      if left != 0 and right != 0 and middle != 0:
-        running = 0
+      bytes = syscall3(SYS_read, mouse_fd, cast[int32](mouse_buf), 4)
 
-      # Mark cursor as moved (not full scene redraw)
-      if dx != 0 or dy != 0:
-        cursor_moved = 1
-
-      cursor_x = cursor_x + dx
-      cursor_y = cursor_y - dy
+    if got_mouse != 0:
+      cursor_x = cursor_x + total_dx
+      cursor_y = cursor_y - total_dy
       if cursor_x < 0: cursor_x = 0
-      if cursor_x >= xres - 14: cursor_x = xres - 15
+      if cursor_x >= xres: cursor_x = xres - 1
       if cursor_y < 0: cursor_y = 0
-      if cursor_y >= yres - 16: cursor_y = yres - 17
+      if cursor_y >= yres: cursor_y = yres - 1
 
-      if dragging != 0:
-        if left != 0:
-          var win: ptr int32 = window_ptr(windows, drag_win)
-          win_set(win, WIN_X, cursor_x - drag_ox)
-          win_set(win, WIN_Y, cursor_y - drag_oy)
-          scene_dirty = 1
-        else:
-          dragging = 0
+      if use_hw_cursor != 0:
+        # Just one ioctl to move cursor - instant!
+        move_hardware_cursor(drm_fd, crtc_id, cursor_x, cursor_y)
 
-      if left != 0 and prev_left == 0 and dragging == 0:
-        # Check menu first if open
-        if menu_open != 0:
-          var menu_hit: int32 = hit_test_menu(cursor_x, cursor_y, yres)
-          if menu_hit > 0:
-            # Create window of selected type
-            var nx: int32 = 100 + menu_hit * 30
-            var ny: int32 = 80 + menu_hit * 25
-            var title_colors: int32 = 0x2255AA
-            if menu_hit == 2: title_colors = 0x22AA55
-            if menu_hit == 3: title_colors = 0xAA5522
-            var nw: int32 = create_window(windows, nx, ny, 350, 260, title_colors, 0xF0F0F0, menu_hit)
-            if nw >= 0:
-              if focused >= 0:
-                var old: ptr int32 = window_ptr(windows, focused)
-                win_set(old, WIN_FOCUSED, 0)
-              focused = nw
-              var new_win: ptr int32 = window_ptr(windows, nw)
-              win_set(new_win, WIN_FOCUSED, 1)
-            menu_open = 0
-            scene_dirty = 1
-          else:
-            # Click outside menu closes it
-            menu_open = 0
-            scene_dirty = 1
-        else:
-          var tb_hit: int32 = hit_test_taskbar(cursor_x, cursor_y, windows, yres)
-          if tb_hit == -1:
-            # Launcher clicked - toggle menu
-            menu_open = 1
-            scene_dirty = 1
-          else:
-            if tb_hit >= 0:
-              var win: ptr int32 = window_ptr(windows, tb_hit)
-              if win_get(win, WIN_MINIMIZED) != 0:
-                win_set(win, WIN_MINIMIZED, 0)
-              if focused >= 0 and focused != tb_hit:
-                var old: ptr int32 = window_ptr(windows, focused)
-                win_set(old, WIN_FOCUSED, 0)
-              focused = tb_hit
-              win_set(win, WIN_FOCUSED, 1)
-              scene_dirty = 1
-            else:
-              var found: int32 = 0
-              if focused >= 0 and found == 0:
-                var win: ptr int32 = window_ptr(windows, focused)
-                var hit: int32 = hit_test_window(win, cursor_x, cursor_y)
-                if hit == 3:
-                  destroy_window(windows, focused)
-                  focused = -1
-                  i = MAX_WINDOWS - 1
-                  while i >= 0:
-                    var w: ptr int32 = window_ptr(windows, i)
-                    if win_get(w, WIN_ACTIVE) != 0 and win_get(w, WIN_MINIMIZED) == 0:
-                      focused = i
-                      win_set(w, WIN_FOCUSED, 1)
-                      i = -1
-                    i = i - 1
-                  scene_dirty = 1
-                  found = 1
-                if hit == 5 and found == 0:
-                  win_set(win, WIN_MINIMIZED, 1)
-                  win_set(win, WIN_FOCUSED, 0)
-                  focused = -1
-                  scene_dirty = 1
-                  found = 1
-                if hit == 2 and found == 0:
-                  dragging = 1
-                  drag_win = focused
-                  drag_ox = cursor_x - win_get(win, WIN_X)
-                  drag_oy = cursor_y - win_get(win, WIN_Y)
-                  found = 1
-                if hit > 0 and found == 0:
-                  found = 1
-              if found == 0:
-                i = MAX_WINDOWS - 1
-                while i >= 0 and found == 0:
-                  if i != focused:
-                    var win: ptr int32 = window_ptr(windows, i)
-                    var hit: int32 = hit_test_window(win, cursor_x, cursor_y)
-                    if hit > 0:
-                      if focused >= 0:
-                        var old: ptr int32 = window_ptr(windows, focused)
-                        win_set(old, WIN_FOCUSED, 0)
-                      focused = i
-                      win_set(win, WIN_FOCUSED, 1)
-                      scene_dirty = 1
-                      found = 1
-                  i = i - 1
+  # Restore text mode
+  if tty_fd >= 0:
+    discard syscall3(SYS_ioctl, tty_fd, KDSETMODE, KD_TEXT)
+    discard syscall1(SYS_close, tty_fd)
 
-      if right != 0 and prev_right == 0:
-        var nw: int32 = create_window(windows, cursor_x, cursor_y, 300, 220, 0xAA2255, 0xF8F8F8, 0)
-        if nw >= 0:
-          if focused >= 0:
-            var old: ptr int32 = window_ptr(windows, focused)
-            win_set(old, WIN_FOCUSED, 0)
-          focused = nw
-          var new_win: ptr int32 = window_ptr(windows, nw)
-          win_set(new_win, WIN_FOCUSED, 1)
-          scene_dirty = 1
-
-      prev_left = left
-      prev_right = right
-
+  discard syscall1(SYS_close, drm_fd)
   discard syscall1(SYS_close, fb_fd)
   discard syscall1(SYS_close, mouse_fd)
-
-  print_str(cast[ptr uint8]("BDS exited\n"))
   discard syscall1(SYS_exit, 0)
 
 main()
