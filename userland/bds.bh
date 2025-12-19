@@ -57,10 +57,6 @@ const LAUNCHER_WIDTH: int32 = 80
 const MENU_WIDTH: int32 = 120
 const MENU_ITEM_HEIGHT: int32 = 28
 
-# Cursor size
-const CURSOR_W: int32 = 16
-const CURSOR_H: int32 = 16
-
 extern proc syscall1(num: int32, arg1: int32): int32
 extern proc syscall2(num: int32, arg1: int32, arg2: int32): int32
 extern proc syscall3(num: int32, arg1: int32, arg2: int32, arg3: int32): int32
@@ -694,26 +690,6 @@ proc draw_text(fd: int32, x: int32, y: int32, s: ptr uint8, fg: int32, bg: int32
     draw_char(fd, x + i * FONT_WIDTH, y, cast[int32](s[i]), fg, bg, xres, pixel_buf)
     i = i + 1
 
-# ============ Cursor Save/Restore ============
-
-proc save_cursor_area(fd: int32, x: int32, y: int32, xres: int32, yres: int32, cursor_save: ptr uint32) =
-  var row: int32 = 0
-  while row < CURSOR_H:
-    if y + row >= 0 and y + row < yres:
-      var offset: int32 = ((y + row) * xres + x) * 4
-      discard syscall3(SYS_lseek, fd, offset, SEEK_SET)
-      discard syscall3(SYS_read, fd, cast[int32](cursor_save) + row * CURSOR_W * 4, CURSOR_W * 4)
-    row = row + 1
-
-proc restore_cursor_area(fd: int32, x: int32, y: int32, xres: int32, yres: int32, cursor_save: ptr uint32) =
-  var row: int32 = 0
-  while row < CURSOR_H:
-    if y + row >= 0 and y + row < yres:
-      var offset: int32 = ((y + row) * xres + x) * 4
-      discard syscall3(SYS_lseek, fd, offset, SEEK_SET)
-      discard syscall3(SYS_write, fd, cast[int32](cursor_save) + row * CURSOR_W * 4, CURSOR_W * 4)
-    row = row + 1
-
 proc draw_cursor(fd: int32, x: int32, y: int32, xres: int32, yres: int32, pixel_buf: ptr uint32) =
   # Simple arrow cursor
   var i: int32 = 0
@@ -998,8 +974,7 @@ proc main() =
   var pixel_buf: ptr uint32 = cast[ptr uint32](old_brk + 16384)
   var mouse_buf: ptr uint8 = cast[ptr uint8](old_brk + 16392)
   var windows: ptr int32 = cast[ptr int32](old_brk + 16400)
-  var cursor_save: ptr uint32 = cast[ptr uint32](old_brk + 32768)
-  var sleep_buf: ptr int32 = cast[ptr int32](old_brk + 65536)
+  var sleep_buf: ptr int32 = cast[ptr int32](old_brk + 32768)
 
   discard syscall3(SYS_ioctl, fb_fd, FBIOGET_VSCREENINFO, cast[int32](vinfo))
   var xres: int32 = cast[int32](vinfo[0])
@@ -1025,8 +1000,6 @@ proc main() =
 
   var cursor_x: int32 = xres / 2
   var cursor_y: int32 = yres / 2
-  var prev_cursor_x: int32 = cursor_x
-  var prev_cursor_y: int32 = cursor_y
   var focused: int32 = w3
   var dragging: int32 = 0
   var drag_win: int32 = -1
@@ -1037,7 +1010,7 @@ proc main() =
   var prev_right: int32 = 0
   var bg_color: int32 = 0x1A3A5A
   var menu_open: int32 = 0
-  var cursor_saved: int32 = 0
+  var frame_count: int32 = 0
 
   if focused >= 0:
     var fwin: ptr int32 = window_ptr(windows, focused)
@@ -1045,25 +1018,15 @@ proc main() =
 
   var running: int32 = 1
   while running != 0:
+    # Only redraw when something changed
     if needs_redraw != 0:
       composite(fb_fd, windows, focused, xres, yres, line_buf, pixel_buf, bg_color)
       draw_taskbar(fb_fd, windows, xres, yres, line_buf, pixel_buf)
       if menu_open != 0:
         draw_menu(fb_fd, xres, yres, line_buf, pixel_buf)
       needs_redraw = 0
-      cursor_saved = 0
 
-    # Restore previous cursor area if we saved it
-    if cursor_saved != 0:
-      restore_cursor_area(fb_fd, prev_cursor_x, prev_cursor_y, xres, yres, cursor_save)
-
-    # Save area under new cursor position
-    save_cursor_area(fb_fd, cursor_x, cursor_y, xres, yres, cursor_save)
-    cursor_saved = 1
-    prev_cursor_x = cursor_x
-    prev_cursor_y = cursor_y
-
-    # Draw cursor
+    # Always draw cursor on top
     draw_cursor(fb_fd, cursor_x, cursor_y, xres, yres, pixel_buf)
 
     var bytes: int32 = syscall3(SYS_read, mouse_fd, cast[int32](mouse_buf), 3)
@@ -1089,6 +1052,13 @@ proc main() =
       if cursor_x >= xres - 14: cursor_x = xres - 15
       if cursor_y < 0: cursor_y = 0
       if cursor_y >= yres - 16: cursor_y = yres - 17
+
+      # Redraw periodically when cursor moves to clean up trails
+      if dx != 0 or dy != 0:
+        frame_count = frame_count + 1
+        if frame_count > 8:
+          needs_redraw = 1
+          frame_count = 0
 
       if dragging != 0:
         if left != 0:
