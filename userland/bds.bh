@@ -1026,29 +1026,25 @@ proc main() =
     # Always draw cursor on top
     draw_cursor(fb_fd, cursor_x, cursor_y, xres, yres, pixel_buf)
 
-    var bytes: int32 = syscall3(SYS_read, mouse_fd, cast[int32](mouse_buf), 3)
+    # Read 4 bytes for IntelliMouse protocol (scroll wheel mice)
+    var bytes: int32 = syscall3(SYS_read, mouse_fd, cast[int32](mouse_buf), 4)
 
-    if bytes == 3:
+    if bytes >= 3:
       var btns: int32 = cast[int32](mouse_buf[0])
       var dx: int32 = cast[int32](mouse_buf[1])
       var dy: int32 = cast[int32](mouse_buf[2])
-
-      # Debug: print raw button state
-      print_str(cast[ptr uint8]("b="))
-      print_num(btns)
-      print_str(cast[ptr uint8](" "))
+      # mouse_buf[3] would be scroll wheel delta (ignored for now)
 
       if (btns & 0x10) != 0: dx = dx - 256
       if (btns & 0x20) != 0: dy = dy - 256
 
+      # Only check button bits 0-2 (ignore other bits for compatibility)
       var left: int32 = btns & 0x01
       var right: int32 = btns & 0x02
       var middle: int32 = btns & 0x04
 
-      if middle != 0:
-        print_str(cast[ptr uint8]("\nMiddle btn="))
-        print_num(btns)
-        print_str(cast[ptr uint8](" exiting\n"))
+      # Exit on left+right+middle all pressed together
+      if left != 0 and right != 0 and middle != 0:
         running = 0
 
       # Always redraw after mouse movement for clean cursor
