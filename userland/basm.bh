@@ -2031,8 +2031,8 @@ proc write_elf_object(filename: ptr uint8): int32 =
   if g_data_len > 0:
     discard syscall3(SYS_write, fd, cast[int32](g_data), g_data_len)
 
-  # Write string table
-  var strtab: array[4096, uint8]
+  # Write string table (increased from 4096 to handle large programs)
+  var strtab: array[65536, uint8]
   strtab[0] = cast[uint8](0)  # Null string
   var str_pos: int32 = 1
   i = 0

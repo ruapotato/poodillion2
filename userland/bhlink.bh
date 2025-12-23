@@ -80,6 +80,12 @@ var g_reloc_count: int32 = 0
 # Entry point symbol
 var g_entry_point: int32 = 0
 
+# Data file offset (calculated dynamically)
+var g_data_file_off: int32 = 0
+
+# Data virtual address (calculated dynamically based on text size)
+var g_data_vaddr: int32 = 0
+
 # Error flag
 var g_error: int32 = 0
 
@@ -327,7 +333,11 @@ proc parse_object_file(filename: ptr uint8, file_buf: ptr uint8, file_len: int32
 
   # Map from file symbol index to global symbol index
   var sym_map: ptr int32 = cast[ptr int32](alloc(1024 * 4))
-  var sym_count: int32 = symtab_size / symtab_entsize
+
+  # Guard against divide-by-zero
+  var sym_count: int32 = 0
+  if symtab_entsize > 0:
+    sym_count = symtab_size / symtab_entsize
 
   # Calculate where bss starts for this file (after its data section)
   # Align to 4 bytes for proper BSS placement
@@ -403,6 +413,11 @@ proc parse_object_file(filename: ptr uint8, file_buf: ptr uint8, file_len: int32
   # Update .bss size
   g_bss_len = g_bss_len + bss_sh_size
 
+  # Calculate dynamic data virtual address based on actual text size
+  # Data starts at next page boundary after text ends
+  var text_end_vaddr: int32 = TEXT_ADDR + g_text_len
+  g_data_vaddr = (text_end_vaddr + 0xFFF) & (0 - 0x1000)
+
   # Process relocations
   if rel_text_size > 0:
     var rel_count: int32 = rel_text_size / 8
@@ -456,11 +471,11 @@ proc apply_relocations(): int32 =
       final_addr = TEXT_ADDR + sym_value
     else:
       if sym_section == 2:
-        final_addr = DATA_ADDR + sym_value
+        final_addr = g_data_vaddr + sym_value
       else:
         if sym_section == 3:
           # bss follows data, sym_value already includes data offset
-          final_addr = DATA_ADDR + sym_value
+          final_addr = g_data_vaddr + sym_value
           # DEBUG: print BSS relocation
           if offset < 100:
             print(cast[ptr uint8]("  BSS reloc at "))
@@ -544,10 +559,17 @@ proc write_elf_header() =
 
 # Write program headers
 proc write_program_headers() =
-  # Calculate file offsets
+  # Calculate file offsets dynamically based on actual section sizes
   var hdr_size: int32 = 52 + 96  # ELF header + 3 program headers
   var text_file_off: int32 = 0x1000  # Page-aligned
-  var data_file_off: int32 = 0x2000  # Page-aligned
+
+  # Data follows text, aligned to page boundary
+  var text_end: int32 = text_file_off + g_text_len
+  # Round up to next page boundary (0x1000 = 4096)
+  var data_file_off: int32 = (text_end + 0xFFF) & (0 - 0x1000)
+
+  # Store for use in write_output
+  g_data_file_off = data_file_off
 
   var phdr: ptr uint8 = cast[ptr uint8](cast[int32](g_output) + 52)
 
@@ -576,8 +598,8 @@ proc write_program_headers() =
   phdr = cast[ptr uint8](cast[int32](g_output) + 52 + 64)
   write_u32(phdr, 0, PT_LOAD)
   write_u32(phdr, 4, data_file_off)
-  write_u32(phdr, 8, DATA_ADDR)
-  write_u32(phdr, 12, DATA_ADDR)
+  write_u32(phdr, 8, g_data_vaddr)
+  write_u32(phdr, 12, g_data_vaddr)
   write_u32(phdr, 16, g_data_len)
   # Align data for BSS placement (BSS symbols calculated with aligned base)
   var aligned_data_len: int32 = g_data_len
@@ -604,8 +626,8 @@ proc write_output(filename: ptr uint8): int32 =
   memcpy(cast[ptr uint8](cast[int32](g_output) + g_output_len), g_text, g_text_len)
   g_output_len = g_output_len + g_text_len
 
-  # Pad to data section offset (0x2000)
-  while g_output_len < 0x2000:
+  # Pad to data section offset (dynamically calculated)
+  while g_output_len < g_data_file_off:
     g_output[g_output_len] = cast[uint8](0)
     g_output_len = g_output_len + 1
 
