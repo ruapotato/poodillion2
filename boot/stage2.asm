@@ -13,11 +13,12 @@ stage2_start:
     call print_string
 
     ; Load kernel from disk (in real mode, using BIOS)
-    ; Kernel starts at sector 18, load to 0x10000 (64KB)
+    ; Kernel is at LBA 18 (dd seek=18), but INT 13h uses 1-based sectors
+    ; LBA 18 = sector 19 for INT 13h (since sectors are 1-based: LBA = sector - 1)
     mov ah, 0x02            ; BIOS read sectors
-    mov al, 32              ; Read 32 sectors (16KB kernel)
+    mov al, 64              ; Read 64 sectors (32KB kernel)
     mov ch, 0               ; Cylinder 0
-    mov cl, 18              ; Start at sector 18
+    mov cl, 19              ; Sector 19 (1-based) = LBA 18 (0-based)
     mov dh, 0               ; Head 0
     mov dl, [boot_drive]    ; Drive number
     mov bx, 0x1000          ; Segment

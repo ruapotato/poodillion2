@@ -5,6 +5,8 @@
 extern proc serial_init()
 extern proc serial_putchar(c: int32)
 extern proc serial_print(s: int32)
+extern proc serial_available(): int32
+extern proc serial_getchar(): int32
 
 # External assembly functions - IDT
 extern proc init_idt()
@@ -153,14 +155,14 @@ proc vga_putchar(c: int32) =
     vga_scroll()
     vga_row = VGA_HEIGHT - 1
 
-# Print a null-terminated string
+# Print a null-terminated string (VGA only)
 proc vga_print(s: ptr uint8) =
   var i: int32 = 0
   while cast[int32](s[i]) != 0:
     vga_putchar(cast[int32](s[i]))
     i = i + 1
 
-# Print a string with newline
+# Print a string with newline (VGA only)
 proc vga_println(s: ptr uint8) =
   vga_print(s)
   vga_putchar(10)
@@ -183,6 +185,10 @@ proc ser_println(s: ptr uint8) =
   ser_print(s)
   serial_putchar(13)
   serial_putchar(10)
+
+# Print single character to serial
+proc ser_putchar(c: int32) =
+  serial_putchar(c)
 
 # Print to both VGA and serial
 proc kprint(s: ptr uint8) =
@@ -238,7 +244,7 @@ proc vga_print_hex(num: int32) =
     i = i - 1
   buf[10] = cast[uint8](0)
 
-  vga_print(addr(buf[0]))
+  kprint(addr(buf[0]))
 
 # Print a hexadecimal number to serial
 proc ser_print_hex(num: int32) =
@@ -271,13 +277,13 @@ proc halt() =
 # Print status OK line
 proc print_ok(msg: ptr uint8) =
   vga_set_color(VGA_YELLOW, VGA_BLACK)
-  vga_print(cast[ptr uint8]("  ["))
+  kprint(cast[ptr uint8]("  ["))
   vga_set_color(VGA_LIGHT_GREEN, VGA_BLACK)
-  vga_print(cast[ptr uint8]("OK"))
+  kprint(cast[ptr uint8]("OK"))
   vga_set_color(VGA_YELLOW, VGA_BLACK)
-  vga_print(cast[ptr uint8]("] "))
+  kprint(cast[ptr uint8]("] "))
   vga_set_color(VGA_WHITE, VGA_BLACK)
-  vga_println(msg)
+  kprintln(msg)
   # Also print to serial
   ser_print(cast[ptr uint8]("[OK] "))
   ser_println(msg)
@@ -285,13 +291,13 @@ proc print_ok(msg: ptr uint8) =
 # Print status pending line
 proc print_pending(msg: ptr uint8) =
   vga_set_color(VGA_YELLOW, VGA_BLACK)
-  vga_print(cast[ptr uint8]("  ["))
+  kprint(cast[ptr uint8]("  ["))
   vga_set_color(VGA_DARK_GREY, VGA_BLACK)
-  vga_print(cast[ptr uint8](".."))
+  kprint(cast[ptr uint8](".."))
   vga_set_color(VGA_YELLOW, VGA_BLACK)
-  vga_print(cast[ptr uint8]("] "))
+  kprint(cast[ptr uint8]("] "))
   vga_set_color(VGA_DARK_GREY, VGA_BLACK)
-  vga_println(msg)
+  kprintln(msg)
   # Also print to serial
   ser_print(cast[ptr uint8]("[..] "))
   ser_println(msg)
@@ -303,9 +309,9 @@ proc main() =
   # Clear screen and show boot banner
   vga_clear()
   vga_set_color(VGA_LIGHT_CYAN, VGA_BLACK)
-  vga_println(cast[ptr uint8]("BrainhairOS Microkernel v0.1"))
+  kprintln(cast[ptr uint8]("BrainhairOS Microkernel v0.1"))
   vga_set_color(VGA_WHITE, VGA_BLACK)
-  vga_println(cast[ptr uint8](""))
+  kprintln(cast[ptr uint8](""))
 
   ser_println(cast[ptr uint8]("BrainhairOS Microkernel v0.1"))
   ser_println(cast[ptr uint8](""))
@@ -332,9 +338,9 @@ proc main() =
   print_ok(cast[ptr uint8]("Interrupts enabled"))
 
   # Boot complete
-  vga_println(cast[ptr uint8](""))
+  kprintln(cast[ptr uint8](""))
   vga_set_color(VGA_LIGHT_GREEN, VGA_BLACK)
-  vga_println(cast[ptr uint8]("Kernel initialization complete!"))
+  kprintln(cast[ptr uint8]("Kernel initialization complete!"))
   vga_set_color(VGA_WHITE, VGA_BLACK)
 
   ser_println(cast[ptr uint8](""))
@@ -375,12 +381,12 @@ proc main() =
   fs_init()
   print_ok(cast[ptr uint8]("Ramdisk initialized (8KB)"))
 
-  vga_println(cast[ptr uint8](""))
+  kprintln(cast[ptr uint8](""))
   vga_set_color(VGA_LIGHT_GREEN, VGA_BLACK)
-  vga_println(cast[ptr uint8]("Welcome to BrainhairOS!"))
+  kprintln(cast[ptr uint8]("Welcome to BrainhairOS!"))
   vga_set_color(VGA_WHITE, VGA_BLACK)
-  vga_println(cast[ptr uint8]("Type 'help' for available commands."))
-  vga_println(cast[ptr uint8](""))
+  kprintln(cast[ptr uint8]("Type 'help' for available commands."))
+  kprintln(cast[ptr uint8](""))
 
   ser_println(cast[ptr uint8](""))
   ser_println(cast[ptr uint8]("Starting kernel shell..."))
@@ -396,10 +402,10 @@ proc test_process() =
   # This runs as a new process
   # For now, just print a message and loop
   vga_set_color(VGA_LIGHT_MAGENTA, VGA_BLACK)
-  vga_print(cast[ptr uint8]("[Process "))
+  kprint(cast[ptr uint8]("[Process "))
   var pid: int32 = get_current_pid()
   vga_print_dec(pid)
-  vga_println(cast[ptr uint8]("] Hello from child process!"))
+  kprintln(cast[ptr uint8]("] Hello from child process!"))
   vga_set_color(VGA_WHITE, VGA_BLACK)
 
   # Simple counter loop - shows process is running
@@ -411,9 +417,9 @@ proc test_process() =
     count = count + 1
 
   vga_set_color(VGA_LIGHT_MAGENTA, VGA_BLACK)
-  vga_print(cast[ptr uint8]("[Process "))
+  kprint(cast[ptr uint8]("[Process "))
   vga_print_dec(pid)
-  vga_println(cast[ptr uint8]("] Done, exiting."))
+  kprintln(cast[ptr uint8]("] Done, exiting."))
   vga_set_color(VGA_WHITE, VGA_BLACK)
 
   # Exit (for now just return, later use exit syscall)
@@ -668,12 +674,12 @@ proc str_equals(s1: ptr uint8, s2: ptr uint8): int32 =
     i = i + 1
   return 0
 
-# Print prompt
+# Print prompt (kprint outputs to both VGA and serial)
 proc shell_prompt() =
   vga_set_color(VGA_LIGHT_CYAN, VGA_BLACK)
-  vga_print(cast[ptr uint8]("bhos"))
+  kprint(cast[ptr uint8]("bhos"))
   vga_set_color(VGA_WHITE, VGA_BLACK)
-  vga_print(cast[ptr uint8]("> "))
+  kprint(cast[ptr uint8]("> "))
 
 # Execute a command
 proc shell_execute() =
@@ -684,81 +690,51 @@ proc shell_execute() =
   if cmd_len == 0:
     return
 
-  # Parse and execute command
+  # Parse and execute command (using if/return to work around elif bug)
+    return
   if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("help")) == 1:
-    vga_println(cast[ptr uint8]("Available commands:"))
-    vga_println(cast[ptr uint8]("  help     - Show this help"))
-    vga_println(cast[ptr uint8]("  clear    - Clear screen"))
-    vga_println(cast[ptr uint8]("  ver      - Version info"))
-    vga_println(cast[ptr uint8]("  uptime   - System uptime"))
-    vga_println(cast[ptr uint8]("  ticks    - Timer tick count"))
-    vga_println(cast[ptr uint8]("  mem      - Memory info"))
-    vga_println(cast[ptr uint8]("  ps       - Show processes"))
-    vga_println(cast[ptr uint8]("  echo X   - Echo text X"))
-    vga_println(cast[ptr uint8]("  color    - Show colors"))
-    vga_println(cast[ptr uint8]("  banner   - Show ASCII art"))
-    vga_println(cast[ptr uint8]("  hello    - Hello World!"))
-    vga_println(cast[ptr uint8]("  spin     - Spinner animation"))
-    vga_println(cast[ptr uint8]("  guess    - Number guessing game"))
-    vga_println(cast[ptr uint8]("  peek A   - Read memory at hex addr A"))
-    vga_println(cast[ptr uint8]("  poke A V - Write V to hex addr A"))
-    vga_println(cast[ptr uint8]("  dump A   - Hexdump 64 bytes at addr A"))
-    vga_println(cast[ptr uint8]("  run      - Spawn a test process"))
-    vga_println(cast[ptr uint8]("  calc     - Calculator (e.g. calc 5 + 3)"))
-    vga_println(cast[ptr uint8]("  fill A V N - Fill N bytes at addr A with V"))
-    vga_println(cast[ptr uint8]("  rand     - Generate random number"))
-    vga_println(cast[ptr uint8]("  test     - Run kernel self-tests"))
-    vga_println(cast[ptr uint8]("  countdown N - Count down from N"))
-    vga_println(cast[ptr uint8]("  logo     - Show fancy logo"))
-    vga_println(cast[ptr uint8]("  matrix   - Matrix rain effect"))
-    vga_println(cast[ptr uint8]("  cls      - Clear screen (alias)"))
-    vga_println(cast[ptr uint8]("  ls       - List files on ramdisk"))
-    vga_println(cast[ptr uint8]("  cat F    - Show contents of file F"))
-    vga_println(cast[ptr uint8]("  write F T - Write text T to file F"))
-    vga_println(cast[ptr uint8]("  rm F     - Delete file F"))
-    vga_println(cast[ptr uint8]("  cp S D   - Copy file S to D"))
-    vga_println(cast[ptr uint8]("  df       - Show disk (ramdisk) usage"))
-    vga_println(cast[ptr uint8]("  whoami   - Show current user"))
-    vga_println(cast[ptr uint8]("  hostname - Show hostname"))
-    vga_println(cast[ptr uint8]("  date     - Show date/time"))
-    vga_println(cast[ptr uint8]("  wc F     - Count lines/words/chars in F"))
-    vga_println(cast[ptr uint8]("  head F   - Show first 5 lines of F"))
-    vga_println(cast[ptr uint8]("  grep P F - Search for pattern P in file F"))
-    vga_println(cast[ptr uint8]("  mv S D   - Rename file S to D"))
-    vga_println(cast[ptr uint8]("  touch F  - Create empty file F"))
-    vga_println(cast[ptr uint8]("  xxd F    - Hexdump file F"))
-    vga_println(cast[ptr uint8]("  size F   - Show size of file F"))
-    vga_println(cast[ptr uint8]("  stat F   - File statistics"))
-    vga_println(cast[ptr uint8]("  sysinfo  - System information"))
-    vga_println(cast[ptr uint8]("  about    - About BrainhairOS"))
-    vga_println(cast[ptr uint8]("  reboot   - Reboot system"))
-  elif str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("clear")) == 1:
+    kprintln(cast[ptr uint8]("Available commands:"))
+    kprintln(cast[ptr uint8]("  help, clear, ver, uptime, ticks, mem, ps, echo"))
+    kprintln(cast[ptr uint8]("  color, banner, hello, spin, guess, peek, poke"))
+    kprintln(cast[ptr uint8]("  dump, run, calc, fill, rand, test, countdown"))
+    kprintln(cast[ptr uint8]("  logo, matrix, ls, cat, write, rm, cp, df"))
+    kprintln(cast[ptr uint8]("  whoami, hostname, date, wc, head, grep, mv"))
+    kprintln(cast[ptr uint8]("  touch, xxd, size, stat, sysinfo, about, reboot"))
+    return
+  if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("clear")) == 1:
     vga_clear()
-  elif str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("ticks")) == 1:
+    return
+  if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("cls")) == 1:
+    vga_clear()
+    return
+  if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("ticks")) == 1:
     var ticks: int32 = get_tick_count()
-    vga_print(cast[ptr uint8]("Timer ticks: "))
+    kprint(cast[ptr uint8]("Timer ticks: "))
     vga_print_hex(ticks)
-    vga_println(cast[ptr uint8](""))
-  elif str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("ver")) == 1:
+    kprintln(cast[ptr uint8](""))
+    return
+  if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("ver")) == 1:
     vga_set_color(VGA_LIGHT_CYAN, VGA_BLACK)
-    vga_println(cast[ptr uint8]("BrainhairOS Microkernel v0.1"))
+    kprintln(cast[ptr uint8]("BrainhairOS Microkernel v0.1"))
     vga_set_color(VGA_WHITE, VGA_BLACK)
-    vga_println(cast[ptr uint8]("Written in Brainhair programming language"))
-    vga_println(cast[ptr uint8]("Self-hosted on x86-32 architecture"))
-  elif str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("uptime")) == 1:
+    kprintln(cast[ptr uint8]("Written in Brainhair programming language"))
+    kprintln(cast[ptr uint8]("Self-hosted on x86-32 architecture"))
+    return
+  if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("uptime")) == 1:
     var ticks: int32 = get_tick_count()
     # PIT runs at ~18.2 Hz, so ticks/18 ~ seconds
     var seconds: int32 = ticks / 18
     var minutes: int32 = seconds / 60
     seconds = seconds - (minutes * 60)
-    vga_print(cast[ptr uint8]("System uptime: "))
+    kprint(cast[ptr uint8]("System uptime: "))
     vga_print_dec(minutes)
-    vga_print(cast[ptr uint8]("m "))
+    kprint(cast[ptr uint8]("m "))
     vga_print_dec(seconds)
-    vga_println(cast[ptr uint8]("s"))
-  elif str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("ps")) == 1:
-    vga_println(cast[ptr uint8]("PID  STATE"))
-    vga_println(cast[ptr uint8]("---  --------"))
+    kprintln(cast[ptr uint8]("s"))
+    return
+  if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("ps")) == 1:
+    kprintln(cast[ptr uint8]("PID  STATE"))
+    kprintln(cast[ptr uint8]("---  --------"))
     var ps_pid: int32 = 0
     var ps_count: int32 = 0
     while ps_pid < 64:
@@ -766,60 +742,64 @@ proc shell_execute() =
       if state > 0:  # Not unused
         vga_print_dec(ps_pid)
         if ps_pid < 10:
-          vga_print(cast[ptr uint8]("    "))
+          kprint(cast[ptr uint8]("    "))
         else:
-          vga_print(cast[ptr uint8]("   "))
+          kprint(cast[ptr uint8]("   "))
         if state == 1:
           vga_set_color(VGA_YELLOW, VGA_BLACK)
-          vga_println(cast[ptr uint8]("READY"))
+          kprintln(cast[ptr uint8]("READY"))
         elif state == 2:
           vga_set_color(VGA_LIGHT_GREEN, VGA_BLACK)
-          vga_println(cast[ptr uint8]("RUNNING"))
+          kprintln(cast[ptr uint8]("RUNNING"))
         elif state == 3:
           vga_set_color(VGA_LIGHT_BLUE, VGA_BLACK)
-          vga_println(cast[ptr uint8]("BLOCKED"))
+          kprintln(cast[ptr uint8]("BLOCKED"))
         elif state == 4:
           vga_set_color(VGA_DARK_GREY, VGA_BLACK)
-          vga_println(cast[ptr uint8]("ZOMBIE"))
+          kprintln(cast[ptr uint8]("ZOMBIE"))
         else:
-          vga_println(cast[ptr uint8]("UNKNOWN"))
+          kprintln(cast[ptr uint8]("UNKNOWN"))
         vga_set_color(VGA_WHITE, VGA_BLACK)
         ps_count = ps_count + 1
       ps_pid = ps_pid + 1
-    vga_print(cast[ptr uint8]("Total: "))
+    kprint(cast[ptr uint8]("Total: "))
     vga_print_dec(ps_count)
-    vga_println(cast[ptr uint8](" process(es)"))
-  elif str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("color")) == 1:
-    vga_print(cast[ptr uint8]("Colors: "))
+    kprintln(cast[ptr uint8](" process(es)"))
+    return
+  if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("color")) == 1:
+    kprint(cast[ptr uint8]("Colors: "))
     var c: int32 = 0
     while c < 16:
       vga_set_color(c, VGA_BLACK)
       vga_putchar(42)  # '*'
       c = c + 1
     vga_set_color(VGA_WHITE, VGA_BLACK)
-    vga_println(cast[ptr uint8](""))
-  elif str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("banner")) == 1:
+    kprintln(cast[ptr uint8](""))
+    return
+  if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("banner")) == 1:
     vga_set_color(VGA_LIGHT_CYAN, VGA_BLACK)
-    vga_println(cast[ptr uint8](""))
-    vga_println(cast[ptr uint8]("  ____            _       _           _       ___  ____  "))
-    vga_println(cast[ptr uint8](" | __ ) _ __ __ _(_)_ __ | |__   __ _(_)_ __ / _ \\/ ___| "))
-    vga_println(cast[ptr uint8](" |  _ \\| '__/ _` | | '_ \\| '_ \\ / _` | | '__| | | \\___ \\ "))
-    vga_println(cast[ptr uint8](" | |_) | | | (_| | | | | | | | | (_| | | |  | |_| |___) |"))
-    vga_println(cast[ptr uint8](" |____/|_|  \\__,_|_|_| |_|_| |_|\\__,_|_|_|   \\___/|____/ "))
-    vga_println(cast[ptr uint8](""))
+    kprintln(cast[ptr uint8](""))
+    kprintln(cast[ptr uint8]("  ____            _       _           _       ___  ____  "))
+    kprintln(cast[ptr uint8](" | __ ) _ __ __ _(_)_ __ | |__   __ _(_)_ __ / _ \\/ ___| "))
+    kprintln(cast[ptr uint8](" |  _ \\| '__/ _` | | '_ \\| '_ \\ / _` | | '__| | | \\___ \\ "))
+    kprintln(cast[ptr uint8](" | |_) | | | (_| | | | | | | | | (_| | | |  | |_| |___) |"))
+    kprintln(cast[ptr uint8](" |____/|_|  \\__,_|_|_| |_|_| |_|\\__,_|_|_|   \\___/|____/ "))
+    kprintln(cast[ptr uint8](""))
     vga_set_color(VGA_WHITE, VGA_BLACK)
-  elif str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("hello")) == 1:
+    return
+  if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("hello")) == 1:
     vga_set_color(VGA_LIGHT_GREEN, VGA_BLACK)
-    vga_println(cast[ptr uint8]("Hello, World from BrainhairOS!"))
+    kprintln(cast[ptr uint8]("Hello, World from BrainhairOS!"))
     vga_set_color(VGA_WHITE, VGA_BLACK)
-  elif str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("spin")) == 1:
+    return
+  if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("spin")) == 1:
     # Show a spinning animation
     var frames: array[4, uint8]
     frames[0] = cast[uint8](124)  # |
     frames[1] = cast[uint8](47)   # /
     frames[2] = cast[uint8](45)   # -
     frames[3] = cast[uint8](92)   # \
-    vga_print(cast[ptr uint8]("Spinning: "))
+    kprint(cast[ptr uint8]("Spinning: "))
     var spin_col: int32 = vga_col
     var spin_row: int32 = vga_row
     var frame: int32 = 0
@@ -833,15 +813,16 @@ proc shell_execute() =
         d = d + 1
       count = count + 1
     vga_col = spin_col + 1
-    vga_println(cast[ptr uint8](" Done!"))
-  elif str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("guess")) == 1:
+    kprintln(cast[ptr uint8](" Done!"))
+    return
+  if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("guess")) == 1:
     # Simple number guessing game
     vga_set_color(VGA_LIGHT_CYAN, VGA_BLACK)
-    vga_println(cast[ptr uint8]("=== Number Guessing Game ==="))
+    kprintln(cast[ptr uint8]("=== Number Guessing Game ==="))
     vga_set_color(VGA_WHITE, VGA_BLACK)
-    vga_println(cast[ptr uint8]("I'm thinking of a number 1-100."))
-    vga_println(cast[ptr uint8]("Type a number and press Enter."))
-    vga_println(cast[ptr uint8](""))
+    kprintln(cast[ptr uint8]("I'm thinking of a number 1-100."))
+    kprintln(cast[ptr uint8]("Type a number and press Enter."))
+    kprintln(cast[ptr uint8](""))
 
     # Generate "random" number using tick count
     var secret: int32 = get_tick_count()
@@ -857,7 +838,7 @@ proc shell_execute() =
     var game_done: int32 = 0
 
     while game_done == 0:
-      vga_print(cast[ptr uint8]("Guess: "))
+      kprint(cast[ptr uint8]("Guess: "))
       game_len = 0
 
       # Read guess
@@ -867,7 +848,7 @@ proc shell_execute() =
         if avail > 0:
           var c: int32 = keyboard_read_char()
           if c == 13:  # Enter
-            vga_println(cast[ptr uint8](""))
+            kprintln(cast[ptr uint8](""))
             reading = 0
           elif c >= 48:
             if c <= 57:  # 0-9
@@ -888,15 +869,15 @@ proc shell_execute() =
 
       if guess == secret:
         vga_set_color(VGA_LIGHT_GREEN, VGA_BLACK)
-        vga_print(cast[ptr uint8]("Correct! You got it in "))
+        kprint(cast[ptr uint8]("Correct! You got it in "))
         vga_print_dec(guess_count)
-        vga_println(cast[ptr uint8](" guesses!"))
+        kprintln(cast[ptr uint8](" guesses!"))
         vga_set_color(VGA_WHITE, VGA_BLACK)
         game_done = 1
       elif guess < secret:
-        vga_println(cast[ptr uint8]("Too low!"))
+        kprintln(cast[ptr uint8]("Too low!"))
       else:
-        vga_println(cast[ptr uint8]("Too high!"))
+        kprintln(cast[ptr uint8]("Too high!"))
   elif cmd_buffer[0] == cast[uint8](112):  # 'p'
     if cmd_buffer[1] == cast[uint8](101):  # 'e'
       if cmd_buffer[2] == cast[uint8](101):  # 'e'
@@ -907,13 +888,13 @@ proc shell_execute() =
             var addr_val: int32 = parse_hex(arg)
             var mem: ptr uint8 = cast[ptr uint8](addr_val)
             var val: int32 = cast[int32](mem[0])
-            vga_print(cast[ptr uint8]("["))
+            kprint(cast[ptr uint8]("["))
             vga_print_hex(addr_val)
-            vga_print(cast[ptr uint8]("] = "))
+            kprint(cast[ptr uint8]("] = "))
             vga_print_hex(val)
-            vga_println(cast[ptr uint8](""))
+            kprintln(cast[ptr uint8](""))
           else:
-            vga_println(cast[ptr uint8]("Usage: peek <hex_addr>"))
+            kprintln(cast[ptr uint8]("Usage: peek <hex_addr>"))
       elif cmd_buffer[2] == cast[uint8](111):  # 'o'
         if cmd_buffer[3] == cast[uint8](107):  # 'k'
           if cmd_buffer[4] == cast[uint8](101):  # 'e'
@@ -926,15 +907,15 @@ proc shell_execute() =
                 var val: int32 = parse_hex(arg2)
                 var mem: ptr uint8 = cast[ptr uint8](addr_val)
                 mem[0] = cast[uint8](val)
-                vga_print(cast[ptr uint8]("Wrote "))
+                kprint(cast[ptr uint8]("Wrote "))
                 vga_print_hex(val)
-                vga_print(cast[ptr uint8](" to "))
+                kprint(cast[ptr uint8](" to "))
                 vga_print_hex(addr_val)
-                vga_println(cast[ptr uint8](""))
+                kprintln(cast[ptr uint8](""))
               else:
-                vga_println(cast[ptr uint8]("Usage: poke <hex_addr> <hex_val>"))
+                kprintln(cast[ptr uint8]("Usage: poke <hex_addr> <hex_val>"))
             else:
-              vga_println(cast[ptr uint8]("Usage: poke <hex_addr> <hex_val>"))
+              kprintln(cast[ptr uint8]("Usage: poke <hex_addr> <hex_val>"))
   elif cmd_buffer[0] == cast[uint8](100):  # 'd'
     if cmd_buffer[1] == cast[uint8](117):  # 'u'
       if cmd_buffer[2] == cast[uint8](109):  # 'm'
@@ -947,7 +928,7 @@ proc shell_execute() =
             var row: int32 = 0
             while row < 4:
               vga_print_hex(addr_val + row * 16)
-              vga_print(cast[ptr uint8](": "))
+              kprint(cast[ptr uint8](": "))
               var col: int32 = 0
               while col < 16:
                 var byte_val: int32 = cast[int32](mem[row * 16 + col])
@@ -965,7 +946,7 @@ proc shell_execute() =
                 vga_putchar(32)  # space
                 col = col + 1
               # Print ASCII
-              vga_print(cast[ptr uint8](" |"))
+              kprint(cast[ptr uint8](" |"))
               col = 0
               while col < 16:
                 var byte_val: int32 = cast[int32](mem[row * 16 + col])
@@ -977,59 +958,62 @@ proc shell_execute() =
                 else:
                   vga_putchar(46)  # '.'
                 col = col + 1
-              vga_println(cast[ptr uint8]("|"))
+              kprintln(cast[ptr uint8]("|"))
               row = row + 1
           else:
-            vga_println(cast[ptr uint8]("Usage: dump <hex_addr>"))
-  elif str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("run")) == 1:
-    vga_println(cast[ptr uint8]("Spawning test process..."))
+            kprintln(cast[ptr uint8]("Usage: dump <hex_addr>"))
+    return
+  if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("run")) == 1:
+    kprintln(cast[ptr uint8]("Spawning test process..."))
     var pid: int32 = sys_spawn(cast[int32](addr(test_process)))
     if pid >= 0:
-      vga_print(cast[ptr uint8]("Created process with PID "))
+      kprint(cast[ptr uint8]("Created process with PID "))
       vga_print_dec(pid)
-      vga_println(cast[ptr uint8](""))
-      vga_println(cast[ptr uint8]("(Process runs in background - use 'ps' to see)"))
+      kprintln(cast[ptr uint8](""))
+      kprintln(cast[ptr uint8]("(Process runs in background - use 'ps' to see)"))
     else:
       vga_set_color(VGA_LIGHT_RED, VGA_BLACK)
-      vga_println(cast[ptr uint8]("Failed to spawn process!"))
+      kprintln(cast[ptr uint8]("Failed to spawn process!"))
       vga_set_color(VGA_WHITE, VGA_BLACK)
-  elif str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("rand")) == 1:
+    return
+  if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("rand")) == 1:
     # Generate pseudo-random number using tick count and LCG
     var seed: int32 = get_tick_count()
     seed = seed * 1103515245 + 12345
     seed = (seed / 65536) & 0x7FFF
     vga_set_color(VGA_LIGHT_GREEN, VGA_BLACK)
-    vga_print(cast[ptr uint8]("Random: "))
+    kprint(cast[ptr uint8]("Random: "))
     vga_print_dec(seed)
-    vga_print(cast[ptr uint8](" ("))
+    kprint(cast[ptr uint8](" ("))
     vga_print_hex(seed)
-    vga_println(cast[ptr uint8](")"))
+    kprintln(cast[ptr uint8](")"))
     vga_set_color(VGA_WHITE, VGA_BLACK)
-  elif str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("test")) == 1:
+    return
+  if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("test")) == 1:
     vga_set_color(VGA_LIGHT_CYAN, VGA_BLACK)
-    vga_println(cast[ptr uint8]("=== Kernel Self-Tests ==="))
+    kprintln(cast[ptr uint8]("=== Kernel Self-Tests ==="))
     vga_set_color(VGA_WHITE, VGA_BLACK)
-    vga_println(cast[ptr uint8](""))
+    kprintln(cast[ptr uint8](""))
     # Test 1: Memory write/read
-    vga_print(cast[ptr uint8]("[1] Memory test...   "))
+    kprint(cast[ptr uint8]("[1] Memory test...   "))
     var test_addr: ptr uint8 = cast[ptr uint8](0x90000)
     test_addr[0] = cast[uint8](0xAB)
     test_addr[1] = cast[uint8](0xCD)
     if cast[int32](test_addr[0]) == 0xAB:
       if cast[int32](test_addr[1]) == 0xCD:
         vga_set_color(VGA_LIGHT_GREEN, VGA_BLACK)
-        vga_println(cast[ptr uint8]("PASS"))
+        kprintln(cast[ptr uint8]("PASS"))
         vga_set_color(VGA_WHITE, VGA_BLACK)
       else:
         vga_set_color(VGA_LIGHT_RED, VGA_BLACK)
-        vga_println(cast[ptr uint8]("FAIL"))
+        kprintln(cast[ptr uint8]("FAIL"))
         vga_set_color(VGA_WHITE, VGA_BLACK)
     else:
       vga_set_color(VGA_LIGHT_RED, VGA_BLACK)
-      vga_println(cast[ptr uint8]("FAIL"))
+      kprintln(cast[ptr uint8]("FAIL"))
       vga_set_color(VGA_WHITE, VGA_BLACK)
     # Test 2: Timer running
-    vga_print(cast[ptr uint8]("[2] Timer test...    "))
+    kprint(cast[ptr uint8]("[2] Timer test...    "))
     var t1: int32 = get_tick_count()
     var delay: int32 = 0
     while delay < 500000:
@@ -1037,16 +1021,16 @@ proc shell_execute() =
     var t2: int32 = get_tick_count()
     if t2 > t1:
       vga_set_color(VGA_LIGHT_GREEN, VGA_BLACK)
-      vga_print(cast[ptr uint8]("PASS ("))
+      kprint(cast[ptr uint8]("PASS ("))
       vga_print_dec(t2 - t1)
-      vga_println(cast[ptr uint8](" ticks)"))
+      kprintln(cast[ptr uint8](" ticks)"))
       vga_set_color(VGA_WHITE, VGA_BLACK)
     else:
       vga_set_color(VGA_LIGHT_RED, VGA_BLACK)
-      vga_println(cast[ptr uint8]("FAIL"))
+      kprintln(cast[ptr uint8]("FAIL"))
       vga_set_color(VGA_WHITE, VGA_BLACK)
     # Test 3: Arithmetic
-    vga_print(cast[ptr uint8]("[3] Arithmetic...    "))
+    kprint(cast[ptr uint8]("[3] Arithmetic...    "))
     var arith_pass: int32 = 1
     if 5 + 3 != 8:
       arith_pass = 0
@@ -1058,30 +1042,30 @@ proc shell_execute() =
       arith_pass = 0
     if arith_pass == 1:
       vga_set_color(VGA_LIGHT_GREEN, VGA_BLACK)
-      vga_println(cast[ptr uint8]("PASS"))
+      kprintln(cast[ptr uint8]("PASS"))
       vga_set_color(VGA_WHITE, VGA_BLACK)
     else:
       vga_set_color(VGA_LIGHT_RED, VGA_BLACK)
-      vga_println(cast[ptr uint8]("FAIL"))
+      kprintln(cast[ptr uint8]("FAIL"))
       vga_set_color(VGA_WHITE, VGA_BLACK)
     # Test 4: String comparison
-    vga_print(cast[ptr uint8]("[4] String cmp...    "))
+    kprint(cast[ptr uint8]("[4] String cmp...    "))
     if str_equals(cast[ptr uint8]("hello"), cast[ptr uint8]("hello")) == 1:
       if str_equals(cast[ptr uint8]("hello"), cast[ptr uint8]("world")) == 0:
         vga_set_color(VGA_LIGHT_GREEN, VGA_BLACK)
-        vga_println(cast[ptr uint8]("PASS"))
+        kprintln(cast[ptr uint8]("PASS"))
         vga_set_color(VGA_WHITE, VGA_BLACK)
       else:
         vga_set_color(VGA_LIGHT_RED, VGA_BLACK)
-        vga_println(cast[ptr uint8]("FAIL"))
+        kprintln(cast[ptr uint8]("FAIL"))
         vga_set_color(VGA_WHITE, VGA_BLACK)
     else:
       vga_set_color(VGA_LIGHT_RED, VGA_BLACK)
-      vga_println(cast[ptr uint8]("FAIL"))
+      kprintln(cast[ptr uint8]("FAIL"))
       vga_set_color(VGA_WHITE, VGA_BLACK)
-    vga_println(cast[ptr uint8](""))
+    kprintln(cast[ptr uint8](""))
     vga_set_color(VGA_LIGHT_GREEN, VGA_BLACK)
-    vga_println(cast[ptr uint8]("All tests complete!"))
+    kprintln(cast[ptr uint8]("All tests complete!"))
     vga_set_color(VGA_WHITE, VGA_BLACK)
   elif cmd_buffer[0] == cast[uint8](102):  # 'f'
     if cmd_buffer[1] == cast[uint8](105):  # 'i'
@@ -1101,27 +1085,27 @@ proc shell_execute() =
                   if count > 0:
                     if count > 4096:
                       count = 4096
-                      vga_println(cast[ptr uint8]("(limited to 4096 bytes)"))
+                      kprintln(cast[ptr uint8]("(limited to 4096 bytes)"))
                     var mem: ptr uint8 = cast[ptr uint8](addr_val)
                     var i: int32 = 0
                     while i < count:
                       mem[i] = cast[uint8](val)
                       i = i + 1
-                    vga_print(cast[ptr uint8]("Filled "))
+                    kprint(cast[ptr uint8]("Filled "))
                     vga_print_dec(count)
-                    vga_print(cast[ptr uint8](" bytes at "))
+                    kprint(cast[ptr uint8](" bytes at "))
                     vga_print_hex(addr_val)
-                    vga_print(cast[ptr uint8](" with "))
+                    kprint(cast[ptr uint8](" with "))
                     vga_print_hex(val)
-                    vga_println(cast[ptr uint8](""))
+                    kprintln(cast[ptr uint8](""))
                   else:
-                    vga_println(cast[ptr uint8]("Count must be > 0"))
+                    kprintln(cast[ptr uint8]("Count must be > 0"))
                 else:
-                  vga_println(cast[ptr uint8]("Usage: fill <hex_addr> <hex_val> <count>"))
+                  kprintln(cast[ptr uint8]("Usage: fill <hex_addr> <hex_val> <count>"))
               else:
-                vga_println(cast[ptr uint8]("Usage: fill <hex_addr> <hex_val> <count>"))
+                kprintln(cast[ptr uint8]("Usage: fill <hex_addr> <hex_val> <count>"))
             else:
-              vga_println(cast[ptr uint8]("Usage: fill <hex_addr> <hex_val> <count>"))
+              kprintln(cast[ptr uint8]("Usage: fill <hex_addr> <hex_val> <count>"))
   elif cmd_buffer[0] == cast[uint8](99):  # 'c'
     if cmd_buffer[1] == cast[uint8](97):  # 'a'
       if cmd_buffer[2] == cast[uint8](108):  # 'l'
@@ -1148,7 +1132,7 @@ proc shell_execute() =
                   elif op == 47:  # '/'
                     if num2 == 0:
                       vga_set_color(VGA_LIGHT_RED, VGA_BLACK)
-                      vga_println(cast[ptr uint8]("Error: Division by zero"))
+                      kprintln(cast[ptr uint8]("Error: Division by zero"))
                       vga_set_color(VGA_WHITE, VGA_BLACK)
                       valid = 0
                     else:
@@ -1156,7 +1140,7 @@ proc shell_execute() =
                   elif op == 37:  # '%'
                     if num2 == 0:
                       vga_set_color(VGA_LIGHT_RED, VGA_BLACK)
-                      vga_println(cast[ptr uint8]("Error: Division by zero"))
+                      kprintln(cast[ptr uint8]("Error: Division by zero"))
                       vga_set_color(VGA_WHITE, VGA_BLACK)
                       valid = 0
                     else:
@@ -1169,27 +1153,27 @@ proc shell_execute() =
                     result = num1 ^ num2
                   else:
                     vga_set_color(VGA_LIGHT_RED, VGA_BLACK)
-                    vga_print(cast[ptr uint8]("Unknown operator: "))
+                    kprint(cast[ptr uint8]("Unknown operator: "))
                     vga_putchar(op)
-                    vga_println(cast[ptr uint8](""))
+                    kprintln(cast[ptr uint8](""))
                     vga_set_color(VGA_WHITE, VGA_BLACK)
                     valid = 0
                   if valid == 1:
                     vga_set_color(VGA_LIGHT_GREEN, VGA_BLACK)
-                    vga_print(cast[ptr uint8]("= "))
+                    kprint(cast[ptr uint8]("= "))
                     vga_print_dec(result)
-                    vga_print(cast[ptr uint8](" ("))
+                    kprint(cast[ptr uint8](" ("))
                     vga_print_hex(result)
-                    vga_println(cast[ptr uint8](")"))
+                    kprintln(cast[ptr uint8](")"))
                     vga_set_color(VGA_WHITE, VGA_BLACK)
                 else:
-                  vga_println(cast[ptr uint8]("Usage: calc <num> <op> <num>"))
-                  vga_println(cast[ptr uint8]("  Ops: + - * / % & | ^"))
+                  kprintln(cast[ptr uint8]("Usage: calc <num> <op> <num>"))
+                  kprintln(cast[ptr uint8]("  Ops: + - * / % & | ^"))
               else:
-                vga_println(cast[ptr uint8]("Usage: calc <num> <op> <num>"))
+                kprintln(cast[ptr uint8]("Usage: calc <num> <op> <num>"))
             else:
-              vga_println(cast[ptr uint8]("Usage: calc <num> <op> <num>"))
-              vga_println(cast[ptr uint8]("  Ops: + - * / % & | ^"))
+              kprintln(cast[ptr uint8]("Usage: calc <num> <op> <num>"))
+              kprintln(cast[ptr uint8]("  Ops: + - * / % & | ^"))
   elif cmd_buffer[0] == cast[uint8](99):  # 'c'
     if cmd_buffer[1] == cast[uint8](111):  # 'o'
       if cmd_buffer[2] == cast[uint8](117):  # 'u'
@@ -1207,96 +1191,100 @@ proc shell_execute() =
                         if n > 100:
                           n = 100
                         if n > 0:
-                          vga_println(cast[ptr uint8](""))
+                          kprintln(cast[ptr uint8](""))
                           while n >= 0:
                             vga_set_color(VGA_LIGHT_CYAN, VGA_BLACK)
-                            vga_print(cast[ptr uint8]("\r"))
-                            vga_print(cast[ptr uint8]("  "))
+                            kprint(cast[ptr uint8]("\r"))
+                            kprint(cast[ptr uint8]("  "))
                             vga_print_dec(n)
-                            vga_print(cast[ptr uint8]("   "))
+                            kprint(cast[ptr uint8]("   "))
                             vga_set_color(VGA_WHITE, VGA_BLACK)
                             # Delay ~1 second (18 ticks)
                             var start_tick: int32 = get_tick_count()
                             while get_tick_count() - start_tick < 18:
                               discard
                             n = n - 1
-                          vga_println(cast[ptr uint8](""))
+                          kprintln(cast[ptr uint8](""))
                           vga_set_color(VGA_LIGHT_GREEN, VGA_BLACK)
-                          vga_println(cast[ptr uint8]("*** BOOM! ***"))
+                          kprintln(cast[ptr uint8]("*** BOOM! ***"))
                           vga_set_color(VGA_WHITE, VGA_BLACK)
                         else:
-                          vga_println(cast[ptr uint8]("Number must be > 0"))
+                          kprintln(cast[ptr uint8]("Number must be > 0"))
                       else:
-                        vga_println(cast[ptr uint8]("Usage: countdown <number>"))
-  elif str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("logo")) == 1:
-    vga_println(cast[ptr uint8](""))
+                        kprintln(cast[ptr uint8]("Usage: countdown <number>"))
+    return
+  if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("logo")) == 1:
+    kprintln(cast[ptr uint8](""))
     # Draw a colorful logo
     vga_set_color(VGA_LIGHT_RED, VGA_BLACK)
-    vga_println(cast[ptr uint8]("    ____  _   _ ___  ____"))
+    kprintln(cast[ptr uint8]("    ____  _   _ ___  ____"))
     vga_set_color(VGA_YELLOW, VGA_BLACK)
-    vga_println(cast[ptr uint8]("   | __ )| | | / _ \\/ ___|"))
+    kprintln(cast[ptr uint8]("   | __ )| | | / _ \\/ ___|"))
     vga_set_color(VGA_LIGHT_GREEN, VGA_BLACK)
-    vga_println(cast[ptr uint8]("   |  _ \\| |_| | | | \\___ \\"))
+    kprintln(cast[ptr uint8]("   |  _ \\| |_| | | | \\___ \\"))
     vga_set_color(VGA_LIGHT_CYAN, VGA_BLACK)
-    vga_println(cast[ptr uint8]("   | |_) |  _  | |_| |___) |"))
+    kprintln(cast[ptr uint8]("   | |_) |  _  | |_| |___) |"))
     vga_set_color(VGA_LIGHT_BLUE, VGA_BLACK)
-    vga_println(cast[ptr uint8]("   |____/|_| |_|\\___/|____/"))
-    vga_println(cast[ptr uint8](""))
+    kprintln(cast[ptr uint8]("   |____/|_| |_|\\___/|____/"))
+    kprintln(cast[ptr uint8](""))
     vga_set_color(VGA_LIGHT_MAGENTA, VGA_BLACK)
-    vga_println(cast[ptr uint8]("   B R A I N H A I R O S"))
+    kprintln(cast[ptr uint8]("   B R A I N H A I R O S"))
     vga_set_color(VGA_WHITE, VGA_BLACK)
-    vga_println(cast[ptr uint8](""))
+    kprintln(cast[ptr uint8](""))
     vga_set_color(VGA_DARK_GREY, VGA_BLACK)
-    vga_println(cast[ptr uint8]("   Self-hosted microkernel"))
-    vga_println(cast[ptr uint8]("   Written in Brainhair"))
+    kprintln(cast[ptr uint8]("   Self-hosted microkernel"))
+    kprintln(cast[ptr uint8]("   Written in Brainhair"))
     vga_set_color(VGA_WHITE, VGA_BLACK)
-    vga_println(cast[ptr uint8](""))
-  elif str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("cls")) == 1:
+    kprintln(cast[ptr uint8](""))
+    return
+  if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("cls")) == 1:
     vga_clear()
-  elif str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("ls")) == 1:
+    return
+  if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("ls")) == 1:
     vga_set_color(VGA_LIGHT_CYAN, VGA_BLACK)
-    vga_println(cast[ptr uint8]("Ramdisk files:"))
+    kprintln(cast[ptr uint8]("Ramdisk files:"))
     vga_set_color(VGA_WHITE, VGA_BLACK)
     if file_count == 0:
-      vga_println(cast[ptr uint8]("  (empty)"))
+      kprintln(cast[ptr uint8]("  (empty)"))
     else:
       var fi: int32 = 0
       while fi < file_count:
         var entry: ptr uint8 = fs_get_entry(fi)
-        vga_print(cast[ptr uint8]("  "))
+        kprint(cast[ptr uint8]("  "))
         vga_set_color(VGA_LIGHT_GREEN, VGA_BLACK)
-        vga_print(entry)  # filename
+        kprint(entry)  # filename
         vga_set_color(VGA_DARK_GREY, VGA_BLACK)
-        vga_print(cast[ptr uint8]("  "))
+        kprint(cast[ptr uint8]("  "))
         var fsize: int32 = fs_get_size(entry)
         vga_print_dec(fsize)
-        vga_println(cast[ptr uint8](" bytes"))
+        kprintln(cast[ptr uint8](" bytes"))
         vga_set_color(VGA_WHITE, VGA_BLACK)
         fi = fi + 1
-      vga_print(cast[ptr uint8]("Total: "))
+      kprint(cast[ptr uint8]("Total: "))
       vga_print_dec(file_count)
-      vga_print(cast[ptr uint8](" file(s), "))
+      kprint(cast[ptr uint8](" file(s), "))
       vga_print_dec(ramdisk_used)
-      vga_println(cast[ptr uint8](" bytes used"))
-  elif str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("df")) == 1:
+      kprintln(cast[ptr uint8](" bytes used"))
+    return
+  if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("df")) == 1:
     vga_set_color(VGA_LIGHT_CYAN, VGA_BLACK)
-    vga_println(cast[ptr uint8]("Ramdisk Usage:"))
+    kprintln(cast[ptr uint8]("Ramdisk Usage:"))
     vga_set_color(VGA_WHITE, VGA_BLACK)
-    vga_print(cast[ptr uint8]("  Used:  "))
+    kprint(cast[ptr uint8]("  Used:  "))
     vga_print_dec(ramdisk_used)
-    vga_print(cast[ptr uint8](" / "))
+    kprint(cast[ptr uint8](" / "))
     vga_print_dec(RAMDISK_SIZE)
-    vga_println(cast[ptr uint8](" bytes"))
-    vga_print(cast[ptr uint8]("  Free:  "))
+    kprintln(cast[ptr uint8](" bytes"))
+    kprint(cast[ptr uint8]("  Free:  "))
     vga_print_dec(RAMDISK_SIZE - ramdisk_used)
-    vga_println(cast[ptr uint8](" bytes"))
-    vga_print(cast[ptr uint8]("  Files: "))
+    kprintln(cast[ptr uint8](" bytes"))
+    kprint(cast[ptr uint8]("  Files: "))
     vga_print_dec(file_count)
-    vga_print(cast[ptr uint8](" / "))
+    kprint(cast[ptr uint8](" / "))
     vga_print_dec(MAX_FILES)
-    vga_println(cast[ptr uint8](""))
+    kprintln(cast[ptr uint8](""))
     # Show a usage bar
-    vga_print(cast[ptr uint8]("  ["))
+    kprint(cast[ptr uint8]("  ["))
     var bar_used: int32 = (ramdisk_used * 40) / RAMDISK_SIZE
     var bi: int32 = 0
     while bi < 40:
@@ -1308,7 +1296,7 @@ proc shell_execute() =
         vga_putchar(45)  # '-'
       bi = bi + 1
     vga_set_color(VGA_WHITE, VGA_BLACK)
-    vga_println(cast[ptr uint8]("]"))
+    kprintln(cast[ptr uint8]("]"))
   elif cmd_buffer[0] == cast[uint8](99):  # 'c'
     if cmd_buffer[1] == cast[uint8](97):  # 'a'
       if cmd_buffer[2] == cast[uint8](116):  # 't'
@@ -1331,14 +1319,14 @@ proc shell_execute() =
                   if ch < 127:
                     vga_putchar(ch)
                 ci = ci + 1
-              vga_println(cast[ptr uint8](""))
+              kprintln(cast[ptr uint8](""))
             else:
               vga_set_color(VGA_LIGHT_RED, VGA_BLACK)
-              vga_print(cast[ptr uint8]("File not found: "))
-              vga_println(filename)
+              kprint(cast[ptr uint8]("File not found: "))
+              kprintln(filename)
               vga_set_color(VGA_WHITE, VGA_BLACK)
           else:
-            vga_println(cast[ptr uint8]("Usage: cat <filename>"))
+            kprintln(cast[ptr uint8]("Usage: cat <filename>"))
   elif cmd_buffer[0] == cast[uint8](119):  # 'w'
     if cmd_buffer[1] == cast[uint8](114):  # 'r'
       if cmd_buffer[2] == cast[uint8](105):  # 'i'
@@ -1358,28 +1346,28 @@ proc shell_execute() =
                   var result: int32 = fs_create(filename, text, tlen)
                   if result == 0:
                     vga_set_color(VGA_LIGHT_GREEN, VGA_BLACK)
-                    vga_print(cast[ptr uint8]("Created: "))
-                    vga_print(filename)
-                    vga_print(cast[ptr uint8](" ("))
+                    kprint(cast[ptr uint8]("Created: "))
+                    kprint(filename)
+                    kprint(cast[ptr uint8](" ("))
                     vga_print_dec(tlen)
-                    vga_println(cast[ptr uint8](" bytes)"))
+                    kprintln(cast[ptr uint8](" bytes)"))
                     vga_set_color(VGA_WHITE, VGA_BLACK)
                   elif result == -1:
                     vga_set_color(VGA_LIGHT_RED, VGA_BLACK)
-                    vga_println(cast[ptr uint8]("File already exists"))
+                    kprintln(cast[ptr uint8]("File already exists"))
                     vga_set_color(VGA_WHITE, VGA_BLACK)
                   elif result == -2:
                     vga_set_color(VGA_LIGHT_RED, VGA_BLACK)
-                    vga_println(cast[ptr uint8]("Too many files"))
+                    kprintln(cast[ptr uint8]("Too many files"))
                     vga_set_color(VGA_WHITE, VGA_BLACK)
                   else:
                     vga_set_color(VGA_LIGHT_RED, VGA_BLACK)
-                    vga_println(cast[ptr uint8]("Not enough space"))
+                    kprintln(cast[ptr uint8]("Not enough space"))
                     vga_set_color(VGA_WHITE, VGA_BLACK)
                 else:
-                  vga_println(cast[ptr uint8]("Usage: write <filename> <text>"))
+                  kprintln(cast[ptr uint8]("Usage: write <filename> <text>"))
               else:
-                vga_println(cast[ptr uint8]("Usage: write <filename> <text>"))
+                kprintln(cast[ptr uint8]("Usage: write <filename> <text>"))
   elif cmd_buffer[0] == cast[uint8](114):  # 'r'
     if cmd_buffer[1] == cast[uint8](109):  # 'm'
       if cmd_buffer[2] == cast[uint8](32):  # ' '
@@ -1389,16 +1377,16 @@ proc shell_execute() =
           var result: int32 = fs_delete(filename)
           if result == 0:
             vga_set_color(VGA_LIGHT_GREEN, VGA_BLACK)
-            vga_print(cast[ptr uint8]("Deleted: "))
-            vga_println(filename)
+            kprint(cast[ptr uint8]("Deleted: "))
+            kprintln(filename)
             vga_set_color(VGA_WHITE, VGA_BLACK)
           else:
             vga_set_color(VGA_LIGHT_RED, VGA_BLACK)
-            vga_print(cast[ptr uint8]("File not found: "))
-            vga_println(filename)
+            kprint(cast[ptr uint8]("File not found: "))
+            kprintln(filename)
             vga_set_color(VGA_WHITE, VGA_BLACK)
         else:
-          vga_println(cast[ptr uint8]("Usage: rm <filename>"))
+          kprintln(cast[ptr uint8]("Usage: rm <filename>"))
   elif cmd_buffer[0] == cast[uint8](99):  # 'c'
     if cmd_buffer[1] == cast[uint8](112):  # 'p'
       if cmd_buffer[2] == cast[uint8](32):  # ' '
@@ -1416,35 +1404,37 @@ proc shell_execute() =
               var result: int32 = fs_create(dst_name, addr(ramdisk_data[src_offset]), src_size)
               if result == 0:
                 vga_set_color(VGA_LIGHT_GREEN, VGA_BLACK)
-                vga_print(cast[ptr uint8]("Copied: "))
-                vga_print(src_name)
-                vga_print(cast[ptr uint8](" -> "))
-                vga_println(dst_name)
+                kprint(cast[ptr uint8]("Copied: "))
+                kprint(src_name)
+                kprint(cast[ptr uint8](" -> "))
+                kprintln(dst_name)
                 vga_set_color(VGA_WHITE, VGA_BLACK)
               elif result == -1:
                 vga_set_color(VGA_LIGHT_RED, VGA_BLACK)
-                vga_println(cast[ptr uint8]("Destination already exists"))
+                kprintln(cast[ptr uint8]("Destination already exists"))
                 vga_set_color(VGA_WHITE, VGA_BLACK)
               else:
                 vga_set_color(VGA_LIGHT_RED, VGA_BLACK)
-                vga_println(cast[ptr uint8]("Not enough space"))
+                kprintln(cast[ptr uint8]("Not enough space"))
                 vga_set_color(VGA_WHITE, VGA_BLACK)
             else:
               vga_set_color(VGA_LIGHT_RED, VGA_BLACK)
-              vga_print(cast[ptr uint8]("Source not found: "))
-              vga_println(src_name)
+              kprint(cast[ptr uint8]("Source not found: "))
+              kprintln(src_name)
               vga_set_color(VGA_WHITE, VGA_BLACK)
           else:
-            vga_println(cast[ptr uint8]("Usage: cp <source> <dest>"))
+            kprintln(cast[ptr uint8]("Usage: cp <source> <dest>"))
         else:
-          vga_println(cast[ptr uint8]("Usage: cp <source> <dest>"))
-  elif str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("whoami")) == 1:
+          kprintln(cast[ptr uint8]("Usage: cp <source> <dest>"))
+    return
+  if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("whoami")) == 1:
     vga_set_color(VGA_LIGHT_GREEN, VGA_BLACK)
-    vga_println(cast[ptr uint8]("root"))
+    kprintln(cast[ptr uint8]("root"))
     vga_set_color(VGA_WHITE, VGA_BLACK)
-  elif str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("hostname")) == 1:
+    return
+  if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("hostname")) == 1:
     vga_set_color(VGA_LIGHT_CYAN, VGA_BLACK)
-    vga_println(cast[ptr uint8]("brainhair"))
+    kprintln(cast[ptr uint8]("brainhair"))
     vga_set_color(VGA_WHITE, VGA_BLACK)
   elif cmd_buffer[0] == cast[uint8](119):  # 'w'
     if cmd_buffer[1] == cast[uint8](99):  # 'c'
@@ -1484,21 +1474,21 @@ proc shell_execute() =
             if in_word == 1:
               words = words + 1
             # Print results
-            vga_print(cast[ptr uint8]("  "))
+            kprint(cast[ptr uint8]("  "))
             vga_print_dec(lines)
-            vga_print(cast[ptr uint8]("  "))
+            kprint(cast[ptr uint8]("  "))
             vga_print_dec(words)
-            vga_print(cast[ptr uint8]("  "))
+            kprint(cast[ptr uint8]("  "))
             vga_print_dec(chars)
-            vga_print(cast[ptr uint8]("  "))
-            vga_println(filename)
+            kprint(cast[ptr uint8]("  "))
+            kprintln(filename)
           else:
             vga_set_color(VGA_LIGHT_RED, VGA_BLACK)
-            vga_print(cast[ptr uint8]("File not found: "))
-            vga_println(filename)
+            kprint(cast[ptr uint8]("File not found: "))
+            kprintln(filename)
             vga_set_color(VGA_WHITE, VGA_BLACK)
         else:
-          vga_println(cast[ptr uint8]("Usage: wc <filename>"))
+          kprintln(cast[ptr uint8]("Usage: wc <filename>"))
   elif cmd_buffer[0] == cast[uint8](104):  # 'h'
     if cmd_buffer[1] == cast[uint8](101):  # 'e'
       if cmd_buffer[2] == cast[uint8](97):  # 'a'
@@ -1527,14 +1517,14 @@ proc shell_execute() =
                       vga_putchar(ch)
                   hi = hi + 1
                 if lines_shown < 5:
-                  vga_println(cast[ptr uint8](""))
+                  kprintln(cast[ptr uint8](""))
               else:
                 vga_set_color(VGA_LIGHT_RED, VGA_BLACK)
-                vga_print(cast[ptr uint8]("File not found: "))
-                vga_println(filename)
+                kprint(cast[ptr uint8]("File not found: "))
+                kprintln(filename)
                 vga_set_color(VGA_WHITE, VGA_BLACK)
             else:
-              vga_println(cast[ptr uint8]("Usage: head <filename>"))
+              kprintln(cast[ptr uint8]("Usage: head <filename>"))
   elif cmd_buffer[0] == cast[uint8](103):  # 'g'
     if cmd_buffer[1] == cast[uint8](114):  # 'r'
       if cmd_buffer[2] == cast[uint8](101):  # 'e'
@@ -1582,7 +1572,7 @@ proc shell_execute() =
                               if pch < 127:
                                 vga_putchar(pch)
                             pi = pi + 1
-                          vga_println(cast[ptr uint8](""))
+                          kprintln(cast[ptr uint8](""))
                           vga_set_color(VGA_WHITE, VGA_BLACK)
                           found = found + 1
                           break
@@ -1591,17 +1581,17 @@ proc shell_execute() =
                     gi = gi + 1
                   if found == 0:
                     vga_set_color(VGA_DARK_GREY, VGA_BLACK)
-                    vga_println(cast[ptr uint8]("(no matches)"))
+                    kprintln(cast[ptr uint8]("(no matches)"))
                     vga_set_color(VGA_WHITE, VGA_BLACK)
                 else:
                   vga_set_color(VGA_LIGHT_RED, VGA_BLACK)
-                  vga_print(cast[ptr uint8]("File not found: "))
-                  vga_println(filename)
+                  kprint(cast[ptr uint8]("File not found: "))
+                  kprintln(filename)
                   vga_set_color(VGA_WHITE, VGA_BLACK)
               else:
-                vga_println(cast[ptr uint8]("Usage: grep <pattern> <filename>"))
+                kprintln(cast[ptr uint8]("Usage: grep <pattern> <filename>"))
             else:
-              vga_println(cast[ptr uint8]("Usage: grep <pattern> <filename>"))
+              kprintln(cast[ptr uint8]("Usage: grep <pattern> <filename>"))
   elif cmd_buffer[0] == cast[uint8](109):  # 'm'
     if cmd_buffer[1] == cast[uint8](118):  # 'v'
       if cmd_buffer[2] == cast[uint8](32):  # ' '
@@ -1627,24 +1617,24 @@ proc shell_execute() =
                   j = j + 1
                 entry[j] = cast[uint8](0)
                 vga_set_color(VGA_LIGHT_GREEN, VGA_BLACK)
-                vga_print(cast[ptr uint8]("Renamed: "))
-                vga_print(old_name)
-                vga_print(cast[ptr uint8](" -> "))
-                vga_println(new_name)
+                kprint(cast[ptr uint8]("Renamed: "))
+                kprint(old_name)
+                kprint(cast[ptr uint8](" -> "))
+                kprintln(new_name)
                 vga_set_color(VGA_WHITE, VGA_BLACK)
               else:
                 vga_set_color(VGA_LIGHT_RED, VGA_BLACK)
-                vga_println(cast[ptr uint8]("Destination already exists"))
+                kprintln(cast[ptr uint8]("Destination already exists"))
                 vga_set_color(VGA_WHITE, VGA_BLACK)
             else:
               vga_set_color(VGA_LIGHT_RED, VGA_BLACK)
-              vga_print(cast[ptr uint8]("Source not found: "))
-              vga_println(old_name)
+              kprint(cast[ptr uint8]("Source not found: "))
+              kprintln(old_name)
               vga_set_color(VGA_WHITE, VGA_BLACK)
           else:
-            vga_println(cast[ptr uint8]("Usage: mv <old_name> <new_name>"))
+            kprintln(cast[ptr uint8]("Usage: mv <old_name> <new_name>"))
         else:
-          vga_println(cast[ptr uint8]("Usage: mv <old_name> <new_name>"))
+          kprintln(cast[ptr uint8]("Usage: mv <old_name> <new_name>"))
   elif cmd_buffer[0] == cast[uint8](116):  # 't'
     if cmd_buffer[1] == cast[uint8](111):  # 'o'
       if cmd_buffer[2] == cast[uint8](117):  # 'u'
@@ -1659,19 +1649,19 @@ proc shell_execute() =
                 var result: int32 = fs_create(filename, empty, 0)
                 if result == 0:
                   vga_set_color(VGA_LIGHT_GREEN, VGA_BLACK)
-                  vga_print(cast[ptr uint8]("Created: "))
-                  vga_println(filename)
+                  kprint(cast[ptr uint8]("Created: "))
+                  kprintln(filename)
                   vga_set_color(VGA_WHITE, VGA_BLACK)
                 elif result == -1:
                   vga_set_color(VGA_DARK_GREY, VGA_BLACK)
-                  vga_println(cast[ptr uint8]("(file already exists)"))
+                  kprintln(cast[ptr uint8]("(file already exists)"))
                   vga_set_color(VGA_WHITE, VGA_BLACK)
                 else:
                   vga_set_color(VGA_LIGHT_RED, VGA_BLACK)
-                  vga_println(cast[ptr uint8]("Failed to create file"))
+                  kprintln(cast[ptr uint8]("Failed to create file"))
                   vga_set_color(VGA_WHITE, VGA_BLACK)
               else:
-                vga_println(cast[ptr uint8]("Usage: touch <filename>"))
+                kprintln(cast[ptr uint8]("Usage: touch <filename>"))
   elif cmd_buffer[0] == cast[uint8](120):  # 'x'
     if cmd_buffer[1] == cast[uint8](120):  # 'x'
       if cmd_buffer[2] == cast[uint8](100):  # 'd'
@@ -1688,7 +1678,7 @@ proc shell_execute() =
               if fsize > 128:
                 fsize = 128
                 vga_set_color(VGA_DARK_GREY, VGA_BLACK)
-                vga_println(cast[ptr uint8]("(showing first 128 bytes)"))
+                kprintln(cast[ptr uint8]("(showing first 128 bytes)"))
                 vga_set_color(VGA_WHITE, VGA_BLACK)
               var row: int32 = 0
               while row * 16 < fsize:
@@ -1706,7 +1696,7 @@ proc shell_execute() =
                   vga_putchar(48 + lo)
                 else:
                   vga_putchar(55 + lo)
-                vga_print(cast[ptr uint8](": "))
+                kprint(cast[ptr uint8](": "))
                 vga_set_color(VGA_LIGHT_CYAN, VGA_BLACK)
                 # Print hex bytes
                 var col: int32 = 0
@@ -1724,12 +1714,12 @@ proc shell_execute() =
                     else:
                       vga_putchar(55 + blo)
                   else:
-                    vga_print(cast[ptr uint8]("  "))
+                    kprint(cast[ptr uint8]("  "))
                   vga_putchar(32)
                   col = col + 1
                 # Print ASCII
                 vga_set_color(VGA_LIGHT_GREEN, VGA_BLACK)
-                vga_print(cast[ptr uint8]("|"))
+                kprint(cast[ptr uint8]("|"))
                 col = 0
                 while col < 16:
                   if row * 16 + col < fsize:
@@ -1742,16 +1732,16 @@ proc shell_execute() =
                     else:
                       vga_putchar(46)
                   col = col + 1
-                vga_println(cast[ptr uint8]("|"))
+                kprintln(cast[ptr uint8]("|"))
                 vga_set_color(VGA_WHITE, VGA_BLACK)
                 row = row + 1
             else:
               vga_set_color(VGA_LIGHT_RED, VGA_BLACK)
-              vga_print(cast[ptr uint8]("File not found: "))
-              vga_println(filename)
+              kprint(cast[ptr uint8]("File not found: "))
+              kprintln(filename)
               vga_set_color(VGA_WHITE, VGA_BLACK)
           else:
-            vga_println(cast[ptr uint8]("Usage: xxd <filename>"))
+            kprintln(cast[ptr uint8]("Usage: xxd <filename>"))
   elif cmd_buffer[0] == cast[uint8](115):  # 's'
     if cmd_buffer[1] == cast[uint8](105):  # 'i'
       if cmd_buffer[2] == cast[uint8](122):  # 'z'
@@ -1765,15 +1755,15 @@ proc shell_execute() =
                 var entry: ptr uint8 = fs_get_entry(idx)
                 var fsize: int32 = fs_get_size(entry)
                 vga_print_dec(fsize)
-                vga_print(cast[ptr uint8](" "))
-                vga_println(filename)
+                kprint(cast[ptr uint8](" "))
+                kprintln(filename)
               else:
                 vga_set_color(VGA_LIGHT_RED, VGA_BLACK)
-                vga_print(cast[ptr uint8]("File not found: "))
-                vga_println(filename)
+                kprint(cast[ptr uint8]("File not found: "))
+                kprintln(filename)
                 vga_set_color(VGA_WHITE, VGA_BLACK)
             else:
-              vga_println(cast[ptr uint8]("Usage: size <filename>"))
+              kprintln(cast[ptr uint8]("Usage: size <filename>"))
     elif cmd_buffer[1] == cast[uint8](116):  # 't'
       if cmd_buffer[2] == cast[uint8](97):  # 'a'
         if cmd_buffer[3] == cast[uint8](116):  # 't'
@@ -1787,32 +1777,33 @@ proc shell_execute() =
                 var fsize: int32 = fs_get_size(entry)
                 var foffset: int32 = fs_get_offset(entry)
                 vga_set_color(VGA_LIGHT_CYAN, VGA_BLACK)
-                vga_print(cast[ptr uint8]("  File: "))
+                kprint(cast[ptr uint8]("  File: "))
                 vga_set_color(VGA_WHITE, VGA_BLACK)
-                vga_println(entry)
+                kprintln(entry)
                 vga_set_color(VGA_LIGHT_CYAN, VGA_BLACK)
-                vga_print(cast[ptr uint8]("  Size: "))
+                kprint(cast[ptr uint8]("  Size: "))
                 vga_set_color(VGA_WHITE, VGA_BLACK)
                 vga_print_dec(fsize)
-                vga_println(cast[ptr uint8](" bytes"))
+                kprintln(cast[ptr uint8](" bytes"))
                 vga_set_color(VGA_LIGHT_CYAN, VGA_BLACK)
-                vga_print(cast[ptr uint8]("  Offset: "))
+                kprint(cast[ptr uint8]("  Offset: "))
                 vga_set_color(VGA_WHITE, VGA_BLACK)
                 vga_print_hex(foffset)
-                vga_println(cast[ptr uint8](""))
+                kprintln(cast[ptr uint8](""))
                 vga_set_color(VGA_LIGHT_CYAN, VGA_BLACK)
-                vga_print(cast[ptr uint8]("  Index: "))
+                kprint(cast[ptr uint8]("  Index: "))
                 vga_set_color(VGA_WHITE, VGA_BLACK)
                 vga_print_dec(idx)
-                vga_println(cast[ptr uint8](""))
+                kprintln(cast[ptr uint8](""))
               else:
                 vga_set_color(VGA_LIGHT_RED, VGA_BLACK)
-                vga_print(cast[ptr uint8]("File not found: "))
-                vga_println(filename)
+                kprint(cast[ptr uint8]("File not found: "))
+                kprintln(filename)
                 vga_set_color(VGA_WHITE, VGA_BLACK)
             else:
-              vga_println(cast[ptr uint8]("Usage: stat <filename>"))
-  elif str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("date")) == 1:
+              kprintln(cast[ptr uint8]("Usage: stat <filename>"))
+    return
+  if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("date")) == 1:
     # Show uptime-based fake time since we don't have RTC
     var ticks: int32 = get_tick_count()
     var total_secs: int32 = ticks / 18
@@ -1820,7 +1811,7 @@ proc shell_execute() =
     var mins: int32 = (total_secs - hours * 3600) / 60
     var secs: int32 = total_secs - hours * 3600 - mins * 60
     vga_set_color(VGA_LIGHT_CYAN, VGA_BLACK)
-    vga_print(cast[ptr uint8]("Uptime: "))
+    kprint(cast[ptr uint8]("Uptime: "))
     if hours < 10:
       vga_putchar(48)  # '0'
     vga_print_dec(hours)
@@ -1832,11 +1823,12 @@ proc shell_execute() =
     if secs < 10:
       vga_putchar(48)
     vga_print_dec(secs)
-    vga_println(cast[ptr uint8](""))
+    kprintln(cast[ptr uint8](""))
     vga_set_color(VGA_DARK_GREY, VGA_BLACK)
-    vga_println(cast[ptr uint8]("(No RTC - showing uptime as HH:MM:SS)"))
+    kprintln(cast[ptr uint8]("(No RTC - showing uptime as HH:MM:SS)"))
     vga_set_color(VGA_WHITE, VGA_BLACK)
-  elif str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("matrix")) == 1:
+    return
+  if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("matrix")) == 1:
     # Matrix rain effect
     vga_set_color(VGA_LIGHT_GREEN, VGA_BLACK)
     vga_clear()
@@ -1921,85 +1913,89 @@ proc shell_execute() =
 
     vga_set_color(VGA_WHITE, VGA_BLACK)
     vga_clear()
-    vga_println(cast[ptr uint8]("Press any key to exit..."))
-  elif str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("sysinfo")) == 1:
+    kprintln(cast[ptr uint8]("Press any key to exit..."))
+    return
+  if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("sysinfo")) == 1:
     vga_set_color(VGA_LIGHT_CYAN, VGA_BLACK)
-    vga_println(cast[ptr uint8]("=== System Information ==="))
+    kprintln(cast[ptr uint8]("=== System Information ==="))
     vga_set_color(VGA_WHITE, VGA_BLACK)
-    vga_println(cast[ptr uint8](""))
-    vga_print(cast[ptr uint8]("OS:         "))
+    kprintln(cast[ptr uint8](""))
+    kprint(cast[ptr uint8]("OS:         "))
     vga_set_color(VGA_LIGHT_GREEN, VGA_BLACK)
-    vga_println(cast[ptr uint8]("BrainhairOS v0.1"))
+    kprintln(cast[ptr uint8]("BrainhairOS v0.1"))
     vga_set_color(VGA_WHITE, VGA_BLACK)
-    vga_print(cast[ptr uint8]("Arch:       "))
-    vga_println(cast[ptr uint8]("x86-32 (i386)"))
-    vga_print(cast[ptr uint8]("CPU Mode:   "))
-    vga_println(cast[ptr uint8]("Protected mode"))
-    vga_print(cast[ptr uint8]("Paging:     "))
-    vga_println(cast[ptr uint8]("Enabled (16MB identity map)"))
-    vga_print(cast[ptr uint8]("Kernel:     "))
-    vga_print(cast[ptr uint8]("0x10000 - 0x"))
+    kprint(cast[ptr uint8]("Arch:       "))
+    kprintln(cast[ptr uint8]("x86-32 (i386)"))
+    kprint(cast[ptr uint8]("CPU Mode:   "))
+    kprintln(cast[ptr uint8]("Protected mode"))
+    kprint(cast[ptr uint8]("Paging:     "))
+    kprintln(cast[ptr uint8]("Enabled (16MB identity map)"))
+    kprint(cast[ptr uint8]("Kernel:     "))
+    kprint(cast[ptr uint8]("0x10000 - 0x"))
     # Show approximate kernel end
-    vga_print(cast[ptr uint8]("14000"))
-    vga_println(cast[ptr uint8](""))
-    vga_print(cast[ptr uint8]("Stack:      "))
-    vga_println(cast[ptr uint8]("0x90000"))
+    kprint(cast[ptr uint8]("14000"))
+    kprintln(cast[ptr uint8](""))
+    kprint(cast[ptr uint8]("Stack:      "))
+    kprintln(cast[ptr uint8]("0x90000"))
     var ticks: int32 = get_tick_count()
     var seconds: int32 = ticks / 18
-    vga_print(cast[ptr uint8]("Uptime:     "))
+    kprint(cast[ptr uint8]("Uptime:     "))
     vga_print_dec(seconds)
-    vga_println(cast[ptr uint8](" seconds"))
-    vga_print(cast[ptr uint8]("Ticks:      "))
+    kprintln(cast[ptr uint8](" seconds"))
+    kprint(cast[ptr uint8]("Ticks:      "))
     vga_print_dec(ticks)
-    vga_println(cast[ptr uint8](""))
-    vga_print(cast[ptr uint8]("Max procs:  "))
-    vga_println(cast[ptr uint8]("64"))
-    vga_print(cast[ptr uint8]("Current PID:"))
+    kprintln(cast[ptr uint8](""))
+    kprint(cast[ptr uint8]("Max procs:  "))
+    kprintln(cast[ptr uint8]("64"))
+    kprint(cast[ptr uint8]("Current PID:"))
     vga_print_dec(get_current_pid())
-    vga_println(cast[ptr uint8](""))
-    vga_println(cast[ptr uint8](""))
-  elif str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("about")) == 1:
+    kprintln(cast[ptr uint8](""))
+    kprintln(cast[ptr uint8](""))
+    return
+  if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("about")) == 1:
     vga_set_color(VGA_LIGHT_CYAN, VGA_BLACK)
-    vga_println(cast[ptr uint8](""))
-    vga_println(cast[ptr uint8]("BrainhairOS Microkernel v0.1"))
+    kprintln(cast[ptr uint8](""))
+    kprintln(cast[ptr uint8]("BrainhairOS Microkernel v0.1"))
     vga_set_color(VGA_WHITE, VGA_BLACK)
-    vga_println(cast[ptr uint8](""))
-    vga_println(cast[ptr uint8]("A self-hosted operating system written in"))
-    vga_println(cast[ptr uint8]("the Brainhair programming language."))
-    vga_println(cast[ptr uint8](""))
+    kprintln(cast[ptr uint8](""))
+    kprintln(cast[ptr uint8]("A self-hosted operating system written in"))
+    kprintln(cast[ptr uint8]("the Brainhair programming language."))
+    kprintln(cast[ptr uint8](""))
     vga_set_color(VGA_LIGHT_GREEN, VGA_BLACK)
-    vga_println(cast[ptr uint8]("Kernel Features:"))
+    kprintln(cast[ptr uint8]("Kernel Features:"))
     vga_set_color(VGA_WHITE, VGA_BLACK)
-    vga_println(cast[ptr uint8]("  * x86-32 protected mode"))
-    vga_println(cast[ptr uint8]("  * Paging with 16MB identity map"))
-    vga_println(cast[ptr uint8]("  * Preemptive multitasking (64 processes)"))
-    vga_println(cast[ptr uint8]("  * Synchronous IPC (send/recv/call/reply)"))
-    vga_println(cast[ptr uint8]("  * PS/2 keyboard with IRQ"))
-    vga_println(cast[ptr uint8]("  * VGA text mode (80x25, 16 colors)"))
-    vga_println(cast[ptr uint8]("  * Ramdisk filesystem (8KB, 16 files)"))
-    vga_println(cast[ptr uint8]("  * ELF32 program loader"))
-    vga_println(cast[ptr uint8](""))
+    kprintln(cast[ptr uint8]("  * x86-32 protected mode"))
+    kprintln(cast[ptr uint8]("  * Paging with 16MB identity map"))
+    kprintln(cast[ptr uint8]("  * Preemptive multitasking (64 processes)"))
+    kprintln(cast[ptr uint8]("  * Synchronous IPC (send/recv/call/reply)"))
+    kprintln(cast[ptr uint8]("  * PS/2 keyboard with IRQ"))
+    kprintln(cast[ptr uint8]("  * VGA text mode (80x25, 16 colors)"))
+    kprintln(cast[ptr uint8]("  * Ramdisk filesystem (8KB, 16 files)"))
+    kprintln(cast[ptr uint8]("  * ELF32 program loader"))
+    kprintln(cast[ptr uint8](""))
     vga_set_color(VGA_LIGHT_GREEN, VGA_BLACK)
-    vga_println(cast[ptr uint8]("Shell Features:"))
+    kprintln(cast[ptr uint8]("Shell Features:"))
     vga_set_color(VGA_WHITE, VGA_BLACK)
-    vga_println(cast[ptr uint8]("  * 45+ built-in commands"))
-    vga_println(cast[ptr uint8]("  * File operations (ls, cat, cp, mv, rm...)"))
-    vga_println(cast[ptr uint8]("  * Memory tools (peek, poke, dump, fill)"))
-    vga_println(cast[ptr uint8]("  * Calculator with bitwise ops"))
-    vga_println(cast[ptr uint8]("  * Process management (ps, run)"))
-    vga_println(cast[ptr uint8]("  * Fun stuff (matrix, banner, guess)"))
-    vga_println(cast[ptr uint8](""))
+    kprintln(cast[ptr uint8]("  * 45+ built-in commands"))
+    kprintln(cast[ptr uint8]("  * File operations (ls, cat, cp, mv, rm...)"))
+    kprintln(cast[ptr uint8]("  * Memory tools (peek, poke, dump, fill)"))
+    kprintln(cast[ptr uint8]("  * Calculator with bitwise ops"))
+    kprintln(cast[ptr uint8]("  * Process management (ps, run)"))
+    kprintln(cast[ptr uint8]("  * Fun stuff (matrix, banner, guess)"))
+    kprintln(cast[ptr uint8](""))
     vga_set_color(VGA_DARK_GREY, VGA_BLACK)
-    vga_println(cast[ptr uint8]("Coded with love by Claude :)"))
+    kprintln(cast[ptr uint8]("Coded with love by Claude :)"))
     vga_set_color(VGA_WHITE, VGA_BLACK)
-    vga_println(cast[ptr uint8](""))
-  elif str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("mem")) == 1:
-    vga_println(cast[ptr uint8]("Memory Map:"))
-    vga_println(cast[ptr uint8]("  Kernel: 0x10000 - 0x1FFFF (64KB)"))
-    vga_println(cast[ptr uint8]("  Paging: 16MB identity mapped"))
-    vga_println(cast[ptr uint8]("  Stack:  0x90000"))
-  elif str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("reboot")) == 1:
-    vga_println(cast[ptr uint8]("Rebooting..."))
+    kprintln(cast[ptr uint8](""))
+    return
+  if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("mem")) == 1:
+    kprintln(cast[ptr uint8]("Memory Map:"))
+    kprintln(cast[ptr uint8]("  Kernel: 0x10000 - 0x1FFFF (64KB)"))
+    kprintln(cast[ptr uint8]("  Paging: 16MB identity mapped"))
+    kprintln(cast[ptr uint8]("  Stack:  0x90000"))
+    return
+  if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("reboot")) == 1:
+    kprintln(cast[ptr uint8]("Rebooting..."))
     # Triple fault to reboot
     disable_interrupts()
     # Write invalid value to IDTR
@@ -2018,13 +2014,38 @@ proc shell_execute() =
                 while i < cmd_len:
                   vga_putchar(cast[int32](cmd_buffer[i]))
                   i = i + 1
-                vga_println(cast[ptr uint8](""))
+                kprintln(cast[ptr uint8](""))
                 return
 
     vga_set_color(VGA_LIGHT_RED, VGA_BLACK)
-    vga_print(cast[ptr uint8]("Unknown command: "))
+    kprint(cast[ptr uint8]("Unknown command: "))
     vga_set_color(VGA_WHITE, VGA_BLACK)
-    vga_println(addr(cmd_buffer[0]))
+    kprintln(addr(cmd_buffer[0]))
+
+# Process a character from any input source
+proc shell_process_char(c: int32) =
+  if c == 13 or c == 10:  # Enter (CR or LF)
+    kprintln(cast[ptr uint8](""))
+    shell_execute()
+    cmd_len = 0
+    shell_prompt()
+  elif c == 8 or c == 127:  # Backspace or DEL
+    if cmd_len > 0:
+      cmd_len = cmd_len - 1
+      vga_col = vga_col - 1
+      vga_putchar(32)
+      vga_col = vga_col - 1
+      ser_putchar(8)
+      ser_putchar(32)
+      ser_putchar(8)
+  else:
+    # Any printable char (c >= 32)
+    if c >= 32:
+      if cmd_len < 255:
+        cmd_buffer[cmd_len] = cast[uint8](c)
+        cmd_len = cmd_len + 1
+        vga_putchar(c)
+        ser_putchar(c)
 
 # Main shell loop
 proc shell_main() =
@@ -2036,24 +2057,13 @@ proc shell_main() =
     var avail: int32 = keyboard_available()
     if avail > 0:
       var c: int32 = keyboard_read_char()
+      shell_process_char(c)
 
-      if c == 13:  # Enter
-        vga_println(cast[ptr uint8](""))
-        shell_execute()
-        cmd_len = 0
-        shell_prompt()
-      elif c == 8:  # Backspace
-        if cmd_len > 0:
-          cmd_len = cmd_len - 1
-          # Move cursor back, print space, move back again
-          vga_col = vga_col - 1
-          vga_putchar(32)
-          vga_col = vga_col - 1
-      elif c >= 32:
-        if cmd_len < 255:
-          cmd_buffer[cmd_len] = cast[uint8](c)
-          cmd_len = cmd_len + 1
-          vga_putchar(c)
+    # Check for serial input (non-blocking)
+    var ser_avail: int32 = serial_available()
+    if ser_avail != 0:
+      var sc: int32 = serial_getchar()
+      shell_process_char(sc)
 
 # ============================================================================
 # Syscall wrappers (int 0x42)

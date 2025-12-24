@@ -97,6 +97,44 @@ serial_print:
     ret
 
 ; ============================================================================
+; Check if serial data is available
+; Returns: EAX = 1 if data available, 0 otherwise
+; ============================================================================
+global serial_available
+serial_available:
+    push edx
+
+    mov dx, 0x3FD           ; Line status register
+    in al, dx
+    and eax, 0x01           ; Check Data Ready bit
+
+    pop edx
+    ret
+
+; ============================================================================
+; Read a character from serial port (blocking)
+; Returns: EAX = character read
+; ============================================================================
+global serial_getchar
+serial_getchar:
+    push edx
+
+.wait:
+    ; Wait for data to be available
+    mov dx, 0x3FD           ; Line status register
+    in al, dx
+    test al, 0x01           ; Check Data Ready bit
+    jz .wait
+
+    ; Read character
+    mov dx, 0x3F8           ; Data register
+    in al, dx
+    and eax, 0xFF           ; Clear upper bits
+
+    pop edx
+    ret
+
+; ============================================================================
 ; syscall2 - Invoke a syscall with 2 arguments
 ; Input:
 ;   [esp+4] = syscall number
