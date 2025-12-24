@@ -95,3 +95,38 @@ serial_print:
     pop eax
     pop ebx
     ret
+
+; ============================================================================
+; syscall2 - Invoke a syscall with 2 arguments
+; Input:
+;   [esp+4] = syscall number
+;   [esp+8] = arg1
+;   [esp+12] = arg2
+; Returns: EAX = syscall return value
+; ============================================================================
+global syscall1
+syscall1:
+    push ebx
+
+    mov eax, [esp + 8]      ; syscall number
+    mov ebx, [esp + 12]     ; arg1
+
+    int 0x42                ; Invoke syscall
+
+    pop ebx
+    ret
+
+global syscall2
+syscall2:
+    push ebx
+    push ecx
+
+    mov eax, [esp + 12]     ; syscall number
+    mov ebx, [esp + 16]     ; arg1
+    mov ecx, [esp + 20]     ; arg2
+
+    int 0x42                ; Invoke syscall
+
+    pop ecx
+    pop ebx
+    ret

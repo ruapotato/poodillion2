@@ -66,15 +66,57 @@ $(KERNEL_OBJ): $(KERNEL_C) | $(BUILD_DIR)
 	@echo "Compiling C kernel..."
 	$(CC) $(CFLAGS) -c $(KERNEL_C) -o $(KERNEL_OBJ)
 
-# Compile Brainhair kernel (for custom bootloader - deprecated)
-BRAINHAIR_KERNEL_OBJ = compiler/kernel.o
-$(BRAINHAIR_KERNEL_OBJ): kernel/kernel.bh
-	@echo "Compiling Brainhair kernel..."
-	cd compiler && python3 brainhair.py ../kernel/kernel.bh --kernel
+# Compile Brainhair kernel (for custom bootloader)
+BRAINHAIR_KERNEL_OBJ = compiler/kernel_main.o
+$(BRAINHAIR_KERNEL_OBJ): kernel/kernel_main.bh
+	@echo "Compiling Brainhair microkernel..."
+	cd compiler && python3 brainhair.py ../kernel/kernel_main.bh --kernel -o kernel_main
+
+# Assembly support files for microkernel
+SERIAL_OBJ = $(BUILD_DIR)/serial.o
+IDT_OBJ = $(BUILD_DIR)/idt.o
+ISR_OBJ = $(BUILD_DIR)/isr.o
+PAGING_OBJ = $(BUILD_DIR)/paging.o
+PROCESS_OBJ = $(BUILD_DIR)/process.o
+IPC_OBJ = $(BUILD_DIR)/ipc.o
+KEYBOARD_OBJ = $(BUILD_DIR)/keyboard.o
+ELF_OBJ = $(BUILD_DIR)/elf.o
+KERNEL_ASM_OBJS = $(SERIAL_OBJ) $(IDT_OBJ) $(ISR_OBJ) $(PAGING_OBJ) $(PROCESS_OBJ) $(IPC_OBJ) $(KEYBOARD_OBJ) $(ELF_OBJ)
+
+$(SERIAL_OBJ): kernel/serial.asm | $(BUILD_DIR)
+	@echo "Assembling serial driver..."
+	$(AS) $(ASFLAGS_32) kernel/serial.asm -o $(SERIAL_OBJ)
+
+$(IDT_OBJ): kernel/idt.asm | $(BUILD_DIR)
+	@echo "Assembling IDT..."
+	$(AS) $(ASFLAGS_32) kernel/idt.asm -o $(IDT_OBJ)
+
+$(ISR_OBJ): kernel/isr.asm | $(BUILD_DIR)
+	@echo "Assembling ISR..."
+	$(AS) $(ASFLAGS_32) kernel/isr.asm -o $(ISR_OBJ)
+
+$(PAGING_OBJ): kernel/paging.asm | $(BUILD_DIR)
+	@echo "Assembling paging..."
+	$(AS) $(ASFLAGS_32) kernel/paging.asm -o $(PAGING_OBJ)
+
+$(PROCESS_OBJ): kernel/process.asm | $(BUILD_DIR)
+	@echo "Assembling process management..."
+	$(AS) $(ASFLAGS_32) kernel/process.asm -o $(PROCESS_OBJ)
+
+$(IPC_OBJ): kernel/ipc.asm | $(BUILD_DIR)
+	@echo "Assembling IPC..."
+	$(AS) $(ASFLAGS_32) kernel/ipc.asm -o $(IPC_OBJ)
+
+$(KEYBOARD_OBJ): kernel/keyboard.asm | $(BUILD_DIR)
+	@echo "Assembling keyboard driver..."
+	$(AS) $(ASFLAGS_32) kernel/keyboard.asm -o $(KEYBOARD_OBJ)
+
+$(ELF_OBJ): kernel/elf.asm | $(BUILD_DIR)
+	@echo "Assembling ELF loader..."
+	$(AS) $(ASFLAGS_32) kernel/elf.asm -o $(ELF_OBJ)
 
 # Compile Brainhair kernel for GRUB
 BRAINHAIR_KERNEL_OBJ_GRUB = $(BUILD_DIR)/kernel_brainhair.o
-SERIAL_OBJ = $(BUILD_DIR)/serial.o
 BRAINHAIR_WRAPPER_OBJ = $(BUILD_DIR)/brainhair_wrapper.o
 
 $(BRAINHAIR_KERNEL_OBJ_GRUB): kernel/kernel.bh | $(BUILD_DIR)
@@ -83,19 +125,15 @@ $(BRAINHAIR_KERNEL_OBJ_GRUB): kernel/kernel.bh | $(BUILD_DIR)
 	@mv compiler/kernel_brainhair.o $(BRAINHAIR_KERNEL_OBJ_GRUB)
 	@echo "  Brainhair kernel compiled: $(BRAINHAIR_KERNEL_OBJ_GRUB)"
 
-$(SERIAL_OBJ): kernel/serial.asm | $(BUILD_DIR)
-	@echo "Assembling serial driver..."
-	$(AS) $(ASFLAGS_32) kernel/serial.asm -o $(SERIAL_OBJ)
-
 $(BRAINHAIR_WRAPPER_OBJ): kernel/brainhair_wrapper.asm | $(BUILD_DIR)
 	@echo "Assembling Brainhair wrapper..."
 	$(AS) $(ASFLAGS_32) kernel/brainhair_wrapper.asm -o $(BRAINHAIR_WRAPPER_OBJ)
 
 # Build kernel with Brainhair compiler
 .PHONY: kernel-brainhair
-kernel-brainhair: $(BOOT_OBJ) $(BRAINHAIR_KERNEL_OBJ)
+kernel-brainhair: $(BOOT_OBJ) $(BRAINHAIR_KERNEL_OBJ) $(KERNEL_ASM_OBJS)
 	@echo "Linking Brainhair kernel..."
-	$(LD) $(LDFLAGS) -o $(BUILD_DIR)/kernel.elf $(BOOT_OBJ) $(BRAINHAIR_KERNEL_OBJ)
+	$(LD) $(LDFLAGS) -o $(BUILD_DIR)/kernel.elf $(BOOT_OBJ) $(BRAINHAIR_KERNEL_OBJ) $(KERNEL_ASM_OBJS)
 	@echo "Converting ELF to flat binary..."
 	objcopy -O binary $(BUILD_DIR)/kernel.elf $(KERNEL_BIN)
 	@echo "  Kernel size: $$(stat -c%s $(KERNEL_BIN)) bytes"
@@ -142,6 +180,36 @@ brainhair: $(STAGE1_BIN) $(STAGE2_BIN) kernel-brainhair
 	@echo "✓ Brainhair disk image created: $(DISK_IMG)"
 	@echo "  Kernel: Brainhair compiled!"
 	@echo "  Run with: make run"
+
+# ========== MICROKERNEL TARGETS ==========
+
+# Build and run the BrainhairOS microkernel
+.PHONY: microkernel
+microkernel: $(STAGE1_BIN) $(STAGE2_BIN) $(BRAINHAIR_KERNEL_OBJ) $(BOOT_OBJ) $(IDT_OBJ) $(ISR_OBJ) $(PAGING_OBJ) $(PROCESS_OBJ) $(SERIAL_OBJ) $(IPC_OBJ) $(KEYBOARD_OBJ) $(ELF_OBJ)
+	@echo "Building BrainhairOS Microkernel..."
+	$(LD) $(LDFLAGS) -o $(BUILD_DIR)/kernel.elf $(BOOT_OBJ) $(SERIAL_OBJ) $(IDT_OBJ) $(ISR_OBJ) $(PAGING_OBJ) $(PROCESS_OBJ) $(IPC_OBJ) $(KEYBOARD_OBJ) $(ELF_OBJ) $(BRAINHAIR_KERNEL_OBJ)
+	objcopy -O binary $(BUILD_DIR)/kernel.elf $(KERNEL_BIN)
+	@echo "  Kernel size: $$(stat -c%s $(KERNEL_BIN)) bytes"
+	dd if=/dev/zero of=$(DISK_IMG) bs=512 count=20480 2>/dev/null
+	dd if=$(STAGE1_BIN) of=$(DISK_IMG) conv=notrunc bs=512 count=1 2>/dev/null
+	dd if=$(STAGE2_BIN) of=$(DISK_IMG) conv=notrunc bs=512 seek=1 2>/dev/null
+	dd if=$(KERNEL_BIN) of=$(DISK_IMG) conv=notrunc bs=512 seek=18 2>/dev/null
+	@echo ""
+	@echo "✓ BrainhairOS Microkernel built!"
+	@echo "  Disk image: $(DISK_IMG)"
+	@echo "  Run with: make run-microkernel"
+
+.PHONY: run-microkernel
+run-microkernel: microkernel
+	@echo "Booting BrainhairOS Microkernel..."
+	qemu-system-i386 -drive file=$(DISK_IMG),format=raw
+
+.PHONY: run-microkernel-serial
+run-microkernel-serial: microkernel
+	@echo "Booting BrainhairOS Microkernel (serial output)..."
+	@echo "Press Ctrl-A X to exit QEMU"
+	@echo "========================================"
+	qemu-system-i386 -drive file=$(DISK_IMG),format=raw -display none -serial stdio
 
 # Build just the kernel
 .PHONY: kernel
@@ -261,16 +329,11 @@ run-grub-brainhair-gui: $(KERNEL_BRAINHAIR_ELF)
 	@echo "Booting BrainhairOS Brainhair Kernel with GRUB (GUI)..."
 	qemu-system-i386 -kernel $(KERNEL_BRAINHAIR_ELF)
 
-# Interactive Shell kernel targets
-KEYBOARD_OBJ = $(BUILD_DIR)/keyboard.o
+# Interactive Shell kernel targets (uses KEYBOARD_OBJ from above)
 VGA_OBJ = $(BUILD_DIR)/vga.o
 SHELL_OBJ = $(BUILD_DIR)/shell.o
 SHELL_WRAPPER_OBJ = $(BUILD_DIR)/shell_wrapper.o
 KERNEL_SHELL_ELF = $(ISO_DIR)/boot/kernel_shell.elf
-
-$(KEYBOARD_OBJ): kernel/keyboard.asm | $(BUILD_DIR)
-	@echo "Assembling keyboard driver..."
-	$(AS) $(ASFLAGS_32) kernel/keyboard.asm -o $(KEYBOARD_OBJ)
 
 $(VGA_OBJ): kernel/vga.asm | $(BUILD_DIR)
 	@echo "Assembling VGA driver..."
@@ -426,6 +489,9 @@ DATA_UTILS = $(BIN_DIR)/ps $(BIN_DIR)/inspect $(BIN_DIR)/where $(BIN_DIR)/count 
 # Graphics utilities
 GRAPHICS_UTILS = $(BIN_DIR)/fbinfo $(BIN_DIR)/clear $(BIN_DIR)/demo $(BIN_DIR)/pixel $(BIN_DIR)/line $(BIN_DIR)/rect $(BIN_DIR)/circle
 
+# Graphical applications (desktop environment)
+GRAPHICAL_APPS = $(BIN_DIR)/bds $(BIN_DIR)/term $(BIN_DIR)/fm $(BIN_DIR)/gedit $(BIN_DIR)/calc $(BIN_DIR)/sysmon $(BIN_DIR)/settings $(BIN_DIR)/imgview $(BIN_DIR)/hexview
+
 # File manipulation utilities (new)
 FILE_UTILS = $(BIN_DIR)/rm $(BIN_DIR)/mkdir $(BIN_DIR)/rmdir $(BIN_DIR)/mv $(BIN_DIR)/touch $(BIN_DIR)/cp $(BIN_DIR)/mkfifo $(BIN_DIR)/mknod $(BIN_DIR)/link $(BIN_DIR)/unlink $(BIN_DIR)/truncate $(BIN_DIR)/realpath
 
@@ -493,7 +559,7 @@ SYSTEM_UTILS = $(BIN_DIR)/mount $(BIN_DIR)/umount $(BIN_DIR)/shutdown $(BIN_DIR)
 BOOT_UTILS = $(BIN_DIR)/init $(BIN_DIR)/getty $(BIN_DIR)/login
 
 # All utilities
-ALL_UTILS = $(CORE_UTILS) $(DATA_UTILS) $(GRAPHICS_UTILS) $(FILE_UTILS) $(TEXT_UTILS) $(ADVANCED_TEXT_UTILS) $(STRING_UTILS) $(DISPLAY_UTILS) $(SYSINFO_UTILS) $(USER_MGMT_UTILS) $(PROC_UTILS) $(DISK_UTILS) $(SEARCH_UTILS) $(TIME_PERM_UTILS) $(SHELL_SCRIPT_UTILS) $(POSIX_UTILS) $(MATH_UTILS) $(DIFF_UTILS) $(ARCHIVE_UTILS) $(SHELL_UTILS) $(TERMINAL_UTILS) $(NET_UTILS) $(KERNEL_UTILS) $(SYSTEM_UTILS) $(BOOT_UTILS)
+ALL_UTILS = $(CORE_UTILS) $(DATA_UTILS) $(GRAPHICS_UTILS) $(GRAPHICAL_APPS) $(FILE_UTILS) $(TEXT_UTILS) $(ADVANCED_TEXT_UTILS) $(STRING_UTILS) $(DISPLAY_UTILS) $(SYSINFO_UTILS) $(USER_MGMT_UTILS) $(PROC_UTILS) $(DISK_UTILS) $(SEARCH_UTILS) $(TIME_PERM_UTILS) $(SHELL_SCRIPT_UTILS) $(POSIX_UTILS) $(MATH_UTILS) $(DIFF_UTILS) $(ARCHIVE_UTILS) $(SHELL_UTILS) $(TERMINAL_UTILS) $(NET_UTILS) $(KERNEL_UTILS) $(SYSTEM_UTILS) $(BOOT_UTILS)
 
 # Build all userland utilities
 .PHONY: userland
@@ -681,6 +747,16 @@ kernel-utils: $(KERNEL_UTILS)
 graphics: $(BIN_DIR)/fbinfo $(BIN_DIR)/clear $(BIN_DIR)/pixel $(BIN_DIR)/line $(BIN_DIR)/rect $(BIN_DIR)/circle
 	@echo "✓ Graphics utilities built!"
 	@ls -lh $(BIN_DIR)/fbinfo $(BIN_DIR)/clear $(BIN_DIR)/pixel $(BIN_DIR)/line $(BIN_DIR)/rect $(BIN_DIR)/circle
+
+# Graphical applications target (desktop environment)
+.PHONY: graphical-apps
+graphical-apps: $(GRAPHICAL_APPS)
+	@echo "✓ Graphical applications built!"
+	@echo ""
+	@echo "Desktop Environment:"
+	@ls -lh $(GRAPHICAL_APPS) 2>/dev/null || true
+	@echo ""
+	@echo "Run 'sudo ./bin/bds' to start the desktop environment"
 
 # Test graphics utilities
 .PHONY: test-graphics
