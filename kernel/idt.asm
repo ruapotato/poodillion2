@@ -87,6 +87,7 @@ extern irq_15  ; Secondary ATA
 
 ; Syscall (0x42 = 66)
 extern isr_syscall
+extern isr_linux_syscall
 
 ; ============================================================================
 ; set_idt_entry - Set an IDT entry
@@ -304,6 +305,13 @@ init_idt:
     mov cl, IDT_PRESENT | IDT_DPL3 | IDT_INTERRUPT
     mov eax, 0x42
     mov ebx, isr_syscall
+    call set_idt_entry
+
+    ; Set up Linux syscall handler (int 0x80)
+    ; DPL3 so user-mode processes can trigger it
+    mov cl, IDT_PRESENT | IDT_DPL3 | IDT_INTERRUPT
+    mov eax, 0x80
+    mov ebx, isr_linux_syscall
     call set_idt_entry
 
     ; Load the IDT

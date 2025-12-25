@@ -532,8 +532,10 @@ isr_syscall:
 .syscall_net_listen:
     ; net_listen(port) -> conn
     ; EBX = port
+    ; Stack: ES DS EAX EBX ECX EDX ESI EDI EBP EIP...
+    ;        +0 +4 +8  +12 +16 +20 +24 +28 +32 +36
     extern tcp_listen
-    mov eax, [esp + 20]     ; EBX (port)
+    mov eax, [esp + 12]     ; EBX (port)
     push eax
     call tcp_listen
     add esp, 4
@@ -542,8 +544,10 @@ isr_syscall:
 .syscall_net_accept:
     ; net_accept_ready(conn) -> 0/1
     ; EBX = conn
+    ; Stack: ES DS EAX EBX ECX EDX ESI EDI EBP EIP...
+    ;        +0 +4 +8  +12 +16 +20 +24 +28 +32 +36
     extern tcp_accept_ready
-    mov eax, [esp + 20]     ; EBX (conn)
+    mov eax, [esp + 12]     ; EBX (conn)
     push eax
     call tcp_accept_ready
     add esp, 4
@@ -552,8 +556,10 @@ isr_syscall:
 .syscall_net_connect:
     ; net_connect(ip_ptr, port) -> conn
     ; EBX = ip_ptr, ECX = port
+    ; Stack: ES DS EAX EBX ECX EDX ESI EDI EBP EIP...
+    ;        +0 +4 +8  +12 +16 +20 +24 +28 +32 +36
     extern tcp_connect
-    mov eax, [esp + 20]     ; EBX (ip_ptr)
+    mov eax, [esp + 12]     ; EBX (ip_ptr)
     mov ebx, [esp + 16]     ; ECX (port)
     push ebx                ; port
     push eax                ; ip_ptr
@@ -564,10 +570,12 @@ isr_syscall:
 .syscall_net_send:
     ; net_send(conn, data, len) -> sent
     ; EBX = conn, ECX = data, EDX = len
+    ; Stack: ES DS EAX EBX ECX EDX ESI EDI EBP EIP...
+    ;        +0 +4 +8  +12 +16 +20 +24 +28 +32 +36
     extern tcp_write
-    mov eax, [esp + 20]     ; EBX (conn)
+    mov eax, [esp + 12]     ; EBX (conn)
     mov ebx, [esp + 16]     ; ECX (data)
-    mov ecx, [esp + 12]     ; EDX (len)
+    mov ecx, [esp + 20]     ; EDX (len)
     push ecx                ; len
     push ebx                ; data
     push eax                ; conn
@@ -578,10 +586,12 @@ isr_syscall:
 .syscall_net_recv:
     ; net_recv(conn, buf, max_len) -> read
     ; EBX = conn, ECX = buf, EDX = max_len
+    ; Stack: ES DS EAX EBX ECX EDX ESI EDI EBP EIP...
+    ;        +0 +4 +8  +12 +16 +20 +24 +28 +32 +36
     extern tcp_read
-    mov eax, [esp + 20]     ; EBX (conn)
+    mov eax, [esp + 12]     ; EBX (conn)
     mov ebx, [esp + 16]     ; ECX (buf)
-    mov ecx, [esp + 12]     ; EDX (max_len)
+    mov ecx, [esp + 20]     ; EDX (max_len)
     push ecx                ; max_len
     push ebx                ; buf
     push eax                ; conn
@@ -592,8 +602,10 @@ isr_syscall:
 .syscall_net_close:
     ; net_close(conn)
     ; EBX = conn
+    ; Stack: ES DS EAX EBX ECX EDX ESI EDI EBP EIP...
+    ;        +0 +4 +8  +12 +16 +20 +24 +28 +32 +36
     extern tcp_close
-    mov eax, [esp + 20]     ; EBX (conn)
+    mov eax, [esp + 12]     ; EBX (conn)
     push eax
     call tcp_close
     add esp, 4
@@ -603,9 +615,11 @@ isr_syscall:
 .syscall_net_state:
     ; net_state(conn) -> state
     ; EBX = conn
+    ; Stack: ES DS EAX EBX ECX EDX ESI EDI EBP EIP...
+    ;        +0 +4 +8  +12 +16 +20 +24 +28 +32 +36
     ; Returns tcp_state[conn]
     extern tcp_state
-    mov eax, [esp + 20]     ; EBX (conn)
+    mov eax, [esp + 12]     ; EBX (conn)
     ; Bounds check: if conn >= 16, return -1
     cmp eax, 16
     jge .syscall_net_state_invalid
@@ -643,5 +657,123 @@ isr_syscall:
     pop ebp
 
     ; Return from interrupt
+    sti
+    iret
+
+; ============================================================================
+; Linux Syscall Handler (int 0x80)
+; Handles basic Linux-compatible syscalls for userland programs
+; EAX = syscall number, EBX/ECX/EDX/ESI/EDI = arguments
+; ============================================================================
+global isr_linux_syscall
+isr_linux_syscall:
+    ; Save all registers
+    push ebp
+    push edi
+    push esi
+    push edx
+    push ecx
+    push ebx
+    push eax
+
+    ; Save segment registers
+    push ds
+    push es
+
+    ; Load kernel data segment
+    mov bx, 0x10
+    mov ds, bx
+    mov es, bx
+
+    ; EAX = syscall number (already on stack)
+    ; Get syscall number from stack
+    mov eax, [esp + 8]      ; EAX from stack
+
+    ; Handle specific syscalls
+    cmp eax, 1              ; SYS_exit
+    je .linux_exit
+
+    cmp eax, 4              ; SYS_write
+    je .linux_write
+
+    ; Unknown syscall - return -1
+    mov eax, -1
+    jmp .linux_done
+
+.linux_exit:
+    ; exit() - for now just return to caller
+    ; In a real OS we'd terminate the process
+    xor eax, eax
+    jmp .linux_done
+
+.linux_write:
+    ; write(fd, buf, count)
+    ; EBX = fd, ECX = buf, EDX = count
+    mov ebx, [esp + 12]     ; EBX (fd)
+    mov ecx, [esp + 16]     ; ECX (buf)
+    mov edx, [esp + 20]     ; EDX (count)
+
+    ; For now, only handle fd 1 (stdout) - write to serial
+    cmp ebx, 1
+    jne .linux_write_stderr
+    jmp .linux_do_write
+
+.linux_write_stderr:
+    cmp ebx, 2              ; stderr
+    jne .linux_write_fail
+
+.linux_do_write:
+    ; Write to serial port (COM1 = 0x3F8)
+    mov esi, ecx            ; Source buffer
+    mov ecx, edx            ; Count
+    xor edx, edx            ; Bytes written
+
+.linux_write_loop:
+    cmp edx, ecx
+    jge .linux_write_done
+
+    ; Wait for transmit buffer empty
+    push dx
+    mov dx, 0x3FD           ; Line status register
+.linux_wait_tx:
+    in al, dx
+    test al, 0x20           ; Check if transmit buffer empty
+    jz .linux_wait_tx
+    pop dx
+
+    ; Send character
+    push dx
+    mov al, [esi + edx]
+    mov dx, 0x3F8
+    out dx, al
+    pop dx
+
+    inc edx
+    jmp .linux_write_loop
+
+.linux_write_done:
+    mov eax, edx            ; Return bytes written
+    jmp .linux_done
+
+.linux_write_fail:
+    mov eax, -1
+
+.linux_done:
+    ; Store return value
+    mov [esp + 8], eax
+
+    ; Restore segments
+    pop es
+    pop ds
+
+    ; Restore registers
+    pop eax                 ; Now has return value
+    pop ebx
+    pop ecx
+    pop edx
+    pop esi
+    pop edi
+    pop ebp
+
     sti
     iret

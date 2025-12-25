@@ -43,6 +43,9 @@ section .text
 global elf_validate
 elf_validate:
     push ebx
+    push ebp
+    mov ebp, esp
+    mov esi, [ebp + 12]     ; Get elf_ptr from stack (cdecl)
 
     ; Check magic
     mov eax, [esi + ELF_MAGIC_OFF]
@@ -65,11 +68,13 @@ elf_validate:
     jne .invalid
 
     mov eax, 1
+    pop ebp
     pop ebx
     ret
 
 .invalid:
     xor eax, eax
+    pop ebp
     pop ebx
     ret
 
@@ -80,7 +85,11 @@ elf_validate:
 ; ============================================================================
 global elf_get_entry
 elf_get_entry:
+    push ebp
+    mov ebp, esp
+    mov esi, [ebp + 8]      ; Get elf_ptr from stack (cdecl)
     mov eax, [esi + ELF_ENTRY_OFF]
+    pop ebp
     ret
 
 ; ============================================================================
@@ -97,9 +106,14 @@ elf_load:
     push edx
     push edi
     push ebp
+    mov ebp, esp
+    mov esi, [ebp + 24]     ; Get elf_ptr from stack (cdecl) - 6 pushes * 4 = 24
+    mov edi, [ebp + 28]     ; Get dest_base from stack
 
-    ; Validate ELF
+    ; Validate ELF - push esi for cdecl call
+    push esi
     call elf_validate
+    add esp, 4
     test eax, eax
     jz .load_error
 

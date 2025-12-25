@@ -64,6 +64,16 @@ extern pci_config_read8(bus: int32, slot: int32, func: int32, offset: int32): in
 extern mmio_read32(address: int32): int32
 extern mmio_write32(address: int32, value: int32)
 extern net_memcpy(dest: int32, src: int32, len: int32)
+
+# External assembly functions - ELF loader
+extern elf_validate(elf_ptr: int32): int32
+extern elf_get_entry(elf_ptr: int32): int32
+extern elf_load(elf_ptr: int32, dest_base: int32): int32
+
+# Embedded userland binaries (accessor functions)
+extern get_webapp_bin(): int32
+extern get_webapp_bin_size(): int32
+extern call_entry(entry: int32)
 extern net_memset(dest: int32, val: int32, len: int32)
 extern wait_tick()  # Wait for next interrupt (allows timer to fire)
 
@@ -446,9 +456,14 @@ proc main() =
   ser_println(cast[ptr uint8]("Starting kernel shell..."))
 
   # Auto-start HTTP server for testing (set to 1 to enable)
-  var auto_httpd: int32 = 1
+  var auto_httpd: int32 = 0  # Disabled for testing uweb
   if auto_httpd == 1:
     run_webapp()  # Flask-style demo
+
+  # Auto-start userland webapp for testing (set to 1 to enable)
+  var auto_uweb: int32 = 1
+  if auto_uweb == 1:
+    run_userland_webapp()
 
   # Run simple shell
   shell_main()
@@ -2047,7 +2062,7 @@ proc shell_execute() =
     kprintln(cast[ptr uint8]("  Nav:    cd, pwd, stat, size, df"))
     kprintln(cast[ptr uint8]("  Text:   wc, head, grep, xxd, echo"))
     kprintln(cast[ptr uint8]("  Env:    env, export VAR=value"))
-    kprintln(cast[ptr uint8]("  Net:    ping, ifconfig, arp, dns, ntp, httpd"))
+    kprintln(cast[ptr uint8]("  Net:    ping, ifconfig, arp, dns, ntp, httpd, uweb"))
     kprintln(cast[ptr uint8]("  Fun:    banner, hello, spin, guess, countdown"))
     kprintln(cast[ptr uint8]("  Debug:  peek, poke, dump, fill, run, calc"))
     kprintln(cast[ptr uint8](""))
@@ -2655,9 +2670,13 @@ proc shell_execute() =
             if cmd_buffer[5] == cast[uint8](0):  # null terminator
               run_httpd()
               return
-  # webapp - Flask-style demo
+  # webapp - Flask-style demo (kernel mode)
   if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("webapp")) == 1:
     run_webapp()
+    return
+  # uweb - userland webapp (ELF binary)
+  if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("uweb")) == 1:
+    run_userland_webapp()
     return
   if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("rand")) == 1:
     # Generate pseudo-random number using tick count and LCG
@@ -5835,7 +5854,53 @@ proc not_found(conn: int32) =
   webapp_send(conn, 404, cast[ptr uint8]("text/html"),
     cast[ptr uint8]("<h1>404 Not Found</h1>"))
 
-# Flask-style webapp with routing
+# Userland webapp - runs the embedded ELF binary
+proc run_userland_webapp() =
+  kprintln(cast[ptr uint8](" * Loading userland webapp..."))
+
+  # Get pointer to embedded ELF
+  var elf_ptr: int32 = get_webapp_bin()
+
+  # Validate ELF
+  var valid: int32 = elf_validate(elf_ptr)
+  if valid == 0:
+    kprintln(cast[ptr uint8](" * Error: invalid ELF binary"))
+    return
+
+  var elf_size: int32 = get_webapp_bin_size()
+  kprint(cast[ptr uint8](" * ELF size: "))
+  kprint_dec(elf_size)
+  kprint(cast[ptr uint8](" bytes (0x"))
+  vga_print_hex(elf_size)
+  kprintln(cast[ptr uint8](")"))
+
+  # Map the userland address space (0x08048000 - 0x08058000)
+  # Map virtual addresses to physical addresses in available memory
+  # Use physical 0x00200000 - 0x00210000 (2MB-2.0625MB, in kernel heap area)
+  kprintln(cast[ptr uint8](" * Mapping userland pages..."))
+  var vpage: int32 = 0x08048000
+  var ppage: int32 = 0x00200000  # Physical address in available range
+  while vpage < 0x08058000:
+    discard map_page(vpage, ppage, 7)  # 7 = Present+Writable+User
+    vpage = vpage + 4096
+    ppage = ppage + 4096
+
+  # Load ELF into memory (0 = use virtual addresses from ELF)
+  var entry: int32 = elf_load(elf_ptr, 0)
+  if entry == 0:
+    kprintln(cast[ptr uint8](" * Error: failed to load ELF"))
+    return
+
+  kprint(cast[ptr uint8](" * Entry point: 0x"))
+  vga_print_hex(entry)
+  kprintln(cast[ptr uint8](""))
+
+  # Call entry point directly (for testing)
+  # This runs the webapp in kernel mode
+  kprintln(cast[ptr uint8](" * Calling webapp entry point directly..."))
+  call_entry(entry)
+
+# Flask-style webapp with routing (kernel mode)
 proc run_webapp() =
   kprintln(cast[ptr uint8](" * Flask-style webapp starting..."))
   kprintln(cast[ptr uint8](" * Running on http://0.0.0.0:80/"))
@@ -6298,11 +6363,19 @@ proc tcp_connect(dest_ip: ptr uint8, dest_port: int32): int32 =
 
 # Send data on established connection
 proc tcp_write(conn: int32, data: ptr uint8, length: int32): int32 =
+  ser_print(cast[ptr uint8]("[TCP] write conn="))
+  ser_print_hex(conn)
+  ser_print(cast[ptr uint8](" len="))
+  ser_print_hex(length)
+  ser_println(cast[ptr uint8](""))
   if conn < 0:
     return -1
   if conn >= TCP_MAX_CONNS:
     return -1
   if tcp_state[conn] != TCP_STATE_ESTABLISHED:
+    ser_print(cast[ptr uint8]("[TCP] write: state="))
+    ser_print_hex(tcp_state[conn])
+    ser_println(cast[ptr uint8](" (not ESTABLISHED)"))
     return -1
 
   tcp_send_packet(conn, TCP_ACK | TCP_PSH, data, length)
@@ -6317,6 +6390,14 @@ proc tcp_read(conn: int32, buf: ptr uint8, max_len: int32): int32 =
     return -1
   if tcp_recv_ready[conn] == 0:
     return 0
+
+  ser_print(cast[ptr uint8]("[TCP] read conn="))
+  ser_print_hex(conn)
+  ser_print(cast[ptr uint8](" ready="))
+  ser_print_hex(tcp_recv_ready[conn])
+  ser_print(cast[ptr uint8](" len="))
+  ser_print_hex(tcp_recv_len[conn])
+  ser_println(cast[ptr uint8](""))
 
   var len: int32 = tcp_recv_len[conn]
   if len > max_len:
@@ -6345,12 +6426,22 @@ proc tcp_close(conn: int32) =
 
 # Listen on a TCP port (server)
 proc tcp_listen(port: int32): int32 =
+  ser_print(cast[ptr uint8]("[TCP] Listen on port "))
+  ser_print_hex(port)
+  ser_println(cast[ptr uint8](""))
+
   var conn: int32 = tcp_find_free()
   if conn < 0:
+    ser_println(cast[ptr uint8]("[TCP] No free connection slot"))
     return -1
 
   tcp_state[conn] = TCP_STATE_LISTEN
   tcp_local_port[conn] = port
+  ser_print(cast[ptr uint8]("[TCP] Created listener conn="))
+  ser_print_hex(conn)
+  ser_print(cast[ptr uint8](" state="))
+  ser_print_hex(tcp_state[conn])
+  ser_println(cast[ptr uint8](""))
   tcp_remote_port[conn] = 0
   tcp_seq[conn] = 0
   tcp_ack[conn] = 0
@@ -6372,18 +6463,33 @@ proc tcp_accept_ready(conn: int32): int32 =
   if conn >= TCP_MAX_CONNS:
     return 0
   # Connection is ready when it transitions to ESTABLISHED
-  if tcp_state[conn] == TCP_STATE_ESTABLISHED:
+  var state: int32 = tcp_state[conn]
+  if state == TCP_STATE_ESTABLISHED:
+    ser_print(cast[ptr uint8]("[TCP] accept_ready conn="))
+    ser_print_hex(conn)
+    ser_print(cast[ptr uint8](" state="))
+    ser_print_hex(state)
+    ser_println(cast[ptr uint8](" -> 1"))
     return 1
   return 0
 
 # Find a listening socket for a given port
 proc tcp_find_listener(port: int32): int32 =
+  ser_print(cast[ptr uint8]("[TCP] Finding listener for port "))
+  ser_print_hex(port)
+  ser_println(cast[ptr uint8](""))
   var i: int32 = 0
   while i < TCP_MAX_CONNS:
     if tcp_state[i] == TCP_STATE_LISTEN:
+      ser_print(cast[ptr uint8]("[TCP]   conn "))
+      ser_print_hex(i)
+      ser_print(cast[ptr uint8](" listening on port "))
+      ser_print_hex(tcp_local_port[i])
+      ser_println(cast[ptr uint8](""))
       if tcp_local_port[i] == port:
         return i
     i = i + 1
+  ser_println(cast[ptr uint8]("[TCP]   No listener found"))
   return -1
 
 # Handle incoming TCP packet
@@ -6485,6 +6591,9 @@ proc tcp_handle_packet(src_ip: ptr uint8, data: ptr uint8, length: int32) =
     var payload_offset: int32 = header_len
     var payload_len: int32 = length - header_len
     if payload_len > 0:
+      ser_print(cast[ptr uint8]("[TCP] DATA received, len="))
+      ser_print_hex(payload_len)
+      ser_println(cast[ptr uint8](""))
       if payload_len > TCP_BUF_SIZE:
         payload_len = TCP_BUF_SIZE
       var i: int32 = 0

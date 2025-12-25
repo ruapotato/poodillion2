@@ -95,8 +95,16 @@ init_scheduler:
     ; Initialize current_pid to 0 (kernel)
     mov dword [current_pid], 0
     mov dword [next_pid], 1
-    mov dword [ready_count], 0
+    mov dword [ready_count], 1   ; Kernel is ready/running
     mov dword [tick_count], 0
+
+    ; Register kernel as process 0 (RUNNING state)
+    mov edi, process_table
+    mov dword [edi + PCB_PID], 0
+    mov dword [edi + PCB_STATE], PROC_RUNNING
+    mov dword [edi + PCB_PARENT], 0
+    mov dword [edi + PCB_PRIORITY], 0
+    ; Kernel uses its own stack, no need to set stack pointers
 
     pop edi
     pop ecx
@@ -409,30 +417,10 @@ timer_tick:
     ; Increment tick count
     inc dword [tick_count]
 
-    ; Every 10 ticks, reschedule
-    mov eax, [tick_count]
-    and eax, 0x0F           ; Modulo 16
-    jnz .no_switch
+    ; Preemptive scheduling disabled - context switch from interrupt
+    ; is not properly implemented (corrupts interrupt return frame)
+    ; Use cooperative scheduling via yield() instead
 
-    ; Save all registers
-    pusha
-
-    ; Find next process
-    call schedule
-
-    ; If different from current, switch
-    cmp eax, [current_pid]
-    je .restore
-
-    ; Context switch
-    push eax
-    call context_switch
-    add esp, 4
-
-.restore:
-    popa
-
-.no_switch:
     ret
 
 ; ============================================================================
