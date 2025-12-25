@@ -413,6 +413,31 @@ isr_syscall:
     cmp eax, 41         ; SYS_wait
     je .syscall_wait
 
+    ; Networking syscalls (50-57)
+    cmp eax, 50         ; SYS_NET_LISTEN
+    je .syscall_net_listen
+
+    cmp eax, 51         ; SYS_NET_ACCEPT
+    je .syscall_net_accept
+
+    cmp eax, 52         ; SYS_NET_CONNECT
+    je .syscall_net_connect
+
+    cmp eax, 53         ; SYS_NET_SEND
+    je .syscall_net_send
+
+    cmp eax, 54         ; SYS_NET_RECV
+    je .syscall_net_recv
+
+    cmp eax, 55         ; SYS_NET_CLOSE
+    je .syscall_net_close
+
+    cmp eax, 56         ; SYS_NET_STATE
+    je .syscall_net_state
+
+    cmp eax, 57         ; SYS_NET_POLL
+    je .syscall_net_poll
+
     ; Unknown syscall - return -1
     mov eax, -1
     jmp .syscall_done
@@ -500,6 +525,104 @@ isr_syscall:
     ; For now, just yield
     call yield
     xor eax, eax
+    jmp .syscall_done
+
+; ============= Networking syscalls =============
+
+.syscall_net_listen:
+    ; net_listen(port) -> conn
+    ; EBX = port
+    extern tcp_listen
+    mov eax, [esp + 20]     ; EBX (port)
+    push eax
+    call tcp_listen
+    add esp, 4
+    jmp .syscall_done
+
+.syscall_net_accept:
+    ; net_accept_ready(conn) -> 0/1
+    ; EBX = conn
+    extern tcp_accept_ready
+    mov eax, [esp + 20]     ; EBX (conn)
+    push eax
+    call tcp_accept_ready
+    add esp, 4
+    jmp .syscall_done
+
+.syscall_net_connect:
+    ; net_connect(ip_ptr, port) -> conn
+    ; EBX = ip_ptr, ECX = port
+    extern tcp_connect
+    mov eax, [esp + 20]     ; EBX (ip_ptr)
+    mov ebx, [esp + 16]     ; ECX (port)
+    push ebx                ; port
+    push eax                ; ip_ptr
+    call tcp_connect
+    add esp, 8
+    jmp .syscall_done
+
+.syscall_net_send:
+    ; net_send(conn, data, len) -> sent
+    ; EBX = conn, ECX = data, EDX = len
+    extern tcp_write
+    mov eax, [esp + 20]     ; EBX (conn)
+    mov ebx, [esp + 16]     ; ECX (data)
+    mov ecx, [esp + 12]     ; EDX (len)
+    push ecx                ; len
+    push ebx                ; data
+    push eax                ; conn
+    call tcp_write
+    add esp, 12
+    jmp .syscall_done
+
+.syscall_net_recv:
+    ; net_recv(conn, buf, max_len) -> read
+    ; EBX = conn, ECX = buf, EDX = max_len
+    extern tcp_read
+    mov eax, [esp + 20]     ; EBX (conn)
+    mov ebx, [esp + 16]     ; ECX (buf)
+    mov ecx, [esp + 12]     ; EDX (max_len)
+    push ecx                ; max_len
+    push ebx                ; buf
+    push eax                ; conn
+    call tcp_read
+    add esp, 12
+    jmp .syscall_done
+
+.syscall_net_close:
+    ; net_close(conn)
+    ; EBX = conn
+    extern tcp_close
+    mov eax, [esp + 20]     ; EBX (conn)
+    push eax
+    call tcp_close
+    add esp, 4
+    xor eax, eax            ; return 0
+    jmp .syscall_done
+
+.syscall_net_state:
+    ; net_state(conn) -> state
+    ; EBX = conn
+    ; Returns tcp_state[conn]
+    extern tcp_state
+    mov eax, [esp + 20]     ; EBX (conn)
+    ; Bounds check: if conn >= 16, return -1
+    cmp eax, 16
+    jge .syscall_net_state_invalid
+    ; Get tcp_state[conn] - array of int32 (4 bytes each)
+    shl eax, 2              ; conn * 4
+    add eax, tcp_state      ; &tcp_state[conn]
+    mov eax, [eax]          ; tcp_state[conn]
+    jmp .syscall_done
+.syscall_net_state_invalid:
+    mov eax, -1
+    jmp .syscall_done
+
+.syscall_net_poll:
+    ; net_poll() - process network packets
+    extern net_poll
+    call net_poll
+    xor eax, eax            ; return 0
     jmp .syscall_done
 
 .syscall_done:

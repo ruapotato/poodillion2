@@ -1721,6 +1721,15 @@ class X86CodeGen:
         else:
             # In kernel mode, export brainhair_kernel_main
             asm.append("global brainhair_kernel_main")
+            # Export networking functions for syscall handlers
+            asm.append("global tcp_listen")
+            asm.append("global tcp_accept_ready")
+            asm.append("global tcp_connect")
+            asm.append("global tcp_write")
+            asm.append("global tcp_read")
+            asm.append("global tcp_close")
+            asm.append("global tcp_state")
+            asm.append("global net_poll")
             asm.append("")
 
         asm.extend(self.output)

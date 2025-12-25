@@ -681,18 +681,18 @@ var ntp_timestamp: int32 = 0                      # Unix timestamp (seconds sinc
 var ntp_sync_tick: int32 = 0                      # Tick count when synced
 
 # TCP connection state
-const TCP_MAX_CONNS: int32 = 4
+const TCP_MAX_CONNS: int32 = 16
 const TCP_BUF_SIZE: int32 = 1024
 # States: 0=closed, 1=syn_sent, 2=established, 3=fin_wait, 4=close_wait
-var tcp_state: array[4, int32]                    # Connection states
-var tcp_local_port: array[4, int32]               # Local ports
-var tcp_remote_port: array[4, int32]              # Remote ports
-var tcp_remote_ip: array[16, uint8]               # Remote IPs (4 bytes each)
-var tcp_seq: array[4, int32]                      # Sequence numbers
-var tcp_ack: array[4, int32]                      # Ack numbers
-var tcp_recv_buf: array[4096, uint8]              # Receive buffers (1024 per conn)
-var tcp_recv_len: array[4, int32]                 # Bytes in receive buffer
-var tcp_recv_ready: array[4, int32]               # Data ready flags
+var tcp_state: array[16, int32]                   # Connection states
+var tcp_local_port: array[16, int32]              # Local ports
+var tcp_remote_port: array[16, int32]             # Remote ports
+var tcp_remote_ip: array[64, uint8]               # Remote IPs (4 bytes each)
+var tcp_seq: array[16, int32]                     # Sequence numbers
+var tcp_ack: array[16, int32]                     # Ack numbers
+var tcp_recv_buf: array[16384, uint8]             # Receive buffers (1024 per conn)
+var tcp_recv_len: array[16, int32]                # Bytes in receive buffer
+var tcp_recv_ready: array[16, int32]              # Data ready flags
 
 # Get environment variable name at index
 proc env_name_ptr(idx: int32): ptr uint8 =
@@ -6630,3 +6630,13 @@ proc sys_spawn(entry: int32): int32 =
 
 proc sys_wait(): int32 =
   return syscall1(SYS_WAIT, 0)
+
+# Networking syscall numbers
+const SYS_NET_LISTEN: int32 = 50      # tcp_listen(port) -> conn
+const SYS_NET_ACCEPT: int32 = 51      # tcp_accept_ready(conn) -> 0/1
+const SYS_NET_CONNECT: int32 = 52     # tcp_connect(ip_ptr, port) -> conn
+const SYS_NET_SEND: int32 = 53        # tcp_write(conn, data, len) -> sent
+const SYS_NET_RECV: int32 = 54        # tcp_read(conn, buf, max) -> read
+const SYS_NET_CLOSE: int32 = 55       # tcp_close(conn)
+const SYS_NET_STATE: int32 = 56       # tcp_state[conn] -> state
+const SYS_NET_POLL: int32 = 57        # net_poll() - process packets
