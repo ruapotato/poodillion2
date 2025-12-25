@@ -15,7 +15,7 @@ from ast_nodes import *
 from symbols import (
     SymbolTable, TypeInfo, Span, FunctionSymbol, VariableSymbol,
     ParamSymbol, TypeSymbol, Symbol, SymbolKind,
-    create_builtin_type, create_pointer_type, create_array_type,
+    create_builtin_type, create_pointer_type, create_array_type, create_slice_type,
     is_numeric_type, is_integer_type, is_float_type
 )
 
@@ -79,8 +79,12 @@ class TypeChecker:
         for decl in node.declarations:
             if isinstance(decl, StructDecl):
                 self._register_struct(decl)
+            elif isinstance(decl, EnumDecl):
+                self._register_enum(decl)
             elif isinstance(decl, ProcDecl):
                 self._register_function(decl)
+            elif isinstance(decl, MethodDecl):
+                self._register_method(decl)
             elif isinstance(decl, ExternDecl):
                 self._register_extern(decl)
 
@@ -88,6 +92,8 @@ class TypeChecker:
         for decl in node.declarations:
             if isinstance(decl, ProcDecl):
                 self._check_proc_decl(decl)
+            elif isinstance(decl, MethodDecl):
+                self._check_method_decl(decl)
             elif isinstance(decl, VarDecl):
                 self._check_var_decl(decl)
 
@@ -116,6 +122,75 @@ class TypeChecker:
         except Exception as e:
             self.errors.append(TypeError(
                 f"Error registering struct '{node.name}': {e}",
+                self._get_span(node)
+            ))
+
+    def _register_enum(self, node: EnumDecl) -> None:
+        """Register an enum type in the symbol table."""
+        try:
+            span = self._get_span(node)
+
+            # Build variant info as "fields" where name -> payload type
+            # For unit variants (no payload), use a void/unit type
+            variants = {}
+            for variant in node.variants:
+                if variant.payload_types:
+                    # For now, only support single-value payloads
+                    variant_type = self._resolve_type(variant.payload_types[0])
+                    variants[variant.name] = variant_type
+                else:
+                    # Unit variant - no payload
+                    variants[variant.name] = None
+
+            # Create type symbol
+            type_symbol = TypeSymbol(
+                name=node.name,
+                span=span,
+                type_info=TypeInfo(node.name),
+                fields=variants,  # Store variants as fields
+                is_struct=False,
+                is_enum=True
+            )
+
+            self.symbol_table.define(type_symbol)
+
+            # Also register constructor functions for each variant
+            for variant in node.variants:
+                if variant.payload_types:
+                    # Variant with payload: Some(int32) -> function Some(int32): Option
+                    params = []
+                    for i, ptype in enumerate(variant.payload_types):
+                        param_type = self._resolve_type(ptype)
+                        if param_type:
+                            param_sym = ParamSymbol(
+                                name=f"_arg{i}",
+                                span=span,
+                                type_info=param_type,
+                                position=i
+                            )
+                            params.append(param_sym)
+
+                    func_symbol = FunctionSymbol(
+                        name=variant.name,
+                        span=span,
+                        params=params,
+                        return_type=TypeInfo(node.name)
+                    )
+                    self.symbol_table.define(func_symbol)
+                else:
+                    # Unit variant: None is a constant of type Option
+                    # Register as a variable/constant
+                    var_symbol = VariableSymbol(
+                        name=variant.name,
+                        span=span,
+                        type_info=TypeInfo(node.name),
+                        is_mutable=False
+                    )
+                    self.symbol_table.define(var_symbol)
+
+        except Exception as e:
+            self.errors.append(TypeError(
+                f"Error registering enum '{node.name}': {e}",
                 self._get_span(node)
             ))
 
@@ -166,6 +241,81 @@ class TypeChecker:
         except Exception as e:
             self.errors.append(TypeError(
                 f"Error registering function '{node.name}': {e}",
+                self._get_span(node)
+            ))
+
+    def _register_method(self, node: MethodDecl) -> None:
+        """Register a method declaration in the symbol table."""
+        try:
+            span = self._get_span(node)
+
+            # Get the type name from receiver type
+            receiver_type = node.receiver_type
+            if isinstance(receiver_type, PointerType):
+                type_name = receiver_type.base_type.name
+            else:
+                type_name = receiver_type.name
+
+            # Mangled name: TypeName_methodName
+            mangled_name = f"{type_name}_{node.name}"
+
+            # Resolve receiver type
+            receiver_type_info = self._resolve_type(node.receiver_type)
+
+            # Build parameter symbols (self is first parameter)
+            params = []
+
+            # Add self parameter
+            if receiver_type_info:
+                self_param = ParamSymbol(
+                    name=node.receiver_name,
+                    span=span,
+                    type_info=receiver_type_info,
+                    position=0
+                )
+                params.append(self_param)
+
+            # Add explicit parameters
+            for i, param in enumerate(node.params):
+                param_type = self._resolve_type(param.param_type)
+                if param_type is None:
+                    self.errors.append(TypeError(
+                        f"Invalid parameter type for '{param.name}'",
+                        self._get_span(param)
+                    ))
+                    continue
+
+                param_sym = ParamSymbol(
+                    name=param.name,
+                    span=self._get_span(param),
+                    type_info=param_type,
+                    position=i + 1  # +1 because self is position 0
+                )
+                params.append(param_sym)
+
+            # Resolve return type
+            return_type = None
+            if node.return_type:
+                return_type = self._resolve_type(node.return_type)
+                if return_type is None:
+                    self.errors.append(TypeError(
+                        f"Invalid return type for method '{node.name}'",
+                        span
+                    ))
+
+            # Create function symbol with mangled name
+            func_symbol = FunctionSymbol(
+                name=mangled_name,
+                span=span,
+                params=params,
+                return_type=return_type
+            )
+
+            self.symbol_table.define(func_symbol)
+
+        except Exception as e:
+            self.errors.append(TypeError(
+                f"Error registering method '{node.name}': {e}",
                 self._get_span(node)
             ))
 
@@ -248,6 +398,48 @@ class TypeChecker:
             self.symbol_table.pop_scope()
             self.current_function = old_function
 
+    def _check_method_decl(self, node: MethodDecl) -> None:
+        """Check a method declaration."""
+        # Get the type name from receiver type
+        receiver_type = node.receiver_type
+        if isinstance(receiver_type, PointerType):
+            type_name = receiver_type.base_type.name
+        else:
+            type_name = receiver_type.name
+
+        mangled_name = f"{type_name}_{node.name}"
+
+        # Get the function symbol
+        func_symbol = self.symbol_table.lookup_optional(mangled_name)
+        if not isinstance(func_symbol, FunctionSymbol):
+            return  # Error already reported during registration
+
+        # Enter method scope
+        self.symbol_table.push_scope(f"method_{mangled_name}")
+        old_function = self.current_function
+        self.current_function = func_symbol
+
+        try:
+            # Add parameters to scope (including self)
+            for param_sym in func_symbol.params:
+                self.symbol_table.define(param_sym)
+
+            # Check method body
+            for stmt in node.body:
+                self._check_statement(stmt)
+
+            # Check that non-void methods return a value
+            if func_symbol.return_type and func_symbol.return_type.name != "void":
+                if not self._has_return(node.body):
+                    self.errors.append(TypeError(
+                        f"Method '{node.name}' must return a value of type {func_symbol.return_type}",
+                        self._get_span(node)
+                    ))
+
+        finally:
+            self.symbol_table.pop_scope()
+            self.current_function = old_function
+
     def _has_return(self, stmts: List[ASTNode]) -> bool:
         """Check if a statement list contains a return statement."""
         for stmt in stmts:
@@ -276,6 +468,8 @@ class TypeChecker:
             self._check_while(node)
         elif isinstance(node, ForStmt):
             self._check_for(node)
+        elif isinstance(node, ForEachStmt):
+            self._check_foreach(node)
         elif isinstance(node, ExprStmt):
             self._check_expr(node.expr)
         elif isinstance(node, BreakStmt):
@@ -481,6 +675,44 @@ class TypeChecker:
             self.in_loop -= 1
             self.symbol_table.pop_scope()
 
+    def _check_foreach(self, node: ForEachStmt) -> None:
+        """Check a for-each loop (for item in array)."""
+        # Check iterable expression is an array
+        iterable_type = self._check_expr(node.iterable)
+
+        if iterable_type is None:
+            return
+
+        if not iterable_type.is_array:
+            self.errors.append(TypeError(
+                f"For-each requires array type, got {iterable_type}",
+                self._get_span(node.iterable)
+            ))
+            return
+
+        # Get element type from array
+        element_type = iterable_type.element_type
+
+        # Create loop variable scope
+        self.symbol_table.push_scope("foreach")
+        self.in_loop += 1
+        try:
+            # Add loop variable with element type
+            var_symbol = VariableSymbol(
+                name=node.var,
+                span=Span(0, 0, 0),
+                type_info=element_type,
+                is_mutable=False
+            )
+            self.symbol_table.define(var_symbol)
+
+            # Check body
+            for stmt in node.body:
+                self._check_statement(stmt)
+        finally:
+            self.in_loop -= 1
+            self.symbol_table.pop_scope()
+
     def _check_break(self, node: BreakStmt) -> None:
         """Check a break statement."""
         if self.in_loop == 0:
@@ -515,8 +747,8 @@ class TypeChecker:
         elif isinstance(node, CharLiteral):
             result = create_builtin_type("char")
         elif isinstance(node, StringLiteral):
-            # String is pointer to char
-            result = create_pointer_type(create_builtin_type("char"))
+            # String is pointer to u8 (compatible with C strings and syscalls)
+            result = create_pointer_type(create_builtin_type("u8"))
         elif isinstance(node, BoolLiteral):
             result = create_builtin_type("bool")
         elif isinstance(node, Identifier):
@@ -527,10 +759,14 @@ class TypeChecker:
             result = self._check_unary_expr(node)
         elif isinstance(node, CallExpr):
             result = self._check_call_expr(node)
+        elif isinstance(node, MethodCallExpr):
+            result = self._check_method_call_expr(node)
         elif isinstance(node, CastExpr):
             result = self._check_cast_expr(node)
         elif isinstance(node, IndexExpr):
             result = self._check_index_expr(node)
+        elif isinstance(node, SliceExpr):
+            result = self._check_slice_expr(node)
         elif isinstance(node, AddrOfExpr):
             result = self._check_addr_of_expr(node)
         elif isinstance(node, DerefExpr):
@@ -545,6 +781,8 @@ class TypeChecker:
             result = create_builtin_type("u32")
         elif isinstance(node, ConditionalExpr):
             result = self._check_conditional_expr(node)
+        elif isinstance(node, MatchExpr):
+            result = self._check_match_expr(node)
 
         # Cache result
         if result:
@@ -704,6 +942,19 @@ class TypeChecker:
 
     def _check_call_expr(self, node: CallExpr) -> Optional[TypeInfo]:
         """Check function call and return result type."""
+        # Check for built-in functions
+        if node.func == "len" and len(node.args) == 1:
+            arg_type = self._check_expr(node.args[0])
+            if arg_type:
+                if arg_type.is_slice or arg_type.is_array:
+                    return create_builtin_type("i32")
+                else:
+                    self.errors.append(TypeError(
+                        f"len() expects slice or array, got {arg_type}",
+                        self._get_span(node)
+                    ))
+            return create_builtin_type("i32")
+
         # Look up function
         func_symbol = self.symbol_table.lookup_optional(node.func)
         if func_symbol is None:
@@ -735,6 +986,59 @@ class TypeChecker:
             if arg_type and not self._types_compatible(param.type_info, arg_type):
                 self.errors.append(TypeError(
                     f"Argument {i+1} to '{node.func}': expected {param.type_info}, got {arg_type}",
+                    self._get_span(arg)
+                ))
+
+        return func_symbol.return_type
+
+    def _check_method_call_expr(self, node: MethodCallExpr) -> Optional[TypeInfo]:
+        """Check method call and return result type."""
+        # Get object type
+        obj_type = self._check_expr(node.object)
+        if obj_type is None:
+            return None
+
+        # Get the type name for method lookup
+        type_name = obj_type.name
+        if obj_type.is_pointer and obj_type.element_type:
+            type_name = obj_type.element_type.name
+
+        # Build mangled name
+        mangled_name = f"{type_name}_{node.method_name}"
+
+        # Look up method by mangled name
+        func_symbol = self.symbol_table.lookup_optional(mangled_name)
+        if func_symbol is None:
+            self.errors.append(TypeError(
+                f"No method '{node.method_name}' for type '{type_name}'",
+                self._get_span(node)
+            ))
+            return None
+
+        if not isinstance(func_symbol, FunctionSymbol):
+            self.errors.append(TypeError(
+                f"'{mangled_name}' is not a method",
+                self._get_span(node)
+            ))
+            return None
+
+        # Check argument count (excluding self)
+        expected_args = len(func_symbol.params) - 1  # -1 for self
+        if len(node.args) != expected_args:
+            self.errors.append(TypeError(
+                f"Method '{node.method_name}' expects {expected_args} arguments, "
+                f"got {len(node.args)}",
+                self._get_span(node)
+            ))
+            return func_symbol.return_type
+
+        # Check argument types (skip self parameter at position 0)
+        for i, arg in enumerate(node.args):
+            param = func_symbol.params[i + 1]  # +1 to skip self
+            arg_type = self._check_expr(arg)
+            if arg_type and not self._types_compatible(param.type_info, arg_type):
+                self.errors.append(TypeError(
+                    f"Argument {i+1} to '{node.method_name}': expected {param.type_info}, got {arg_type}",
                     self._get_span(arg)
                 ))
 
@@ -777,9 +1081,47 @@ class TypeChecker:
             return array_type.element_type
         elif array_type.is_pointer:
             return array_type.element_type
+        elif array_type.is_slice:
+            return array_type.element_type
         else:
             self.errors.append(TypeError(
                 f"Cannot index type {array_type}",
+                self._get_span(node.array)
+            ))
+            return None
+
+    def _check_slice_expr(self, node: SliceExpr) -> Optional[TypeInfo]:
+        """Check slice expression: arr[start..end]"""
+        array_type = self._check_expr(node.array)
+        start_type = self._check_expr(node.start)
+        end_type = self._check_expr(node.end)
+
+        if not array_type:
+            return None
+
+        # Check start and end are integers
+        if start_type and not is_integer_type(start_type):
+            self.errors.append(TypeError(
+                f"Slice start must be integer, got {start_type}",
+                self._get_span(node.start)
+            ))
+
+        if end_type and not is_integer_type(end_type):
+            self.errors.append(TypeError(
+                f"Slice end must be integer, got {end_type}",
+                self._get_span(node.end)
+            ))
+
+        # Check array_type is sliceable (array, pointer, or slice)
+        if array_type.is_array:
+            return create_slice_type(array_type.element_type)
+        elif array_type.is_pointer:
+            return create_slice_type(array_type.element_type)
+        elif array_type.is_slice:
+            return create_slice_type(array_type.element_type)
+        else:
+            self.errors.append(TypeError(
+                f"Cannot slice type {array_type}",
                 self._get_span(node.array)
             ))
             return None
@@ -816,16 +1158,21 @@ class TypeChecker:
         return expr_type.element_type
 
     def _check_field_access_expr(self, node: FieldAccessExpr) -> Optional[TypeInfo]:
-        """Check struct field access."""
+        """Check struct field access (works for both direct struct and ptr-to-struct)."""
         obj_type = self._check_expr(node.object)
         if not obj_type:
             return None
 
-        # Look up the type
-        type_symbol = self.symbol_table.lookup_optional(obj_type.name)
+        # Handle pointer-to-struct: extract base type
+        struct_type_name = obj_type.name
+        if obj_type.is_pointer and obj_type.element_type:
+            struct_type_name = obj_type.element_type.name
+
+        # Look up the struct type
+        type_symbol = self.symbol_table.lookup_optional(struct_type_name)
         if not isinstance(type_symbol, TypeSymbol):
             self.errors.append(TypeError(
-                f"Type {obj_type} is not a struct",
+                f"Type {struct_type_name} is not a struct",
                 self._get_span(node.object)
             ))
             return None
@@ -833,7 +1180,7 @@ class TypeChecker:
         # Check field exists
         if not type_symbol.has_field(node.field_name):
             self.errors.append(TypeError(
-                f"Type {obj_type.name} has no field '{node.field_name}'",
+                f"Type {struct_type_name} has no field '{node.field_name}'",
                 self._get_span(node)
             ))
             return None
@@ -919,6 +1266,86 @@ class TypeChecker:
 
         return then_type if then_type else else_type
 
+    def _check_match_expr(self, node: MatchExpr) -> Optional[TypeInfo]:
+        """Check match expression and return result type."""
+        # Check the expression being matched
+        expr_type = self._check_expr(node.expr)
+        if not expr_type:
+            return None
+
+        # Look up the enum type
+        type_symbol = self.symbol_table.lookup_optional(expr_type.name)
+        if not type_symbol or not isinstance(type_symbol, TypeSymbol) or not type_symbol.is_enum:
+            self.errors.append(TypeError(
+                f"Match expression requires enum type, got {expr_type}",
+                self._get_span(node.expr)
+            ))
+            return None
+
+        # Get the enum variants
+        variants = type_symbol.fields  # variant name -> payload type
+
+        # Check each arm
+        arm_types = []
+        matched_variants = set()
+
+        for arm in node.arms:
+            variant_name = arm.pattern.variant_name
+
+            # Check variant exists
+            if variant_name not in variants:
+                self.errors.append(TypeError(
+                    f"Unknown variant '{variant_name}' for enum {expr_type.name}",
+                    self._get_span(arm)
+                ))
+                continue
+
+            # Track which variants we've matched
+            matched_variants.add(variant_name)
+
+            # Check arm body with bindings in scope
+            self.symbol_table.push_scope(f"match_arm_{variant_name}")
+            try:
+                # If variant has payload and pattern has bindings, add them
+                payload_type = variants[variant_name]
+                if payload_type and arm.pattern.bindings:
+                    for i, binding in enumerate(arm.pattern.bindings):
+                        var_symbol = VariableSymbol(
+                            name=binding,
+                            span=self._get_span(arm),
+                            type_info=payload_type,
+                            is_mutable=False
+                        )
+                        self.symbol_table.define(var_symbol)
+
+                # Check arm body
+                for stmt in arm.body:
+                    self._check_statement(stmt)
+
+                # Try to determine return type from return statements
+                for stmt in arm.body:
+                    if isinstance(stmt, ReturnStmt) and stmt.value:
+                        arm_type = self._check_expr(stmt.value)
+                        if arm_type:
+                            arm_types.append(arm_type)
+                            break
+
+            finally:
+                self.symbol_table.pop_scope()
+
+        # Check exhaustiveness
+        missing_variants = set(variants.keys()) - matched_variants
+        if missing_variants:
+            self.errors.append(TypeError(
+                f"Non-exhaustive match: missing variants {missing_variants}",
+                self._get_span(node)
+            ))
+
+        # Return the common type of all arms (simplified - just use first)
+        if arm_types:
+            return arm_types[0]
+        return create_builtin_type("void")
+
     def _resolve_type(self, type_node: Type) -> Optional[TypeInfo]:
         """
         Resolve a type annotation to TypeInfo.
@@ -961,6 +1388,12 @@ class TypeChecker:
             elem_type = self._resolve_type(type_node.element_type)
             if elem_type:
                 return create_array_type(elem_type, type_node.size)
+            return None
+
+        elif isinstance(type_node, SliceType):
+            elem_type = self._resolve_type(type_node.element_type)
+            if elem_type:
+                return create_slice_type(elem_type)
             return None
 
         return None

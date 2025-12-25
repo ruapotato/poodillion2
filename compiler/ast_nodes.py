@@ -85,6 +85,16 @@ class ArrayType(ASTNode):
 
 
 @dataclass
+class SliceType(ASTNode):
+    """Slice type: []T - fat pointer (ptr + len)"""
+    element_type: 'Type'
+
+    @property
+    def name(self):
+        return f"[]{self.element_type.name}"
+
+
+@dataclass
 class GenericType(ASTNode):
     """Generic type parameter: T in proc foo[T](x: T)"""
     name: str
@@ -205,6 +215,14 @@ class DerefExpr(ASTNode):
     expr: ASTNode
 
 
+@dataclass
+class SliceExpr(ASTNode):
+    """Slice creation: arr[start..end] - creates a fat pointer"""
+    array: ASTNode
+    start: ASTNode
+    end: ASTNode
+
+
 # Statements
 @dataclass
 class VarDecl(ASTNode):
@@ -236,9 +254,17 @@ class WhileStmt(ASTNode):
 
 @dataclass
 class ForStmt(ASTNode):
+    """For loop over range: for i in start..end"""
     var: str
     start: ASTNode
     end: ASTNode
+    body: List[ASTNode]
+
+@dataclass
+class ForEachStmt(ASTNode):
+    """For-each loop over array: for item in array"""
+    var: str
+    iterable: ASTNode
     body: List[ASTNode]
 
 @dataclass
@@ -256,6 +282,11 @@ class BreakStmt(ASTNode):
 @dataclass
 class ContinueStmt(ASTNode):
     pass
+
+@dataclass
+class DeferStmt(ASTNode):
+    """Defer statement: defer expr - executes expr when function returns"""
+    stmt: ASTNode  # The statement to defer (usually a function call)
 
 @dataclass
 class ConditionalExpr(ASTNode):
@@ -280,16 +311,80 @@ class ProcDecl(ASTNode):
     type_params: List['GenericType'] = field(default_factory=list)  # Generic type parameters
 
 @dataclass
+class MethodDecl(ASTNode):
+    """Method declaration: proc (self: ptr Type) name(params): return_type"""
+    receiver_type: Type  # The type this method belongs to (e.g., Point)
+    receiver_name: str   # Usually "self"
+    name: str
+    params: List[Parameter]
+    return_type: Optional[Type]
+    body: List[ASTNode]
+
+@dataclass
+class MethodCallExpr(ASTNode):
+    """Method call: obj.method(args)"""
+    object: ASTNode
+    method_name: str
+    args: List[ASTNode] = field(default_factory=list)
+
+@dataclass
 class ExternDecl(ASTNode):
     """External function declaration (implemented in assembly)"""
     name: str
     params: List[Parameter]
     return_type: Optional[Type]
 
+
+# Enums and Pattern Matching
+@dataclass
+class EnumVariant(ASTNode):
+    """A variant of an enum type: Some(T) or None"""
+    name: str
+    payload_types: List['Type'] = field(default_factory=list)  # Types for payload, empty for unit variants
+
+
+@dataclass
+class EnumDecl(ASTNode):
+    """Enum type definition: type Option = enum Some(T) | None"""
+    name: str
+    variants: List[EnumVariant] = field(default_factory=list)
+    generic_params: List[str] = field(default_factory=list)  # For generic enums like Option[T]
+
+
+@dataclass
+class MatchArm(ASTNode):
+    """A single arm of a match expression: Pattern => body"""
+    pattern: 'Pattern'
+    body: List[ASTNode]
+
+
+@dataclass
+class Pattern(ASTNode):
+    """A pattern for matching: VariantName(binding1, binding2) or just VariantName"""
+    variant_name: str
+    bindings: List[str] = field(default_factory=list)  # Variable names to bind payload values
+
+
+@dataclass
+class MatchExpr(ASTNode):
+    """Match expression: match expr: arms"""
+    expr: ASTNode
+    arms: List[MatchArm] = field(default_factory=list)
+
+
+# Import
+@dataclass
+class ImportDecl(ASTNode):
+    """Import declaration: import "path" or import "path" as alias"""
+    path: str  # The import path (e.g., "lib/syscalls")
+    alias: Optional[str] = None  # Optional alias (e.g., "as str")
+
+
 # Program
 @dataclass
 class Program(ASTNode):
     declarations: List[ASTNode]
+    imports: List[ImportDecl] = field(default_factory=list)  # Import declarations
 
     def __repr__(self):
-        return f"Program({len(self.declarations)} declarations)"
+        return f"Program({len(self.declarations)} declarations, {len(self.imports)} imports)"

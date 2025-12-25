@@ -21,6 +21,7 @@ from type_checker import TypeChecker
 from ownership import OwnershipChecker
 from lifetimes import LifetimeChecker
 from generics import monomorphize
+from ast_nodes import Program, ImportDecl
 
 class Compiler:
     def __init__(self, source_file: str, output_file: str = None, kernel_mode: bool = False,
@@ -38,6 +39,98 @@ class Compiler:
         self.asm_file = f"{self.output_file}.asm"
         self.ll_file = f"{self.output_file}.ll"
         self.obj_file = f"{self.output_file}.o"
+
+        # Track imported files to prevent circular imports
+        self.imported_files = set()
+
+    def resolve_imports(self, ast: Program, source_dir: str) -> Program:
+        """
+        Recursively resolve all imports in the AST.
+        Imported declarations are prepended to the main AST.
+        """
+        if not ast.imports:
+            return ast
+
+        all_imported_decls = []
+
+        for imp in ast.imports:
+            # Resolve import path relative to source file or compiler dir
+            import_path = self._resolve_import_path(imp.path, source_dir)
+
+            if import_path is None:
+                print(f"WARNING: Cannot find import '{imp.path}'")
+                continue
+
+            # Check for circular imports
+            abs_path = os.path.abspath(import_path)
+            if abs_path in self.imported_files:
+                continue  # Already imported, skip
+
+            self.imported_files.add(abs_path)
+
+            # Parse the imported file
+            try:
+                with open(import_path, 'r') as f:
+                    import_source = f.read()
+
+                lexer = Lexer(import_source)
+                tokens = lexer.tokenize()
+
+                parser = Parser(tokens)
+                imported_ast = parser.parse()
+
+                # Recursively resolve imports in the imported file
+                import_dir = os.path.dirname(import_path)
+                imported_ast = self.resolve_imports(imported_ast, import_dir)
+
+                # Collect declarations (skip duplicates by name)
+                for decl in imported_ast.declarations:
+                    all_imported_decls.append(decl)
+
+                if imp.alias:
+                    print(f"        Imported '{imp.path}' as '{imp.alias}'")
+                else:
+                    print(f"        Imported '{imp.path}'")
+
+            except Exception as e:
+                print(f"WARNING: Error importing '{imp.path}': {e}")
+                continue
+
+        # Prepend imported declarations to main declarations
+        merged_decls = all_imported_decls + ast.declarations
+        return Program(declarations=merged_decls, imports=[])
+
+    def _resolve_import_path(self, import_path: str, source_dir: str) -> str:
+        """
+        Resolve an import path to an actual file path.
+        Tries:
+        1. Relative to source file directory
+        2. Relative to compiler lib directory
+        3. Absolute path
+        """
+        # Add .bh extension if not present
+        if not import_path.endswith('.bh'):
+            import_path_with_ext = import_path + '.bh'
+        else:
+            import_path_with_ext = import_path
+
+        # Try relative to source directory
+        candidate = os.path.join(source_dir, import_path_with_ext)
+        if os.path.exists(candidate):
+            return candidate
+
+        # Try relative to compiler's parent directory (project root)
+        compiler_dir = os.path.dirname(os.path.abspath(__file__))
+        project_root = os.path.dirname(compiler_dir)
+        candidate = os.path.join(project_root, import_path_with_ext)
+        if os.path.exists(candidate):
+            return candidate
+
+        # Try as absolute path
+        if os.path.exists(import_path_with_ext):
+            return import_path_with_ext
+
+        return None
 
     def compile(self):
         """Full compilation pipeline"""
@@ -58,6 +151,14 @@ class Compiler:
         parser = Parser(tokens)
         ast = parser.parse()
         print(f"        Generated AST with {len(ast.declarations)} declarations")
+
+        # 3.5 Resolve imports
+        if ast.imports:
+            print("  [2.5/8] Resolving imports...")
+            source_dir = os.path.dirname(os.path.abspath(self.source_file))
+            self.imported_files.add(os.path.abspath(self.source_file))  # Mark main file as imported
+            ast = self.resolve_imports(ast, source_dir)
+            print(f"        Now have {len(ast.declarations)} declarations after imports")
 
         # 4. Monomorphization (instantiate generic functions/types)
         print("  [3/8] Monomorphizing generics...")
@@ -292,6 +393,13 @@ def main():
 
         parser = Parser(tokens)
         ast = parser.parse()
+
+        # Resolve imports (create temp compiler for import resolution)
+        if ast.imports:
+            temp_compiler = Compiler(source_file, kernel_mode=kernel_mode)
+            source_dir = os.path.dirname(os.path.abspath(source_file))
+            temp_compiler.imported_files.add(os.path.abspath(source_file))
+            ast = temp_compiler.resolve_imports(ast, source_dir)
 
         # Monomorphize generics
         ast = monomorphize(ast)

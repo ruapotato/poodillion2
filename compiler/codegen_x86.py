@@ -24,12 +24,21 @@ class X86CodeGen:
         # Type table (name -> Type)
         self.type_table: Dict[str, Type] = {}
 
+        # Struct type definitions (name -> StructDecl)
+        self.struct_types: Dict[str, 'StructDecl'] = {}
+
+        # Enum type definitions (name -> EnumDecl)
+        self.enum_types: Dict[str, 'EnumDecl'] = {}
+
         # String literals
         self.string_counter = 0
         self.strings: Dict[str, str] = {}
 
         # Label counter
         self.label_counter = 0
+
+        # Defer stack for current function
+        self.defer_stack: List[ASTNode] = []
 
     def emit(self, instruction: str):
         """Emit an assembly instruction"""
@@ -58,6 +67,9 @@ class X86CodeGen:
         if isinstance(typ, PointerType):
             return 4  # 32-bit pointers
 
+        if isinstance(typ, SliceType):
+            return 8  # Fat pointer: ptr (4) + len (4)
+
         if isinstance(typ, ArrayType):
             return typ.size * self.type_size(typ.element_type)
 
@@ -66,7 +78,136 @@ class X86CodeGen:
             'int16': 2, 'uint16': 2,
             'int32': 4, 'uint32': 4,
         }
+        # Check if it's a struct type
+        if typ.name in self.struct_types:
+            return self.struct_size(typ.name)
+        # Check if it's an enum type
+        if typ.name in self.enum_types:
+            return self.enum_size(typ.name)
         return type_sizes.get(typ.name, 4)
+
+    def struct_size(self, struct_name: str) -> int:
+        """Calculate total size of a struct"""
+        if struct_name not in self.struct_types:
+            return 4  # Default
+        struct_decl = self.struct_types[struct_name]
+        total = 0
+        for field in struct_decl.fields:
+            total += self.type_size(field.field_type)
+        return total
+
+    def get_field_offset(self, struct_name: str, field_name: str) -> int:
+        """Get byte offset of a field within a struct"""
+        if struct_name not in self.struct_types:
+            raise ValueError(f"Unknown struct type: {struct_name}")
+        struct_decl = self.struct_types[struct_name]
+        offset = 0
+        for field in struct_decl.fields:
+            if field.name == field_name:
+                return offset
+            offset += self.type_size(field.field_type)
+        raise ValueError(f"Unknown field {field_name} in struct {struct_name}")
+
+    def get_field_type(self, struct_name: str, field_name: str) -> Type:
+        """Get type of a field within a struct"""
+        if struct_name not in self.struct_types:
+            raise ValueError(f"Unknown struct type: {struct_name}")
+        struct_decl = self.struct_types[struct_name]
+        for field in struct_decl.fields:
+            if field.name == field_name:
+                return field.field_type
+        raise ValueError(f"Unknown field {field_name} in struct {struct_name}")
+
+    # Enum helpers
+    def enum_size(self, enum_name: str) -> int:
+        """Calculate total size of an enum (tag + max payload)"""
+        if enum_name not in self.enum_types:
+            return 8  # Default: 4 byte tag + 4 byte payload
+        enum_decl = self.enum_types[enum_name]
+        max_payload = 0
+        for variant in enum_decl.variants:
+            if variant.payload_types:
+                for ptype in variant.payload_types:
+                    max_payload = max(max_payload, self.type_size(ptype))
+        return 4 + max_payload  # 4 byte tag + payload
+
+    def get_variant_tag(self, enum_name: str, variant_name: str) -> int:
+        """Get the numeric tag for an enum variant"""
+        if enum_name not in self.enum_types:
+            return 0
+        enum_decl = self.enum_types[enum_name]
+        for i, variant in enumerate(enum_decl.variants):
+            if variant.name == variant_name:
+                return i
+        return 0
+
+    def get_variant_payload_size(self, enum_name: str, variant_name: str) -> int:
+        """Get the payload size for an enum variant"""
+        if enum_name not in self.enum_types:
+            return 0
+        enum_decl = self.enum_types[enum_name]
+        for variant in enum_decl.variants:
+            if variant.name == variant_name:
+                if variant.payload_types:
+                    return self.type_size(variant.payload_types[0])
+                return 0
+        return 0
+
+    def is_enum_constructor(self, name: str) -> str:
+        """Check if a name is an enum variant constructor. Returns enum name or None."""
+        for enum_name, enum_decl in self.enum_types.items():
+            for variant in enum_decl.variants:
+                if variant.name == name:
+                    return enum_name
+        return None
+
+    def _get_expr_type(self, expr: ASTNode) -> Type:
+        """Determine the type of an expression"""
+        if isinstance(expr, Identifier):
+            return self.type_table.get(expr.name)
+        if isinstance(expr, FieldAccessExpr):
+            obj_type = self._get_expr_type(expr.object)
+            if obj_type is None:
+                return None
+            # Get struct name from object type
+            if isinstance(obj_type, PointerType):
+                struct_name = obj_type.base_type.name
+            else:
+                struct_name = obj_type.name
+            return self.get_field_type(struct_name, expr.field_name)
+        if isinstance(expr, IndexExpr):
+            arr_type = self._get_expr_type(expr.array)
+            if arr_type is None:
+                return None
+            if isinstance(arr_type, ArrayType):
+                return arr_type.element_type
+            if isinstance(arr_type, PointerType):
+                return arr_type.base_type
+            if isinstance(arr_type, SliceType):
+                return arr_type.element_type
+            return None
+        if isinstance(expr, SliceExpr):
+            arr_type = self._get_expr_type(expr.array)
+            if arr_type is None:
+                return None
+            if isinstance(arr_type, ArrayType):
+                return SliceType(arr_type.element_type)
+            if isinstance(arr_type, PointerType):
+                return SliceType(arr_type.base_type)
+            return None
+        if isinstance(expr, CastExpr):
+            return expr.target_type
+        if isinstance(expr, StructLiteral):
+            return Type(expr.struct_type)
+        if isinstance(expr, IntLiteral):
+            return Type('int32')
+        if isinstance(expr, BoolLiteral):
+            return Type('bool')
+        if isinstance(expr, CharLiteral):
+            return Type('char')
+        if isinstance(expr, StringLiteral):
+            return PointerType(Type('uint8'))
+        return None
 
     # Expression code generation
     def gen_expression(self, expr: ASTNode) -> str:
@@ -89,7 +230,11 @@ class X86CodeGen:
         if isinstance(expr, StringLiteral):
             # Add string to data section and load its address
             label = self.add_string(expr.value)
-            self.emit(f"lea eax, [rel {label}]")
+            # In kernel mode (32-bit), don't use RIP-relative addressing
+            if self.kernel_mode:
+                self.emit(f"lea eax, [{label}]")
+            else:
+                self.emit(f"lea eax, [rel {label}]")
             return "eax"
 
         if isinstance(expr, Identifier):
@@ -122,12 +267,14 @@ class X86CodeGen:
                 var_type = self.type_table.get(expr.name)
                 var_size = self.type_size(var_type) if var_type else 4
 
+                # In kernel mode (32-bit), don't use RIP-relative addressing
+                addr = f"[{expr.name}]" if self.kernel_mode else f"[rel {expr.name}]"
                 if var_size == 1:
-                    self.emit(f"movzx eax, byte [rel {expr.name}]")
+                    self.emit(f"movzx eax, byte {addr}")
                 elif var_size == 2:
-                    self.emit(f"movzx eax, word [rel {expr.name}]")
+                    self.emit(f"movzx eax, word {addr}")
                 else:
-                    self.emit(f"mov eax, [rel {expr.name}]")
+                    self.emit(f"mov eax, {addr}")
             return "eax"
 
         if isinstance(expr, UnaryExpr):
@@ -235,6 +382,32 @@ class X86CodeGen:
             return "eax"
 
         if isinstance(expr, CallExpr):
+            # Check for built-in len() function
+            if expr.func == "len" and len(expr.args) == 1:
+                arg = expr.args[0]
+                arg_type = self._get_expr_type(arg)
+
+                if isinstance(arg_type, SliceType):
+                    # Slice: len is at offset 4 in the fat pointer
+                    if isinstance(arg, Identifier) and arg.name in self.local_vars:
+                        offset = self.local_vars[arg.name]
+                        len_offset = offset + 4
+                        if len_offset > 0:
+                            self.emit(f"mov eax, [ebp+{len_offset}]")
+                        else:
+                            self.emit(f"mov eax, [ebp{len_offset}]")
+                    else:
+                        # For non-identifier slices, we need the len from edx
+                        # This shouldn't happen often as slices are usually stored
+                        self.gen_expression(arg)
+                        # After SliceExpr, len is in edx
+                        self.emit("mov eax, edx")
+                    return "eax"
+                elif isinstance(arg_type, ArrayType):
+                    # Array: compile-time known size
+                    self.emit(f"mov eax, {arg_type.size}")
+                    return "eax"
+
             # Push arguments in reverse order
             for arg in reversed(expr.args):
                 self.gen_expression(arg)
@@ -246,6 +419,46 @@ class X86CodeGen:
             # Clean up stack
             if expr.args:
                 self.emit(f"add esp, {len(expr.args) * 4}")
+
+            return "eax"
+
+        if isinstance(expr, MethodCallExpr):
+            # Method call: obj.method(args)
+            # Transforms to: TypeName_methodName(addr(obj), args...)
+
+            # Get the object's type to build mangled name
+            obj_type = self._get_expr_type(expr.object)
+            is_pointer = isinstance(obj_type, PointerType)
+            if is_pointer:
+                type_name = obj_type.base_type.name
+            elif obj_type:
+                type_name = obj_type.name
+            else:
+                type_name = "Unknown"
+
+            mangled_name = f"{type_name}_{expr.method_name}"
+
+            # Push explicit arguments in reverse order
+            for arg in reversed(expr.args):
+                self.gen_expression(arg)
+                self.emit("push eax")
+
+            # Push the receiver object's address as first (implicit) argument
+            # If object is already a pointer, just use the value; otherwise take address
+            if is_pointer:
+                # Already a pointer, just use the value
+                self.gen_expression(expr.object)
+            else:
+                # Need to take address of the object
+                self.gen_lvalue_address(expr.object)
+            self.emit("push eax")
+
+            # Call the mangled method function
+            self.emit(f"call {mangled_name}")
+
+            # Clean up stack (explicit args + implicit self)
+            total_args = len(expr.args) + 1
+            self.emit(f"add esp, {total_args * 4}")
 
             return "eax"
 
@@ -274,6 +487,10 @@ class X86CodeGen:
             element_size = 1  # Default to 1 byte
             if pointer_type and isinstance(pointer_type, PointerType):
                 element_size = self.type_size(pointer_type.base_type)
+            elif pointer_type and isinstance(pointer_type, SliceType):
+                element_size = self.type_size(pointer_type.element_type)
+            elif pointer_type and isinstance(pointer_type, ArrayType):
+                element_size = self.type_size(pointer_type.element_type)
 
             # Generate array base address
             if isinstance(expr.array, CastExpr):
@@ -283,12 +500,18 @@ class X86CodeGen:
                 if expr.array.name in self.local_vars:
                     offset = self.local_vars[expr.array.name]
                     var_type = self.type_table.get(expr.array.name)
-                    # For local arrays, get address with LEA; for pointers, load value with MOV
+                    # For local arrays, get address with LEA; for pointers/slices, load value with MOV
                     if isinstance(var_type, ArrayType):
                         if offset > 0:
                             self.emit(f"lea eax, [ebp+{offset}]")
                         else:
                             self.emit(f"lea eax, [ebp{offset}]")
+                    elif isinstance(var_type, SliceType):
+                        # Slice: load ptr from first 4 bytes
+                        if offset > 0:
+                            self.emit(f"mov eax, [ebp+{offset}]")
+                        else:
+                            self.emit(f"mov eax, [ebp{offset}]")
                     else:
                         # It's a pointer variable, load its value
                         if offset > 0:
@@ -298,12 +521,16 @@ class X86CodeGen:
                 else:
                     # Global variable - check if array or pointer
                     var_type = self.type_table.get(expr.array.name)
+                    addr = f"[{expr.array.name}]" if self.kernel_mode else f"[rel {expr.array.name}]"
                     if isinstance(var_type, ArrayType):
                         # Array storage is the data, use LEA to get address
-                        self.emit(f"lea eax, [rel {expr.array.name}]")
+                        self.emit(f"lea eax, {addr}")
+                    elif isinstance(var_type, SliceType):
+                        # Slice: load ptr from first 4 bytes
+                        self.emit(f"mov eax, {addr}")
                     else:
                         # Pointer variable - load its value with MOV
-                        self.emit(f"mov eax, [rel {expr.array.name}]")
+                        self.emit(f"mov eax, {addr}")
 
             # Calculate address: base + index * element_size
             if element_size > 1:
@@ -325,6 +552,73 @@ class X86CodeGen:
             else:
                 self.emit("mov eax, [eax]")  # Load dword
 
+            return "eax"
+
+        if isinstance(expr, SliceExpr):
+            # Slice expression: arr[start..end]
+            # Creates a fat pointer (ptr, len) = 8 bytes
+            # Result: ptr in eax, len in edx
+
+            # First, calculate length = end - start
+            self.gen_expression(expr.end)
+            self.emit("push eax")  # Save end
+            self.gen_expression(expr.start)
+            self.emit("mov ecx, eax")  # start in ecx
+            self.emit("pop edx")  # end in edx
+            self.emit("sub edx, ecx")  # len = end - start, now in edx
+            self.emit("push edx")  # Save length
+
+            # Get element size
+            arr_type = self._get_expr_type(expr.array)
+            element_size = 4  # Default
+            if isinstance(arr_type, ArrayType):
+                element_size = self.type_size(arr_type.element_type)
+            elif isinstance(arr_type, PointerType):
+                element_size = self.type_size(arr_type.base_type)
+
+            # Calculate pointer = array_base + start * element_size
+            # start is still in ecx
+            if element_size > 1:
+                if element_size == 2:
+                    self.emit("shl ecx, 1")
+                elif element_size == 4:
+                    self.emit("shl ecx, 2")
+                else:
+                    self.emit(f"imul ecx, {element_size}")
+
+            # Get array base address
+            if isinstance(expr.array, Identifier):
+                if expr.array.name in self.local_vars:
+                    offset = self.local_vars[expr.array.name]
+                    var_type = self.type_table.get(expr.array.name)
+                    if isinstance(var_type, ArrayType):
+                        if offset > 0:
+                            self.emit(f"lea eax, [ebp+{offset}]")
+                        else:
+                            self.emit(f"lea eax, [ebp{offset}]")
+                    else:
+                        # Pointer - load its value
+                        if offset > 0:
+                            self.emit(f"mov eax, [ebp+{offset}]")
+                        else:
+                            self.emit(f"mov eax, [ebp{offset}]")
+                else:
+                    # Global
+                    addr = f"[{expr.array.name}]" if self.kernel_mode else f"[rel {expr.array.name}]"
+                    self.emit(f"lea eax, {addr}")
+            else:
+                self.emit("push ecx")  # Save scaled start
+                self.gen_expression(expr.array)
+                self.emit("pop ecx")
+
+            # ptr = base + scaled_start
+            self.emit("add eax, ecx")  # ptr in eax
+
+            # Restore len to edx
+            self.emit("pop edx")  # len in edx
+
+            # Return with ptr in eax, len in edx
+            # Caller needs to handle the fat pointer appropriately
             return "eax"
 
         if isinstance(expr, ConditionalExpr):
@@ -362,7 +656,8 @@ class X86CodeGen:
                         self.emit(f"lea eax, [ebp{offset}]")  # offset is already negative
                 else:
                     # Global variable
-                    self.emit(f"lea eax, [rel {expr.expr.name}]")
+                    addr = f"[{expr.expr.name}]" if self.kernel_mode else f"[rel {expr.expr.name}]"
+                    self.emit(f"lea eax, {addr}")
             elif isinstance(expr.expr, IndexExpr):
                 # Address of array element: addr(array[index])
                 # This is like IndexExpr but without the final dereference
@@ -404,10 +699,11 @@ class X86CodeGen:
                     else:
                         # Global variable - check if array or pointer
                         var_type = self.type_table.get(expr.expr.array.name)
+                        addr = f"[{expr.expr.array.name}]" if self.kernel_mode else f"[rel {expr.expr.array.name}]"
                         if isinstance(var_type, ArrayType):
-                            self.emit(f"lea eax, [rel {expr.expr.array.name}]")
+                            self.emit(f"lea eax, {addr}")
                         else:
-                            self.emit(f"mov eax, [rel {expr.expr.array.name}]")
+                            self.emit(f"mov eax, {addr}")
 
                 # Calculate address: base + index * element_size
                 if element_size > 1:
@@ -424,7 +720,246 @@ class X86CodeGen:
                 raise NotImplementedError(f"Address-of only supports identifiers and array indexing, got {type(expr.expr).__name__}")
             return "eax"
 
+        if isinstance(expr, StructLiteral):
+            # Struct literal: Point(x: 10, y: 20)
+            # Returns pointer to struct allocated on stack
+            struct_name = expr.struct_type
+            struct_size = self.struct_size(struct_name)
+
+            # Allocate space for struct on stack
+            self.stack_offset += struct_size
+            struct_offset = -self.stack_offset
+
+            # Initialize each field
+            for field_name, field_expr in expr.field_values.items():
+                field_offset = self.get_field_offset(struct_name, field_name)
+                field_type = self.get_field_type(struct_name, field_name)
+                field_size = self.type_size(field_type)
+
+                # Generate field value
+                self.gen_expression(field_expr)
+
+                # Store at struct_base + field_offset
+                total_offset = struct_offset + field_offset
+                if total_offset >= 0:
+                    addr = f"[ebp+{total_offset}]"
+                else:
+                    addr = f"[ebp{total_offset}]"
+
+                if field_size == 1:
+                    self.emit(f"mov byte {addr}, al")
+                elif field_size == 2:
+                    self.emit(f"mov word {addr}, ax")
+                else:
+                    self.emit(f"mov {addr}, eax")
+
+            # Return pointer to struct
+            if struct_offset >= 0:
+                self.emit(f"lea eax, [ebp+{struct_offset}]")
+            else:
+                self.emit(f"lea eax, [ebp{struct_offset}]")
+            return "eax"
+
+        if isinstance(expr, ArrayLiteral):
+            # Array literal: [1, 2, 3]
+            # Allocate space on stack and initialize elements
+            if not expr.elements:
+                # Empty array - just return address of nothing
+                self.emit("xor eax, eax")
+                return "eax"
+
+            # Determine element type from first element
+            first_type = self._get_expr_type(expr.elements[0])
+            element_size = self.type_size(first_type) if first_type else 4
+            array_size = len(expr.elements) * element_size
+
+            # Allocate space on stack
+            self.stack_offset += array_size
+            array_offset = -self.stack_offset
+
+            # Initialize each element
+            for i, elem in enumerate(expr.elements):
+                self.gen_expression(elem)
+                elem_offset = array_offset + (i * element_size)
+                if elem_offset >= 0:
+                    addr = f"[ebp+{elem_offset}]"
+                else:
+                    addr = f"[ebp{elem_offset}]"
+
+                if element_size == 1:
+                    self.emit(f"mov byte {addr}, al")
+                elif element_size == 2:
+                    self.emit(f"mov word {addr}, ax")
+                else:
+                    self.emit(f"mov {addr}, eax")
+
+            # Return pointer to array
+            if array_offset >= 0:
+                self.emit(f"lea eax, [ebp+{array_offset}]")
+            else:
+                self.emit(f"lea eax, [ebp{array_offset}]")
+            return "eax"
+
+        if isinstance(expr, FieldAccessExpr):
+            # Field access: obj.field
+            # First, get the struct type from the object
+            obj_type = self._get_expr_type(expr.object)
+            if obj_type is None:
+                raise ValueError(f"Cannot determine type of {expr.object}")
+
+            # Handle pointer-to-struct (obj is ptr Struct, need to dereference)
+            if isinstance(obj_type, PointerType):
+                struct_name = obj_type.base_type.name
+                # Generate pointer value
+                self.gen_expression(expr.object)
+                # eax now has pointer to struct
+            else:
+                # Direct struct value - get its address
+                struct_name = obj_type.name
+                if isinstance(expr.object, Identifier):
+                    if expr.object.name in self.local_vars:
+                        offset = self.local_vars[expr.object.name]
+                        if offset > 0:
+                            self.emit(f"lea eax, [ebp+{offset}]")
+                        else:
+                            self.emit(f"lea eax, [ebp{offset}]")
+                    else:
+                        addr = f"[{expr.object.name}]" if self.kernel_mode else f"[rel {expr.object.name}]"
+                        self.emit(f"lea eax, {addr}")
+                else:
+                    # For complex expressions, generate and assume it returns struct address
+                    self.gen_expression(expr.object)
+
+            # Get field offset and type
+            field_offset = self.get_field_offset(struct_name, expr.field_name)
+            field_type = self.get_field_type(struct_name, expr.field_name)
+            field_size = self.type_size(field_type)
+
+            # Add field offset to base address
+            if field_offset > 0:
+                self.emit(f"add eax, {field_offset}")
+
+            # Load field value with appropriate size
+            if field_size == 1:
+                self.emit("movzx eax, byte [eax]")
+            elif field_size == 2:
+                self.emit("movzx eax, word [eax]")
+            else:
+                self.emit("mov eax, [eax]")
+
+            return "eax"
+
+        if isinstance(expr, MatchExpr):
+            # Match expression: compare tag and branch to appropriate arm
+            end_label = self.new_label("match_end")
+
+            # Get the enum value's address
+            self.gen_lvalue_address(expr.expr)
+            self.emit("push eax")  # Save address
+
+            # Load the tag (first 4 bytes of enum)
+            self.emit("mov eax, [eax]")
+            self.emit("push eax")  # Save tag for comparison
+
+            # Get the enum type
+            expr_type = self._get_expr_type(expr.expr)
+            if expr_type:
+                enum_name = expr_type.name
+            else:
+                enum_name = None
+
+            # Generate code for each arm
+            for i, arm in enumerate(expr.arms):
+                variant_name = arm.pattern.variant_name
+                next_arm_label = self.new_label(f"match_arm_{i+1}")
+
+                # Compare tag
+                if enum_name:
+                    expected_tag = self.get_variant_tag(enum_name, variant_name)
+                else:
+                    expected_tag = i
+
+                self.emit("mov eax, [esp]")  # Load saved tag
+                self.emit(f"cmp eax, {expected_tag}")
+                self.emit(f"jne {next_arm_label}")
+
+                # Tag matches - bind payload and execute body
+                if arm.pattern.bindings and enum_name:
+                    # Load payload value for binding
+                    # Enum address is at [esp+4], payload is at offset 4
+                    self.emit("mov eax, [esp+4]")  # enum address
+                    self.emit("add eax, 4")  # point to payload
+                    self.emit("mov eax, [eax]")  # load payload value
+
+                    # Create a temporary variable for the binding
+                    for binding in arm.pattern.bindings:
+                        self.stack_offset += 4
+                        bind_offset = -self.stack_offset
+                        self.local_vars[binding] = bind_offset
+                        payload_type = self.get_variant_payload_size(enum_name, variant_name)
+                        # Store payload in binding
+                        self.emit(f"mov [ebp{bind_offset}], eax")
+
+                # Execute arm body
+                for stmt in arm.body:
+                    self.gen_statement(stmt)
+
+                # Clean up bindings
+                for binding in arm.pattern.bindings:
+                    if binding in self.local_vars:
+                        del self.local_vars[binding]
+
+                # Jump to end
+                self.emit(f"jmp {end_label}")
+
+                self.emit_label(next_arm_label)
+
+            # End of match
+            self.emit_label(end_label)
+            self.emit("add esp, 8")  # Clean up saved address and tag
+
+            return "eax"
+
         raise NotImplementedError(f"Code generation for {type(expr).__name__} not implemented")
+
+    def gen_lvalue_address(self, expr: ASTNode):
+        """Generate code to get the address of an lvalue expression into EAX"""
+        if isinstance(expr, Identifier):
+            if expr.name in self.local_vars:
+                offset = self.local_vars[expr.name]
+                if offset > 0:
+                    self.emit(f"lea eax, [ebp+{offset}]")
+                else:
+                    self.emit(f"lea eax, [ebp{offset}]")
+            else:
+                # Global variable
+                self.emit(f"lea eax, [{expr.name}]")
+        elif isinstance(expr, FieldAccessExpr):
+            # Get address of struct field
+            self.gen_lvalue_address(expr.object)  # Get object address
+            obj_type = self._get_expr_type(expr.object)
+            if obj_type and obj_type.startswith('ptr '):
+                obj_type = obj_type[4:]
+                # If it's a pointer, load the pointer value first
+                self.gen_expression(expr.object)
+            offset = self.get_field_offset(obj_type, expr.field_name)
+            if offset > 0:
+                self.emit(f"add eax, {offset}")
+        elif isinstance(expr, IndexExpr):
+            # Get address of array element (similar to AddrOfExpr handling)
+            self.gen_expression(expr.index)
+            self.emit("mov ebx, eax")
+            # Get base address and add scaled index
+            self.gen_expression(expr.array)
+            self.emit("imul ebx, 4")  # Assume 4-byte elements
+            self.emit("add eax, ebx")
+        else:
+            raise NotImplementedError(f"Cannot take address of {type(expr).__name__}")
+
+    def emit_deferred(self):
+        """Emit all deferred statements in reverse order (LIFO)"""
+        for stmt in reversed(self.defer_stack):
+            self.gen_statement(stmt)
 
     # Statement code generation
     def gen_statement(self, stmt: ASTNode):
@@ -435,18 +970,103 @@ class X86CodeGen:
             # Allocate space on stack (negative offset from EBP)
             size = self.type_size(stmt.var_type)
             self.stack_offset += size
-            self.local_vars[stmt.name] = -self.stack_offset  # Negative for local vars
+            var_offset = -self.stack_offset
+            self.local_vars[stmt.name] = var_offset  # Negative for local vars
 
             # Initialize if there's a value
             if stmt.value:
-                self.gen_expression(stmt.value)
-                # Store with appropriate size
-                if size == 1:
-                    self.emit(f"mov byte [ebp-{self.stack_offset}], al")
-                elif size == 2:
-                    self.emit(f"mov word [ebp-{self.stack_offset}], ax")
+                # Special handling for struct literal initialization
+                if isinstance(stmt.value, StructLiteral):
+                    struct_name = stmt.value.struct_type
+                    # Initialize each field directly into the allocated space
+                    for field_name, field_expr in stmt.value.field_values.items():
+                        field_offset = self.get_field_offset(struct_name, field_name)
+                        field_type = self.get_field_type(struct_name, field_name)
+                        field_size = self.type_size(field_type)
+
+                        # Generate field value
+                        self.gen_expression(field_expr)
+
+                        # Store at var_base + field_offset
+                        total_offset = var_offset + field_offset
+                        if total_offset >= 0:
+                            addr = f"[ebp+{total_offset}]"
+                        else:
+                            addr = f"[ebp{total_offset}]"
+
+                        if field_size == 1:
+                            self.emit(f"mov byte {addr}, al")
+                        elif field_size == 2:
+                            self.emit(f"mov word {addr}, ax")
+                        else:
+                            self.emit(f"mov {addr}, eax")
+                elif isinstance(stmt.value, ArrayLiteral):
+                    # Initialize array elements directly into allocated space
+                    elements = stmt.value.elements
+                    if elements:
+                        first_type = self._get_expr_type(elements[0])
+                        element_size = self.type_size(first_type) if first_type else 4
+
+                        for i, elem in enumerate(elements):
+                            self.gen_expression(elem)
+                            elem_offset = var_offset + (i * element_size)
+                            if elem_offset >= 0:
+                                addr = f"[ebp+{elem_offset}]"
+                            else:
+                                addr = f"[ebp{elem_offset}]"
+
+                            if element_size == 1:
+                                self.emit(f"mov byte {addr}, al")
+                            elif element_size == 2:
+                                self.emit(f"mov word {addr}, ax")
+                            else:
+                                self.emit(f"mov {addr}, eax")
+                elif isinstance(stmt.value, CallExpr) and self.is_enum_constructor(stmt.value.func):
+                    # Enum variant constructor: Some(5)
+                    enum_name = self.is_enum_constructor(stmt.value.func)
+                    variant_name = stmt.value.func
+                    tag = self.get_variant_tag(enum_name, variant_name)
+
+                    # Store tag at base of enum
+                    tag_addr = f"[ebp{var_offset}]" if var_offset < 0 else f"[ebp+{var_offset}]"
+                    self.emit(f"mov dword {tag_addr}, {tag}")
+
+                    # Store payload (if any)
+                    if stmt.value.args:
+                        self.gen_expression(stmt.value.args[0])
+                        payload_offset = var_offset + 4  # payload is after 4-byte tag
+                        payload_addr = f"[ebp{payload_offset}]" if payload_offset < 0 else f"[ebp+{payload_offset}]"
+                        self.emit(f"mov {payload_addr}, eax")
+                elif isinstance(stmt.value, Identifier) and self.is_enum_constructor(stmt.value.name):
+                    # Unit enum variant: None
+                    enum_name = self.is_enum_constructor(stmt.value.name)
+                    variant_name = stmt.value.name
+                    tag = self.get_variant_tag(enum_name, variant_name)
+
+                    # Store tag at base of enum
+                    tag_addr = f"[ebp{var_offset}]" if var_offset < 0 else f"[ebp+{var_offset}]"
+                    self.emit(f"mov dword {tag_addr}, {tag}")
+                elif isinstance(stmt.value, SliceExpr):
+                    # Slice expression: stores fat pointer (ptr, len) = 8 bytes
+                    self.gen_expression(stmt.value)  # ptr in eax, len in edx
+
+                    # Store ptr at var_offset
+                    ptr_addr = f"[ebp{var_offset}]" if var_offset < 0 else f"[ebp+{var_offset}]"
+                    self.emit(f"mov {ptr_addr}, eax")
+
+                    # Store len at var_offset + 4
+                    len_offset = var_offset + 4
+                    len_addr = f"[ebp{len_offset}]" if len_offset < 0 else f"[ebp+{len_offset}]"
+                    self.emit(f"mov {len_addr}, edx")
                 else:
-                    self.emit(f"mov [ebp-{self.stack_offset}], eax")
+                    self.gen_expression(stmt.value)
+                    # Store with appropriate size
+                    if size == 1:
+                        self.emit(f"mov byte [ebp-{self.stack_offset}], al")
+                    elif size == 2:
+                        self.emit(f"mov word [ebp-{self.stack_offset}], ax")
+                    else:
+                        self.emit(f"mov [ebp-{self.stack_offset}], eax")
 
         elif isinstance(stmt, Assignment):
             # Generate value
@@ -474,12 +1094,13 @@ class X86CodeGen:
                         self.emit(f"mov {addr}, eax")
                 else:
                     # Global variable
+                    addr = f"[{stmt.target.name}]" if self.kernel_mode else f"[rel {stmt.target.name}]"
                     if var_size == 1:
-                        self.emit(f"mov byte [rel {stmt.target.name}], al")
+                        self.emit(f"mov byte {addr}, al")
                     elif var_size == 2:
-                        self.emit(f"mov word [rel {stmt.target.name}], ax")
+                        self.emit(f"mov word {addr}, ax")
                     else:
-                        self.emit(f"mov [rel {stmt.target.name}], eax")
+                        self.emit(f"mov {addr}, eax")
 
             elif isinstance(stmt.target, IndexExpr):
                 # Array assignment
@@ -527,12 +1148,13 @@ class X86CodeGen:
                     else:
                         # Global variable - check if array or pointer
                         var_type = self.type_table.get(stmt.target.array.name)
+                        addr = f"[{stmt.target.array.name}]" if self.kernel_mode else f"[rel {stmt.target.array.name}]"
                         if isinstance(var_type, ArrayType):
                             # Array storage is the data, use LEA to get address
-                            self.emit(f"lea eax, [rel {stmt.target.array.name}]")
+                            self.emit(f"lea eax, {addr}")
                         else:
                             # Pointer variable - load its value with MOV
-                            self.emit(f"mov eax, [rel {stmt.target.array.name}]")
+                            self.emit(f"mov eax, {addr}")
 
                 # Calculate address: base + index * element_size
                 if element_size > 1:
@@ -555,10 +1177,58 @@ class X86CodeGen:
                 else:
                     self.emit("mov [eax], ebx")  # Store dword
 
+            elif isinstance(stmt.target, FieldAccessExpr):
+                # Field assignment: obj.field = value
+                self.emit("push eax")  # Save value
+
+                # Get struct type from object
+                obj_type = self._get_expr_type(stmt.target.object)
+                if obj_type is None:
+                    raise ValueError(f"Cannot determine type of {stmt.target.object}")
+
+                # Handle pointer-to-struct vs direct struct
+                if isinstance(obj_type, PointerType):
+                    struct_name = obj_type.base_type.name
+                    # Generate pointer value
+                    self.gen_expression(stmt.target.object)
+                else:
+                    struct_name = obj_type.name
+                    # Get address of struct
+                    if isinstance(stmt.target.object, Identifier):
+                        if stmt.target.object.name in self.local_vars:
+                            offset = self.local_vars[stmt.target.object.name]
+                            if offset > 0:
+                                self.emit(f"lea eax, [ebp+{offset}]")
+                            else:
+                                self.emit(f"lea eax, [ebp{offset}]")
+                        else:
+                            addr = f"[{stmt.target.object.name}]" if self.kernel_mode else f"[rel {stmt.target.object.name}]"
+                            self.emit(f"lea eax, {addr}")
+                    else:
+                        self.gen_expression(stmt.target.object)
+
+                # Get field offset and type
+                field_offset = self.get_field_offset(struct_name, stmt.target.field_name)
+                field_type = self.get_field_type(struct_name, stmt.target.field_name)
+                field_size = self.type_size(field_type)
+
+                # Add field offset to base
+                if field_offset > 0:
+                    self.emit(f"add eax, {field_offset}")
+
+                # Restore value and store
+                self.emit("pop ebx")
+                if field_size == 1:
+                    self.emit("mov byte [eax], bl")
+                elif field_size == 2:
+                    self.emit("mov word [eax], bx")
+                else:
+                    self.emit("mov [eax], ebx")
+
         elif isinstance(stmt, ReturnStmt):
             if stmt.value:
                 self.gen_expression(stmt.value)
-            # Leave and return (handled by procedure epilogue)
+            # Jump to deferred/epilogue section
             self.emit(f"jmp {self.return_label}")
 
         elif isinstance(stmt, IfStmt):
@@ -661,11 +1331,114 @@ class X86CodeGen:
             self.emit_label(end_label)
             self.emit("add esp, 4")  # Clean up end value
 
+        elif isinstance(stmt, ForEachStmt):
+            # for item in array: body
+            # Generates: for i in 0..len(array): item = array[i]; body
+
+            # Get array type to determine element size and length
+            arr_type = self._get_expr_type(stmt.iterable)
+            if not isinstance(arr_type, ArrayType):
+                raise ValueError(f"For-each requires array type, got {arr_type}")
+
+            element_type = arr_type.element_type
+            element_size = self.type_size(element_type)
+            array_length = arr_type.size
+
+            # Allocate index variable (hidden)
+            self.stack_offset += 4
+            index_offset = -self.stack_offset
+
+            # Allocate loop variable
+            self.stack_offset += element_size
+            var_offset = -self.stack_offset
+            self.local_vars[stmt.var] = var_offset
+            self.type_table[stmt.var] = element_type
+
+            # Initialize index to 0
+            self.emit(f"mov dword [ebp{index_offset}], 0")
+
+            start_label = self.new_label("foreach_start")
+            end_label = self.new_label("foreach_end")
+
+            # Save loop labels for break/continue
+            old_start = getattr(self, 'loop_start_label', None)
+            old_end = getattr(self, 'loop_end_label', None)
+            self.loop_start_label = start_label
+            self.loop_end_label = end_label
+
+            self.emit_label(start_label)
+
+            # Check: index < array_length
+            self.emit(f"mov eax, [ebp{index_offset}]")
+            self.emit(f"cmp eax, {array_length}")
+            self.emit(f"jge {end_label}")
+
+            # Load current element: item = array[index]
+            # Get array base address
+            if isinstance(stmt.iterable, Identifier):
+                if stmt.iterable.name in self.local_vars:
+                    arr_offset = self.local_vars[stmt.iterable.name]
+                    if arr_offset > 0:
+                        self.emit(f"lea ebx, [ebp+{arr_offset}]")
+                    else:
+                        self.emit(f"lea ebx, [ebp{arr_offset}]")
+                else:
+                    addr = f"[{stmt.iterable.name}]" if self.kernel_mode else f"[rel {stmt.iterable.name}]"
+                    self.emit(f"lea ebx, {addr}")
+            else:
+                self.gen_expression(stmt.iterable)
+                self.emit("mov ebx, eax")
+
+            # Calculate element address: base + index * element_size
+            self.emit(f"mov eax, [ebp{index_offset}]")
+            if element_size > 1:
+                if element_size == 2:
+                    self.emit("shl eax, 1")
+                elif element_size == 4:
+                    self.emit("shl eax, 2")
+                else:
+                    self.emit(f"imul eax, {element_size}")
+            self.emit("add eax, ebx")
+
+            # Load element value
+            if element_size == 1:
+                self.emit("movzx eax, byte [eax]")
+            elif element_size == 2:
+                self.emit("movzx eax, word [eax]")
+            else:
+                self.emit("mov eax, [eax]")
+
+            # Store in loop variable
+            if element_size == 1:
+                self.emit(f"mov byte [ebp{var_offset}], al")
+            elif element_size == 2:
+                self.emit(f"mov word [ebp{var_offset}], ax")
+            else:
+                self.emit(f"mov [ebp{var_offset}], eax")
+
+            # Execute body
+            for s in stmt.body:
+                self.gen_statement(s)
+
+            # Increment index
+            self.emit(f"inc dword [ebp{index_offset}]")
+            self.emit(f"jmp {start_label}")
+
+            self.emit_label(end_label)
+
+            # Restore old loop labels
+            self.loop_start_label = old_start
+            self.loop_end_label = old_end
+
         elif isinstance(stmt, ExprStmt):
             self.gen_expression(stmt.expr)
 
         elif isinstance(stmt, DiscardStmt):
             pass  # No code needed
+
+        elif isinstance(stmt, DeferStmt):
+            # Add to defer stack - will be executed at function return
+            self.defer_stack.append(stmt.stmt)
 
     # Procedure code generation
     def gen_procedure(self, proc: ProcDecl):
@@ -688,6 +1461,10 @@ class X86CodeGen:
         old_offset = self.stack_offset
         self.local_vars = {}
         self.stack_offset = 0
+
+        # Save and reset defer stack for this function
+        old_defer_stack = self.defer_stack
+        self.defer_stack = []
 
         # Create unique return label for this function
         old_return_label = getattr(self, 'return_label', None)
@@ -715,8 +1492,12 @@ class X86CodeGen:
             # Insert the allocation instruction
             self.output.insert(stack_alloc_pos, f"    sub esp, {stack_size}")
 
-        # Epilogue
+        # Epilogue - emit deferred statements first
         self.emit_label(self.return_label)
+        if self.defer_stack:
+            self.emit("push eax")  # Save return value
+            self.emit_deferred()
+            self.emit("pop eax")   # Restore return value
         self.emit("mov esp, ebp")
         self.emit("pop ebp")
         self.emit("ret")
@@ -725,18 +1506,108 @@ class X86CodeGen:
         self.local_vars = old_locals
         self.stack_offset = old_offset
         self.return_label = old_return_label
+        self.defer_stack = old_defer_stack
+
+    def gen_method(self, method: MethodDecl):
+        """Generate code for a method declaration.
+
+        Methods are generated as functions with a mangled name: TypeName_methodName
+        The receiver (self) is the first implicit parameter.
+        """
+        self.emit("")
+
+        # Get the type name from the receiver type
+        receiver_type = method.receiver_type
+        if isinstance(receiver_type, PointerType):
+            type_name = receiver_type.base_type.name
+        else:
+            type_name = receiver_type.name
+
+        # Generate mangled function name
+        func_name = f"{type_name}_{method.name}"
+        self.emit_label(func_name)
+
+        # Prologue
+        self.emit("push ebp")
+        self.emit("mov ebp, esp")
+
+        # Mark where we'll insert stack allocation later
+        stack_alloc_pos = len(self.output)
+
+        # Save and reset local variables for this function
+        old_locals = self.local_vars
+        old_offset = self.stack_offset
+        self.local_vars = {}
+        self.stack_offset = 0
+
+        # Save and reset defer stack for this method
+        old_defer_stack = self.defer_stack
+        self.defer_stack = []
+
+        # Create unique return label for this function
+        old_return_label = getattr(self, 'return_label', None)
+        self.return_label = f"{func_name}_return"
+
+        # Parameters (on stack, above EBP)
+        # Stack layout: [param2][param1][self][return addr][saved EBP] <- EBP
+        param_offset = 8  # Skip return address (4 bytes) and saved EBP (4 bytes)
+
+        # First parameter is the receiver (self)
+        self.type_table[method.receiver_name] = method.receiver_type
+        self.local_vars[method.receiver_name] = param_offset
+        param_offset += 4
+
+        # Then explicit parameters
+        for param in method.params:
+            self.type_table[param.name] = param.param_type
+            self.local_vars[param.name] = param_offset
+            param_offset += 4
+
+        # Generate body
+        for stmt in method.body:
+            self.gen_statement(stmt)
+
+        # Allocate stack space for local variables (if any)
+        if self.stack_offset > 0:
+            stack_size = self.stack_offset
+            self.output.insert(stack_alloc_pos, f"    sub esp, {stack_size}")
+
+        # Epilogue - emit deferred statements first
+        self.emit_label(self.return_label)
+        if self.defer_stack:
+            self.emit("push eax")  # Save return value
+            self.emit_deferred()
+            self.emit("pop eax")   # Restore return value
+        self.emit("mov esp, ebp")
+        self.emit("pop ebp")
+        self.emit("ret")
+
+        # Restore
+        self.local_vars = old_locals
+        self.stack_offset = old_offset
+        self.return_label = old_return_label
+        self.defer_stack = old_defer_stack
 
     # Program generation
     def generate(self, program: Program) -> str:
         """Generate complete x86 assembly"""
-        # First pass: collect constants and extern declarations
+        # First pass: collect constants, extern declarations, struct types, and global variable types
         self.constants = {}
         self.externs = []
         for decl in program.declarations:
-            if isinstance(decl, VarDecl) and decl.is_const and decl.value:
+            if isinstance(decl, StructDecl):
+                # Register struct type for field offset calculations
+                self.struct_types[decl.name] = decl
+            elif isinstance(decl, EnumDecl):
+                # Register enum type
+                self.enum_types[decl.name] = decl
+            elif isinstance(decl, VarDecl) and decl.is_const and decl.value:
                 # Inline constants - store for lookup
                 if isinstance(decl.value, IntLiteral):
                     self.constants[decl.name] = decl.value.value
+            elif isinstance(decl, VarDecl) and not decl.is_const:
+                # Register global variable types before generating procedure code
+                self.type_table[decl.name] = decl.var_type
             elif isinstance(decl, ExternDecl):
                 # Collect external function names
                 self.externs.append(decl.name)
@@ -745,6 +1616,8 @@ class X86CodeGen:
         for decl in program.declarations:
             if isinstance(decl, ProcDecl):
                 self.gen_procedure(decl)
+            elif isinstance(decl, MethodDecl):
+                self.gen_method(decl)
             elif isinstance(decl, ExternDecl):
                 # External declarations - no code generation needed
                 # They're just function prototypes
@@ -753,7 +1626,8 @@ class X86CodeGen:
                 # Skip constants (they're inlined)
                 if decl.is_const:
                     continue
-                # Global variable
+                # Global variable - record type for proper address calculation
+                self.type_table[decl.name] = decl.var_type
                 self.bss_section.append(f"{decl.name}: resb {self.type_size(decl.var_type)}")
 
         # Build final assembly

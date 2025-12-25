@@ -31,6 +31,11 @@ class TokenType(Enum):
     ADDR = auto()
     TYPE = auto()
     OBJECT = auto()
+    ENUM = auto()
+    MATCH = auto()
+    DEFER = auto()
+    IMPORT = auto()
+    AS = auto()
 
     # Types
     INT8 = auto()
@@ -146,6 +151,11 @@ class Lexer:
             'addr': TokenType.ADDR,
             'type': TokenType.TYPE,
             'object': TokenType.OBJECT,
+            'enum': TokenType.ENUM,
+            'match': TokenType.MATCH,
+            'defer': TokenType.DEFER,
+            'import': TokenType.IMPORT,
+            'as': TokenType.AS,
             'true': TokenType.TRUE,
             'false': TokenType.FALSE,
             # Types

@@ -760,6 +760,36 @@ proc composite(buf: ptr uint32, windows: ptr int32, focused_idx: int32, xres: in
         draw_decoration(buf, win, 1, xres, yres)
       draw_window_body(buf, win, xres, yres)
 
+proc draw_clock(buf: ptr uint32, xres: int32, yres: int32) =
+  var timestamp: int32 = get_time()
+  # Convert to hours, minutes, seconds
+  var total_seconds: int32 = timestamp % 86400  # Seconds in current day
+  var hours: int32 = (total_seconds / 3600) % 24
+  var minutes: int32 = (total_seconds % 3600) / 60
+  var seconds: int32 = total_seconds % 60
+
+  # Build time string "HH:MM:SS"
+  var old_brk: int32 = syscall1(SYS_brk, 0)
+  discard syscall1(SYS_brk, old_brk + 16)
+  var time_str: ptr uint8 = cast[ptr uint8](old_brk)
+
+  # Format HH
+  time_str[0] = cast[uint8](48 + hours / 10)
+  time_str[1] = cast[uint8](48 + hours % 10)
+  time_str[2] = cast[uint8](58)  # ':'
+  # Format MM
+  time_str[3] = cast[uint8](48 + minutes / 10)
+  time_str[4] = cast[uint8](48 + minutes % 10)
+  time_str[5] = cast[uint8](58)  # ':'
+  # Format SS
+  time_str[6] = cast[uint8](48 + seconds / 10)
+  time_str[7] = cast[uint8](48 + seconds % 10)
+  time_str[8] = cast[uint8](0)  # null terminator
+
+  var taskbar_y: int32 = yres - TASKBAR_HEIGHT
+  var clock_x: int32 = xres - 80  # Position clock 80 pixels from right edge
+  draw_text(buf, clock_x, taskbar_y + 12, time_str, 0xFFFFFF, 0x2D2D2D, xres, yres, 8)
+
 proc draw_taskbar(buf: ptr uint32, windows: ptr int32, xres: int32, yres: int32, menu_open: int32) =
   var taskbar_y: int32 = yres - TASKBAR_HEIGHT
   fill_rect(buf, 0, taskbar_y, xres, TASKBAR_HEIGHT, 0x2D2D2D, xres, yres)
@@ -770,6 +800,8 @@ proc draw_taskbar(buf: ptr uint32, windows: ptr int32, xres: int32, yres: int32,
     menu_color = 0x0088DD
   fill_rect(buf, 4, taskbar_y + 4, LAUNCHER_WIDTH, TASKBAR_HEIGHT - 8, menu_color, xres, yres)
   draw_text(buf, 20, taskbar_y + 12, cast[ptr uint8]("Menu"), 0xFFFFFF, menu_color, xres, yres, 10)
+  # Draw clock
+  draw_clock(buf, xres, yres)
 
 proc draw_menu(buf: ptr uint32, xres: int32, yres: int32) =
   var menu_x: int32 = 4
@@ -898,6 +930,18 @@ proc point_in_titlebar(win: ptr int32, px: int32, py: int32): int32 =
   var w: int32 = win_get(win, WIN_WIDTH)
   if px >= x + BORDER_SIZE and px < x + w - BORDER_SIZE:
     if py >= y + BORDER_SIZE and py < y + BORDER_SIZE + TITLE_HEIGHT:
+      return 1
+  return 0
+
+proc point_in_close_button(win: ptr int32, px: int32, py: int32): int32 =
+  var x: int32 = win_get(win, WIN_X)
+  var y: int32 = win_get(win, WIN_Y)
+  var w: int32 = win_get(win, WIN_WIDTH)
+  # Close button is at: x + w - BORDER_SIZE - BUTTON_SIZE - 4
+  var btn_x: int32 = x + w - BORDER_SIZE - BUTTON_SIZE - 4
+  var btn_y: int32 = y + BORDER_SIZE + 4
+  if px >= btn_x and px < btn_x + BUTTON_SIZE:
+    if py >= btn_y and py < btn_y + BUTTON_SIZE:
       return 1
   return 0
 
@@ -1163,22 +1207,30 @@ proc main() =
           # Check if clicking on a window
           var clicked_win: int32 = find_window_at(windows, cursor_x, cursor_y, focused)
           if clicked_win >= 0:
-            # Focus this window
-            if clicked_win != focused:
-              if focused >= 0:
-                var old_win: ptr int32 = window_ptr(windows, focused)
-                win_set(old_win, WIN_FOCUSED, 0)
-              focused = clicked_win
-              var new_win: ptr int32 = window_ptr(windows, focused)
-              win_set(new_win, WIN_FOCUSED, 1)
-
-            # Check if clicking on title bar - start drag
             var win: ptr int32 = window_ptr(windows, clicked_win)
-            if point_in_titlebar(win, cursor_x, cursor_y) != 0:
-              dragging = 1
-              drag_win = clicked_win
-              drag_off_x = cursor_x - win_get(win, WIN_X)
-              drag_off_y = cursor_y - win_get(win, WIN_Y)
+
+            # Check if clicking close button - destroy window
+            if point_in_close_button(win, cursor_x, cursor_y) != 0:
+              destroy_window(windows, clicked_win)
+              # If we closed the focused window, unfocus it
+              if clicked_win == focused:
+                focused = -1
+            else:
+              # Focus this window
+              if clicked_win != focused:
+                if focused >= 0:
+                  var old_win: ptr int32 = window_ptr(windows, focused)
+                  win_set(old_win, WIN_FOCUSED, 0)
+                focused = clicked_win
+                var new_win: ptr int32 = window_ptr(windows, focused)
+                win_set(new_win, WIN_FOCUSED, 1)
+
+              # Check if clicking on title bar - start drag
+              if point_in_titlebar(win, cursor_x, cursor_y) != 0:
+                dragging = 1
+                drag_win = clicked_win
+                drag_off_x = cursor_x - win_get(win, WIN_X)
+                drag_off_y = cursor_y - win_get(win, WIN_Y)
 
       if left_released != 0:
         # Stop dragging

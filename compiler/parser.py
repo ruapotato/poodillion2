@@ -58,6 +58,13 @@ class Parser:
             base_type = self.parse_type()
             return PointerType(base_type)
 
+        # Slice type: []T
+        if token.type == TokenType.LBRACKET:
+            self.advance()  # Skip '['
+            self.expect(TokenType.RBRACKET)  # Expect ']'
+            element_type = self.parse_type()
+            return SliceType(element_type)
+
         # Array type: array[N, T]
         if token.type == TokenType.IDENT and token.value == 'array':
             self.advance()
@@ -175,6 +182,9 @@ class Parser:
             expr = self.parse_expression()
             self.expect(TokenType.RPAREN)
             expr = AddrOfExpr(expr)
+        # Match expression
+        elif token.type == TokenType.MATCH:
+            return self.parse_match_expr()
         else:
             # Parse atom (literal, identifier, etc.)
             expr = self.parse_atom()
@@ -329,16 +339,36 @@ class Parser:
                     self.expect(TokenType.RPAREN)
                     expr = CallExpr(expr.name, args, type_args=type_args)
                 else:
-                    # Regular array indexing
+                    # Regular array indexing or slice expression
                     index = self.parse_expression()
-                    self.expect(TokenType.RBRACKET)
-                    expr = IndexExpr(expr, index)
 
-            # Field access: expr.field
+                    # Check for slice syntax: arr[start..end]
+                    if self.current_token().type == TokenType.DOTDOT:
+                        self.advance()  # Skip '..'
+                        end = self.parse_expression()
+                        self.expect(TokenType.RBRACKET)
+                        expr = SliceExpr(expr, index, end)
+                    else:
+                        self.expect(TokenType.RBRACKET)
+                        expr = IndexExpr(expr, index)
+
+            # Field access: expr.field or method call: expr.method()
             elif token.type == TokenType.DOT:
                 self.advance()
                 field_name = self.expect(TokenType.IDENT).value
-                expr = FieldAccessExpr(expr, field_name)
+                # Check if this is a method call (followed by '(')
+                if self.current_token().type == TokenType.LPAREN:
+                    self.advance()  # Skip '('
+                    args = []
+                    if self.current_token().type != TokenType.RPAREN:
+                        args.append(self.parse_expression())
+                        while self.current_token().type == TokenType.COMMA:
+                            self.advance()
+                            args.append(self.parse_expression())
+                    self.expect(TokenType.RPAREN)
+                    expr = MethodCallExpr(expr, field_name, args)
+                else:
+                    expr = FieldAccessExpr(expr, field_name)
 
             else:
                 # No more postfix operations
@@ -483,6 +513,62 @@ class Parser:
     def parse_expression(self) -> ASTNode:
         return self.parse_conditional_expr()
 
+    def parse_match_expr(self) -> MatchExpr:
+        """Parse match expression:
+        match expr:
+            Pattern1(binding):
+                body1
+            Pattern2:
+                body2
+        """
+        self.advance()  # Skip 'match'
+        match_expr = self.parse_expression()
+        self.expect(TokenType.COLON)
+        self.skip_newlines()
+
+        # Parse match arms - indented block
+        arms = []
+        block_indent = None
+
+        while True:
+            self.skip_newlines()
+            token = self.current_token()
+
+            # Stop at end of file
+            if token.type == TokenType.EOF:
+                break
+
+            # Track indentation of first arm
+            if block_indent is None:
+                block_indent = token.col
+            # If we encounter a line at LOWER indentation, match is done
+            elif token.col < block_indent:
+                break
+
+            # Parse pattern: VariantName or VariantName(binding1, binding2)
+            variant_name = self.expect(TokenType.IDENT).value
+            bindings = []
+
+            if self.current_token().type == TokenType.LPAREN:
+                self.advance()  # Skip '('
+                if self.current_token().type != TokenType.RPAREN:
+                    bindings.append(self.expect(TokenType.IDENT).value)
+                    while self.current_token().type == TokenType.COMMA:
+                        self.advance()
+                        bindings.append(self.expect(TokenType.IDENT).value)
+                self.expect(TokenType.RPAREN)
+
+            pattern = Pattern(variant_name, bindings)
+
+            self.expect(TokenType.COLON)
+            self.skip_newlines()
+
+            # Parse arm body
+            body = self.parse_block()
+            arms.append(MatchArm(pattern, body))
+
+        return MatchExpr(match_expr, arms)
+
     # Statement parsing
     def parse_var_decl(self) -> VarDecl:
         is_const = self.current_token().type == TokenType.CONST
@@ -563,21 +649,38 @@ class Parser:
         body = self.parse_block()
         return WhileStmt(condition, body)
 
-    def parse_for_stmt(self) -> ForStmt:
+    def parse_for_stmt(self):
+        """Parse for loop: either 'for i in start..end' or 'for item in array'"""
         self.advance()  # Skip 'for'
 
         var_name = self.expect(TokenType.IDENT).value
         self.expect(TokenType.IN)
 
-        start = self.parse_expression()
-        self.expect(TokenType.DOTDOT)
-        end = self.parse_expression()
+        # Parse first expression
+        first_expr = self.parse_expression()
 
-        self.expect(TokenType.COLON)
-        self.skip_newlines()
+        # Check if this is a range (start..end) or iteration (array)
+        if self.current_token().type == TokenType.DOTDOT:
+            # Range loop: for i in start..end
+            self.advance()  # Skip '..'
+            end = self.parse_expression()
+            self.expect(TokenType.COLON)
+            self.skip_newlines()
+            body = self.parse_block()
+            return ForStmt(var_name, first_expr, end, body)
+        else:
+            # Array iteration: for item in array
+            self.expect(TokenType.COLON)
+            self.skip_newlines()
+            body = self.parse_block()
+            return ForEachStmt(var_name, first_expr, body)
 
-        body = self.parse_block()
-        return ForStmt(var_name, start, end, body)
+    def parse_defer_stmt(self) -> DeferStmt:
+        """Parse defer statement: defer expr"""
+        self.advance()  # Skip 'defer'
+        # Parse the statement/expression to defer (usually a function call)
+        expr = self.parse_expression()
+        return DeferStmt(ExprStmt(expr))
 
     def parse_statement(self) -> ASTNode:
         token = self.current_token()
@@ -608,6 +711,9 @@ class Parser:
         if token.type == TokenType.DISCARD:
             self.advance()
             return DiscardStmt()
+
+        if token.type == TokenType.DEFER:
+            return self.parse_defer_stmt()
 
         # Assignment or expression statement
         return self.parse_assignment_or_expr()
@@ -652,8 +758,13 @@ class Parser:
 
         return statements
 
-    def parse_proc_decl(self) -> ProcDecl:
+    def parse_proc_decl(self):
+        """Parse proc or method declaration"""
         self.advance()  # Skip 'proc'
+
+        # Check for method syntax: proc (self: Type) name(...)
+        if self.current_token().type == TokenType.LPAREN:
+            return self.parse_method_decl()
 
         name = self.expect(TokenType.IDENT).value
 
@@ -705,6 +816,51 @@ class Parser:
 
         return ProcDecl(name, params, return_type, body, type_params=type_params)
 
+    def parse_method_decl(self):
+        """Parse method declaration: proc (self: ptr Type) name(params): return_type"""
+        self.advance()  # Skip '('
+
+        # Parse receiver: self: ptr Type
+        receiver_name = self.expect(TokenType.IDENT).value
+        self.expect(TokenType.COLON)
+        receiver_type = self.parse_type()
+
+        self.expect(TokenType.RPAREN)
+
+        # Get method name
+        name = self.expect(TokenType.IDENT).value
+
+        # Parse parameters
+        self.expect(TokenType.LPAREN)
+        params = []
+        if self.current_token().type != TokenType.RPAREN:
+            param_name = self.expect(TokenType.IDENT).value
+            self.expect(TokenType.COLON)
+            param_type = self.parse_type()
+            params.append(Parameter(param_name, param_type))
+
+            while self.current_token().type == TokenType.COMMA:
+                self.advance()
+                param_name = self.expect(TokenType.IDENT).value
+                self.expect(TokenType.COLON)
+                param_type = self.parse_type()
+                params.append(Parameter(param_name, param_type))
+
+        self.expect(TokenType.RPAREN)
+
+        # Parse return type
+        return_type = None
+        if self.current_token().type == TokenType.COLON:
+            self.advance()
+            return_type = self.parse_type()
+
+        self.expect(TokenType.EQUALS)
+        self.skip_newlines()
+
+        body = self.parse_block()
+
+        return MethodDecl(receiver_type, receiver_name, name, params, return_type, body)
+
     def parse_extern_decl(self) -> ExternDecl:
         self.advance()  # Skip 'extern'
         self.expect(TokenType.PROC)
@@ -737,13 +893,24 @@ class Parser:
 
         return ExternDecl(name, params, return_type)
 
-    def parse_struct_decl(self) -> StructDecl:
-        """Parse struct type declaration: type Name = object ... """
+    def parse_type_decl(self):
+        """Parse type declaration: either struct or enum"""
         self.advance()  # Skip 'type'
 
         name = self.expect(TokenType.IDENT).value
         self.expect(TokenType.EQUALS)
-        self.expect(TokenType.OBJECT)
+
+        # Dispatch based on whether it's 'object' or 'enum'
+        if self.current_token().type == TokenType.OBJECT:
+            return self.parse_struct_body(name)
+        elif self.current_token().type == TokenType.ENUM:
+            return self.parse_enum_body(name)
+        else:
+            raise SyntaxError(f"Expected 'object' or 'enum' after '=', got {self.current_token().type}")
+
+    def parse_struct_body(self, name: str) -> StructDecl:
+        """Parse struct body after 'type Name = object'"""
+        self.advance()  # Skip 'object'
         self.skip_newlines()
 
         # Parse fields - indented block
@@ -781,11 +948,83 @@ class Parser:
 
         return StructDecl(name, fields)
 
+    def parse_enum_body(self, name: str) -> EnumDecl:
+        """Parse enum body after 'type Name = enum'
+
+        Syntax:
+            type Option = enum
+                Some(int32)
+                None
+        """
+        self.advance()  # Skip 'enum'
+        self.skip_newlines()
+
+        # Parse variants - indented block
+        variants = []
+        block_indent = None
+
+        while True:
+            self.skip_newlines()
+            token = self.current_token()
+
+            # Stop at end of file
+            if token.type == TokenType.EOF:
+                break
+
+            # Track indentation of first variant
+            if block_indent is None:
+                block_indent = token.col
+            # If we encounter a line at LOWER indentation, enum is done
+            elif token.col < block_indent:
+                break
+
+            # Parse variant: Name or Name(Type1, Type2, ...)
+            variant_name = self.expect(TokenType.IDENT).value
+            payload_types = []
+
+            # Check for payload types
+            if self.current_token().type == TokenType.LPAREN:
+                self.advance()  # Skip '('
+                if self.current_token().type != TokenType.RPAREN:
+                    payload_types.append(self.parse_type())
+                    while self.current_token().type == TokenType.COMMA:
+                        self.advance()
+                        payload_types.append(self.parse_type())
+                self.expect(TokenType.RPAREN)
+
+            variants.append(EnumVariant(variant_name, payload_types))
+            self.skip_newlines()
+
+        return EnumDecl(name, variants)
+
+    def parse_import(self) -> ImportDecl:
+        """Parse import declaration: import "path" or import "path" as alias"""
+        self.advance()  # Skip 'import'
+
+        # Get the path (string literal)
+        path_token = self.expect(TokenType.STRING)
+        path = path_token.value
+
+        # Check for optional alias
+        alias = None
+        if self.current_token().type == TokenType.AS:
+            self.advance()  # Skip 'as'
+            alias = self.expect(TokenType.IDENT).value
+
+        return ImportDecl(path, alias)
+
     def parse(self) -> Program:
+        imports = []
         declarations = []
 
         self.skip_newlines()
 
+        # Parse imports first (must be at top of file)
+        while self.current_token().type == TokenType.IMPORT:
+            imports.append(self.parse_import())
+            self.skip_newlines()
+
+        # Parse declarations
         while self.current_token().type != TokenType.EOF:
             token = self.current_token()
 
@@ -794,7 +1033,7 @@ class Parser:
             elif token.type == TokenType.PROC:
                 declarations.append(self.parse_proc_decl())
             elif token.type == TokenType.TYPE:
-                declarations.append(self.parse_struct_decl())
+                declarations.append(self.parse_type_decl())
             elif token.type in [TokenType.VAR, TokenType.CONST]:
                 declarations.append(self.parse_var_decl())
             else:
@@ -803,7 +1042,7 @@ class Parser:
 
             self.skip_newlines()
 
-        return Program(declarations)
+        return Program(declarations, imports)
 
 # Test the parser
 if __name__ == '__main__':

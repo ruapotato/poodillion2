@@ -27,12 +27,14 @@ class TypeInfo:
     - Primitive types (i32, u8, bool, etc.)
     - Pointer types (*T)
     - Array types ([T; N])
+    - Slice types ([]T) - fat pointer with ptr + len
     - Struct types
     - Function types
     """
     name: str
     is_pointer: bool = False
     is_array: bool = False
+    is_slice: bool = False
     array_size: Optional[int] = None
     element_type: Optional['TypeInfo'] = None
     struct_fields: Optional[Dict[str, 'TypeInfo']] = None
@@ -43,6 +45,8 @@ class TypeInfo:
         if self.is_array and self.element_type:
             size_str = str(self.array_size) if self.array_size else ""
             return f"[{self.element_type}; {size_str}]"
+        if self.is_slice and self.element_type:
+            return f"[]{self.element_type}"
         return self.name
 
     def __eq__(self, other: object) -> bool:
@@ -53,6 +57,8 @@ class TypeInfo:
         if self.is_pointer != other.is_pointer:
             return False
         if self.is_array != other.is_array:
+            return False
+        if self.is_slice != other.is_slice:
             return False
         if self.array_size != other.array_size:
             return False
@@ -513,6 +519,15 @@ def create_array_type(element_type: TypeInfo, size: Optional[int] = None) -> Typ
         name=f"[{element_type.name}; {size_str}]",
         is_array=True,
         array_size=size,
+        element_type=element_type
+    )
+
+
+def create_slice_type(element_type: TypeInfo) -> TypeInfo:
+    """Create a slice type ([]T) - fat pointer with ptr + len."""
+    return TypeInfo(
+        name=f"[]{element_type.name}",
+        is_slice=True,
         element_type=element_type
     )
 
