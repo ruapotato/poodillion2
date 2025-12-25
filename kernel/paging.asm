@@ -255,15 +255,56 @@ map_page:
     test eax, PTE_PRESENT
     jnz .table_exists
 
-    ; TODO: Allocate new page table if needed
-    ; For now, fail if page table doesn't exist
-    mov eax, -1
-    jmp .done
+    ; Page table doesn't exist, allocate one
+    jmp .allocate_table
 
 .table_exists:
     ; Get page table address (clear flags)
     and eax, 0xFFFFF000
+    jmp .do_mapping
 
+.allocate_table:
+    ; Allocate a new page frame for the page table
+    push ebx
+    push ecx
+    push edx
+    call alloc_frame
+    pop edx
+    pop ecx
+    pop ebx
+
+    test eax, eax
+    jz .alloc_failed
+
+    ; Save page table physical address
+    push eax
+
+    ; Clear the new page table (4KB of zeros)
+    mov edi, eax
+    push ecx
+    mov ecx, 1024
+    xor eax, eax
+    rep stosd
+    pop ecx
+
+    ; Restore page table address
+    pop eax
+    push eax                ; Save it again for mapping
+
+    ; Add page table to page directory
+    mov edx, [esp + 24]     ; Virtual address (adjusted for push)
+    shr edx, 22             ; PDI
+    mov edi, page_directory
+    push ebx
+    mov ebx, eax
+    or ebx, PTE_PRESENT | PTE_WRITABLE  ; Page table flags
+    mov [edi + edx * 4], ebx
+    pop ebx
+
+    ; Get page table address back
+    pop eax
+
+.do_mapping:
     ; Calculate page table index (middle 10 bits)
     mov edx, [esp + 20]     ; Virtual address again
     shr edx, 12
@@ -278,6 +319,10 @@ map_page:
     invlpg [eax]
 
     xor eax, eax            ; Return 0 (success)
+    jmp .done
+
+.alloc_failed:
+    mov eax, -1
 
 .done:
     pop edi

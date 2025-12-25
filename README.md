@@ -78,6 +78,42 @@ psh> bin/ps
 
 ### ✅ Working Now
 
+**BrainhairOS Microkernel** (bare-metal x86):
+- **Boots from BIOS** - Custom 2-stage bootloader
+- **Protected mode** - Full 32-bit x86 with paging (16MB identity mapped)
+- **Preemptive multitasking** - Timer-based scheduler, 64 process slots
+- **IPC** - Synchronous message passing (send/recv/call/reply)
+- **PS/2 keyboard** - IRQ-driven input with scancode translation
+- **Serial console** - COM1 for headless operation
+- **VGA text mode** - 80x25, 16 colors
+- **Hierarchical filesystem** - ext2-like with inodes, directories, files
+- **Virtual filesystems** - /proc, /sys, /dev with dynamic content
+- **ELF loader** - Load and execute userspace programs
+- **Networking** - E1000 NIC driver, ARP, IP, ICMP protocols
+
+**Microkernel Shell** (50+ built-in commands):
+- **File ops**: ls, cat, cp, mv, rm, mkdir, touch, stat, size, df
+- **Navigation**: cd, pwd
+- **Text**: echo, wc, head, grep, xxd
+- **System**: ps, uptime, date, mem, reboot, sysinfo
+- **Network**: ping, ifconfig, arp
+- **Fun**: banner, hello, guess, countdown, matrix, spin
+- **Debug**: peek, poke, dump, fill, run, calc
+
+**Shell Features**:
+- **I/O redirection**: `echo hello > file`, `echo more >> file`
+- **Pipes**: `ls | grep txt | wc`
+- **Environment variables**: `export VAR=value`, `echo $VAR`
+- **Command history**: Up/down arrows recall previous commands
+- **Tab completion**: Commands and file paths
+- **Variable expansion**: `$HOME`, `$PATH`, `$USER`
+
+**Run the microkernel**:
+```bash
+make run-microkernel     # QEMU with VGA display
+make run-microkernel-serial  # Headless via serial console
+```
+
 **Userland Utilities** (all in Brainhair, no libc):
 - **echo** (8.9KB) - Display text output
 - **cat** (5.1KB) - Concatenate and display files
@@ -410,9 +446,11 @@ brainhair2/
 │   ├── fmt            # 10.4KB ELF32
 │   └── ls             # 9.6KB ELF32
 │
-├── kernel/            # OS Kernel (optional)
-│   ├── kernel.c       # C kernel
-│   └── shell_nim.bh  # Brainhair shell
+├── kernel/            # BrainhairOS Microkernel
+│   ├── kernel_main.bh # Entry point, scheduler, filesystem, networking
+│   ├── paging.asm     # Virtual memory with dynamic page tables
+│   ├── net.asm        # E1000 NIC driver, PCI enumeration
+│   └── idt.asm        # Interrupt handling
 │
 ├── boot/              # Bootloader
 │   └── multiboot.asm  # GRUB multiboot
@@ -740,7 +778,7 @@ Utilities:  18 working + Type-Aware Shell!
              head, tail, select, psh, fbinfo, clear, pixel, line, rect, circle)
 Size:       ~167KB total for all utilities
 Platform:   Linux x86/x86_64 (32-bit executables)
-Status:     🚀 Active Development - COMPILER INFRASTRUCTURE COMPLETE! 🔧
+Status:     🚀 Active Development - NETWORKING STACK ADDED! 🌐
 
 Vision:     Unix performance + PowerShell composability + Native Graphics!
 Innovation: Binary typed data streams + Direct framebuffer manipulation
@@ -749,6 +787,7 @@ Goal:       Self-hosting, type-safe, zero-copy, SQL-queryable OS!
 ✅ Complete: Type-aware shell with automatic schema detection and formatting!
 ✅ Complete: Full data pipeline! (ps | where | select | head | tail | count)
 ✅ Complete: Graphics primitives! (clear, pixel, line, rect, circle)
+✅ Complete: Networking! E1000 NIC, ARP, IP, ICMP (ping, ifconfig, arp)
 ✅ Complete: Compiler Phase 0-2 infrastructure!
             - Error handling with source locations
             - Symbol table with proper scoping

@@ -46,6 +46,26 @@ extern proc keyboard_init()
 extern proc keyboard_read_char(): int32
 extern proc keyboard_available(): int32
 
+# External assembly functions - Port I/O
+extern proc port_outb(port: int32, value: int32)
+extern proc port_outw(port: int32, value: int32)
+extern proc port_outl(port: int32, value: int32)
+extern proc port_inb(port: int32): int32
+extern proc port_inw(port: int32): int32
+extern proc port_inl(port: int32): int32
+
+# External assembly functions - PCI
+extern proc pci_config_read32(bus: int32, slot: int32, func: int32, offset: int32): int32
+extern proc pci_config_write32(bus: int32, slot: int32, func: int32, offset: int32, value: int32)
+extern proc pci_config_read16(bus: int32, slot: int32, func: int32, offset: int32): int32
+extern proc pci_config_read8(bus: int32, slot: int32, func: int32, offset: int32): int32
+
+# External assembly functions - MMIO
+extern proc mmio_read32(address: int32): int32
+extern proc mmio_write32(address: int32, value: int32)
+extern proc net_memcpy(dest: int32, src: int32, len: int32)
+extern proc net_memset(dest: int32, val: int32, len: int32)
+
 # Process states
 const PROC_UNUSED: int32 = 0
 const PROC_READY: int32 = 1
@@ -203,31 +223,42 @@ proc kprintln(s: ptr uint8) =
 proc vga_set_color(fg: int32, bg: int32) =
   vga_color = vga_make_color(fg, bg)
 
-# Print a decimal number to VGA
-proc vga_print_dec(num: int32) =
+# Print a decimal number to both VGA and serial
+proc kprint_dec(num: int32) =
   if num == 0:
-    vga_putchar(48)  # '0'
+    vga_putchar(48)
+    serial_putchar(48)
     return
 
   var buf: array[12, uint8]
   var i: int32 = 0
   var n: int32 = num
 
-  # Handle negative
   if n < 0:
-    vga_putchar(45)  # '-'
+    vga_putchar(45)
+    serial_putchar(45)
     n = 0 - n
 
-  # Build digits in reverse
   while n > 0:
-    buf[i] = cast[uint8](48 + (n - ((n / 10) * 10)))  # n % 10
+    buf[i] = cast[uint8](48 + (n - ((n / 10) * 10)))
     n = n / 10
     i = i + 1
 
-  # Print in correct order
   while i > 0:
     i = i - 1
-    vga_putchar(cast[int32](buf[i]))
+    var c: int32 = cast[int32](buf[i])
+    vga_putchar(c)
+    serial_putchar(c)
+
+# Print a hex byte (2 digits)
+proc kprint_hex_byte(num: int32) =
+  var hex_chars: ptr uint8 = cast[ptr uint8]("0123456789ABCDEF")
+  var hi: int32 = (num >> 4) & 0x0F
+  var lo: int32 = num & 0x0F
+  vga_putchar(cast[int32](hex_chars[hi]))
+  serial_putchar(cast[int32](hex_chars[hi]))
+  vga_putchar(cast[int32](hex_chars[lo]))
+  serial_putchar(cast[int32](hex_chars[lo]))
 
 # Print a hexadecimal number to VGA
 proc vga_print_hex(num: int32) =
@@ -276,29 +307,31 @@ proc halt() =
 
 # Print status OK line
 proc print_ok(msg: ptr uint8) =
+  # VGA with colors
   vga_set_color(VGA_YELLOW, VGA_BLACK)
-  kprint(cast[ptr uint8]("  ["))
+  vga_print(cast[ptr uint8]("  ["))
   vga_set_color(VGA_LIGHT_GREEN, VGA_BLACK)
-  kprint(cast[ptr uint8]("OK"))
+  vga_print(cast[ptr uint8]("OK"))
   vga_set_color(VGA_YELLOW, VGA_BLACK)
-  kprint(cast[ptr uint8]("] "))
+  vga_print(cast[ptr uint8]("] "))
   vga_set_color(VGA_WHITE, VGA_BLACK)
-  kprintln(msg)
-  # Also print to serial
+  vga_println(msg)
+  # Serial (plain)
   ser_print(cast[ptr uint8]("[OK] "))
   ser_println(msg)
 
 # Print status pending line
 proc print_pending(msg: ptr uint8) =
+  # VGA with colors
   vga_set_color(VGA_YELLOW, VGA_BLACK)
-  kprint(cast[ptr uint8]("  ["))
+  vga_print(cast[ptr uint8]("  ["))
   vga_set_color(VGA_DARK_GREY, VGA_BLACK)
-  kprint(cast[ptr uint8](".."))
+  vga_print(cast[ptr uint8](".."))
   vga_set_color(VGA_YELLOW, VGA_BLACK)
-  kprint(cast[ptr uint8]("] "))
+  vga_print(cast[ptr uint8]("] "))
   vga_set_color(VGA_DARK_GREY, VGA_BLACK)
-  kprintln(msg)
-  # Also print to serial
+  vga_println(msg)
+  # Serial (plain)
   ser_print(cast[ptr uint8]("[..] "))
   ser_println(msg)
 
@@ -312,9 +345,6 @@ proc main() =
   kprintln(cast[ptr uint8]("BrainhairOS Microkernel v0.1"))
   vga_set_color(VGA_WHITE, VGA_BLACK)
   kprintln(cast[ptr uint8](""))
-
-  ser_println(cast[ptr uint8]("BrainhairOS Microkernel v0.1"))
-  ser_println(cast[ptr uint8](""))
 
   # Initialize IDT (Interrupt Descriptor Table)
   print_pending(cast[ptr uint8]("Initializing IDT"))
@@ -381,6 +411,24 @@ proc main() =
   fs_init()
   print_ok(cast[ptr uint8]("Ramdisk initialized (8KB)"))
 
+  # Initialize environment variables
+  env_init()
+
+  # Initialize tab completion
+  init_builtins()
+
+  # Initialize networking
+  print_pending(cast[ptr uint8]("Initializing network"))
+  var net_result: int32 = net_init()
+  if net_result == 1:
+    kprint(cast[ptr uint8]("[OK] Network: "))
+    print_mac()
+    kprint(cast[ptr uint8](" @ "))
+    print_ip()
+    kprintln(cast[ptr uint8](""))
+  else:
+    print_ok(cast[ptr uint8]("Network: No NIC found"))
+
   kprintln(cast[ptr uint8](""))
   vga_set_color(VGA_LIGHT_GREEN, VGA_BLACK)
   kprintln(cast[ptr uint8]("Welcome to BrainhairOS!"))
@@ -404,7 +452,7 @@ proc test_process() =
   vga_set_color(VGA_LIGHT_MAGENTA, VGA_BLACK)
   kprint(cast[ptr uint8]("[Process "))
   var pid: int32 = get_current_pid()
-  vga_print_dec(pid)
+  kprint_dec(pid)
   kprintln(cast[ptr uint8]("] Hello from child process!"))
   vga_set_color(VGA_WHITE, VGA_BLACK)
 
@@ -418,7 +466,7 @@ proc test_process() =
 
   vga_set_color(VGA_LIGHT_MAGENTA, VGA_BLACK)
   kprint(cast[ptr uint8]("[Process "))
-  vga_print_dec(pid)
+  kprint_dec(pid)
   kprintln(cast[ptr uint8]("] Done, exiting."))
   vga_set_color(VGA_WHITE, VGA_BLACK)
 
@@ -432,143 +480,1140 @@ proc test_process() =
 # Command buffer
 var cmd_buffer: array[256, uint8]
 var cmd_len: int32 = 0
+var escape_seq: int32 = 0  # Tracks escape sequence state
+var escape_buf: array[8, uint8]  # Buffer to collect escape sequence
+var escape_idx: int32 = 0
 
-# ============================================================================
-# Simple Ramdisk Filesystem
-# ============================================================================
+# Command history
+const HISTORY_SIZE: int32 = 16
+const HISTORY_LINE_LEN: int32 = 128
+var history: array[2048, uint8]  # 16 * 128 = 2048
+var history_count: int32 = 0     # Number of entries in history
+var history_pos: int32 = 0       # Current position when browsing (-1 = current line)
+var saved_cmd: array[256, uint8] # Saved current command when browsing history
+var saved_len: int32 = 0
 
-# File entry: 32 bytes name + 4 bytes size + 4 bytes offset = 40 bytes
-const MAX_FILES: int32 = 16
-const MAX_FILENAME: int32 = 31
-const FILE_ENTRY_SIZE: int32 = 40
-const RAMDISK_SIZE: int32 = 8192  # 8KB data area
+# Get pointer to history entry
+proc history_ptr(idx: int32): ptr uint8 =
+  return addr(history[idx * HISTORY_LINE_LEN])
 
-# File table: name (32) + size (4) + data_offset (4)
-var file_table: array[640, uint8]  # 16 files * 40 bytes
-var file_count: int32 = 0
-var ramdisk_data: array[8192, uint8]  # 8KB data area
-var ramdisk_used: int32 = 0
+# Add command to history
+proc history_add(cmd: ptr uint8, len: int32) =
+  if len == 0:
+    return
+  # Don't add duplicates of the last command
+  if history_count > 0:
+    var last: ptr uint8 = history_ptr(history_count - 1)
+    if str_equals(cmd, last) == 1:
+      return
+  # If history is full, shift everything up
+  if history_count >= HISTORY_SIZE:
+    var i: int32 = 0
+    while i < HISTORY_SIZE - 1:
+      var src: ptr uint8 = history_ptr(i + 1)
+      var dst: ptr uint8 = history_ptr(i)
+      var j: int32 = 0
+      while j < HISTORY_LINE_LEN:
+        dst[j] = src[j]
+        j = j + 1
+      i = i + 1
+    history_count = HISTORY_SIZE - 1
+  # Add new entry
+  var entry: ptr uint8 = history_ptr(history_count)
+  var k: int32 = 0
+  while k < len:
+    if k < HISTORY_LINE_LEN - 1:
+      entry[k] = cmd[k]
+    k = k + 1
+  entry[k] = cast[uint8](0)
+  history_count = history_count + 1
+  history_pos = history_count  # Reset position to end
 
-# Get file entry pointer
-proc fs_get_entry(idx: int32): ptr uint8 =
-  if idx < 0:
-    return cast[ptr uint8](0)
-  if idx >= MAX_FILES:
-    return cast[ptr uint8](0)
-  return addr(file_table[idx * FILE_ENTRY_SIZE])
-
-# Get file size from entry
-proc fs_get_size(entry: ptr uint8): int32 =
-  var size_ptr: ptr int32 = cast[ptr int32](addr(entry[32]))
-  return size_ptr[0]
-
-# Set file size in entry
-proc fs_set_size(entry: ptr uint8, size: int32) =
-  var size_ptr: ptr int32 = cast[ptr int32](addr(entry[32]))
-  size_ptr[0] = size
-
-# Get file data offset from entry
-proc fs_get_offset(entry: ptr uint8): int32 =
-  var off_ptr: ptr int32 = cast[ptr int32](addr(entry[36]))
-  return off_ptr[0]
-
-# Set file data offset in entry
-proc fs_set_offset(entry: ptr uint8, offset: int32) =
-  var off_ptr: ptr int32 = cast[ptr int32](addr(entry[36]))
-  off_ptr[0] = offset
-
-# Find file by name, returns index or -1
-proc fs_find(name: ptr uint8): int32 =
+# Clear the current command line on screen
+proc clear_cmdline() =
+  # Move cursor back and clear
   var i: int32 = 0
-  while i < file_count:
-    var entry: ptr uint8 = fs_get_entry(i)
-    if str_equals(entry, name) == 1:
+  while i < cmd_len:
+    vga_col = vga_col - 1
+    vga_putchar(32)  # space
+    vga_col = vga_col - 1
+    ser_putchar(8)   # backspace
+    ser_putchar(32)  # space
+    ser_putchar(8)   # backspace
+    i = i + 1
+
+# Set command line to a string
+proc set_cmdline(s: ptr uint8) =
+  clear_cmdline()
+  cmd_len = 0
+  var i: int32 = 0
+  while cast[int32](s[i]) != 0:
+    if cmd_len < 255:
+      cmd_buffer[cmd_len] = s[i]
+      vga_putchar(cast[int32](s[i]))
+      serial_putchar(cast[int32](s[i]))
+      cmd_len = cmd_len + 1
+    i = i + 1
+
+# ============================================================================
+# BrainhairFS - ext2-like Hierarchical Filesystem
+# ============================================================================
+#
+# Layout (16 x 512-byte blocks = 8KB):
+#   Block 0: Superblock
+#   Block 1: Inode bitmap (64 inodes max)
+#   Block 2: Block bitmap (16 blocks)
+#   Blocks 3-4: Inode table (32 inodes x 32 bytes = 2 blocks)
+#   Blocks 5-15: Data blocks (11 blocks = 5632 bytes)
+#
+# Inode structure (32 bytes):
+#   0-1: mode (0x4000=dir, 0x8000=file)
+#   2-3: links
+#   4-7: size
+#   8-11: block[0]
+#   12-15: block[1]
+#   16-19: block[2]
+#   20-23: block[3]
+#   24-31: reserved
+#
+# Directory entry (32 bytes):
+#   0-3: inode
+#   4-5: rec_len
+#   6: name_len
+#   7: file_type (1=file, 2=dir)
+#   8-31: name (24 chars)
+
+const BLOCK_SIZE: int32 = 512
+const BLOCK_COUNT: int32 = 64
+const INODE_COUNT: int32 = 64
+const INODE_SIZE: int32 = 32
+const DIRENT_SIZE: int32 = 32
+const FIRST_DATA_BLOCK: int32 = 7  # 0=sb, 1=inode_bmp, 2=block_bmp, 3-6=inode_tbl
+const DATA_BLOCKS: int32 = 57
+const MAX_NAME_LEN: int32 = 24
+
+# File types
+const FT_FILE: int32 = 1
+const FT_DIR: int32 = 2
+
+# Inode modes
+const S_IFDIR: int32 = 0x4000
+const S_IFREG: int32 = 0x8000
+
+# The entire filesystem in one array (32KB)
+var fs_data: array[32768, uint8]
+
+# Current working directory inode
+var cwd_inode: int32 = 1  # Start at root
+
+# ============================================================================
+# Environment Variables
+# ============================================================================
+
+const MAX_ENV_VARS: int32 = 16
+const MAX_ENV_NAME: int32 = 32
+const MAX_ENV_VALUE: int32 = 64
+
+# Environment storage: names and values
+var env_names: array[512, uint8]   # 16 * 32 = 512
+var env_values: array[1024, uint8] # 16 * 64 = 1024
+var env_count: int32 = 0
+
+# Get environment variable name at index
+proc env_name_ptr(idx: int32): ptr uint8 =
+  return addr(env_names[idx * MAX_ENV_NAME])
+
+# Get environment variable value at index
+proc env_value_ptr(idx: int32): ptr uint8 =
+  return addr(env_values[idx * MAX_ENV_VALUE])
+
+# Find environment variable by name, return index or -1
+proc env_find(name: ptr uint8): int32 =
+  var i: int32 = 0
+  while i < env_count:
+    var env_n: ptr uint8 = env_name_ptr(i)
+    if str_equals(name, env_n) == 1:
       return i
     i = i + 1
   return -1
 
-# Create a new file
-proc fs_create(name: ptr uint8, content: ptr uint8, size: int32): int32 =
-  # Check if file already exists
-  if fs_find(name) >= 0:
-    return -1  # Already exists
+# Get environment variable value, return null if not found
+proc env_get(name: ptr uint8): ptr uint8 =
+  var idx: int32 = env_find(name)
+  if idx < 0:
+    return cast[ptr uint8](0)
+  return env_value_ptr(idx)
 
-  # Check if we have space
-  if file_count >= MAX_FILES:
-    return -2  # No space for file entry
-  if ramdisk_used + size > RAMDISK_SIZE:
-    return -3  # No space for data
-
-  # Get new entry
-  var entry: ptr uint8 = fs_get_entry(file_count)
-
-  # Copy filename (max 31 chars + null)
+# Set environment variable
+proc env_set(name: ptr uint8, value: ptr uint8): int32 =
+  var idx: int32 = env_find(name)
+  if idx < 0:
+    # New variable
+    if env_count >= MAX_ENV_VARS:
+      return -1  # No space
+    idx = env_count
+    env_count = env_count + 1
+    # Copy name
+    var np: ptr uint8 = env_name_ptr(idx)
+    var i: int32 = 0
+    while i < MAX_ENV_NAME - 1:
+      if cast[int32](name[i]) == 0:
+        break
+      np[i] = name[i]
+      i = i + 1
+    np[i] = cast[uint8](0)
+  # Copy value
+  var vp: ptr uint8 = env_value_ptr(idx)
   var j: int32 = 0
-  while j < MAX_FILENAME:
-    var c: int32 = cast[int32](name[j])
-    if c == 0:
+  while j < MAX_ENV_VALUE - 1:
+    if cast[int32](value[j]) == 0:
       break
-    entry[j] = name[j]
+    vp[j] = value[j]
     j = j + 1
-  entry[j] = cast[uint8](0)  # Null terminate
-
-  # Set size and offset
-  fs_set_size(entry, size)
-  fs_set_offset(entry, ramdisk_used)
-
-  # Copy data
-  j = 0
-  while j < size:
-    ramdisk_data[ramdisk_used + j] = content[j]
-    j = j + 1
-
-  ramdisk_used = ramdisk_used + size
-  file_count = file_count + 1
-
+  vp[j] = cast[uint8](0)
   return 0
 
-# Delete a file (marks as deleted, doesn't reclaim space)
-proc fs_delete(name: ptr uint8): int32 =
-  var idx: int32 = fs_find(name)
-  if idx < 0:
-    return -1  # Not found
+# Initialize default environment variables
+proc env_init() =
+  env_set(cast[ptr uint8]("HOME"), cast[ptr uint8]("/home"))
+  env_set(cast[ptr uint8]("PATH"), cast[ptr uint8]("/bin"))
+  env_set(cast[ptr uint8]("SHELL"), cast[ptr uint8]("/bin/bsh"))
+  env_set(cast[ptr uint8]("USER"), cast[ptr uint8]("root"))
+  env_set(cast[ptr uint8]("HOSTNAME"), cast[ptr uint8]("brainhair"))
+  env_set(cast[ptr uint8]("PS1"), cast[ptr uint8]("bhos> "))
 
-  # Move all entries after this one up
-  var i: int32 = idx
-  while i < file_count - 1:
-    var src: ptr uint8 = fs_get_entry(i + 1)
-    var dst: ptr uint8 = fs_get_entry(i)
-    var j: int32 = 0
-    while j < FILE_ENTRY_SIZE:
-      dst[j] = src[j]
-      j = j + 1
+# ============================================================================
+# Low-level block/inode access
+# ============================================================================
+
+# Get pointer to a block
+proc fs_block_ptr(block_num: int32): ptr uint8 =
+  var offset: int32 = block_num * BLOCK_SIZE
+  return addr(fs_data[offset])
+
+# Get pointer to inode
+proc fs_inode_ptr(ino: int32): ptr uint8 =
+  # Inodes start at block 3
+  var offset: int32 = 3 * BLOCK_SIZE + (ino - 1) * INODE_SIZE
+  return addr(fs_data[offset])
+
+# Read 16-bit value from pointer
+proc read16(p: ptr uint8): int32 =
+  var lo: int32 = cast[int32](p[0])
+  var hi: int32 = cast[int32](p[1])
+  return lo + (hi << 8)
+
+# Write 16-bit value to pointer
+proc write16(p: ptr uint8, val: int32) =
+  p[0] = cast[uint8](val & 0xFF)
+  p[1] = cast[uint8]((val >> 8) & 0xFF)
+
+# Read 32-bit value from pointer
+proc read32(p: ptr uint8): int32 =
+  var b0: int32 = cast[int32](p[0])
+  var b1: int32 = cast[int32](p[1])
+  var b2: int32 = cast[int32](p[2])
+  var b3: int32 = cast[int32](p[3])
+  return b0 + (b1 << 8) + (b2 << 16) + (b3 << 24)
+
+# Write 32-bit value to pointer
+proc write32(p: ptr uint8, val: int32) =
+  p[0] = cast[uint8](val & 0xFF)
+  p[1] = cast[uint8]((val >> 8) & 0xFF)
+  p[2] = cast[uint8]((val >> 16) & 0xFF)
+  p[3] = cast[uint8]((val >> 24) & 0xFF)
+
+# ============================================================================
+# Inode operations
+# ============================================================================
+
+# Get inode mode
+proc inode_get_mode(ino: int32): int32 =
+  var p: ptr uint8 = fs_inode_ptr(ino)
+  return read16(p)
+
+# Set inode mode
+proc inode_set_mode(ino: int32, mode: int32) =
+  var p: ptr uint8 = fs_inode_ptr(ino)
+  write16(p, mode)
+
+# Get inode size
+proc inode_get_size(ino: int32): int32 =
+  var p: ptr uint8 = fs_inode_ptr(ino)
+  return read32(addr(p[4]))
+
+# Set inode size
+proc inode_set_size(ino: int32, size: int32) =
+  var p: ptr uint8 = fs_inode_ptr(ino)
+  write32(addr(p[4]), size)
+
+# Get inode block pointer (0-3)
+proc inode_get_block(ino: int32, idx: int32): int32 =
+  var p: ptr uint8 = fs_inode_ptr(ino)
+  return read32(addr(p[8 + idx * 4]))
+
+# Set inode block pointer
+proc inode_set_block(ino: int32, idx: int32, blk: int32) =
+  var p: ptr uint8 = fs_inode_ptr(ino)
+  write32(addr(p[8 + idx * 4]), blk)
+
+# Check if inode is directory
+proc inode_is_dir(ino: int32): int32 =
+  var mode: int32 = inode_get_mode(ino)
+  if (mode & 0xF000) == S_IFDIR:
+    return 1
+  return 0
+
+# ============================================================================
+# Bitmap operations
+# ============================================================================
+
+# Get bit in bitmap
+proc bitmap_get(block: int32, bit: int32): int32 =
+  var p: ptr uint8 = fs_block_ptr(block)
+  var byte_idx: int32 = bit / 8
+  var bit_idx: int32 = bit & 7
+  var byte_val: int32 = cast[int32](p[byte_idx])
+  if (byte_val & (1 << bit_idx)) != 0:
+    return 1
+  return 0
+
+# Set bit in bitmap
+proc bitmap_set(block: int32, bit: int32) =
+  var p: ptr uint8 = fs_block_ptr(block)
+  var byte_idx: int32 = bit / 8
+  var bit_idx: int32 = bit & 7
+  var byte_val: int32 = cast[int32](p[byte_idx])
+  p[byte_idx] = cast[uint8](byte_val | (1 << bit_idx))
+
+# Clear bit in bitmap
+proc bitmap_clear(block: int32, bit: int32) =
+  var p: ptr uint8 = fs_block_ptr(block)
+  var byte_idx: int32 = bit / 8
+  var bit_idx: int32 = bit & 7
+  var byte_val: int32 = cast[int32](p[byte_idx])
+  var mask: int32 = 255 - (1 << bit_idx)
+  p[byte_idx] = cast[uint8](byte_val & mask)
+
+# Allocate an inode, returns inode number or 0
+proc alloc_inode(): int32 =
+  var i: int32 = 1  # Inode 0 is reserved
+  while i < INODE_COUNT:
+    if bitmap_get(1, i) == 0:
+      bitmap_set(1, i)
+      return i
+    i = i + 1
+  return 0
+
+# Free an inode
+proc free_inode(ino: int32) =
+  bitmap_clear(1, ino)
+  # Clear inode data
+  var p: ptr uint8 = fs_inode_ptr(ino)
+  var i: int32 = 0
+  while i < INODE_SIZE:
+    p[i] = cast[uint8](0)
     i = i + 1
 
-  file_count = file_count - 1
+# Allocate a data block, returns block number or 0
+proc alloc_block(): int32 =
+  var i: int32 = FIRST_DATA_BLOCK
+  while i < BLOCK_COUNT:
+    if bitmap_get(2, i) == 0:
+      bitmap_set(2, i)
+      # Clear block
+      var p: ptr uint8 = fs_block_ptr(i)
+      var j: int32 = 0
+      while j < BLOCK_SIZE:
+        p[j] = cast[uint8](0)
+        j = j + 1
+      return i
+    i = i + 1
   return 0
 
-# Initialize filesystem with some sample files
+# Free a data block
+proc free_block(blk: int32) =
+  bitmap_clear(2, blk)
+
+# ============================================================================
+# Directory operations
+# ============================================================================
+
+# Find entry in directory, returns inode or 0
+proc dir_lookup(dir_ino: int32, name: ptr uint8, name_len: int32): int32 =
+  var blk: int32 = inode_get_block(dir_ino, 0)
+  if blk == 0:
+    return 0
+  var p: ptr uint8 = fs_block_ptr(blk)
+  var offset: int32 = 0
+  while offset < BLOCK_SIZE:
+    var ent_ino: int32 = read32(addr(p[offset]))
+    if ent_ino != 0:
+      var ent_name_len: int32 = cast[int32](p[offset + 6])
+      if ent_name_len == name_len:
+        # Compare names
+        var match: int32 = 1
+        var i: int32 = 0
+        while i < name_len:
+          if p[offset + 8 + i] != name[i]:
+            match = 0
+            i = name_len  # break
+          i = i + 1
+        if match == 1:
+          return ent_ino
+    offset = offset + DIRENT_SIZE
+  return 0
+
+# Add entry to directory
+proc dir_add_entry(dir_ino: int32, name: ptr uint8, name_len: int32, ino: int32, ftype: int32): int32 =
+  var blk: int32 = inode_get_block(dir_ino, 0)
+  if blk == 0:
+    # Allocate block for directory
+    blk = alloc_block()
+    if blk == 0:
+      return -1
+    inode_set_block(dir_ino, 0, blk)
+    inode_set_size(dir_ino, BLOCK_SIZE)
+  var p: ptr uint8 = fs_block_ptr(blk)
+  # Find empty slot
+  var offset: int32 = 0
+  while offset < BLOCK_SIZE:
+    var ent_ino: int32 = read32(addr(p[offset]))
+    if ent_ino == 0:
+      # Found empty slot
+      write32(addr(p[offset]), ino)
+      write16(addr(p[offset + 4]), DIRENT_SIZE)
+      p[offset + 6] = cast[uint8](name_len)
+      p[offset + 7] = cast[uint8](ftype)
+      var i: int32 = 0
+      while i < name_len:
+        p[offset + 8 + i] = name[i]
+        i = i + 1
+      return 0
+    offset = offset + DIRENT_SIZE
+  return -1  # Directory full
+
+# Remove entry from directory
+proc dir_remove_entry(dir_ino: int32, name: ptr uint8, name_len: int32): int32 =
+  var blk: int32 = inode_get_block(dir_ino, 0)
+  if blk == 0:
+    return -1
+  var p: ptr uint8 = fs_block_ptr(blk)
+  var offset: int32 = 0
+  while offset < BLOCK_SIZE:
+    var ent_ino: int32 = read32(addr(p[offset]))
+    if ent_ino != 0:
+      var ent_name_len: int32 = cast[int32](p[offset + 6])
+      if ent_name_len == name_len:
+        var match: int32 = 1
+        var i: int32 = 0
+        while i < name_len:
+          if p[offset + 8 + i] != name[i]:
+            match = 0
+            i = name_len
+          i = i + 1
+        if match == 1:
+          # Clear entry
+          write32(addr(p[offset]), 0)
+          return ent_ino
+    offset = offset + DIRENT_SIZE
+  return -1
+
+# ============================================================================
+# Path resolution
+# ============================================================================
+
+# Get string length
+proc fs_strlen(s: ptr uint8): int32 =
+  var len: int32 = 0
+  while cast[int32](s[len]) != 0:
+    len = len + 1
+  return len
+
+# Resolve path to inode (simplified: /a/b/c style)
+proc path_resolve(path: ptr uint8): int32 =
+  var len: int32 = fs_strlen(path)
+  if len == 0:
+    return cwd_inode
+
+  # Start from root or cwd
+  var ino: int32 = cwd_inode
+  if cast[int32](path[0]) == 47:  # '/'
+    ino = 1  # root inode
+    path = addr(path[1])
+    len = len - 1
+
+  if len == 0:
+    return ino
+
+  # Parse path components
+  var start: int32 = 0
+  var i: int32 = 0
+  while i <= len:
+    var c: int32 = 0
+    if i < len:
+      c = cast[int32](path[i])
+    if c == 47 or c == 0:  # '/' or end
+      if i > start:
+        var comp_len: int32 = i - start
+        var next_ino: int32 = dir_lookup(ino, addr(path[start]), comp_len)
+        if next_ino == 0:
+          return 0  # Not found
+        ino = next_ino
+      start = i + 1
+    i = i + 1
+
+  return ino
+
+# Get parent directory inode
+proc path_parent(path: ptr uint8): int32 =
+  var len: int32 = fs_strlen(path)
+  if len == 0:
+    return cwd_inode
+
+  # Find last slash
+  var last_slash: int32 = -1
+  var i: int32 = 0
+  while i < len:
+    if cast[int32](path[i]) == 47:
+      last_slash = i
+    i = i + 1
+
+  if last_slash < 0:
+    return cwd_inode  # No slash, parent is cwd
+  if last_slash == 0:
+    return 1  # Parent is root
+
+  # Resolve up to last slash
+  # Temporarily null-terminate
+  var saved: uint8 = path[last_slash]
+  path[last_slash] = cast[uint8](0)
+  var parent: int32 = path_resolve(path)
+  path[last_slash] = saved
+  return parent
+
+# Get basename from path
+proc path_basename(path: ptr uint8): ptr uint8 =
+  var len: int32 = fs_strlen(path)
+  var last_slash: int32 = -1
+  var i: int32 = 0
+  while i < len:
+    if cast[int32](path[i]) == 47:
+      last_slash = i
+    i = i + 1
+  if last_slash < 0:
+    return path
+  return addr(path[last_slash + 1])
+
+# ============================================================================
+# High-level filesystem operations
+# ============================================================================
+
+# Create a file
+proc fs_create_file(path: ptr uint8, content: ptr uint8, size: int32): int32 =
+  var parent_ino: int32 = path_parent(path)
+  if parent_ino == 0:
+    return -1  # Parent not found
+  if inode_is_dir(parent_ino) == 0:
+    return -2  # Parent not a directory
+
+  var name: ptr uint8 = path_basename(path)
+  var name_len: int32 = fs_strlen(name)
+  if name_len == 0:
+    return -3
+  if name_len > MAX_NAME_LEN:
+    return -3
+
+  # Check if already exists
+  if dir_lookup(parent_ino, name, name_len) != 0:
+    return -4  # Already exists
+
+  # Allocate inode
+  var ino: int32 = alloc_inode()
+  if ino == 0:
+    return -5  # No inodes
+
+  # Set up inode
+  inode_set_mode(ino, S_IFREG)
+  inode_set_size(ino, size)
+
+  # Allocate block for content if needed
+  if size > 0:
+    var blk: int32 = alloc_block()
+    if blk == 0:
+      free_inode(ino)
+      return -6  # No blocks
+    inode_set_block(ino, 0, blk)
+    # Copy content
+    var p: ptr uint8 = fs_block_ptr(blk)
+    var i: int32 = 0
+    while i < size:
+      if i < BLOCK_SIZE:
+        p[i] = content[i]
+      i = i + 1
+
+  # Add to parent directory
+  if dir_add_entry(parent_ino, name, name_len, ino, FT_FILE) < 0:
+    free_inode(ino)
+    return -7
+
+  return 0
+
+# Create a directory
+proc fs_mkdir(path: ptr uint8): int32 =
+  var parent_ino: int32 = path_parent(path)
+  if parent_ino == 0:
+    return -1
+  if inode_is_dir(parent_ino) == 0:
+    return -2
+
+  var name: ptr uint8 = path_basename(path)
+  var name_len: int32 = fs_strlen(name)
+  if name_len == 0:
+    return -3
+  if name_len > MAX_NAME_LEN:
+    return -3
+
+  if dir_lookup(parent_ino, name, name_len) != 0:
+    return -4  # Exists
+
+  var ino: int32 = alloc_inode()
+  if ino == 0:
+    return -5
+
+  inode_set_mode(ino, S_IFDIR)
+
+  # Allocate block for directory entries
+  var blk: int32 = alloc_block()
+  if blk == 0:
+    free_inode(ino)
+    return -6
+  inode_set_block(ino, 0, blk)
+  inode_set_size(ino, BLOCK_SIZE)
+
+  # Add . and .. entries
+  dir_add_entry(ino, cast[ptr uint8]("."), 1, ino, FT_DIR)
+  dir_add_entry(ino, cast[ptr uint8](".."), 2, parent_ino, FT_DIR)
+
+  # Add to parent
+  if dir_add_entry(parent_ino, name, name_len, ino, FT_DIR) < 0:
+    free_inode(ino)
+    free_block(blk)
+    return -7
+
+  return 0
+
+# Delete a file
+proc fs_unlink(path: ptr uint8): int32 =
+  var ino: int32 = path_resolve(path)
+  if ino == 0:
+    return -1
+  if inode_is_dir(ino) == 1:
+    return -2  # Is a directory
+
+  var parent_ino: int32 = path_parent(path)
+  var name: ptr uint8 = path_basename(path)
+  var name_len: int32 = fs_strlen(name)
+
+  # Remove from parent
+  dir_remove_entry(parent_ino, name, name_len)
+
+  # Free blocks
+  var i: int32 = 0
+  while i < 4:
+    var blk: int32 = inode_get_block(ino, i)
+    if blk != 0:
+      free_block(blk)
+    i = i + 1
+
+  free_inode(ino)
+  return 0
+
+# Read file content
+proc fs_read(path: ptr uint8, buf: ptr uint8, max_size: int32): int32 =
+  var ino: int32 = path_resolve(path)
+  if ino == 0:
+    return -1
+  if inode_is_dir(ino) == 1:
+    return -2
+
+  var size: int32 = inode_get_size(ino)
+  if size > max_size:
+    size = max_size
+
+  var blk: int32 = inode_get_block(ino, 0)
+  if blk == 0:
+    return 0  # Empty file
+
+  var p: ptr uint8 = fs_block_ptr(blk)
+  var i: int32 = 0
+  while i < size:
+    buf[i] = p[i]
+    i = i + 1
+
+  return size
+
+# Write to file (create if doesn't exist, overwrite if does)
+proc fs_write(path: ptr uint8, content: ptr uint8, size: int32): int32 =
+  var ino: int32 = path_resolve(path)
+
+  if ino == 0:
+    # File doesn't exist, create it
+    return fs_create_file(path, content, size)
+
+  if inode_is_dir(ino) == 1:
+    return -2  # Can't write to directory
+
+  # File exists, update content
+  var blk: int32 = inode_get_block(ino, 0)
+  if blk == 0:
+    # No block allocated, allocate one
+    blk = alloc_block()
+    if blk == 0:
+      return -3  # No blocks
+    inode_set_block(ino, 0, blk)
+
+  # Update size
+  inode_set_size(ino, size)
+
+  # Write content
+  var p: ptr uint8 = fs_block_ptr(blk)
+  var i: int32 = 0
+  while i < size:
+    if i < BLOCK_SIZE:
+      p[i] = content[i]
+    i = i + 1
+
+  return 0
+
+# ============================================================================
+# Filesystem initialization
+# ============================================================================
+
 proc fs_init() =
-  # Create a welcome file
-  var welcome: ptr uint8 = cast[ptr uint8]("Welcome to BrainhairOS!\nThis is the ramdisk filesystem.\nUse 'ls' to list files.\n")
-  var wlen: int32 = 0
-  while cast[int32](welcome[wlen]) != 0:
-    wlen = wlen + 1
-  fs_create(cast[ptr uint8]("readme.txt"), welcome, wlen)
+  # Clear all filesystem data (32KB)
+  var i: int32 = 0
+  while i < 32768:
+    fs_data[i] = cast[uint8](0)
+    i = i + 1
 
-  # Create a test file
-  var test: ptr uint8 = cast[ptr uint8]("Hello, World!\n")
-  var tlen: int32 = 0
-  while cast[int32](test[tlen]) != 0:
-    tlen = tlen + 1
-  fs_create(cast[ptr uint8]("hello.txt"), test, tlen)
+  # Set up superblock (block 0)
+  var sb: ptr uint8 = fs_block_ptr(0)
+  write32(addr(sb[0]), 0xBF5F5342)  # Magic "BSFS"
+  write32(addr(sb[4]), 1)           # Version
+  write32(addr(sb[8]), BLOCK_SIZE)
+  write32(addr(sb[12]), BLOCK_COUNT)
+  write32(addr(sb[16]), INODE_COUNT)
 
-  # Create a todo file
-  var todo: ptr uint8 = cast[ptr uint8]("TODO:\n- Add more commands\n- Implement proper FS\n- Write more tests\n")
-  var dlen: int32 = 0
-  while cast[int32](todo[dlen]) != 0:
-    dlen = dlen + 1
-  fs_create(cast[ptr uint8]("todo.txt"), todo, dlen)
+  # Mark reserved blocks as used in block bitmap
+  i = 0
+  while i < FIRST_DATA_BLOCK:
+    bitmap_set(2, i)
+    i = i + 1
+
+  # Mark inode 0 as used (reserved)
+  bitmap_set(1, 0)
+
+  # Create root directory (inode 1)
+  bitmap_set(1, 1)
+  inode_set_mode(1, S_IFDIR)
+  var root_blk: int32 = alloc_block()
+  inode_set_block(1, 0, root_blk)
+  inode_set_size(1, BLOCK_SIZE)
+
+  # Add . and .. to root
+  dir_add_entry(1, cast[ptr uint8]("."), 1, 1, FT_DIR)
+  dir_add_entry(1, cast[ptr uint8](".."), 2, 1, FT_DIR)
+
+  # Create standard directories
+  fs_mkdir(cast[ptr uint8]("/bin"))
+  fs_mkdir(cast[ptr uint8]("/etc"))
+  fs_mkdir(cast[ptr uint8]("/home"))
+  fs_mkdir(cast[ptr uint8]("/tmp"))
+  fs_mkdir(cast[ptr uint8]("/proc"))
+  fs_mkdir(cast[ptr uint8]("/sys"))
+  fs_mkdir(cast[ptr uint8]("/dev"))
+
+  # Create /proc entries (virtual, content generated dynamically)
+  fs_create_file(cast[ptr uint8]("/proc/version"), cast[ptr uint8](""), 0)
+  fs_create_file(cast[ptr uint8]("/proc/uptime"), cast[ptr uint8](""), 0)
+  fs_create_file(cast[ptr uint8]("/proc/meminfo"), cast[ptr uint8](""), 0)
+  fs_create_file(cast[ptr uint8]("/proc/cpuinfo"), cast[ptr uint8](""), 0)
+  fs_create_file(cast[ptr uint8]("/proc/filesystems"), cast[ptr uint8](""), 0)
+  fs_create_file(cast[ptr uint8]("/proc/mounts"), cast[ptr uint8](""), 0)
+  fs_create_file(cast[ptr uint8]("/proc/cmdline"), cast[ptr uint8](""), 0)
+
+  # Create /sys hierarchy
+  fs_mkdir(cast[ptr uint8]("/sys/kernel"))
+  fs_create_file(cast[ptr uint8]("/sys/kernel/hostname"), cast[ptr uint8](""), 0)
+  fs_create_file(cast[ptr uint8]("/sys/kernel/version"), cast[ptr uint8](""), 0)
+  fs_create_file(cast[ptr uint8]("/sys/kernel/ostype"), cast[ptr uint8](""), 0)
+
+  # Create /dev entries
+  fs_create_file(cast[ptr uint8]("/dev/null"), cast[ptr uint8](""), 0)
+  fs_create_file(cast[ptr uint8]("/dev/zero"), cast[ptr uint8](""), 0)
+  fs_create_file(cast[ptr uint8]("/dev/random"), cast[ptr uint8](""), 0)
+  fs_create_file(cast[ptr uint8]("/dev/console"), cast[ptr uint8](""), 0)
+  fs_create_file(cast[ptr uint8]("/dev/tty"), cast[ptr uint8](""), 0)
+
+  # Create /bin entries (command info)
+  fs_create_file(cast[ptr uint8]("/bin/ls"), cast[ptr uint8]("List directory contents"), 23)
+  fs_create_file(cast[ptr uint8]("/bin/cat"), cast[ptr uint8]("Concatenate and display files"), 29)
+  fs_create_file(cast[ptr uint8]("/bin/cd"), cast[ptr uint8]("Change directory"), 16)
+  fs_create_file(cast[ptr uint8]("/bin/pwd"), cast[ptr uint8]("Print working directory"), 23)
+  fs_create_file(cast[ptr uint8]("/bin/mkdir"), cast[ptr uint8]("Create directory"), 16)
+  fs_create_file(cast[ptr uint8]("/bin/rm"), cast[ptr uint8]("Remove file"), 11)
+  fs_create_file(cast[ptr uint8]("/bin/cp"), cast[ptr uint8]("Copy file"), 9)
+  fs_create_file(cast[ptr uint8]("/bin/mv"), cast[ptr uint8]("Move/rename file"), 16)
+  fs_create_file(cast[ptr uint8]("/bin/touch"), cast[ptr uint8]("Create empty file"), 17)
+  fs_create_file(cast[ptr uint8]("/bin/echo"), cast[ptr uint8]("Display text"), 12)
+  fs_create_file(cast[ptr uint8]("/bin/ps"), cast[ptr uint8]("List processes"), 14)
+  fs_create_file(cast[ptr uint8]("/bin/df"), cast[ptr uint8]("Disk free space"), 15)
+  fs_create_file(cast[ptr uint8]("/bin/help"), cast[ptr uint8]("Show available commands"), 23)
+
+  # Create some initial files
+  fs_create_file(cast[ptr uint8]("/etc/hostname"), cast[ptr uint8]("brainhair"), 9)
+  fs_create_file(cast[ptr uint8]("/etc/motd"), cast[ptr uint8]("Welcome to BrainhairOS!"), 23)
+  fs_create_file(cast[ptr uint8]("/etc/passwd"), cast[ptr uint8]("root:x:0:0:root:/root:/bin/bsh"), 30)
+  fs_create_file(cast[ptr uint8]("/etc/group"), cast[ptr uint8]("root:x:0:"), 9)
+  fs_create_file(cast[ptr uint8]("/etc/fstab"), cast[ptr uint8]("none / brainhairfs rw 0 0"), 25)
+  fs_create_file(cast[ptr uint8]("/home/readme.txt"), cast[ptr uint8]("Your home directory."), 20)
+
+  cwd_inode = 1  # Start in root
+
+# ============================================================================
+# Virtual Filesystem (procfs/sysfs) handlers
+# ============================================================================
+
+# Format integer to decimal string, return length
+proc int_to_str(num: int32, buf: ptr uint8): int32 =
+  if num == 0:
+    buf[0] = cast[uint8](48)
+    buf[1] = cast[uint8](0)
+    return 1
+  var temp: array[12, uint8]
+  var pos: int32 = 0
+  var n: int32 = num
+  if n < 0:
+    n = 0 - n
+  while n > 0:
+    temp[pos] = cast[uint8](48 + (n - (n / 10) * 10))
+    n = n / 10
+    pos = pos + 1
+  # Reverse
+  var i: int32 = 0
+  while i < pos:
+    buf[i] = temp[pos - 1 - i]
+    i = i + 1
+  buf[pos] = cast[uint8](0)
+  return pos
+
+# Append string to buffer, return new position
+proc buf_append(buf: ptr uint8, pos: int32, s: ptr uint8): int32 =
+  var i: int32 = 0
+  while cast[int32](s[i]) != 0:
+    buf[pos] = s[i]
+    pos = pos + 1
+    i = i + 1
+  return pos
+
+# Append newline
+proc buf_newline(buf: ptr uint8, pos: int32): int32 =
+  buf[pos] = cast[uint8](10)
+  return pos + 1
+
+# Check if path matches a pattern (simple prefix check)
+proc path_starts_with(path: ptr uint8, prefix: ptr uint8): int32 =
+  var i: int32 = 0
+  while cast[int32](prefix[i]) != 0:
+    if cast[int32](path[i]) != cast[int32](prefix[i]):
+      return 0
+    i = i + 1
+  return 1
+
+# Check if path exactly equals a string
+proc path_equals(path: ptr uint8, target: ptr uint8): int32 =
+  var i: int32 = 0
+  while true:
+    var c1: int32 = cast[int32](path[i])
+    var c2: int32 = cast[int32](target[i])
+    # Handle space as null for path (command line args)
+    if c1 == 32:
+      c1 = 0
+    if c1 != c2:
+      return 0
+    if c1 == 0:
+      return 1
+    i = i + 1
+  return 0
+
+# Generate /proc/version content
+proc vfs_proc_version(buf: ptr uint8): int32 =
+  var pos: int32 = 0
+  pos = buf_append(buf, pos, cast[ptr uint8]("BrainhairOS version 0.1 (brainhair@localhost) (bcc 1.0) #1"))
+  pos = buf_newline(buf, pos)
+  buf[pos] = cast[uint8](0)
+  return pos
+
+# Generate /proc/uptime content
+proc vfs_proc_uptime(buf: ptr uint8): int32 =
+  var ticks: int32 = get_tick_count()
+  var secs: int32 = ticks / 18  # ~18 ticks per second
+  var pos: int32 = 0
+  pos = pos + int_to_str(secs, addr(buf[pos]))
+  pos = buf_append(buf, pos, cast[ptr uint8](".0 0.0"))
+  pos = buf_newline(buf, pos)
+  buf[pos] = cast[uint8](0)
+  return pos
+
+# Generate /proc/meminfo content
+proc vfs_proc_meminfo(buf: ptr uint8): int32 =
+  var pos: int32 = 0
+  pos = buf_append(buf, pos, cast[ptr uint8]("MemTotal:       32768 kB"))
+  pos = buf_newline(buf, pos)
+  pos = buf_append(buf, pos, cast[ptr uint8]("MemFree:        30720 kB"))
+  pos = buf_newline(buf, pos)
+  pos = buf_append(buf, pos, cast[ptr uint8]("MemAvailable:   30720 kB"))
+  pos = buf_newline(buf, pos)
+  pos = buf_append(buf, pos, cast[ptr uint8]("Buffers:            0 kB"))
+  pos = buf_newline(buf, pos)
+  pos = buf_append(buf, pos, cast[ptr uint8]("Cached:          1024 kB"))
+  pos = buf_newline(buf, pos)
+  buf[pos] = cast[uint8](0)
+  return pos
+
+# Generate /proc/cpuinfo content
+proc vfs_proc_cpuinfo(buf: ptr uint8): int32 =
+  var pos: int32 = 0
+  pos = buf_append(buf, pos, cast[ptr uint8]("processor       : 0"))
+  pos = buf_newline(buf, pos)
+  pos = buf_append(buf, pos, cast[ptr uint8]("vendor_id       : BrainhairCPU"))
+  pos = buf_newline(buf, pos)
+  pos = buf_append(buf, pos, cast[ptr uint8]("model name      : Brainhair Virtual CPU"))
+  pos = buf_newline(buf, pos)
+  pos = buf_append(buf, pos, cast[ptr uint8]("cpu MHz         : 100.0"))
+  pos = buf_newline(buf, pos)
+  pos = buf_append(buf, pos, cast[ptr uint8]("bogomips        : 200.00"))
+  pos = buf_newline(buf, pos)
+  buf[pos] = cast[uint8](0)
+  return pos
+
+# Generate /proc/filesystems content
+proc vfs_proc_filesystems(buf: ptr uint8): int32 =
+  var pos: int32 = 0
+  pos = buf_append(buf, pos, cast[ptr uint8]("nodev   brainhairfs"))
+  pos = buf_newline(buf, pos)
+  pos = buf_append(buf, pos, cast[ptr uint8]("nodev   procfs"))
+  pos = buf_newline(buf, pos)
+  pos = buf_append(buf, pos, cast[ptr uint8]("nodev   sysfs"))
+  pos = buf_newline(buf, pos)
+  pos = buf_append(buf, pos, cast[ptr uint8]("nodev   devfs"))
+  pos = buf_newline(buf, pos)
+  buf[pos] = cast[uint8](0)
+  return pos
+
+# Generate /proc/mounts content
+proc vfs_proc_mounts(buf: ptr uint8): int32 =
+  var pos: int32 = 0
+  pos = buf_append(buf, pos, cast[ptr uint8]("none / brainhairfs rw 0 0"))
+  pos = buf_newline(buf, pos)
+  pos = buf_append(buf, pos, cast[ptr uint8]("proc /proc procfs rw 0 0"))
+  pos = buf_newline(buf, pos)
+  pos = buf_append(buf, pos, cast[ptr uint8]("sys /sys sysfs rw 0 0"))
+  pos = buf_newline(buf, pos)
+  pos = buf_append(buf, pos, cast[ptr uint8]("dev /dev devfs rw 0 0"))
+  pos = buf_newline(buf, pos)
+  buf[pos] = cast[uint8](0)
+  return pos
+
+# Generate /proc/cmdline content
+proc vfs_proc_cmdline(buf: ptr uint8): int32 =
+  var pos: int32 = 0
+  pos = buf_append(buf, pos, cast[ptr uint8]("root=/dev/ram0 console=ttyS0"))
+  pos = buf_newline(buf, pos)
+  buf[pos] = cast[uint8](0)
+  return pos
+
+# Generate /sys/kernel/hostname content
+proc vfs_sys_hostname(buf: ptr uint8): int32 =
+  var pos: int32 = 0
+  pos = buf_append(buf, pos, cast[ptr uint8]("brainhair"))
+  pos = buf_newline(buf, pos)
+  buf[pos] = cast[uint8](0)
+  return pos
+
+# Generate /sys/kernel/version content
+proc vfs_sys_version(buf: ptr uint8): int32 =
+  var pos: int32 = 0
+  pos = buf_append(buf, pos, cast[ptr uint8]("#1 BrainhairOS 0.1"))
+  pos = buf_newline(buf, pos)
+  buf[pos] = cast[uint8](0)
+  return pos
+
+# Generate /sys/kernel/ostype content
+proc vfs_sys_ostype(buf: ptr uint8): int32 =
+  var pos: int32 = 0
+  pos = buf_append(buf, pos, cast[ptr uint8]("BrainhairOS"))
+  pos = buf_newline(buf, pos)
+  buf[pos] = cast[uint8](0)
+  return pos
+
+# Build absolute path from relative path and cwd
+# Returns length of absolute path
+proc build_absolute_path(rel_path: ptr uint8, abs_path: ptr uint8, max_len: int32): int32 =
+  var pos: int32 = 0
+
+  # If already absolute, just copy
+  if cast[int32](rel_path[0]) == 47:  # '/'
+    while cast[int32](rel_path[pos]) != 0:
+      if cast[int32](rel_path[pos]) == 32:  # space terminates
+        break
+      if pos < max_len - 1:
+        abs_path[pos] = rel_path[pos]
+      pos = pos + 1
+    abs_path[pos] = cast[uint8](0)
+    return pos
+
+  # Build cwd + "/" + relative path
+  var cwd_buf: array[64, uint8]
+  fs_getcwd(addr(cwd_buf[0]), 64)
+
+  # Copy cwd
+  var i: int32 = 0
+  while cast[int32](cwd_buf[i]) != 0:
+    if pos < max_len - 1:
+      abs_path[pos] = cwd_buf[i]
+      pos = pos + 1
+    i = i + 1
+
+  # Add / if not at root
+  if pos > 1:
+    if pos < max_len - 1:
+      abs_path[pos] = cast[uint8](47)
+      pos = pos + 1
+  elif pos == 1:
+    if cast[int32](abs_path[0]) != 47:
+      abs_path[pos] = cast[uint8](47)
+      pos = pos + 1
+
+  # Copy relative path
+  i = 0
+  while cast[int32](rel_path[i]) != 0:
+    if cast[int32](rel_path[i]) == 32:  # space terminates
+      break
+    if pos < max_len - 1:
+      abs_path[pos] = rel_path[i]
+      pos = pos + 1
+    i = i + 1
+
+  abs_path[pos] = cast[uint8](0)
+  return pos
+
+# Check if path is a virtual file and generate content
+# Returns: content length, or -1 if not a virtual file
+proc vfs_read(path: ptr uint8, buf: ptr uint8, max_size: int32): int32 =
+  # /proc files
+  if path_equals(path, cast[ptr uint8]("/proc/version")) == 1:
+    return vfs_proc_version(buf)
+  if path_equals(path, cast[ptr uint8]("/proc/uptime")) == 1:
+    return vfs_proc_uptime(buf)
+  if path_equals(path, cast[ptr uint8]("/proc/meminfo")) == 1:
+    return vfs_proc_meminfo(buf)
+  if path_equals(path, cast[ptr uint8]("/proc/cpuinfo")) == 1:
+    return vfs_proc_cpuinfo(buf)
+  if path_equals(path, cast[ptr uint8]("/proc/filesystems")) == 1:
+    return vfs_proc_filesystems(buf)
+  if path_equals(path, cast[ptr uint8]("/proc/mounts")) == 1:
+    return vfs_proc_mounts(buf)
+  if path_equals(path, cast[ptr uint8]("/proc/cmdline")) == 1:
+    return vfs_proc_cmdline(buf)
+  # /sys files
+  if path_equals(path, cast[ptr uint8]("/sys/kernel/hostname")) == 1:
+    return vfs_sys_hostname(buf)
+  if path_equals(path, cast[ptr uint8]("/sys/kernel/version")) == 1:
+    return vfs_sys_version(buf)
+  if path_equals(path, cast[ptr uint8]("/sys/kernel/ostype")) == 1:
+    return vfs_sys_ostype(buf)
+  # Not a virtual file
+  return -1
+
+# ============================================================================
+# Helper function for cwd path
+# ============================================================================
+
+# Find name of inode in parent directory
+proc find_name_in_dir(parent_ino: int32, target_ino: int32, name_buf: ptr uint8, max_len: int32): int32 =
+  var blk: int32 = inode_get_block(parent_ino, 0)
+  if blk == 0:
+    return 0
+  var p: ptr uint8 = fs_block_ptr(blk)
+  var offset: int32 = 0
+  while offset < BLOCK_SIZE:
+    var ent_ino: int32 = read32(addr(p[offset]))
+    if ent_ino == target_ino:
+      var name_len: int32 = cast[int32](p[offset + 6])
+      if name_len > max_len - 1:
+        name_len = max_len - 1
+      var i: int32 = 0
+      while i < name_len:
+        name_buf[i] = p[offset + 8 + i]
+        i = i + 1
+      name_buf[name_len] = cast[uint8](0)
+      return name_len
+    offset = offset + DIRENT_SIZE
+  return 0
+
+# Get current working directory path
+proc fs_getcwd(buf: ptr uint8, size: int32) =
+  if cwd_inode == 1:
+    buf[0] = cast[uint8](47)  # '/'
+    buf[1] = cast[uint8](0)
+    return
+
+  # Simple approach: store inodes, then look up names
+  var inodes: array[8, int32]
+  var count: int32 = 0
+  var current: int32 = cwd_inode
+
+  # Walk up to root, recording inode numbers
+  while current != 1:
+    if count >= 8:
+      break
+    inodes[count] = current
+    count = count + 1
+    var parent: int32 = dir_lookup(current, cast[ptr uint8](".."), 2)
+    if parent == 0:
+      parent = 1
+    current = parent
+
+  # Build path from root down
+  var pos: int32 = 0
+  var i: int32 = count - 1
+  while i >= 0:
+    buf[pos] = cast[uint8](47)  # '/'
+    pos = pos + 1
+    # Find this inode's parent
+    var ino: int32 = inodes[i]
+    var parent_ino: int32 = 1
+    if i < count - 1:
+      parent_ino = inodes[i + 1]
+    else:
+      parent_ino = 1  # root is parent
+    # Get parent for this inode via ..
+    var real_parent: int32 = dir_lookup(ino, cast[ptr uint8](".."), 2)
+    if real_parent == 0:
+      real_parent = 1
+    # Look up name in parent
+    var name_buf: array[32, uint8]
+    var name_len: int32 = find_name_in_dir(real_parent, ino, addr(name_buf[0]), 32)
+    var j: int32 = 0
+    while j < name_len:
+      if pos < size - 1:
+        buf[pos] = name_buf[j]
+        pos = pos + 1
+      j = j + 1
+    i = i - 1
+  buf[pos] = cast[uint8](0)
 
 # Parse decimal string to integer
 proc parse_int(s: ptr uint8): int32 =
@@ -652,6 +1697,81 @@ proc find_arg(buf: ptr uint8, argnum: int32): ptr uint8 =
 
   return cast[ptr uint8](0)
 
+# Find output redirection in command buffer
+# Returns: position of '>' (or first '>' of '>>'), or -1 if not found
+proc find_redirect(buf: ptr uint8, len: int32): int32 =
+  var i: int32 = 0
+  while i < len:
+    if cast[int32](buf[i]) == 62:  # '>'
+      return i
+    i = i + 1
+  return -1
+
+# Check if it's append mode (>>)
+proc is_append_redirect(buf: ptr uint8, pos: int32, len: int32): int32 =
+  if pos + 1 < len:
+    if cast[int32](buf[pos + 1]) == 62:  # second '>'
+      return 1
+  return 0
+
+# Get filename after redirect, skipping spaces
+proc get_redirect_filename(buf: ptr uint8, pos: int32, len: int32): ptr uint8 =
+  var i: int32 = pos + 1
+  # Skip second '>' if present
+  if i < len:
+    if cast[int32](buf[i]) == 62:
+      i = i + 1
+  # Skip spaces
+  while i < len:
+    if cast[int32](buf[i]) != 32:
+      break
+    i = i + 1
+  if i >= len:
+    return cast[ptr uint8](0)
+  return addr(buf[i])
+
+# Null-terminate the redirect filename (at first space or end)
+proc terminate_filename(filename: ptr uint8) =
+  var i: int32 = 0
+  while cast[int32](filename[i]) != 0:
+    if cast[int32](filename[i]) == 32:  # space
+      filename[i] = cast[uint8](0)
+      return
+    i = i + 1
+
+# Find pipe character in command buffer
+# Returns: position of '|', or -1 if not found
+proc find_pipe(buf: ptr uint8, len: int32): int32 =
+  var i: int32 = 0
+  while i < len:
+    if cast[int32](buf[i]) == 124:  # '|'
+      return i
+    i = i + 1
+  return -1
+
+# Pipe output buffer (for capturing command output)
+var pipe_buf: array[1024, uint8]
+var pipe_len: int32 = 0
+var pipe_mode: int32 = 0  # 0 = normal, 1 = capturing to pipe_buf
+
+# Add character to pipe buffer
+proc pipe_putchar(c: int32) =
+  if pipe_len < 1020:
+    pipe_buf[pipe_len] = cast[uint8](c)
+    pipe_len = pipe_len + 1
+
+# Add string to pipe buffer
+proc pipe_print(s: ptr uint8) =
+  var i: int32 = 0
+  while cast[int32](s[i]) != 0:
+    pipe_putchar(cast[int32](s[i]))
+    i = i + 1
+
+# Add string with newline to pipe buffer
+proc pipe_println(s: ptr uint8) =
+  pipe_print(s)
+  pipe_putchar(10)  # newline
+
 # Check if s2 is a substring starting at position in s1
 proc str_contains_at(s1: ptr uint8, pos: int32, s2: ptr uint8, s2_len: int32): int32 =
   var i: int32 = 0
@@ -686,20 +1806,185 @@ proc shell_execute() =
   # Null-terminate the command
   cmd_buffer[cmd_len] = cast[uint8](0)
 
+  # Trim trailing whitespace
+  while cmd_len > 0:
+    var last_ch: int32 = cast[int32](cmd_buffer[cmd_len - 1])
+    if last_ch != 32:  # Not a space
+      if last_ch != 9:  # Not a tab
+        break
+    cmd_len = cmd_len - 1
+    cmd_buffer[cmd_len] = cast[uint8](0)
+
   # Skip empty commands
   if cmd_len == 0:
     return
 
-  # Parse and execute command (using if/return to work around elif bug)
+  # Check for pipe
+  var pipe_pos: int32 = find_pipe(addr(cmd_buffer[0]), cmd_len)
+  if pipe_pos > 0:
+    # Found pipe - split and execute
+    # Left side: cmd_buffer[0..pipe_pos-1]
+    # Right side: cmd_buffer[pipe_pos+1..end]
+
+    # Save right side command
+    var right_cmd: array[128, uint8]
+    var right_start: int32 = pipe_pos + 1
+    # Skip leading spaces
+    while right_start < cmd_len:
+      if cast[int32](cmd_buffer[right_start]) != 32:
+        break
+      right_start = right_start + 1
+    var ri: int32 = 0
+    while right_start + ri < cmd_len:
+      right_cmd[ri] = cmd_buffer[right_start + ri]
+      ri = ri + 1
+    right_cmd[ri] = cast[uint8](0)
+    var right_len: int32 = ri
+
+    # Terminate left command at pipe position (skip trailing spaces)
+    var left_end: int32 = pipe_pos
+    while left_end > 0:
+      if cast[int32](cmd_buffer[left_end - 1]) != 32:
+        break
+      left_end = left_end - 1
+    cmd_buffer[left_end] = cast[uint8](0)
+    var saved_len: int32 = cmd_len
+    cmd_len = left_end
+
+    # Execute left command, capturing output to pipe_buf
+    pipe_mode = 1
+    pipe_len = 0
+    shell_execute()  # Recursive call for left side
+    pipe_buf[pipe_len] = cast[uint8](0)
+    pipe_mode = 0
+
+    # Now execute right command with pipe input
+    # Copy right command to cmd_buffer
+    var ci: int32 = 0
+    while ci < right_len:
+      cmd_buffer[ci] = right_cmd[ci]
+      ci = ci + 1
+    cmd_buffer[ci] = cast[uint8](0)
+    cmd_len = right_len
+
+    # Execute right command with pipe_buf as input
+    # For now, support "grep pattern" on piped input
+    if cmd_len >= 5:
+      if cmd_buffer[0] == cast[uint8](103):  # 'g'
+        if cmd_buffer[1] == cast[uint8](114):  # 'r'
+          if cmd_buffer[2] == cast[uint8](101):  # 'e'
+            if cmd_buffer[3] == cast[uint8](112):  # 'p'
+              if cmd_buffer[4] == cast[uint8](32):  # ' '
+                # grep on piped input
+                var pattern: ptr uint8 = find_arg(addr(cmd_buffer[0]), 1)
+                if cast[int32](pattern) != 0:
+                  var pattern_len: int32 = fs_strlen(pattern)
+                  # Search through pipe_buf line by line
+                  var line_start: int32 = 0
+                  var pi: int32 = 0
+                  while pi <= pipe_len:
+                    if pi == pipe_len or cast[int32](pipe_buf[pi]) == 10:
+                      # End of line - check if pattern matches
+                      var li: int32 = line_start
+                      while li < pi:
+                        if str_contains_at(addr(pipe_buf[0]), li, pattern, pattern_len) == 1:
+                          # Match found - print line
+                          var pj: int32 = line_start
+                          while pj < pi:
+                            var ch: int32 = cast[int32](pipe_buf[pj])
+                            vga_putchar(ch)
+                            serial_putchar(ch)
+                            pj = pj + 1
+                          kprintln(cast[ptr uint8](""))
+                          li = pi  # Exit inner loop
+                        li = li + 1
+                      line_start = pi + 1
+                    pi = pi + 1
+                  cmd_len = saved_len
+                  return
+    # Support "head" or "head -n N" on piped input
+    if cmd_len >= 4:
+      if cmd_buffer[0] == cast[uint8](104):  # 'h'
+        if cmd_buffer[1] == cast[uint8](101):  # 'e'
+          if cmd_buffer[2] == cast[uint8](97):  # 'a'
+            if cmd_buffer[3] == cast[uint8](100):  # 'd'
+              var num_lines: int32 = 10  # default
+              if cmd_len >= 6:
+                if cmd_buffer[4] == cast[uint8](32):  # space after head
+                  var arg: ptr uint8 = find_arg(addr(cmd_buffer[0]), 1)
+                  if cast[int32](arg) != 0:
+                    num_lines = parse_int(arg)
+                    if num_lines <= 0:
+                      num_lines = 10
+              # Print first N lines from pipe_buf
+              var lines_printed: int32 = 0
+              var pi: int32 = 0
+              while pi < pipe_len:
+                if lines_printed >= num_lines:
+                  break
+                var ch: int32 = cast[int32](pipe_buf[pi])
+                vga_putchar(ch)
+                serial_putchar(ch)
+                if ch == 10:
+                  lines_printed = lines_printed + 1
+                pi = pi + 1
+              if pipe_buf[pipe_len - 1] != cast[uint8](10):
+                kprintln(cast[ptr uint8](""))
+              cmd_len = saved_len
+              return
+    # Support "wc" on piped input
+    if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("wc")) == 1:
+      var lines: int32 = 0
+      var words: int32 = 0
+      var chars: int32 = pipe_len
+      var in_word: int32 = 0
+      var pi: int32 = 0
+      while pi < pipe_len:
+        var ch: int32 = cast[int32](pipe_buf[pi])
+        if ch == 10:
+          lines = lines + 1
+        if ch == 32 or ch == 10 or ch == 9:
+          in_word = 0
+        else:
+          if in_word == 0:
+            words = words + 1
+            in_word = 1
+        pi = pi + 1
+      kprint_dec(lines)
+      kprint(cast[ptr uint8](" "))
+      kprint_dec(words)
+      kprint(cast[ptr uint8](" "))
+      kprint_dec(chars)
+      kprintln(cast[ptr uint8](""))
+      cmd_len = saved_len
+      return
+
+    cmd_len = saved_len
+    kprintln(cast[ptr uint8]("Pipe error: unsupported right-side command"))
     return
+
+  # Parse and execute command (using if/return to work around elif bug)
   if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("help")) == 1:
     kprintln(cast[ptr uint8]("Available commands:"))
-    kprintln(cast[ptr uint8]("  help, clear, ver, uptime, ticks, mem, ps, echo"))
-    kprintln(cast[ptr uint8]("  color, banner, hello, spin, guess, peek, poke"))
-    kprintln(cast[ptr uint8]("  dump, run, calc, fill, rand, test, countdown"))
-    kprintln(cast[ptr uint8]("  logo, matrix, ls, cat, write, rm, cp, df"))
-    kprintln(cast[ptr uint8]("  whoami, hostname, date, wc, head, grep, mv"))
-    kprintln(cast[ptr uint8]("  touch, xxd, size, stat, sysinfo, about, reboot"))
+    kprintln(cast[ptr uint8]("  System: help, clear, ver, uptime, date, reboot"))
+    kprintln(cast[ptr uint8]("  Info:   mem, ps, ticks, sysinfo, about"))
+    kprintln(cast[ptr uint8]("  Files:  ls, cat, write, touch, rm, cp, mv, mkdir"))
+    kprintln(cast[ptr uint8]("  Nav:    cd, pwd, stat, size, df"))
+    kprintln(cast[ptr uint8]("  Text:   wc, head, grep, xxd, echo"))
+    kprintln(cast[ptr uint8]("  Env:    env, export VAR=value"))
+    kprintln(cast[ptr uint8]("  Net:    ping, ifconfig, arp"))
+    kprintln(cast[ptr uint8]("  Fun:    banner, hello, spin, guess, countdown"))
+    kprintln(cast[ptr uint8]("  Debug:  peek, poke, dump, fill, run, calc"))
+    kprintln(cast[ptr uint8](""))
+    kprintln(cast[ptr uint8]("Shell features:"))
+    kprintln(cast[ptr uint8]("  Pipes: cmd1 | cmd2 (grep, head, wc)"))
+    kprintln(cast[ptr uint8]("  Redirect: echo text > file, echo text >> file"))
+    kprintln(cast[ptr uint8]("  Variables: echo $HOME, export MY_VAR=value"))
+    kprintln(cast[ptr uint8](""))
+    kprintln(cast[ptr uint8]("Virtual filesystems:"))
+    kprintln(cast[ptr uint8]("  /proc - kernel info (cat /proc/version)"))
+    kprintln(cast[ptr uint8]("  /sys  - system config (cat /sys/kernel/ostype)"))
+    kprintln(cast[ptr uint8]("  /dev  - device files"))
     return
   if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("clear")) == 1:
     vga_clear()
@@ -707,6 +1992,34 @@ proc shell_execute() =
   if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("cls")) == 1:
     vga_clear()
     return
+  if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("pwd")) == 1:
+    var pwd_buf: array[64, uint8]
+    fs_getcwd(addr(pwd_buf[0]), 64)
+    kprintln(addr(pwd_buf[0]))
+    return
+  # cd command
+  if cmd_buffer[0] == cast[uint8](99):  # 'c'
+    if cmd_buffer[1] == cast[uint8](100):  # 'd'
+      if cmd_buffer[2] == cast[uint8](0):  # just "cd" - go to root
+        cwd_inode = 1
+        return
+      if cmd_buffer[2] == cast[uint8](32):  # "cd <path>"
+        var cd_path: ptr uint8 = addr(cmd_buffer[3])
+        var new_ino: int32 = path_resolve(cd_path)
+        if new_ino == 0:
+          vga_set_color(VGA_LIGHT_RED, VGA_BLACK)
+          kprint(cast[ptr uint8]("cd: no such directory: "))
+          kprintln(cd_path)
+          vga_set_color(VGA_WHITE, VGA_BLACK)
+          return
+        if inode_is_dir(new_ino) == 0:
+          vga_set_color(VGA_LIGHT_RED, VGA_BLACK)
+          kprint(cast[ptr uint8]("cd: not a directory: "))
+          kprintln(cd_path)
+          vga_set_color(VGA_WHITE, VGA_BLACK)
+          return
+        cwd_inode = new_ino
+        return
   if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("ticks")) == 1:
     var ticks: int32 = get_tick_count()
     kprint(cast[ptr uint8]("Timer ticks: "))
@@ -727,11 +2040,71 @@ proc shell_execute() =
     var minutes: int32 = seconds / 60
     seconds = seconds - (minutes * 60)
     kprint(cast[ptr uint8]("System uptime: "))
-    vga_print_dec(minutes)
+    kprint_dec(minutes)
     kprint(cast[ptr uint8]("m "))
-    vga_print_dec(seconds)
+    kprint_dec(seconds)
     kprintln(cast[ptr uint8]("s"))
     return
+  # history - show command history
+  if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("history")) == 1:
+    var hi: int32 = 0
+    while hi < history_count:
+      vga_set_color(VGA_DARK_GREY, VGA_BLACK)
+      kprint_dec(hi + 1)
+      kprint(cast[ptr uint8]("  "))
+      vga_set_color(VGA_WHITE, VGA_BLACK)
+      kprintln(history_ptr(hi))
+      hi = hi + 1
+    return
+  # env - show all environment variables
+  if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("env")) == 1:
+    var ei: int32 = 0
+    while ei < env_count:
+      var en: ptr uint8 = env_name_ptr(ei)
+      var ev: ptr uint8 = env_value_ptr(ei)
+      vga_set_color(VGA_LIGHT_CYAN, VGA_BLACK)
+      kprint(en)
+      vga_set_color(VGA_WHITE, VGA_BLACK)
+      kprint(cast[ptr uint8]("="))
+      vga_set_color(VGA_LIGHT_GREEN, VGA_BLACK)
+      kprintln(ev)
+      vga_set_color(VGA_WHITE, VGA_BLACK)
+      ei = ei + 1
+    return
+  # export VAR=value - set environment variable
+  if cmd_buffer[0] == cast[uint8](101):  # 'e'
+    if cmd_buffer[1] == cast[uint8](120):  # 'x'
+      if cmd_buffer[2] == cast[uint8](112):  # 'p'
+        if cmd_buffer[3] == cast[uint8](111):  # 'o'
+          if cmd_buffer[4] == cast[uint8](114):  # 'r'
+            if cmd_buffer[5] == cast[uint8](116):  # 't'
+              if cmd_buffer[6] == cast[uint8](32):  # ' '
+                # Parse VAR=value
+                var name_buf: array[64, uint8]
+                var value_buf: array[128, uint8]
+                var src: int32 = 7
+                var dst: int32 = 0
+                # Copy name until '='
+                while src < cmd_len:
+                  if cast[int32](cmd_buffer[src]) == 61:  # '='
+                    break
+                  name_buf[dst] = cmd_buffer[src]
+                  dst = dst + 1
+                  src = src + 1
+                name_buf[dst] = cast[uint8](0)
+                if cast[int32](cmd_buffer[src]) == 61:
+                  src = src + 1
+                  # Copy value
+                  dst = 0
+                  while src < cmd_len:
+                    value_buf[dst] = cmd_buffer[src]
+                    dst = dst + 1
+                    src = src + 1
+                  value_buf[dst] = cast[uint8](0)
+                  env_set(addr(name_buf[0]), addr(value_buf[0]))
+                  return
+                kprintln(cast[ptr uint8]("Usage: export VAR=value"))
+                return
   if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("ps")) == 1:
     kprintln(cast[ptr uint8]("PID  STATE"))
     kprintln(cast[ptr uint8]("---  --------"))
@@ -740,7 +2113,7 @@ proc shell_execute() =
     while ps_pid < 64:
       var state: int32 = get_process_state(ps_pid)
       if state > 0:  # Not unused
-        vga_print_dec(ps_pid)
+        kprint_dec(ps_pid)
         if ps_pid < 10:
           kprint(cast[ptr uint8]("    "))
         else:
@@ -763,7 +2136,7 @@ proc shell_execute() =
         ps_count = ps_count + 1
       ps_pid = ps_pid + 1
     kprint(cast[ptr uint8]("Total: "))
-    vga_print_dec(ps_count)
+    kprint_dec(ps_count)
     kprintln(cast[ptr uint8](" process(es)"))
     return
   if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("color")) == 1:
@@ -870,7 +2243,7 @@ proc shell_execute() =
       if guess == secret:
         vga_set_color(VGA_LIGHT_GREEN, VGA_BLACK)
         kprint(cast[ptr uint8]("Correct! You got it in "))
-        vga_print_dec(guess_count)
+        kprint_dec(guess_count)
         kprintln(cast[ptr uint8](" guesses!"))
         vga_set_color(VGA_WHITE, VGA_BLACK)
         game_done = 1
@@ -878,7 +2251,7 @@ proc shell_execute() =
         kprintln(cast[ptr uint8]("Too low!"))
       else:
         kprintln(cast[ptr uint8]("Too high!"))
-  elif cmd_buffer[0] == cast[uint8](112):  # 'p'
+  if cmd_buffer[0] == cast[uint8](112):  # 'p'
     if cmd_buffer[1] == cast[uint8](101):  # 'e'
       if cmd_buffer[2] == cast[uint8](101):  # 'e'
         if cmd_buffer[3] == cast[uint8](107):  # 'k'
@@ -916,7 +2289,7 @@ proc shell_execute() =
                 kprintln(cast[ptr uint8]("Usage: poke <hex_addr> <hex_val>"))
             else:
               kprintln(cast[ptr uint8]("Usage: poke <hex_addr> <hex_val>"))
-  elif cmd_buffer[0] == cast[uint8](100):  # 'd'
+  if cmd_buffer[0] == cast[uint8](100):  # 'd'
     if cmd_buffer[1] == cast[uint8](117):  # 'u'
       if cmd_buffer[2] == cast[uint8](109):  # 'm'
         if cmd_buffer[3] == cast[uint8](112):  # 'p'
@@ -960,21 +2333,153 @@ proc shell_execute() =
                 col = col + 1
               kprintln(cast[ptr uint8]("|"))
               row = row + 1
+            return
           else:
             kprintln(cast[ptr uint8]("Usage: dump <hex_addr>"))
-    return
+            return
   if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("run")) == 1:
     kprintln(cast[ptr uint8]("Spawning test process..."))
     var pid: int32 = sys_spawn(cast[int32](addr(test_process)))
     if pid >= 0:
       kprint(cast[ptr uint8]("Created process with PID "))
-      vga_print_dec(pid)
+      kprint_dec(pid)
       kprintln(cast[ptr uint8](""))
       kprintln(cast[ptr uint8]("(Process runs in background - use 'ps' to see)"))
     else:
       vga_set_color(VGA_LIGHT_RED, VGA_BLACK)
       kprintln(cast[ptr uint8]("Failed to spawn process!"))
       vga_set_color(VGA_WHITE, VGA_BLACK)
+    return
+  if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("ping")) == 1:
+    if cmd_len < 6:
+      kprintln(cast[ptr uint8]("Usage: ping <ip>"))
+      kprintln(cast[ptr uint8]("Example: ping 10.0.2.2"))
+      return
+    # Parse IP address from argument
+    var arg_start: int32 = 5  # After "ping "
+    var dest_ip: array[4, uint8]
+    var octet: int32 = 0
+    var octet_idx: int32 = 0
+    var parse_i: int32 = arg_start
+    while parse_i < cmd_len:
+      var c: int32 = cast[int32](cmd_buffer[parse_i])
+      if c >= 48:
+        if c <= 57:
+          octet = octet * 10 + (c - 48)
+      if c == 46:  # '.'
+        if octet_idx < 4:
+          dest_ip[octet_idx] = cast[uint8](octet)
+          octet_idx = octet_idx + 1
+          octet = 0
+      parse_i = parse_i + 1
+    if octet_idx < 4:
+      dest_ip[octet_idx] = cast[uint8](octet)
+
+    kprint(cast[ptr uint8]("PING "))
+    kprint_dec(cast[int32](dest_ip[0]))
+    kprint(cast[ptr uint8]("."))
+    kprint_dec(cast[int32](dest_ip[1]))
+    kprint(cast[ptr uint8]("."))
+    kprint_dec(cast[int32](dest_ip[2]))
+    kprint(cast[ptr uint8]("."))
+    kprint_dec(cast[int32](dest_ip[3]))
+    kprintln(cast[ptr uint8](":"))
+
+    # Send 4 pings
+    var ping_count: int32 = 0
+    var recv_count: int32 = 0
+    while ping_count < 4:
+      icmp_send_ping(addr(dest_ip[0]))
+      kprint(cast[ptr uint8]("  seq="))
+      kprint_dec(ping_seq)
+      kprint(cast[ptr uint8](" "))
+
+      # Wait up to 2 seconds for reply (poll network every 10ms)
+      var wait: int32 = 0
+      while wait < 200:
+        net_poll()
+        if ping_received == 1:
+          wait = 300  # Break
+        else:
+          # Simple delay
+          var delay: int32 = 0
+          while delay < 50000:
+            delay = delay + 1
+          wait = wait + 1
+
+      if ping_received == 1:
+        var rtt: int32 = ping_reply_time - ping_send_time
+        vga_set_color(VGA_LIGHT_GREEN, VGA_BLACK)
+        kprint(cast[ptr uint8]("Reply: time="))
+        kprint_dec(rtt)
+        kprintln(cast[ptr uint8]("ms"))
+        vga_set_color(VGA_WHITE, VGA_BLACK)
+        recv_count = recv_count + 1
+        ping_received = 0
+      else:
+        vga_set_color(VGA_LIGHT_RED, VGA_BLACK)
+        kprintln(cast[ptr uint8]("timeout"))
+        vga_set_color(VGA_WHITE, VGA_BLACK)
+
+      ping_count = ping_count + 1
+
+    kprint(cast[ptr uint8]("--- "))
+    kprint_dec(recv_count)
+    kprint(cast[ptr uint8]("/"))
+    kprint_dec(ping_count)
+    kprintln(cast[ptr uint8](" packets received ---"))
+    return
+  if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("ifconfig")) == 1:
+    kprintln(cast[ptr uint8]("Network Configuration:"))
+    kprint(cast[ptr uint8]("  MAC: "))
+    var mac_i: int32 = 0
+    while mac_i < 6:
+      if cast[int32](my_mac[mac_i]) < 16:
+        kprint(cast[ptr uint8]("0"))
+      vga_print_hex(cast[int32](my_mac[mac_i]))
+      if mac_i < 5:
+        kprint(cast[ptr uint8](":"))
+      mac_i = mac_i + 1
+    kprintln(cast[ptr uint8](""))
+    kprint(cast[ptr uint8]("  IP:  "))
+    kprint_dec(cast[int32](my_ip[0]))
+    kprint(cast[ptr uint8]("."))
+    kprint_dec(cast[int32](my_ip[1]))
+    kprint(cast[ptr uint8]("."))
+    kprint_dec(cast[int32](my_ip[2]))
+    kprint(cast[ptr uint8]("."))
+    kprint_dec(cast[int32](my_ip[3]))
+    kprintln(cast[ptr uint8](""))
+    kprint(cast[ptr uint8]("  ARP entries: "))
+    kprint_dec(arp_count)
+    kprintln(cast[ptr uint8](""))
+    return
+  if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("arp")) == 1:
+    kprintln(cast[ptr uint8]("ARP Cache:"))
+    if arp_count == 0:
+      kprintln(cast[ptr uint8]("  (empty)"))
+    else:
+      var arp_i: int32 = 0
+      while arp_i < arp_count:
+        kprint(cast[ptr uint8]("  "))
+        kprint_dec(cast[int32](arp_ip[arp_i * 4]))
+        kprint(cast[ptr uint8]("."))
+        kprint_dec(cast[int32](arp_ip[arp_i * 4 + 1]))
+        kprint(cast[ptr uint8]("."))
+        kprint_dec(cast[int32](arp_ip[arp_i * 4 + 2]))
+        kprint(cast[ptr uint8]("."))
+        kprint_dec(cast[int32](arp_ip[arp_i * 4 + 3]))
+        kprint(cast[ptr uint8](" -> "))
+        var mac_j: int32 = 0
+        while mac_j < 6:
+          if cast[int32](arp_mac[arp_i * 6 + mac_j]) < 16:
+            kprint(cast[ptr uint8]("0"))
+          vga_print_hex(cast[int32](arp_mac[arp_i * 6 + mac_j]))
+          if mac_j < 5:
+            kprint(cast[ptr uint8](":"))
+          mac_j = mac_j + 1
+        kprintln(cast[ptr uint8](""))
+        arp_i = arp_i + 1
     return
   if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("rand")) == 1:
     # Generate pseudo-random number using tick count and LCG
@@ -983,7 +2488,7 @@ proc shell_execute() =
     seed = (seed / 65536) & 0x7FFF
     vga_set_color(VGA_LIGHT_GREEN, VGA_BLACK)
     kprint(cast[ptr uint8]("Random: "))
-    vga_print_dec(seed)
+    kprint_dec(seed)
     kprint(cast[ptr uint8](" ("))
     vga_print_hex(seed)
     kprintln(cast[ptr uint8](")"))
@@ -1022,7 +2527,7 @@ proc shell_execute() =
     if t2 > t1:
       vga_set_color(VGA_LIGHT_GREEN, VGA_BLACK)
       kprint(cast[ptr uint8]("PASS ("))
-      vga_print_dec(t2 - t1)
+      kprint_dec(t2 - t1)
       kprintln(cast[ptr uint8](" ticks)"))
       vga_set_color(VGA_WHITE, VGA_BLACK)
     else:
@@ -1067,7 +2572,7 @@ proc shell_execute() =
     vga_set_color(VGA_LIGHT_GREEN, VGA_BLACK)
     kprintln(cast[ptr uint8]("All tests complete!"))
     vga_set_color(VGA_WHITE, VGA_BLACK)
-  elif cmd_buffer[0] == cast[uint8](102):  # 'f'
+  if cmd_buffer[0] == cast[uint8](102):  # 'f'
     if cmd_buffer[1] == cast[uint8](105):  # 'i'
       if cmd_buffer[2] == cast[uint8](108):  # 'l'
         if cmd_buffer[3] == cast[uint8](108):  # 'l'
@@ -1092,7 +2597,7 @@ proc shell_execute() =
                       mem[i] = cast[uint8](val)
                       i = i + 1
                     kprint(cast[ptr uint8]("Filled "))
-                    vga_print_dec(count)
+                    kprint_dec(count)
                     kprint(cast[ptr uint8](" bytes at "))
                     vga_print_hex(addr_val)
                     kprint(cast[ptr uint8](" with "))
@@ -1106,7 +2611,7 @@ proc shell_execute() =
                 kprintln(cast[ptr uint8]("Usage: fill <hex_addr> <hex_val> <count>"))
             else:
               kprintln(cast[ptr uint8]("Usage: fill <hex_addr> <hex_val> <count>"))
-  elif cmd_buffer[0] == cast[uint8](99):  # 'c'
+  if cmd_buffer[0] == cast[uint8](99):  # 'c'
     if cmd_buffer[1] == cast[uint8](97):  # 'a'
       if cmd_buffer[2] == cast[uint8](108):  # 'l'
         if cmd_buffer[3] == cast[uint8](99):  # 'c'
@@ -1161,7 +2666,7 @@ proc shell_execute() =
                   if valid == 1:
                     vga_set_color(VGA_LIGHT_GREEN, VGA_BLACK)
                     kprint(cast[ptr uint8]("= "))
-                    vga_print_dec(result)
+                    kprint_dec(result)
                     kprint(cast[ptr uint8](" ("))
                     vga_print_hex(result)
                     kprintln(cast[ptr uint8](")"))
@@ -1174,7 +2679,7 @@ proc shell_execute() =
             else:
               kprintln(cast[ptr uint8]("Usage: calc <num> <op> <num>"))
               kprintln(cast[ptr uint8]("  Ops: + - * / % & | ^"))
-  elif cmd_buffer[0] == cast[uint8](99):  # 'c'
+  if cmd_buffer[0] == cast[uint8](99):  # 'c'
     if cmd_buffer[1] == cast[uint8](111):  # 'o'
       if cmd_buffer[2] == cast[uint8](117):  # 'u'
         if cmd_buffer[3] == cast[uint8](110):  # 'n'
@@ -1196,7 +2701,7 @@ proc shell_execute() =
                             vga_set_color(VGA_LIGHT_CYAN, VGA_BLACK)
                             kprint(cast[ptr uint8]("\r"))
                             kprint(cast[ptr uint8]("  "))
-                            vga_print_dec(n)
+                            kprint_dec(n)
                             kprint(cast[ptr uint8]("   "))
                             vga_set_color(VGA_WHITE, VGA_BLACK)
                             # Delay ~1 second (18 ticks)
@@ -1212,7 +2717,7 @@ proc shell_execute() =
                           kprintln(cast[ptr uint8]("Number must be > 0"))
                       else:
                         kprintln(cast[ptr uint8]("Usage: countdown <number>"))
-    return
+                      return
   if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("logo")) == 1:
     kprintln(cast[ptr uint8](""))
     # Draw a colorful logo
@@ -1240,154 +2745,274 @@ proc shell_execute() =
   if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("cls")) == 1:
     vga_clear()
     return
-  if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("ls")) == 1:
-    vga_set_color(VGA_LIGHT_CYAN, VGA_BLACK)
-    kprintln(cast[ptr uint8]("Ramdisk files:"))
-    vga_set_color(VGA_WHITE, VGA_BLACK)
-    if file_count == 0:
-      kprintln(cast[ptr uint8]("  (empty)"))
-    else:
-      var fi: int32 = 0
-      while fi < file_count:
-        var entry: ptr uint8 = fs_get_entry(fi)
-        kprint(cast[ptr uint8]("  "))
-        vga_set_color(VGA_LIGHT_GREEN, VGA_BLACK)
-        kprint(entry)  # filename
-        vga_set_color(VGA_DARK_GREY, VGA_BLACK)
-        kprint(cast[ptr uint8]("  "))
-        var fsize: int32 = fs_get_size(entry)
-        vga_print_dec(fsize)
-        kprintln(cast[ptr uint8](" bytes"))
-        vga_set_color(VGA_WHITE, VGA_BLACK)
-        fi = fi + 1
-      kprint(cast[ptr uint8]("Total: "))
-      vga_print_dec(file_count)
-      kprint(cast[ptr uint8](" file(s), "))
-      vga_print_dec(ramdisk_used)
-      kprintln(cast[ptr uint8](" bytes used"))
-    return
+  # ls command - list directory contents
+  if cmd_buffer[0] == cast[uint8](108):  # 'l'
+    if cmd_buffer[1] == cast[uint8](115):  # 's'
+      var ls_ino: int32 = cwd_inode  # Default to cwd
+      if cmd_buffer[2] == cast[uint8](32):  # "ls <path>"
+        ls_ino = path_resolve(addr(cmd_buffer[3]))
+        if ls_ino == 0:
+          vga_set_color(VGA_LIGHT_RED, VGA_BLACK)
+          kprint(cast[ptr uint8]("ls: no such file or directory: "))
+          kprintln(addr(cmd_buffer[3]))
+          vga_set_color(VGA_WHITE, VGA_BLACK)
+          return
+      if cmd_buffer[2] != cast[uint8](0):
+        if cmd_buffer[2] != cast[uint8](32):
+          # Not "ls" or "ls ", skip
+          ls_ino = 0
+      if ls_ino != 0:
+        if inode_is_dir(ls_ino) == 0:
+          # It's a file, just show the filename
+          var fsize: int32 = inode_get_size(ls_ino)
+          kprint(addr(cmd_buffer[3]))
+          kprint(cast[ptr uint8]("  "))
+          kprint_dec(fsize)
+          kprintln(cast[ptr uint8](" bytes"))
+          return
+        # It's a directory, list contents
+        var blk: int32 = inode_get_block(ls_ino, 0)
+        if blk != 0:
+          var dp: ptr uint8 = fs_block_ptr(blk)
+          var off: int32 = 0
+          var count: int32 = 0
+          while off < BLOCK_SIZE:
+            var ent_ino: int32 = read32(addr(dp[off]))
+            if ent_ino != 0:
+              var ent_type: int32 = cast[int32](dp[off + 7])
+              var ent_name_len: int32 = cast[int32](dp[off + 6])
+              if pipe_mode == 1:
+                # Pipe mode: plain text output
+                if ent_type == FT_DIR:
+                  pipe_print(cast[ptr uint8]("d "))
+                else:
+                  pipe_print(cast[ptr uint8]("- "))
+                var ni: int32 = 0
+                while ni < ent_name_len:
+                  pipe_putchar(cast[int32](dp[off + 8 + ni]))
+                  ni = ni + 1
+                pipe_putchar(10)  # newline
+              else:
+                # Normal mode: colored output
+                # Print type indicator
+                if ent_type == FT_DIR:
+                  vga_set_color(VGA_LIGHT_BLUE, VGA_BLACK)
+                  kprint(cast[ptr uint8]("d "))
+                else:
+                  vga_set_color(VGA_WHITE, VGA_BLACK)
+                  kprint(cast[ptr uint8]("- "))
+                # Print name
+                vga_set_color(VGA_LIGHT_GREEN, VGA_BLACK)
+                var ni: int32 = 0
+                while ni < ent_name_len:
+                  vga_putchar(cast[int32](dp[off + 8 + ni]))
+                  serial_putchar(cast[int32](dp[off + 8 + ni]))
+                  ni = ni + 1
+                # Print size for files
+                if ent_type == FT_FILE:
+                  vga_set_color(VGA_DARK_GREY, VGA_BLACK)
+                  kprint(cast[ptr uint8]("  "))
+                  var fsize: int32 = inode_get_size(ent_ino)
+                  kprint_dec(fsize)
+                vga_set_color(VGA_WHITE, VGA_BLACK)
+                kprintln(cast[ptr uint8](""))
+              count = count + 1
+            off = off + DIRENT_SIZE
+        return
   if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("df")) == 1:
+    # Count used blocks and inodes
+    var used_blocks: int32 = 0
+    var used_inodes: int32 = 0
+    var bi: int32 = 0
+    while bi < BLOCK_COUNT:
+      if bitmap_get(2, bi) == 1:
+        used_blocks = used_blocks + 1
+      bi = bi + 1
+    var ii: int32 = 0
+    while ii < INODE_COUNT:
+      if bitmap_get(1, ii) == 1:
+        used_inodes = used_inodes + 1
+      ii = ii + 1
+    var total_size: int32 = BLOCK_COUNT * BLOCK_SIZE
+    var used_size: int32 = used_blocks * BLOCK_SIZE
+    var free_size: int32 = total_size - used_size
     vga_set_color(VGA_LIGHT_CYAN, VGA_BLACK)
-    kprintln(cast[ptr uint8]("Ramdisk Usage:"))
+    kprintln(cast[ptr uint8]("BrainhairFS Usage:"))
     vga_set_color(VGA_WHITE, VGA_BLACK)
-    kprint(cast[ptr uint8]("  Used:  "))
-    vga_print_dec(ramdisk_used)
+    kprint(cast[ptr uint8]("  Blocks: "))
+    kprint_dec(used_blocks)
     kprint(cast[ptr uint8](" / "))
-    vga_print_dec(RAMDISK_SIZE)
-    kprintln(cast[ptr uint8](" bytes"))
-    kprint(cast[ptr uint8]("  Free:  "))
-    vga_print_dec(RAMDISK_SIZE - ramdisk_used)
-    kprintln(cast[ptr uint8](" bytes"))
-    kprint(cast[ptr uint8]("  Files: "))
-    vga_print_dec(file_count)
-    kprint(cast[ptr uint8](" / "))
-    vga_print_dec(MAX_FILES)
+    kprint_dec(BLOCK_COUNT)
     kprintln(cast[ptr uint8](""))
+    kprint(cast[ptr uint8]("  Inodes: "))
+    kprint_dec(used_inodes)
+    kprint(cast[ptr uint8](" / "))
+    kprint_dec(INODE_COUNT)
+    kprintln(cast[ptr uint8](""))
+    kprint(cast[ptr uint8]("  Used:   "))
+    kprint_dec(used_size)
+    kprint(cast[ptr uint8](" / "))
+    kprint_dec(total_size)
+    kprintln(cast[ptr uint8](" bytes"))
+    kprint(cast[ptr uint8]("  Free:   "))
+    kprint_dec(free_size)
+    kprintln(cast[ptr uint8](" bytes"))
     # Show a usage bar
     kprint(cast[ptr uint8]("  ["))
-    var bar_used: int32 = (ramdisk_used * 40) / RAMDISK_SIZE
-    var bi: int32 = 0
+    var bar_used: int32 = (used_blocks * 40) / BLOCK_COUNT
+    bi = 0
     while bi < 40:
       if bi < bar_used:
         vga_set_color(VGA_LIGHT_GREEN, VGA_BLACK)
         vga_putchar(35)  # '#'
+        serial_putchar(35)
       else:
         vga_set_color(VGA_DARK_GREY, VGA_BLACK)
         vga_putchar(45)  # '-'
+        serial_putchar(45)
       bi = bi + 1
     vga_set_color(VGA_WHITE, VGA_BLACK)
     kprintln(cast[ptr uint8]("]"))
-  elif cmd_buffer[0] == cast[uint8](99):  # 'c'
+    return
+  if cmd_buffer[0] == cast[uint8](99):  # 'c'
     if cmd_buffer[1] == cast[uint8](97):  # 'a'
       if cmd_buffer[2] == cast[uint8](116):  # 't'
         if cmd_buffer[3] == cast[uint8](32):  # ' '
-          # cat filename
-          var filename: ptr uint8 = find_arg(addr(cmd_buffer[0]), 1)
-          if cast[int32](filename) != 0:
-            var idx: int32 = fs_find(filename)
-            if idx >= 0:
-              var entry: ptr uint8 = fs_get_entry(idx)
-              var fsize: int32 = fs_get_size(entry)
-              var foffset: int32 = fs_get_offset(entry)
-              # Print file contents
-              var ci: int32 = 0
-              while ci < fsize:
-                var ch: int32 = cast[int32](ramdisk_data[foffset + ci])
-                if ch == 10:
-                  vga_putchar(10)
-                elif ch >= 32:
-                  if ch < 127:
-                    vga_putchar(ch)
-                ci = ci + 1
-              kprintln(cast[ptr uint8](""))
+          # cat filename - check virtual files first
+          var cat_path: ptr uint8 = addr(cmd_buffer[4])
+          var cat_buf: array[512, uint8]
+
+          # Build absolute path for virtual file lookup
+          var abs_path: array[128, uint8]
+          build_absolute_path(cat_path, addr(abs_path[0]), 128)
+
+          # Try virtual filesystem first (with absolute path)
+          var bytes_read: int32 = vfs_read(addr(abs_path[0]), addr(cat_buf[0]), 512)
+          if bytes_read < 0:
+            # Not a virtual file, try regular filesystem
+            bytes_read = fs_read(cat_path, addr(cat_buf[0]), 512)
+
+          if bytes_read < 0:
+            vga_set_color(VGA_LIGHT_RED, VGA_BLACK)
+            kprint(cast[ptr uint8]("cat: "))
+            kprint(cat_path)
+            if bytes_read == -2:
+              kprintln(cast[ptr uint8](" is a directory"))
             else:
-              vga_set_color(VGA_LIGHT_RED, VGA_BLACK)
-              kprint(cast[ptr uint8]("File not found: "))
-              kprintln(filename)
-              vga_set_color(VGA_WHITE, VGA_BLACK)
-          else:
-            kprintln(cast[ptr uint8]("Usage: cat <filename>"))
-  elif cmd_buffer[0] == cast[uint8](119):  # 'w'
+              kprintln(cast[ptr uint8](": no such file"))
+            vga_set_color(VGA_WHITE, VGA_BLACK)
+            return
+          # Print file contents (or to pipe buffer)
+          var ci: int32 = 0
+          while ci < bytes_read:
+            var ch: int32 = cast[int32](cat_buf[ci])
+            if pipe_mode == 1:
+              # Output to pipe buffer
+              pipe_putchar(ch)
+            else:
+              # Output to screen
+              if ch == 10:
+                vga_putchar(10)
+                serial_putchar(10)
+              if ch >= 32:
+                if ch < 127:
+                  vga_putchar(ch)
+                  serial_putchar(ch)
+            ci = ci + 1
+          if pipe_mode == 0:
+            kprintln(cast[ptr uint8](""))
+          return
+        kprintln(cast[ptr uint8]("Usage: cat <filename>"))
+        return
+  # write command - create file with content
+  if cmd_buffer[0] == cast[uint8](119):  # 'w'
     if cmd_buffer[1] == cast[uint8](114):  # 'r'
       if cmd_buffer[2] == cast[uint8](105):  # 'i'
         if cmd_buffer[3] == cast[uint8](116):  # 't'
           if cmd_buffer[4] == cast[uint8](101):  # 'e'
             if cmd_buffer[5] == cast[uint8](32):  # ' '
-              # write filename text
-              var filename: ptr uint8 = find_arg(addr(cmd_buffer[0]), 1)
-              var text: ptr uint8 = find_arg(addr(cmd_buffer[0]), 2)
-              if cast[int32](filename) != 0:
-                if cast[int32](text) != 0:
-                  # Calculate text length
+              var w_filename: ptr uint8 = find_arg(addr(cmd_buffer[0]), 1)
+              var w_text: ptr uint8 = find_arg(addr(cmd_buffer[0]), 2)
+              if cast[int32](w_filename) != 0:
+                if cast[int32](w_text) != 0:
                   var tlen: int32 = 0
-                  while cast[int32](text[tlen]) != 0:
+                  while cast[int32](w_text[tlen]) != 0:
                     tlen = tlen + 1
-                  # Try to create file
-                  var result: int32 = fs_create(filename, text, tlen)
+                  var result: int32 = fs_create_file(w_filename, w_text, tlen)
                   if result == 0:
                     vga_set_color(VGA_LIGHT_GREEN, VGA_BLACK)
                     kprint(cast[ptr uint8]("Created: "))
-                    kprint(filename)
+                    kprint(w_filename)
                     kprint(cast[ptr uint8](" ("))
-                    vga_print_dec(tlen)
+                    kprint_dec(tlen)
                     kprintln(cast[ptr uint8](" bytes)"))
                     vga_set_color(VGA_WHITE, VGA_BLACK)
-                  elif result == -1:
-                    vga_set_color(VGA_LIGHT_RED, VGA_BLACK)
+                    return
+                  vga_set_color(VGA_LIGHT_RED, VGA_BLACK)
+                  if result == -4:
                     kprintln(cast[ptr uint8]("File already exists"))
-                    vga_set_color(VGA_WHITE, VGA_BLACK)
-                  elif result == -2:
-                    vga_set_color(VGA_LIGHT_RED, VGA_BLACK)
-                    kprintln(cast[ptr uint8]("Too many files"))
-                    vga_set_color(VGA_WHITE, VGA_BLACK)
-                  else:
-                    vga_set_color(VGA_LIGHT_RED, VGA_BLACK)
-                    kprintln(cast[ptr uint8]("Not enough space"))
-                    vga_set_color(VGA_WHITE, VGA_BLACK)
-                else:
-                  kprintln(cast[ptr uint8]("Usage: write <filename> <text>"))
-              else:
-                kprintln(cast[ptr uint8]("Usage: write <filename> <text>"))
-  elif cmd_buffer[0] == cast[uint8](114):  # 'r'
+                  if result == -5:
+                    kprintln(cast[ptr uint8]("No free inodes"))
+                  if result == -6:
+                    kprintln(cast[ptr uint8]("No free blocks"))
+                  if result == -1:
+                    kprintln(cast[ptr uint8]("Parent directory not found"))
+                  vga_set_color(VGA_WHITE, VGA_BLACK)
+                  return
+                kprintln(cast[ptr uint8]("Usage: write <path> <text>"))
+                return
+              kprintln(cast[ptr uint8]("Usage: write <path> <text>"))
+              return
+  # rm command - delete file
+  if cmd_buffer[0] == cast[uint8](114):  # 'r'
     if cmd_buffer[1] == cast[uint8](109):  # 'm'
       if cmd_buffer[2] == cast[uint8](32):  # ' '
-        # rm filename
-        var filename: ptr uint8 = find_arg(addr(cmd_buffer[0]), 1)
-        if cast[int32](filename) != 0:
-          var result: int32 = fs_delete(filename)
-          if result == 0:
-            vga_set_color(VGA_LIGHT_GREEN, VGA_BLACK)
-            kprint(cast[ptr uint8]("Deleted: "))
-            kprintln(filename)
-            vga_set_color(VGA_WHITE, VGA_BLACK)
-          else:
-            vga_set_color(VGA_LIGHT_RED, VGA_BLACK)
-            kprint(cast[ptr uint8]("File not found: "))
-            kprintln(filename)
-            vga_set_color(VGA_WHITE, VGA_BLACK)
+        var rm_path: ptr uint8 = addr(cmd_buffer[3])
+        var result: int32 = fs_unlink(rm_path)
+        if result == 0:
+          vga_set_color(VGA_LIGHT_GREEN, VGA_BLACK)
+          kprint(cast[ptr uint8]("Deleted: "))
+          kprintln(rm_path)
+          vga_set_color(VGA_WHITE, VGA_BLACK)
+          return
+        vga_set_color(VGA_LIGHT_RED, VGA_BLACK)
+        if result == -2:
+          kprint(cast[ptr uint8]("rm: "))
+          kprint(rm_path)
+          kprintln(cast[ptr uint8](" is a directory"))
         else:
-          kprintln(cast[ptr uint8]("Usage: rm <filename>"))
-  elif cmd_buffer[0] == cast[uint8](99):  # 'c'
+          kprint(cast[ptr uint8]("rm: "))
+          kprint(rm_path)
+          kprintln(cast[ptr uint8](": no such file"))
+        vga_set_color(VGA_WHITE, VGA_BLACK)
+        return
+  # mkdir command - create directory
+  if cmd_buffer[0] == cast[uint8](109):  # 'm'
+    if cmd_buffer[1] == cast[uint8](107):  # 'k'
+      if cmd_buffer[2] == cast[uint8](100):  # 'd'
+        if cmd_buffer[3] == cast[uint8](105):  # 'i'
+          if cmd_buffer[4] == cast[uint8](114):  # 'r'
+            if cmd_buffer[5] == cast[uint8](32):  # ' '
+              var mk_path: ptr uint8 = addr(cmd_buffer[6])
+              var result: int32 = fs_mkdir(mk_path)
+              if result == 0:
+                vga_set_color(VGA_LIGHT_GREEN, VGA_BLACK)
+                kprint(cast[ptr uint8]("Created directory: "))
+                kprintln(mk_path)
+                vga_set_color(VGA_WHITE, VGA_BLACK)
+                return
+              vga_set_color(VGA_LIGHT_RED, VGA_BLACK)
+              if result == -4:
+                kprintln(cast[ptr uint8]("Directory already exists"))
+              if result == -1:
+                kprintln(cast[ptr uint8]("Parent not found"))
+              if result == -5:
+                kprintln(cast[ptr uint8]("No free inodes"))
+              if result == -6:
+                kprintln(cast[ptr uint8]("No free blocks"))
+              vga_set_color(VGA_WHITE, VGA_BLACK)
+              return
+  if cmd_buffer[0] == cast[uint8](99):  # 'c'
     if cmd_buffer[1] == cast[uint8](112):  # 'p'
       if cmd_buffer[2] == cast[uint8](32):  # ' '
         # cp source dest
@@ -1395,13 +3020,10 @@ proc shell_execute() =
         var dst_name: ptr uint8 = find_arg(addr(cmd_buffer[0]), 2)
         if cast[int32](src_name) != 0:
           if cast[int32](dst_name) != 0:
-            var src_idx: int32 = fs_find(src_name)
-            if src_idx >= 0:
-              var src_entry: ptr uint8 = fs_get_entry(src_idx)
-              var src_size: int32 = fs_get_size(src_entry)
-              var src_offset: int32 = fs_get_offset(src_entry)
-              # Create a new file with the same contents
-              var result: int32 = fs_create(dst_name, addr(ramdisk_data[src_offset]), src_size)
+            var cp_buf: array[512, uint8]
+            var src_size: int32 = fs_read(src_name, addr(cp_buf[0]), 512)
+            if src_size >= 0:
+              var result: int32 = fs_create_file(dst_name, addr(cp_buf[0]), src_size)
               if result == 0:
                 vga_set_color(VGA_LIGHT_GREEN, VGA_BLACK)
                 kprint(cast[ptr uint8]("Copied: "))
@@ -1409,14 +3031,18 @@ proc shell_execute() =
                 kprint(cast[ptr uint8](" -> "))
                 kprintln(dst_name)
                 vga_set_color(VGA_WHITE, VGA_BLACK)
-              elif result == -1:
+              elif result == -4:
                 vga_set_color(VGA_LIGHT_RED, VGA_BLACK)
                 kprintln(cast[ptr uint8]("Destination already exists"))
                 vga_set_color(VGA_WHITE, VGA_BLACK)
               else:
                 vga_set_color(VGA_LIGHT_RED, VGA_BLACK)
-                kprintln(cast[ptr uint8]("Not enough space"))
+                kprintln(cast[ptr uint8]("Failed to create destination"))
                 vga_set_color(VGA_WHITE, VGA_BLACK)
+            elif src_size == -2:
+              vga_set_color(VGA_LIGHT_RED, VGA_BLACK)
+              kprintln(cast[ptr uint8]("cp: cannot copy directory"))
+              vga_set_color(VGA_WHITE, VGA_BLACK)
             else:
               vga_set_color(VGA_LIGHT_RED, VGA_BLACK)
               kprint(cast[ptr uint8]("Source not found: "))
@@ -1426,7 +3052,7 @@ proc shell_execute() =
             kprintln(cast[ptr uint8]("Usage: cp <source> <dest>"))
         else:
           kprintln(cast[ptr uint8]("Usage: cp <source> <dest>"))
-    return
+        return
   if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("whoami")) == 1:
     vga_set_color(VGA_LIGHT_GREEN, VGA_BLACK)
     kprintln(cast[ptr uint8]("root"))
@@ -1436,17 +3062,16 @@ proc shell_execute() =
     vga_set_color(VGA_LIGHT_CYAN, VGA_BLACK)
     kprintln(cast[ptr uint8]("brainhair"))
     vga_set_color(VGA_WHITE, VGA_BLACK)
-  elif cmd_buffer[0] == cast[uint8](119):  # 'w'
+    return
+  if cmd_buffer[0] == cast[uint8](119):  # 'w'
     if cmd_buffer[1] == cast[uint8](99):  # 'c'
       if cmd_buffer[2] == cast[uint8](32):  # ' '
         # wc filename
         var filename: ptr uint8 = find_arg(addr(cmd_buffer[0]), 1)
         if cast[int32](filename) != 0:
-          var idx: int32 = fs_find(filename)
-          if idx >= 0:
-            var entry: ptr uint8 = fs_get_entry(idx)
-            var fsize: int32 = fs_get_size(entry)
-            var foffset: int32 = fs_get_offset(entry)
+          var wc_buf: array[512, uint8]
+          var fsize: int32 = fs_read(filename, addr(wc_buf[0]), 512)
+          if fsize >= 0:
             # Count lines, words, and chars
             var lines: int32 = 0
             var words: int32 = 0
@@ -1454,7 +3079,7 @@ proc shell_execute() =
             var in_word: int32 = 0
             var wi: int32 = 0
             while wi < fsize:
-              var ch: int32 = cast[int32](ramdisk_data[foffset + wi])
+              var ch: int32 = cast[int32](wc_buf[wi])
               if ch == 10:  # newline
                 lines = lines + 1
                 if in_word == 1:
@@ -1475,21 +3100,24 @@ proc shell_execute() =
               words = words + 1
             # Print results
             kprint(cast[ptr uint8]("  "))
-            vga_print_dec(lines)
+            kprint_dec(lines)
             kprint(cast[ptr uint8]("  "))
-            vga_print_dec(words)
+            kprint_dec(words)
             kprint(cast[ptr uint8]("  "))
-            vga_print_dec(chars)
+            kprint_dec(chars)
             kprint(cast[ptr uint8]("  "))
             kprintln(filename)
+            return
           else:
             vga_set_color(VGA_LIGHT_RED, VGA_BLACK)
             kprint(cast[ptr uint8]("File not found: "))
             kprintln(filename)
             vga_set_color(VGA_WHITE, VGA_BLACK)
+            return
         else:
           kprintln(cast[ptr uint8]("Usage: wc <filename>"))
-  elif cmd_buffer[0] == cast[uint8](104):  # 'h'
+          return
+  if cmd_buffer[0] == cast[uint8](104):  # 'h'
     if cmd_buffer[1] == cast[uint8](101):  # 'e'
       if cmd_buffer[2] == cast[uint8](97):  # 'a'
         if cmd_buffer[3] == cast[uint8](100):  # 'd'
@@ -1497,18 +3125,16 @@ proc shell_execute() =
             # head filename
             var filename: ptr uint8 = find_arg(addr(cmd_buffer[0]), 1)
             if cast[int32](filename) != 0:
-              var idx: int32 = fs_find(filename)
-              if idx >= 0:
-                var entry: ptr uint8 = fs_get_entry(idx)
-                var fsize: int32 = fs_get_size(entry)
-                var foffset: int32 = fs_get_offset(entry)
+              var head_buf: array[512, uint8]
+              var fsize: int32 = fs_read(filename, addr(head_buf[0]), 512)
+              if fsize >= 0:
                 # Print first 5 lines
                 var lines_shown: int32 = 0
                 var hi: int32 = 0
                 while hi < fsize:
                   if lines_shown >= 5:
                     break
-                  var ch: int32 = cast[int32](ramdisk_data[foffset + hi])
+                  var ch: int32 = cast[int32](head_buf[hi])
                   if ch == 10:
                     vga_putchar(10)
                     lines_shown = lines_shown + 1
@@ -1518,14 +3144,17 @@ proc shell_execute() =
                   hi = hi + 1
                 if lines_shown < 5:
                   kprintln(cast[ptr uint8](""))
+                return
               else:
                 vga_set_color(VGA_LIGHT_RED, VGA_BLACK)
                 kprint(cast[ptr uint8]("File not found: "))
                 kprintln(filename)
                 vga_set_color(VGA_WHITE, VGA_BLACK)
+                return
             else:
               kprintln(cast[ptr uint8]("Usage: head <filename>"))
-  elif cmd_buffer[0] == cast[uint8](103):  # 'g'
+              return
+  if cmd_buffer[0] == cast[uint8](103):  # 'g'
     if cmd_buffer[1] == cast[uint8](114):  # 'r'
       if cmd_buffer[2] == cast[uint8](101):  # 'e'
         if cmd_buffer[3] == cast[uint8](112):  # 'p'
@@ -1535,17 +3164,15 @@ proc shell_execute() =
             var filename: ptr uint8 = find_arg(addr(cmd_buffer[0]), 2)
             if cast[int32](pattern) != 0:
               if cast[int32](filename) != 0:
-                var idx: int32 = fs_find(filename)
-                if idx >= 0:
+                var grep_buf: array[512, uint8]
+                var fsize: int32 = fs_read(filename, addr(grep_buf[0]), 512)
+                if fsize >= 0:
                   # Get pattern length
                   var plen: int32 = 0
                   while cast[int32](pattern[plen]) != 0:
                     if cast[int32](pattern[plen]) == 32:
                       break
                     plen = plen + 1
-                  var entry: ptr uint8 = fs_get_entry(idx)
-                  var fsize: int32 = fs_get_size(entry)
-                  var foffset: int32 = fs_get_offset(entry)
                   # Search for pattern in each line
                   var line_start: int32 = 0
                   var gi: int32 = 0
@@ -1553,7 +3180,7 @@ proc shell_execute() =
                   while gi <= fsize:
                     var ch: int32 = 0
                     if gi < fsize:
-                      ch = cast[int32](ramdisk_data[foffset + gi])
+                      ch = cast[int32](grep_buf[gi])
                     if ch == 10:
                       ch = 0
                     if gi == fsize:
@@ -1562,12 +3189,12 @@ proc shell_execute() =
                       # End of line - check if pattern found in this line
                       var li: int32 = line_start
                       while li + plen <= gi:
-                        if str_contains_at(addr(ramdisk_data[foffset]), li, pattern, plen) == 1:
+                        if str_contains_at(addr(grep_buf[0]), li, pattern, plen) == 1:
                           # Print this line
                           vga_set_color(VGA_LIGHT_GREEN, VGA_BLACK)
                           var pi: int32 = line_start
                           while pi < gi:
-                            var pch: int32 = cast[int32](ramdisk_data[foffset + pi])
+                            var pch: int32 = cast[int32](grep_buf[pi])
                             if pch >= 32:
                               if pch < 127:
                                 vga_putchar(pch)
@@ -1583,59 +3210,64 @@ proc shell_execute() =
                     vga_set_color(VGA_DARK_GREY, VGA_BLACK)
                     kprintln(cast[ptr uint8]("(no matches)"))
                     vga_set_color(VGA_WHITE, VGA_BLACK)
+                  return
                 else:
                   vga_set_color(VGA_LIGHT_RED, VGA_BLACK)
                   kprint(cast[ptr uint8]("File not found: "))
                   kprintln(filename)
                   vga_set_color(VGA_WHITE, VGA_BLACK)
+                  return
               else:
                 kprintln(cast[ptr uint8]("Usage: grep <pattern> <filename>"))
+                return
             else:
               kprintln(cast[ptr uint8]("Usage: grep <pattern> <filename>"))
-  elif cmd_buffer[0] == cast[uint8](109):  # 'm'
+              return
+  if cmd_buffer[0] == cast[uint8](109):  # 'm'
     if cmd_buffer[1] == cast[uint8](118):  # 'v'
       if cmd_buffer[2] == cast[uint8](32):  # ' '
-        # mv oldname newname
+        # mv oldname newname (copy + delete)
         var old_name: ptr uint8 = find_arg(addr(cmd_buffer[0]), 1)
         var new_name: ptr uint8 = find_arg(addr(cmd_buffer[0]), 2)
         if cast[int32](old_name) != 0:
           if cast[int32](new_name) != 0:
-            var idx: int32 = fs_find(old_name)
-            if idx >= 0:
-              # Check new name doesn't exist
-              if fs_find(new_name) < 0:
-                # Rename by copying name
-                var entry: ptr uint8 = fs_get_entry(idx)
-                var j: int32 = 0
-                while j < MAX_FILENAME:
-                  var c: int32 = cast[int32](new_name[j])
-                  if c == 0:
-                    break
-                  if c == 32:
-                    break
-                  entry[j] = new_name[j]
-                  j = j + 1
-                entry[j] = cast[uint8](0)
+            var mv_buf: array[512, uint8]
+            var src_size: int32 = fs_read(old_name, addr(mv_buf[0]), 512)
+            if src_size >= 0:
+              var result: int32 = fs_create_file(new_name, addr(mv_buf[0]), src_size)
+              if result == 0:
+                fs_unlink(old_name)
                 vga_set_color(VGA_LIGHT_GREEN, VGA_BLACK)
-                kprint(cast[ptr uint8]("Renamed: "))
+                kprint(cast[ptr uint8]("Moved: "))
                 kprint(old_name)
                 kprint(cast[ptr uint8](" -> "))
                 kprintln(new_name)
                 vga_set_color(VGA_WHITE, VGA_BLACK)
-              else:
+              elif result == -4:
                 vga_set_color(VGA_LIGHT_RED, VGA_BLACK)
                 kprintln(cast[ptr uint8]("Destination already exists"))
                 vga_set_color(VGA_WHITE, VGA_BLACK)
+              else:
+                vga_set_color(VGA_LIGHT_RED, VGA_BLACK)
+                kprintln(cast[ptr uint8]("Failed to create destination"))
+                vga_set_color(VGA_WHITE, VGA_BLACK)
+            elif src_size == -2:
+              vga_set_color(VGA_LIGHT_RED, VGA_BLACK)
+              kprintln(cast[ptr uint8]("mv: cannot move directory"))
+              vga_set_color(VGA_WHITE, VGA_BLACK)
             else:
               vga_set_color(VGA_LIGHT_RED, VGA_BLACK)
               kprint(cast[ptr uint8]("Source not found: "))
               kprintln(old_name)
               vga_set_color(VGA_WHITE, VGA_BLACK)
+            return
           else:
             kprintln(cast[ptr uint8]("Usage: mv <old_name> <new_name>"))
+            return
         else:
           kprintln(cast[ptr uint8]("Usage: mv <old_name> <new_name>"))
-  elif cmd_buffer[0] == cast[uint8](116):  # 't'
+          return
+  if cmd_buffer[0] == cast[uint8](116):  # 't'
     if cmd_buffer[1] == cast[uint8](111):  # 'o'
       if cmd_buffer[2] == cast[uint8](117):  # 'u'
         if cmd_buffer[3] == cast[uint8](99):  # 'c'
@@ -1646,13 +3278,13 @@ proc shell_execute() =
               if cast[int32](filename) != 0:
                 # Create empty file
                 var empty: ptr uint8 = cast[ptr uint8]("")
-                var result: int32 = fs_create(filename, empty, 0)
+                var result: int32 = fs_create_file(filename, empty, 0)
                 if result == 0:
                   vga_set_color(VGA_LIGHT_GREEN, VGA_BLACK)
                   kprint(cast[ptr uint8]("Created: "))
                   kprintln(filename)
                   vga_set_color(VGA_WHITE, VGA_BLACK)
-                elif result == -1:
+                elif result == -4:
                   vga_set_color(VGA_DARK_GREY, VGA_BLACK)
                   kprintln(cast[ptr uint8]("(file already exists)"))
                   vga_set_color(VGA_WHITE, VGA_BLACK)
@@ -1660,26 +3292,20 @@ proc shell_execute() =
                   vga_set_color(VGA_LIGHT_RED, VGA_BLACK)
                   kprintln(cast[ptr uint8]("Failed to create file"))
                   vga_set_color(VGA_WHITE, VGA_BLACK)
+                return
               else:
                 kprintln(cast[ptr uint8]("Usage: touch <filename>"))
-  elif cmd_buffer[0] == cast[uint8](120):  # 'x'
+                return
+  if cmd_buffer[0] == cast[uint8](120):  # 'x'
     if cmd_buffer[1] == cast[uint8](120):  # 'x'
       if cmd_buffer[2] == cast[uint8](100):  # 'd'
         if cmd_buffer[3] == cast[uint8](32):  # ' '
           # xxd filename - hexdump file
           var filename: ptr uint8 = find_arg(addr(cmd_buffer[0]), 1)
           if cast[int32](filename) != 0:
-            var idx: int32 = fs_find(filename)
-            if idx >= 0:
-              var entry: ptr uint8 = fs_get_entry(idx)
-              var fsize: int32 = fs_get_size(entry)
-              var foffset: int32 = fs_get_offset(entry)
-              # Limit to 128 bytes
-              if fsize > 128:
-                fsize = 128
-                vga_set_color(VGA_DARK_GREY, VGA_BLACK)
-                kprintln(cast[ptr uint8]("(showing first 128 bytes)"))
-                vga_set_color(VGA_WHITE, VGA_BLACK)
+            var xxd_buf: array[128, uint8]
+            var fsize: int32 = fs_read(filename, addr(xxd_buf[0]), 128)
+            if fsize >= 0:
               var row: int32 = 0
               while row * 16 < fsize:
                 # Print offset
@@ -1702,7 +3328,7 @@ proc shell_execute() =
                 var col: int32 = 0
                 while col < 16:
                   if row * 16 + col < fsize:
-                    var byte_val: int32 = cast[int32](ramdisk_data[foffset + row * 16 + col])
+                    var byte_val: int32 = cast[int32](xxd_buf[row * 16 + col])
                     var bhi: int32 = (byte_val >> 4) & 0xF
                     var blo: int32 = byte_val & 0xF
                     if bhi < 10:
@@ -1723,7 +3349,7 @@ proc shell_execute() =
                 col = 0
                 while col < 16:
                   if row * 16 + col < fsize:
-                    var ch: int32 = cast[int32](ramdisk_data[foffset + row * 16 + col])
+                    var ch: int32 = cast[int32](xxd_buf[row * 16 + col])
                     if ch >= 32:
                       if ch < 127:
                         vga_putchar(ch)
@@ -1735,26 +3361,28 @@ proc shell_execute() =
                 kprintln(cast[ptr uint8]("|"))
                 vga_set_color(VGA_WHITE, VGA_BLACK)
                 row = row + 1
+              return
             else:
               vga_set_color(VGA_LIGHT_RED, VGA_BLACK)
               kprint(cast[ptr uint8]("File not found: "))
               kprintln(filename)
               vga_set_color(VGA_WHITE, VGA_BLACK)
+              return
           else:
             kprintln(cast[ptr uint8]("Usage: xxd <filename>"))
-  elif cmd_buffer[0] == cast[uint8](115):  # 's'
+            return
+  # size command
+  if cmd_buffer[0] == cast[uint8](115):  # 's'
     if cmd_buffer[1] == cast[uint8](105):  # 'i'
       if cmd_buffer[2] == cast[uint8](122):  # 'z'
         if cmd_buffer[3] == cast[uint8](101):  # 'e'
           if cmd_buffer[4] == cast[uint8](32):  # ' '
-            # size filename
             var filename: ptr uint8 = find_arg(addr(cmd_buffer[0]), 1)
             if cast[int32](filename) != 0:
-              var idx: int32 = fs_find(filename)
-              if idx >= 0:
-                var entry: ptr uint8 = fs_get_entry(idx)
-                var fsize: int32 = fs_get_size(entry)
-                vga_print_dec(fsize)
+              var ino: int32 = path_resolve(filename)
+              if ino > 0:
+                var fsize: int32 = inode_get_size(ino)
+                kprint_dec(fsize)
                 kprint(cast[ptr uint8](" "))
                 kprintln(filename)
               else:
@@ -1762,47 +3390,58 @@ proc shell_execute() =
                 kprint(cast[ptr uint8]("File not found: "))
                 kprintln(filename)
                 vga_set_color(VGA_WHITE, VGA_BLACK)
+              return
             else:
               kprintln(cast[ptr uint8]("Usage: size <filename>"))
-    elif cmd_buffer[1] == cast[uint8](116):  # 't'
+              return
+  # stat command (separate block to avoid elif bug)
+  if cmd_buffer[0] == cast[uint8](115):  # 's'
+    if cmd_buffer[1] == cast[uint8](116):  # 't'
       if cmd_buffer[2] == cast[uint8](97):  # 'a'
         if cmd_buffer[3] == cast[uint8](116):  # 't'
           if cmd_buffer[4] == cast[uint8](32):  # ' '
-            # stat filename
-            var filename: ptr uint8 = find_arg(addr(cmd_buffer[0]), 1)
-            if cast[int32](filename) != 0:
-              var idx: int32 = fs_find(filename)
-              if idx >= 0:
-                var entry: ptr uint8 = fs_get_entry(idx)
-                var fsize: int32 = fs_get_size(entry)
-                var foffset: int32 = fs_get_offset(entry)
+            var stat_file: ptr uint8 = find_arg(addr(cmd_buffer[0]), 1)
+            if cast[int32](stat_file) != 0:
+              var ino: int32 = path_resolve(stat_file)
+              if ino > 0:
+                var fsize: int32 = inode_get_size(ino)
+                var fmode: int32 = inode_get_mode(ino)
+                var fblock: int32 = inode_get_block(ino, 0)
                 vga_set_color(VGA_LIGHT_CYAN, VGA_BLACK)
                 kprint(cast[ptr uint8]("  File: "))
                 vga_set_color(VGA_WHITE, VGA_BLACK)
-                kprintln(entry)
+                kprintln(stat_file)
+                vga_set_color(VGA_LIGHT_CYAN, VGA_BLACK)
+                kprint(cast[ptr uint8]("  Type: "))
+                vga_set_color(VGA_WHITE, VGA_BLACK)
+                if inode_is_dir(ino) == 1:
+                  kprintln(cast[ptr uint8]("directory"))
+                else:
+                  kprintln(cast[ptr uint8]("regular file"))
                 vga_set_color(VGA_LIGHT_CYAN, VGA_BLACK)
                 kprint(cast[ptr uint8]("  Size: "))
                 vga_set_color(VGA_WHITE, VGA_BLACK)
-                vga_print_dec(fsize)
+                kprint_dec(fsize)
                 kprintln(cast[ptr uint8](" bytes"))
                 vga_set_color(VGA_LIGHT_CYAN, VGA_BLACK)
-                kprint(cast[ptr uint8]("  Offset: "))
+                kprint(cast[ptr uint8]("  Inode: "))
                 vga_set_color(VGA_WHITE, VGA_BLACK)
-                vga_print_hex(foffset)
+                kprint_dec(ino)
                 kprintln(cast[ptr uint8](""))
                 vga_set_color(VGA_LIGHT_CYAN, VGA_BLACK)
-                kprint(cast[ptr uint8]("  Index: "))
+                kprint(cast[ptr uint8]("  Block: "))
                 vga_set_color(VGA_WHITE, VGA_BLACK)
-                vga_print_dec(idx)
+                kprint_dec(fblock)
                 kprintln(cast[ptr uint8](""))
               else:
                 vga_set_color(VGA_LIGHT_RED, VGA_BLACK)
                 kprint(cast[ptr uint8]("File not found: "))
-                kprintln(filename)
+                kprintln(stat_file)
                 vga_set_color(VGA_WHITE, VGA_BLACK)
+              return
             else:
               kprintln(cast[ptr uint8]("Usage: stat <filename>"))
-    return
+              return
   if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("date")) == 1:
     # Show uptime-based fake time since we don't have RTC
     var ticks: int32 = get_tick_count()
@@ -1814,15 +3453,15 @@ proc shell_execute() =
     kprint(cast[ptr uint8]("Uptime: "))
     if hours < 10:
       vga_putchar(48)  # '0'
-    vga_print_dec(hours)
+    kprint_dec(hours)
     vga_putchar(58)  # ':'
     if mins < 10:
       vga_putchar(48)
-    vga_print_dec(mins)
+    kprint_dec(mins)
     vga_putchar(58)  # ':'
     if secs < 10:
       vga_putchar(48)
-    vga_print_dec(secs)
+    kprint_dec(secs)
     kprintln(cast[ptr uint8](""))
     vga_set_color(VGA_DARK_GREY, VGA_BLACK)
     kprintln(cast[ptr uint8]("(No RTC - showing uptime as HH:MM:SS)"))
@@ -1940,15 +3579,15 @@ proc shell_execute() =
     var ticks: int32 = get_tick_count()
     var seconds: int32 = ticks / 18
     kprint(cast[ptr uint8]("Uptime:     "))
-    vga_print_dec(seconds)
+    kprint_dec(seconds)
     kprintln(cast[ptr uint8](" seconds"))
     kprint(cast[ptr uint8]("Ticks:      "))
-    vga_print_dec(ticks)
+    kprint_dec(ticks)
     kprintln(cast[ptr uint8](""))
     kprint(cast[ptr uint8]("Max procs:  "))
     kprintln(cast[ptr uint8]("64"))
     kprint(cast[ptr uint8]("Current PID:"))
-    vga_print_dec(get_current_pid())
+    kprint_dec(get_current_pid())
     kprintln(cast[ptr uint8](""))
     kprintln(cast[ptr uint8](""))
     return
@@ -2002,19 +3641,87 @@ proc shell_execute() =
     # For now just halt
     halt()
   else:
-    # Check for echo command
+    # Check for echo command with redirection support
     if cmd_len >= 5:
       if cmd_buffer[0] == cast[uint8](101):  # 'e'
         if cmd_buffer[1] == cast[uint8](99):  # 'c'
           if cmd_buffer[2] == cast[uint8](104):  # 'h'
             if cmd_buffer[3] == cast[uint8](111):  # 'o'
               if cmd_buffer[4] == cast[uint8](32):  # ' '
-                # Print everything after "echo "
-                var i: int32 = 5
-                while i < cmd_len:
-                  vga_putchar(cast[int32](cmd_buffer[i]))
-                  i = i + 1
-                kprintln(cast[ptr uint8](""))
+                # Check for output redirection
+                var redir_pos: int32 = find_redirect(addr(cmd_buffer[0]), cmd_len)
+                if redir_pos > 5:
+                  # Found redirection - get filename
+                  var append_mode: int32 = is_append_redirect(addr(cmd_buffer[0]), redir_pos, cmd_len)
+                  var redir_file: ptr uint8 = get_redirect_filename(addr(cmd_buffer[0]), redir_pos, cmd_len)
+                  if cast[int32](redir_file) != 0:
+                    terminate_filename(redir_file)
+                    # Build content to write (from position 5 to redir_pos-1, skip trailing space)
+                    var content_end: int32 = redir_pos
+                    while content_end > 5:
+                      if cast[int32](cmd_buffer[content_end - 1]) != 32:
+                        break
+                      content_end = content_end - 1
+                    # Build content buffer with newline
+                    var echo_buf: array[256, uint8]
+                    var echo_i: int32 = 0
+                    var src_i: int32 = 5
+                    while src_i < content_end:
+                      echo_buf[echo_i] = cmd_buffer[src_i]
+                      echo_i = echo_i + 1
+                      src_i = src_i + 1
+                    echo_buf[echo_i] = cast[uint8](10)  # newline
+                    echo_i = echo_i + 1
+                    echo_buf[echo_i] = cast[uint8](0)
+                    # Write or append to file
+                    if append_mode == 1:
+                      # Append mode: read existing content, add new
+                      var existing_buf: array[512, uint8]
+                      var existing_len: int32 = fs_read(redir_file, addr(existing_buf[0]), 500)
+                      if existing_len < 0:
+                        existing_len = 0
+                      # Append new content
+                      var app_i: int32 = 0
+                      while app_i < echo_i:
+                        existing_buf[existing_len + app_i] = echo_buf[app_i]
+                        app_i = app_i + 1
+                      existing_buf[existing_len + app_i] = cast[uint8](0)
+                      fs_write(redir_file, addr(existing_buf[0]), existing_len + echo_i)
+                    else:
+                      # Overwrite mode (echo_i includes newline)
+                      fs_write(redir_file, addr(echo_buf[0]), echo_i)
+                    return
+                  else:
+                    kprintln(cast[ptr uint8]("Error: no filename after redirect"))
+                    return
+                else:
+                  # No redirection - print to terminal with $VAR expansion
+                  var i: int32 = 5
+                  while i < cmd_len:
+                    var ch: int32 = cast[int32](cmd_buffer[i])
+                    if ch == 36:  # '$' - variable expansion
+                      # Extract variable name
+                      var var_name: array[32, uint8]
+                      var vi: int32 = 0
+                      i = i + 1
+                      while i < cmd_len:
+                        var vc: int32 = cast[int32](cmd_buffer[i])
+                        if vc == 32 or vc == 0 or vc == 36 or vc == 10:
+                          break
+                        var_name[vi] = cast[uint8](vc)
+                        vi = vi + 1
+                        i = i + 1
+                      var_name[vi] = cast[uint8](0)
+                      # Look up variable
+                      var val: ptr uint8 = env_get(addr(var_name[0]))
+                      if cast[int32](val) != 0:
+                        kprint(val)
+                      # Don't increment i again, loop will check current position
+                    else:
+                      vga_putchar(ch)
+                      serial_putchar(ch)
+                      i = i + 1
+                  kprintln(cast[ptr uint8](""))
                 return
 
     vga_set_color(VGA_LIGHT_RED, VGA_BLACK)
@@ -2022,14 +3729,277 @@ proc shell_execute() =
     vga_set_color(VGA_WHITE, VGA_BLACK)
     kprintln(addr(cmd_buffer[0]))
 
+# Built-in commands for tab completion
+var builtin_cmds: array[512, uint8]
+var builtin_count: int32 = 0
+
+proc add_builtin(name: ptr uint8) =
+  var i: int32 = 0
+  var pos: int32 = 0
+  # Find end of current list - look for double-null
+  while pos < 500:
+    if cast[int32](builtin_cmds[pos]) == 0:
+      # Found a null - check if it's end of list (next is also null or pos is 0)
+      if pos == 0:
+        break  # Empty list
+      if cast[int32](builtin_cmds[pos + 1]) == 0:
+        pos = pos + 1  # Move past the terminator
+        break
+      # Otherwise, this is just a string terminator - skip to next string
+      pos = pos + 1
+    else:
+      pos = pos + 1
+  # Copy name
+  while cast[int32](name[i]) != 0:
+    builtin_cmds[pos] = name[i]
+    pos = pos + 1
+    i = i + 1
+  builtin_cmds[pos] = cast[uint8](0)
+  builtin_count = builtin_count + 1
+
+proc init_builtins() =
+  builtin_count = 0
+  var i: int32 = 0
+  while i < 512:
+    builtin_cmds[i] = cast[uint8](0)
+    i = i + 1
+  add_builtin(cast[ptr uint8]("help"))
+  add_builtin(cast[ptr uint8]("clear"))
+  add_builtin(cast[ptr uint8]("cls"))
+  add_builtin(cast[ptr uint8]("ver"))
+  add_builtin(cast[ptr uint8]("uptime"))
+  add_builtin(cast[ptr uint8]("history"))
+  add_builtin(cast[ptr uint8]("env"))
+  add_builtin(cast[ptr uint8]("export"))
+  add_builtin(cast[ptr uint8]("ps"))
+  add_builtin(cast[ptr uint8]("mem"))
+  add_builtin(cast[ptr uint8]("ticks"))
+  add_builtin(cast[ptr uint8]("sysinfo"))
+  add_builtin(cast[ptr uint8]("about"))
+  add_builtin(cast[ptr uint8]("ls"))
+  add_builtin(cast[ptr uint8]("cat"))
+  add_builtin(cast[ptr uint8]("cd"))
+  add_builtin(cast[ptr uint8]("pwd"))
+  add_builtin(cast[ptr uint8]("mkdir"))
+  add_builtin(cast[ptr uint8]("rm"))
+  add_builtin(cast[ptr uint8]("cp"))
+  add_builtin(cast[ptr uint8]("mv"))
+  add_builtin(cast[ptr uint8]("touch"))
+  add_builtin(cast[ptr uint8]("stat"))
+  add_builtin(cast[ptr uint8]("size"))
+  add_builtin(cast[ptr uint8]("df"))
+  add_builtin(cast[ptr uint8]("write"))
+  add_builtin(cast[ptr uint8]("wc"))
+  add_builtin(cast[ptr uint8]("head"))
+  add_builtin(cast[ptr uint8]("grep"))
+  add_builtin(cast[ptr uint8]("xxd"))
+  add_builtin(cast[ptr uint8]("echo"))
+  add_builtin(cast[ptr uint8]("date"))
+  add_builtin(cast[ptr uint8]("reboot"))
+  add_builtin(cast[ptr uint8]("banner"))
+  add_builtin(cast[ptr uint8]("hello"))
+  add_builtin(cast[ptr uint8]("calc"))
+  add_builtin(cast[ptr uint8]("ping"))
+  add_builtin(cast[ptr uint8]("ifconfig"))
+  add_builtin(cast[ptr uint8]("arp"))
+
+# Check if string starts with prefix
+proc starts_with(s: ptr uint8, prefix: ptr uint8, prefix_len: int32): int32 =
+  var i: int32 = 0
+  while i < prefix_len:
+    if cast[int32](s[i]) != cast[int32](prefix[i]):
+      return 0
+    i = i + 1
+  return 1
+
+# Tab completion
+proc shell_tab_complete() =
+  if cmd_len == 0:
+    return
+
+
+  # Find the word to complete (last word in command)
+  var word_start: int32 = cmd_len - 1
+  while word_start > 0:
+    if cast[int32](cmd_buffer[word_start - 1]) == 32:  # space
+      break
+    word_start = word_start - 1
+  var word_len: int32 = cmd_len - word_start
+  var word: ptr uint8 = addr(cmd_buffer[word_start])
+
+  # Check if it looks like a path (contains '/')
+  var is_path: int32 = 0
+  var pi: int32 = 0
+  while pi < word_len:
+    if cast[int32](word[pi]) == 47:  # '/'
+      is_path = 1
+      break
+    pi = pi + 1
+
+  if is_path == 1:
+    # Path completion - find matching files
+    # Get directory and partial filename
+    var dir_end: int32 = word_len - 1
+    while dir_end >= 0:
+      if cast[int32](word[dir_end]) == 47:
+        break
+      dir_end = dir_end - 1
+
+    var dir_path: array[128, uint8]
+    var partial: array[64, uint8]
+    var di: int32 = 0
+    while di <= dir_end:
+      dir_path[di] = word[di]
+      di = di + 1
+    if di == 0:
+      dir_path[0] = cast[uint8](47)  # '/'
+      di = 1
+    dir_path[di] = cast[uint8](0)
+
+    var pti: int32 = 0
+    var src: int32 = dir_end + 1
+    while src < word_len:
+      partial[pti] = word[src]
+      pti = pti + 1
+      src = src + 1
+    partial[pti] = cast[uint8](0)
+    var partial_len: int32 = pti
+
+    # Find directory
+    var dir_ino: int32 = path_resolve(addr(dir_path[0]))
+    if dir_ino == 0:
+      return
+    if inode_is_dir(dir_ino) == 0:
+      return
+
+    # Search for matching entries
+    var blk: int32 = inode_get_block(dir_ino, 0)
+    if blk == 0:
+      return
+    var dp: ptr uint8 = fs_block_ptr(blk)
+    var off: int32 = 0
+    var match_count: int32 = 0
+    var last_match: array[64, uint8]
+    while off < BLOCK_SIZE:
+      var ent_ino: int32 = read32(addr(dp[off]))
+      if ent_ino != 0:
+        var ent_name_len: int32 = cast[int32](dp[off + 6])
+        var ent_name: ptr uint8 = addr(dp[off + 8])
+        if ent_name_len >= partial_len:
+          if starts_with(ent_name, addr(partial[0]), partial_len) == 1:
+            # Match found
+            match_count = match_count + 1
+            var mi: int32 = 0
+            while mi < ent_name_len:
+              last_match[mi] = ent_name[mi]
+              mi = mi + 1
+            last_match[mi] = cast[uint8](0)
+      off = off + DIRENT_SIZE
+
+    if match_count == 1:
+      # Single match - complete it
+      var ci: int32 = partial_len
+      while cast[int32](last_match[ci]) != 0:
+        if cmd_len < 255:
+          cmd_buffer[cmd_len] = last_match[ci]
+          vga_putchar(cast[int32](last_match[ci]))
+          serial_putchar(cast[int32](last_match[ci]))
+          cmd_len = cmd_len + 1
+        ci = ci + 1
+  else:
+    # Command completion - search built-in commands
+    var i: int32 = 0
+    var match_count: int32 = 0
+    var last_match: array[64, uint8]
+    while i < 512:
+      if cast[int32](builtin_cmds[i]) == 0:
+        if cast[int32](builtin_cmds[i + 1]) == 0:
+          break
+        i = i + 1
+      else:
+        # Check if this command matches
+        var cmd_start: int32 = i
+        var cmd_len_bi: int32 = 0
+        while cast[int32](builtin_cmds[i + cmd_len_bi]) != 0:
+          cmd_len_bi = cmd_len_bi + 1
+        if cmd_len_bi >= word_len:
+          if starts_with(addr(builtin_cmds[cmd_start]), word, word_len) == 1:
+            match_count = match_count + 1
+            var mi: int32 = 0
+            while mi < cmd_len_bi:
+              last_match[mi] = builtin_cmds[cmd_start + mi]
+              mi = mi + 1
+            last_match[mi] = cast[uint8](0)
+        i = i + cmd_len_bi + 1
+
+    if match_count == 1:
+      # Single match - complete it
+      var ci: int32 = word_len
+      while cast[int32](last_match[ci]) != 0:
+        if cmd_len < 255:
+          cmd_buffer[cmd_len] = last_match[ci]
+          vga_putchar(cast[int32](last_match[ci]))
+          serial_putchar(cast[int32](last_match[ci]))
+          cmd_len = cmd_len + 1
+        ci = ci + 1
+      # Add space after command
+      if cmd_len < 255:
+        cmd_buffer[cmd_len] = cast[uint8](32)
+        vga_putchar(32)
+        serial_putchar(32)
+        cmd_len = cmd_len + 1
+
 # Process a character from any input source
 proc shell_process_char(c: int32) =
+  # Handle escape sequences (arrow keys: ESC [ A/B/C/D)
+  if escape_seq > 0:
+    escape_buf[escape_idx] = cast[uint8](c)
+    escape_idx = escape_idx + 1
+    escape_seq = escape_seq - 1
+    if escape_seq == 0:
+      # Process completed escape sequence
+      if escape_buf[0] == cast[uint8](91):  # '['
+        if escape_buf[1] == cast[uint8](65):  # 'A' - Up arrow
+          # Go back in history
+          if history_pos > 0:
+            if history_pos == history_count:
+              # Save current command before browsing
+              var si: int32 = 0
+              while si < cmd_len:
+                saved_cmd[si] = cmd_buffer[si]
+                si = si + 1
+              saved_cmd[si] = cast[uint8](0)
+              saved_len = cmd_len
+            history_pos = history_pos - 1
+            var hist_entry: ptr uint8 = history_ptr(history_pos)
+            set_cmdline(hist_entry)
+        if escape_buf[1] == cast[uint8](66):  # 'B' - Down arrow
+          # Go forward in history
+          if history_pos < history_count:
+            history_pos = history_pos + 1
+            if history_pos == history_count:
+              # Restore saved command
+              set_cmdline(addr(saved_cmd[0]))
+            else:
+              var hist_entry: ptr uint8 = history_ptr(history_pos)
+              set_cmdline(hist_entry)
+      escape_idx = 0
+    return
+  if c == 27:  # ESC - start escape sequence
+    escape_seq = 2  # Expect 2 more chars ([ + letter)
+    escape_idx = 0
+    return
   if c == 13 or c == 10:  # Enter (CR or LF)
     kprintln(cast[ptr uint8](""))
+    # Add to history before executing
+    cmd_buffer[cmd_len] = cast[uint8](0)
+    history_add(addr(cmd_buffer[0]), cmd_len)
     shell_execute()
     cmd_len = 0
+    history_pos = history_count  # Reset history position
     shell_prompt()
-  elif c == 8 or c == 127:  # Backspace or DEL
+    return
+  if c == 8 or c == 127:  # Backspace or DEL
     if cmd_len > 0:
       cmd_len = cmd_len - 1
       vga_col = vga_col - 1
@@ -2038,14 +4008,928 @@ proc shell_process_char(c: int32) =
       ser_putchar(8)
       ser_putchar(32)
       ser_putchar(8)
-  else:
-    # Any printable char (c >= 32)
-    if c >= 32:
+    return
+  # Tab - trigger completion
+  if c == 9:
+    shell_tab_complete()
+    return
+  # Any printable char (c >= 32 and c < 127)
+  if c >= 32:
+    if c < 127:
       if cmd_len < 255:
         cmd_buffer[cmd_len] = cast[uint8](c)
         cmd_len = cmd_len + 1
         vga_putchar(c)
         ser_putchar(c)
+
+# ============================================================================
+# NETWORKING STACK
+# ============================================================================
+
+# PCI vendor/device IDs
+const E1000_VENDOR_ID: int32 = 0x8086  # Intel
+const E1000_DEVICE_ID: int32 = 0x100E  # 82540EM (QEMU default)
+const E1000_DEVICE_ID_2: int32 = 0x100F  # 82545EM
+const E1000_DEVICE_ID_3: int32 = 0x10D3  # 82574L
+
+# PCI configuration space offsets
+const PCI_VENDOR_ID: int32 = 0x00
+const PCI_DEVICE_ID: int32 = 0x02
+const PCI_COMMAND: int32 = 0x04
+const PCI_STATUS: int32 = 0x06
+const PCI_BAR0: int32 = 0x10
+const PCI_BAR1: int32 = 0x14
+const PCI_IRQ_LINE: int32 = 0x3C
+
+# E1000 Register offsets (from BAR0)
+const E1000_CTRL: int32 = 0x0000      # Device Control
+const E1000_STATUS: int32 = 0x0008    # Device Status
+const E1000_EECD: int32 = 0x0010      # EEPROM Control
+const E1000_EERD: int32 = 0x0014      # EEPROM Read
+const E1000_ICR: int32 = 0x00C0       # Interrupt Cause Read
+const E1000_IMS: int32 = 0x00D0       # Interrupt Mask Set
+const E1000_IMC: int32 = 0x00D8       # Interrupt Mask Clear
+const E1000_RCTL: int32 = 0x0100      # Receive Control
+const E1000_TCTL: int32 = 0x0400      # Transmit Control
+const E1000_RDBAL: int32 = 0x2800     # RX Descriptor Base Low
+const E1000_RDBAH: int32 = 0x2804     # RX Descriptor Base High
+const E1000_RDLEN: int32 = 0x2808     # RX Descriptor Length
+const E1000_RDH: int32 = 0x2810       # RX Descriptor Head
+const E1000_RDT: int32 = 0x2818       # RX Descriptor Tail
+const E1000_TDBAL: int32 = 0x3800     # TX Descriptor Base Low
+const E1000_TDBAH: int32 = 0x3804     # TX Descriptor Base High
+const E1000_TDLEN: int32 = 0x3808     # TX Descriptor Length
+const E1000_TDH: int32 = 0x3810       # TX Descriptor Head
+const E1000_TDT: int32 = 0x3818       # TX Descriptor Tail
+const E1000_RAL: int32 = 0x5400       # Receive Address Low
+const E1000_RAH: int32 = 0x5404       # Receive Address High
+const E1000_MTA: int32 = 0x5200       # Multicast Table Array
+
+# E1000 Control Register bits
+const E1000_CTRL_RST: int32 = 0x04000000   # Device Reset
+const E1000_CTRL_SLU: int32 = 0x00000040   # Set Link Up
+const E1000_CTRL_ASDE: int32 = 0x00000020  # Auto-Speed Detection
+
+# E1000 RCTL bits
+const E1000_RCTL_EN: int32 = 0x00000002    # Receiver Enable
+const E1000_RCTL_BAM: int32 = 0x00008000   # Broadcast Accept Mode
+const E1000_RCTL_BSIZE_2048: int32 = 0x00000000  # Buffer Size 2048
+const E1000_RCTL_SECRC: int32 = 0x04000000 # Strip Ethernet CRC
+
+# E1000 TCTL bits
+const E1000_TCTL_EN: int32 = 0x00000002    # Transmit Enable
+const E1000_TCTL_PSP: int32 = 0x00000008   # Pad Short Packets
+
+# Network state
+var e1000_mmio_base: int32 = 0          # Memory-mapped I/O base address
+var e1000_irq: int32 = 0                # IRQ line
+var e1000_found: int32 = 0              # 1 if E1000 found
+var my_mac: array[6, uint8]             # Our MAC address
+var my_ip: array[4, uint8]              # Our IP address (set by DHCP or static)
+
+# Descriptor ring sizes (must be multiple of 8, each descriptor is 16 bytes)
+const RX_DESC_COUNT: int32 = 32
+const TX_DESC_COUNT: int32 = 32
+const RX_BUFFER_SIZE: int32 = 2048
+const TX_BUFFER_SIZE: int32 = 2048
+
+# RX/TX descriptor rings (aligned to 16 bytes)
+# Each descriptor: 16 bytes = 4 dwords
+# [0-7]: buffer address (64-bit), [8-9]: length, [10]: checksum, [11]: status, [12-15]: special/errors
+# Add padding for 16-byte alignment
+var rx_descs_raw: array[528, uint8]     # 32 * 16 bytes + 16 for alignment
+var tx_descs_raw: array[528, uint8]     # 32 * 16 bytes + 16 for alignment
+var rx_buffers: array[65536, uint8]     # 32 * 2048 bytes
+var tx_buffers: array[65536, uint8]     # 32 * 2048 bytes
+var rx_descs_aligned: int32 = 0         # Aligned pointer (set during init)
+var tx_descs_aligned: int32 = 0         # Aligned pointer (set during init)
+var rx_cur: int32 = 0                   # Current RX descriptor index
+var tx_cur: int32 = 0                   # Current TX descriptor index
+
+# Packet buffer for receiving
+var packet_buf: array[2048, uint8]
+var packet_len: int32 = 0
+
+# ARP cache (16 entries)
+const ARP_CACHE_SIZE: int32 = 16
+var arp_ip: array[64, uint8]            # 16 * 4 bytes
+var arp_mac: array[96, uint8]           # 16 * 6 bytes
+var arp_count: int32 = 0
+
+# TCP connection state
+const TCP_STATE_CLOSED: int32 = 0
+const TCP_STATE_LISTEN: int32 = 1
+const TCP_STATE_SYN_SENT: int32 = 2
+const TCP_STATE_SYN_RECEIVED: int32 = 3
+const TCP_STATE_ESTABLISHED: int32 = 4
+const TCP_STATE_FIN_WAIT_1: int32 = 5
+const TCP_STATE_FIN_WAIT_2: int32 = 6
+const TCP_STATE_CLOSE_WAIT: int32 = 7
+const TCP_STATE_CLOSING: int32 = 8
+const TCP_STATE_LAST_ACK: int32 = 9
+const TCP_STATE_TIME_WAIT: int32 = 10
+
+# ============================================================================
+# E1000 Register Access
+# ============================================================================
+
+proc e1000_read(reg: int32): int32 =
+  return mmio_read32(e1000_mmio_base + reg)
+
+proc e1000_write(reg: int32, value: int32) =
+  mmio_write32(e1000_mmio_base + reg, value)
+
+# ============================================================================
+# PCI Enumeration
+# ============================================================================
+
+proc pci_scan_device(bus: int32, slot: int32): int32 =
+  var vendor: int32 = pci_config_read16(bus, slot, 0, PCI_VENDOR_ID)
+  if vendor == 0xFFFF:
+    return 0  # No device
+
+  var device: int32 = pci_config_read16(bus, slot, 0, PCI_DEVICE_ID)
+
+  # Check for Intel E1000
+  if vendor == E1000_VENDOR_ID:
+    if device == E1000_DEVICE_ID:
+      return 1
+    if device == E1000_DEVICE_ID_2:
+      return 1
+    if device == E1000_DEVICE_ID_3:
+      return 1
+
+  return 0
+
+proc pci_find_e1000(): int32 =
+  var bus: int32 = 0
+  while bus < 256:
+    var slot: int32 = 0
+    while slot < 32:
+      if pci_scan_device(bus, slot) == 1:
+        # Found E1000! Get BAR0 (MMIO address)
+        var bar0: int32 = pci_config_read32(bus, slot, 0, PCI_BAR0)
+        e1000_mmio_base = bar0 & 0xFFFFFFF0  # Mask lower bits
+
+        # Get IRQ
+        e1000_irq = pci_config_read8(bus, slot, 0, PCI_IRQ_LINE)
+
+        # Enable bus mastering and memory space
+        var cmd: int32 = pci_config_read16(bus, slot, 0, PCI_COMMAND)
+        cmd = cmd | 0x06  # Memory Space + Bus Master
+        pci_config_write32(bus, slot, 0, PCI_COMMAND, cmd)
+
+        return 1
+      slot = slot + 1
+    bus = bus + 1
+  return 0
+
+# ============================================================================
+# E1000 Driver
+# ============================================================================
+
+proc e1000_read_mac() =
+  # Read MAC from RAL/RAH registers (set by EEPROM)
+  var ral: int32 = e1000_read(E1000_RAL)
+  var rah: int32 = e1000_read(E1000_RAH)
+
+  my_mac[0] = cast[uint8](ral & 0xFF)
+  my_mac[1] = cast[uint8]((ral >> 8) & 0xFF)
+  my_mac[2] = cast[uint8]((ral >> 16) & 0xFF)
+  my_mac[3] = cast[uint8]((ral >> 24) & 0xFF)
+  my_mac[4] = cast[uint8](rah & 0xFF)
+  my_mac[5] = cast[uint8]((rah >> 8) & 0xFF)
+
+  # Write back with Address Valid bit set
+  e1000_write(E1000_RAL, ral)
+  e1000_write(E1000_RAH, (rah & 0xFFFF) | 0x80000000)  # Set AV bit
+
+proc e1000_init_rx() =
+  # Set up RX descriptor ring
+  var i: int32 = 0
+  while i < RX_DESC_COUNT:
+    var desc_addr: int32 = rx_descs_aligned + (i * 16)
+    var buf_addr: int32 = cast[int32](addr(rx_buffers[0])) + (i * RX_BUFFER_SIZE)
+
+    # Buffer address (64-bit, low 32 bits)
+    mmio_write32(desc_addr, buf_addr)
+    mmio_write32(desc_addr + 4, 0)  # High 32 bits
+
+    # Clear status
+    mmio_write32(desc_addr + 8, 0)
+    mmio_write32(desc_addr + 12, 0)
+
+    i = i + 1
+
+  # Set RX descriptor base address
+  e1000_write(E1000_RDBAL, rx_descs_aligned)
+  e1000_write(E1000_RDBAH, 0)
+
+  # Set RX descriptor length (in bytes)
+  e1000_write(E1000_RDLEN, RX_DESC_COUNT * 16)
+
+  # Set head and tail
+  e1000_write(E1000_RDH, 0)
+  e1000_write(E1000_RDT, RX_DESC_COUNT - 1)
+
+  # Enable receiver (with promiscuous mode for debugging)
+  # UPE = Unicast Promiscuous Enable (bit 3)
+  # MPE = Multicast Promiscuous Enable (bit 4)
+  var rctl: int32 = E1000_RCTL_EN | E1000_RCTL_BAM | E1000_RCTL_BSIZE_2048 | E1000_RCTL_SECRC
+  rctl = rctl | 0x18  # Add UPE and MPE bits
+  e1000_write(E1000_RCTL, rctl)
+
+
+proc e1000_init_tx() =
+  # Set up TX descriptor ring
+  var i: int32 = 0
+  while i < TX_DESC_COUNT:
+    var desc_addr: int32 = tx_descs_aligned + (i * 16)
+    var buf_addr: int32 = cast[int32](addr(tx_buffers[0])) + (i * TX_BUFFER_SIZE)
+
+    # Buffer address
+    mmio_write32(desc_addr, buf_addr)
+    mmio_write32(desc_addr + 4, 0)
+
+    # Set status as done (DD bit) so we can use it
+    mmio_write32(desc_addr + 8, 0)
+    mmio_write32(desc_addr + 12, 0x01)  # DD bit set
+
+    i = i + 1
+
+  # Set TX descriptor base address
+  e1000_write(E1000_TDBAL, tx_descs_aligned)
+  e1000_write(E1000_TDBAH, 0)
+
+  # Set TX descriptor length
+  e1000_write(E1000_TDLEN, TX_DESC_COUNT * 16)
+
+  # Set head and tail
+  e1000_write(E1000_TDH, 0)
+  e1000_write(E1000_TDT, 0)
+
+  # Enable transmitter
+  var tctl: int32 = E1000_TCTL_EN | E1000_TCTL_PSP
+  tctl = tctl | (0x10 << 4)   # Collision Threshold
+  tctl = tctl | (0x40 << 12)  # Collision Distance
+  e1000_write(E1000_TCTL, tctl)
+
+proc e1000_reset() =
+  # Reset the device
+  var ctrl: int32 = e1000_read(E1000_CTRL)
+  e1000_write(E1000_CTRL, ctrl | E1000_CTRL_RST)
+
+  # Wait for reset to complete
+  var i: int32 = 0
+  while i < 100000:
+    i = i + 1
+
+  # Set link up
+  ctrl = e1000_read(E1000_CTRL)
+  ctrl = ctrl | E1000_CTRL_SLU | E1000_CTRL_ASDE
+  ctrl = ctrl & 0xFFFFFFBF  # Clear LRST
+  e1000_write(E1000_CTRL, ctrl)
+
+  # Clear multicast table
+  i = 0
+  while i < 128:
+    e1000_write(E1000_MTA + (i * 4), 0)
+    i = i + 1
+
+proc net_init(): int32 =
+  # Calculate 16-byte aligned descriptor ring addresses
+  var rx_raw: int32 = cast[int32](addr(rx_descs_raw[0]))
+  rx_descs_aligned = (rx_raw + 15) & 0xFFFFFFF0  # Align to 16 bytes
+
+  var tx_raw: int32 = cast[int32](addr(tx_descs_raw[0]))
+  tx_descs_aligned = (tx_raw + 15) & 0xFFFFFFF0  # Align to 16 bytes
+
+  # Set default IP (can be changed via DHCP)
+  my_ip[0] = cast[uint8](10)
+  my_ip[1] = cast[uint8](0)
+  my_ip[2] = cast[uint8](2)
+  my_ip[3] = cast[uint8](15)  # 10.0.2.15 (QEMU default)
+
+  # Find E1000
+  if pci_find_e1000() == 0:
+    return 0  # Not found
+
+  e1000_found = 1
+
+  # Map MMIO region (128KB should be enough for E1000)
+  var mmio_page: int32 = e1000_mmio_base & 0xFFFFF000
+  var i: int32 = 0
+  while i < 32:  # Map 32 pages (128KB)
+    map_page(mmio_page + (i * 4096), mmio_page + (i * 4096), 3)  # Present + R/W
+    i = i + 1
+  flush_tlb()
+
+  # Reset device
+  e1000_reset()
+
+  # Read MAC address
+  e1000_read_mac()
+
+  # Initialize RX and TX
+  e1000_init_rx()
+  e1000_init_tx()
+
+  # Enable interrupts for RX
+  e1000_write(E1000_IMS, 0x1F6DC)  # RXT0, RXO, RXDMT0, etc.
+
+  return 1
+
+# ============================================================================
+# Packet Send/Receive
+# ============================================================================
+
+proc e1000_send_packet(data: ptr uint8, length: int32): int32 =
+  if e1000_found == 0:
+    return -1
+
+  if length > TX_BUFFER_SIZE:
+    return -2
+
+  # Get current TX descriptor
+  var desc_idx: int32 = tx_cur
+  var desc_addr: int32 = tx_descs_aligned + (desc_idx * 16)
+  var buf_addr: int32 = cast[int32](addr(tx_buffers[0])) + (desc_idx * TX_BUFFER_SIZE)
+
+  # Wait for descriptor to be available (DD bit set)
+  var status: int32 = mmio_read32(desc_addr + 12)
+  var wait: int32 = 0
+  while (status & 0x01) == 0:
+    wait = wait + 1
+    if wait > 100000:
+      return -3  # Timeout
+    status = mmio_read32(desc_addr + 12)
+
+  # Copy data to buffer
+  net_memcpy(buf_addr, cast[int32](data), length)
+
+  # Set up descriptor
+  mmio_write32(desc_addr, buf_addr)       # Buffer address low
+  mmio_write32(desc_addr + 4, 0)          # Buffer address high
+
+  # Length + CMD (EOP=1, IFCS=1, RS=1)
+  var cmd: int32 = length | (0x0B << 24)  # EOP | IFCS | RS
+  mmio_write32(desc_addr + 8, cmd)
+  mmio_write32(desc_addr + 12, 0)         # Clear status
+
+  # Update tail pointer
+  tx_cur = (tx_cur + 1) % TX_DESC_COUNT
+  e1000_write(E1000_TDT, tx_cur)
+
+  return 0
+
+proc e1000_receive_packet(): int32 =
+  if e1000_found == 0:
+    return 0
+
+  var desc_idx: int32 = rx_cur
+  var desc_addr: int32 = rx_descs_aligned + (desc_idx * 16)
+
+  # Check if packet received (DD bit set in status)
+  # Status byte is at offset 12 of the RX descriptor
+  var status_word: int32 = mmio_read32(desc_addr + 12)
+  var status: int32 = status_word & 0xFF  # Status byte is low 8 bits
+
+  if (status & 0x01) == 0:
+    return 0  # No packet
+
+  # Get packet length
+  var info: int32 = mmio_read32(desc_addr + 8)
+  var length: int32 = info & 0xFFFF
+
+  # Copy to packet buffer
+  var buf_addr: int32 = cast[int32](addr(rx_buffers[0])) + (desc_idx * RX_BUFFER_SIZE)
+  net_memcpy(cast[int32](addr(packet_buf[0])), buf_addr, length)
+  packet_len = length
+
+  # Clear descriptor status and give back to hardware
+  mmio_write32(desc_addr + 8, 0)
+  mmio_write32(desc_addr + 12, 0)
+
+  # Update tail
+  var old_rx_cur: int32 = rx_cur
+  rx_cur = (rx_cur + 1) % RX_DESC_COUNT
+  e1000_write(E1000_RDT, old_rx_cur)
+
+  return length
+
+# ============================================================================
+# Ethernet Frame Handling
+# ============================================================================
+
+const ETH_TYPE_IP: int32 = 0x0800
+const ETH_TYPE_ARP: int32 = 0x0806
+
+proc eth_send(dest_mac: ptr uint8, eth_type: int32, data: ptr uint8, data_len: int32): int32 =
+  var frame: array[1518, uint8]
+  var i: int32 = 0
+
+  # Destination MAC (6 bytes)
+  while i < 6:
+    frame[i] = dest_mac[i]
+    i = i + 1
+
+  # Source MAC (6 bytes)
+  i = 0
+  while i < 6:
+    frame[6 + i] = my_mac[i]
+    i = i + 1
+
+  # EtherType (2 bytes, big-endian)
+  frame[12] = cast[uint8]((eth_type >> 8) & 0xFF)
+  frame[13] = cast[uint8](eth_type & 0xFF)
+
+  # Data
+  i = 0
+  while i < data_len:
+    frame[14 + i] = data[i]
+    i = i + 1
+
+  # Pad to minimum 60 bytes if needed
+  var total_len: int32 = 14 + data_len
+  if total_len < 60:
+    while total_len < 60:
+      frame[total_len] = cast[uint8](0)
+      total_len = total_len + 1
+    total_len = 60
+
+  return e1000_send_packet(addr(frame[0]), total_len)
+
+# ============================================================================
+# IP Checksum
+# ============================================================================
+
+proc ip_checksum(data: ptr uint8, length: int32): int32 =
+  var sum: int32 = 0
+  var i: int32 = 0
+
+  # Sum 16-bit words
+  while i < length - 1:
+    var word: int32 = (cast[int32](data[i]) << 8) | cast[int32](data[i + 1])
+    sum = sum + word
+    i = i + 2
+
+  # Handle odd byte
+  if (length & 1) == 1:
+    sum = sum + (cast[int32](data[length - 1]) << 8)
+
+  # Fold 32-bit sum to 16 bits
+  while (sum >> 16) != 0:
+    sum = (sum & 0xFFFF) + (sum >> 16)
+
+  return (0xFFFF - sum) & 0xFFFF
+
+# ============================================================================
+# ARP Protocol
+# ============================================================================
+
+const ARP_REQUEST: int32 = 1
+const ARP_REPLY: int32 = 2
+
+proc arp_send_request(target_ip: ptr uint8) =
+  var packet: array[28, uint8]
+
+  # Hardware type: Ethernet (1)
+  packet[0] = cast[uint8](0)
+  packet[1] = cast[uint8](1)
+
+  # Protocol type: IPv4 (0x0800)
+  packet[2] = cast[uint8](0x08)
+  packet[3] = cast[uint8](0x00)
+
+  # Hardware address length: 6
+  packet[4] = cast[uint8](6)
+
+  # Protocol address length: 4
+  packet[5] = cast[uint8](4)
+
+  # Operation: Request (1)
+  packet[6] = cast[uint8](0)
+  packet[7] = cast[uint8](1)
+
+  # Sender hardware address (our MAC)
+  var i: int32 = 0
+  while i < 6:
+    packet[8 + i] = my_mac[i]
+    i = i + 1
+
+  # Sender protocol address (our IP)
+  i = 0
+  while i < 4:
+    packet[14 + i] = my_ip[i]
+    i = i + 1
+
+  # Target hardware address (zeros for request)
+  i = 0
+  while i < 6:
+    packet[18 + i] = cast[uint8](0)
+    i = i + 1
+
+  # Target protocol address
+  i = 0
+  while i < 4:
+    packet[24 + i] = target_ip[i]
+    i = i + 1
+
+  # Send as broadcast
+  var broadcast_mac: array[6, uint8]
+  i = 0
+  while i < 6:
+    broadcast_mac[i] = cast[uint8](0xFF)
+    i = i + 1
+
+  eth_send(addr(broadcast_mac[0]), ETH_TYPE_ARP, addr(packet[0]), 28)
+
+proc arp_handle_packet(data: ptr uint8, length: int32) =
+  if length < 28:
+    return
+
+  var op: int32 = (cast[int32](data[6]) << 8) | cast[int32](data[7])
+
+  if op == ARP_REQUEST:
+    # Check if they're asking for our IP
+    var target_ip_match: int32 = 1
+    var i: int32 = 0
+    while i < 4:
+      if data[24 + i] != my_ip[i]:
+        target_ip_match = 0
+      i = i + 1
+
+    if target_ip_match == 1:
+      # Send ARP reply
+      var reply: array[28, uint8]
+
+      # Hardware type: Ethernet
+      reply[0] = cast[uint8](0)
+      reply[1] = cast[uint8](1)
+
+      # Protocol type: IPv4
+      reply[2] = cast[uint8](0x08)
+      reply[3] = cast[uint8](0x00)
+
+      # Lengths
+      reply[4] = cast[uint8](6)
+      reply[5] = cast[uint8](4)
+
+      # Operation: Reply (2)
+      reply[6] = cast[uint8](0)
+      reply[7] = cast[uint8](2)
+
+      # Sender hardware address (our MAC)
+      i = 0
+      while i < 6:
+        reply[8 + i] = my_mac[i]
+        i = i + 1
+
+      # Sender protocol address (our IP)
+      i = 0
+      while i < 4:
+        reply[14 + i] = my_ip[i]
+        i = i + 1
+
+      # Target hardware address (requester's MAC)
+      i = 0
+      while i < 6:
+        reply[18 + i] = data[8 + i]
+        i = i + 1
+
+      # Target protocol address (requester's IP)
+      i = 0
+      while i < 4:
+        reply[24 + i] = data[14 + i]
+        i = i + 1
+
+      # Send reply to requester
+      eth_send(addr(data[8]), ETH_TYPE_ARP, addr(reply[0]), 28)
+
+  if op == ARP_REPLY:
+    # Add to ARP cache
+    if arp_count < ARP_CACHE_SIZE:
+      var idx: int32 = arp_count
+      var i: int32 = 0
+
+      # Store IP
+      while i < 4:
+        arp_ip[idx * 4 + i] = data[14 + i]
+        i = i + 1
+
+      # Store MAC
+      i = 0
+      while i < 6:
+        arp_mac[idx * 6 + i] = data[8 + i]
+        i = i + 1
+
+      arp_count = arp_count + 1
+
+# ============================================================================
+# ICMP (Ping)
+# ============================================================================
+
+const ICMP_ECHO_REQUEST: int32 = 8
+const ICMP_ECHO_REPLY: int32 = 0
+
+proc icmp_handle_packet(src_ip: ptr uint8, data: ptr uint8, length: int32) =
+  if length < 8:
+    return
+
+  var icmp_type: int32 = cast[int32](data[0])
+
+  if icmp_type == ICMP_ECHO_REQUEST:
+    # Build echo reply
+    var reply: array[1500, uint8]
+    var i: int32 = 0
+
+    # IP header (20 bytes)
+    reply[0] = cast[uint8](0x45)  # Version 4, IHL 5
+    reply[1] = cast[uint8](0)     # TOS
+
+    var total_len: int32 = 20 + length
+    reply[2] = cast[uint8]((total_len >> 8) & 0xFF)
+    reply[3] = cast[uint8](total_len & 0xFF)
+
+    reply[4] = cast[uint8](0)     # ID
+    reply[5] = cast[uint8](0)
+    reply[6] = cast[uint8](0)     # Flags, Fragment
+    reply[7] = cast[uint8](0)
+    reply[8] = cast[uint8](64)    # TTL
+    reply[9] = cast[uint8](1)     # Protocol: ICMP
+
+    reply[10] = cast[uint8](0)    # Checksum (will calculate)
+    reply[11] = cast[uint8](0)
+
+    # Source IP (our IP)
+    i = 0
+    while i < 4:
+      reply[12 + i] = my_ip[i]
+      i = i + 1
+
+    # Destination IP
+    i = 0
+    while i < 4:
+      reply[16 + i] = src_ip[i]
+      i = i + 1
+
+    # Calculate IP header checksum
+    var ip_csum: int32 = ip_checksum(addr(reply[0]), 20)
+    reply[10] = cast[uint8]((ip_csum >> 8) & 0xFF)
+    reply[11] = cast[uint8](ip_csum & 0xFF)
+
+    # ICMP Echo Reply
+    reply[20] = cast[uint8](ICMP_ECHO_REPLY)  # Type
+    reply[21] = cast[uint8](0)                 # Code
+    reply[22] = cast[uint8](0)                 # Checksum (will calculate)
+    reply[23] = cast[uint8](0)
+
+    # Copy rest of ICMP data (ID, sequence, data)
+    i = 4
+    while i < length:
+      reply[20 + i] = data[i]
+      i = i + 1
+
+    # Calculate ICMP checksum
+    var icmp_csum: int32 = ip_checksum(addr(reply[20]), length)
+    reply[22] = cast[uint8]((icmp_csum >> 8) & 0xFF)
+    reply[23] = cast[uint8](icmp_csum & 0xFF)
+
+    # Look up destination MAC in ARP cache (or use gateway)
+    # For simplicity, send ARP request and use broadcast
+    var dest_mac: array[6, uint8]
+    i = 0
+    while i < 6:
+      dest_mac[i] = cast[uint8](0xFF)  # Broadcast for now
+      i = i + 1
+
+    # Check ARP cache
+    i = 0
+    while i < arp_count:
+      var match: int32 = 1
+      var j: int32 = 0
+      while j < 4:
+        if arp_ip[i * 4 + j] != src_ip[j]:
+          match = 0
+        j = j + 1
+      if match == 1:
+        j = 0
+        while j < 6:
+          dest_mac[j] = arp_mac[i * 6 + j]
+          j = j + 1
+      i = i + 1
+
+    eth_send(addr(dest_mac[0]), ETH_TYPE_IP, addr(reply[0]), total_len)
+  elif icmp_type == ICMP_ECHO_REPLY:
+    # Received ping reply
+    if ping_pending == 1:
+      ping_pending = 0
+      ping_received = 1
+      # Extract sequence number and record time
+      ping_reply_seq = (cast[int32](data[6]) << 8) | cast[int32](data[7])
+      ping_reply_time = get_tick_count()
+
+# Ping state tracking
+var ping_pending: int32 = 0
+var ping_received: int32 = 0
+var ping_seq: int32 = 0
+var ping_id: int32 = 0x1234
+var ping_reply_seq: int32 = 0
+var ping_reply_time: int32 = 0
+var ping_send_time: int32 = 0
+var ping_target_ip: array[4, uint8]
+
+proc icmp_send_ping(dest_ip: ptr uint8) =
+  var pkt: array[128, uint8]
+  var i: int32 = 0
+
+  # IP header (20 bytes)
+  pkt[0] = cast[uint8](0x45)   # Version 4, IHL 5
+  pkt[1] = cast[uint8](0)      # TOS
+  pkt[2] = cast[uint8](0)      # Total length high
+  pkt[3] = cast[uint8](28)     # Total length low (20 IP + 8 ICMP)
+  pkt[4] = cast[uint8](0)      # ID
+  pkt[5] = cast[uint8](0)
+  pkt[6] = cast[uint8](0x40)   # Don't fragment
+  pkt[7] = cast[uint8](0)
+  pkt[8] = cast[uint8](64)     # TTL
+  pkt[9] = cast[uint8](1)      # Protocol: ICMP
+  pkt[10] = cast[uint8](0)     # Checksum (will calculate)
+  pkt[11] = cast[uint8](0)
+
+  # Source IP (our IP)
+  i = 0
+  while i < 4:
+    pkt[12 + i] = my_ip[i]
+    i = i + 1
+
+  # Destination IP
+  i = 0
+  while i < 4:
+    pkt[16 + i] = dest_ip[i]
+    ping_target_ip[i] = dest_ip[i]
+    i = i + 1
+
+  # Calculate IP header checksum
+  var ip_csum: int32 = ip_checksum(addr(pkt[0]), 20)
+  pkt[10] = cast[uint8]((ip_csum >> 8) & 0xFF)
+  pkt[11] = cast[uint8](ip_csum & 0xFF)
+
+  # ICMP Echo Request
+  pkt[20] = cast[uint8](ICMP_ECHO_REQUEST)  # Type
+  pkt[21] = cast[uint8](0)                   # Code
+  pkt[22] = cast[uint8](0)                   # Checksum (will calculate)
+  pkt[23] = cast[uint8](0)
+  pkt[24] = cast[uint8]((ping_id >> 8) & 0xFF)   # ID
+  pkt[25] = cast[uint8](ping_id & 0xFF)
+  pkt[26] = cast[uint8]((ping_seq >> 8) & 0xFF)  # Sequence
+  pkt[27] = cast[uint8](ping_seq & 0xFF)
+
+  # Calculate ICMP checksum
+  var icmp_csum: int32 = ip_checksum(addr(pkt[20]), 8)
+  pkt[22] = cast[uint8]((icmp_csum >> 8) & 0xFF)
+  pkt[23] = cast[uint8](icmp_csum & 0xFF)
+
+  # Need to find MAC for destination (use gateway MAC for now - ARP for 10.0.2.2)
+  var dest_mac: array[6, uint8]
+  var gateway_ip: array[4, uint8]
+  gateway_ip[0] = cast[uint8](10)
+  gateway_ip[1] = cast[uint8](0)
+  gateway_ip[2] = cast[uint8](2)
+  gateway_ip[3] = cast[uint8](2)
+
+  # Look up gateway in ARP cache
+  var found: int32 = 0
+  i = 0
+  while i < arp_count:
+    var match: int32 = 1
+    var j: int32 = 0
+    while j < 4:
+      if arp_ip[i * 4 + j] != gateway_ip[j]:
+        match = 0
+      j = j + 1
+    if match == 1:
+      j = 0
+      while j < 6:
+        dest_mac[j] = arp_mac[i * 6 + j]
+        j = j + 1
+      found = 1
+    i = i + 1
+
+  if found == 0:
+    # Send ARP request for gateway first
+    arp_send_request(addr(gateway_ip[0]))
+    # Use broadcast
+    i = 0
+    while i < 6:
+      dest_mac[i] = cast[uint8](0xFF)
+      i = i + 1
+
+  ping_pending = 1
+  ping_received = 0
+  ping_send_time = get_tick_count()
+  ping_seq = ping_seq + 1
+
+  eth_send(addr(dest_mac[0]), ETH_TYPE_IP, addr(pkt[0]), 28)
+
+# ============================================================================
+# IP Packet Handling
+# ============================================================================
+
+const IP_PROTO_ICMP: int32 = 1
+const IP_PROTO_TCP: int32 = 6
+const IP_PROTO_UDP: int32 = 17
+
+proc ip_handle_packet(data: ptr uint8, length: int32) =
+  if length < 20:
+    return
+
+  var version: int32 = (cast[int32](data[0]) >> 4) & 0x0F
+  if version != 4:
+    return  # IPv4 only
+
+  var ihl: int32 = cast[int32](data[0]) & 0x0F
+  var header_len: int32 = ihl * 4
+
+  var protocol: int32 = cast[int32](data[9])
+  var src_ip: ptr uint8 = addr(data[12])
+  var dest_ip: ptr uint8 = addr(data[16])
+
+  # Check if packet is for us
+  var for_us: int32 = 1
+  var i: int32 = 0
+  while i < 4:
+    if dest_ip[i] != my_ip[i]:
+      for_us = 0
+    i = i + 1
+
+  # Also accept broadcast
+  if for_us == 0:
+    var is_broadcast: int32 = 1
+    i = 0
+    while i < 4:
+      if dest_ip[i] != cast[uint8](255):
+        is_broadcast = 0
+      i = i + 1
+    if is_broadcast == 1:
+      for_us = 1
+
+  if for_us == 0:
+    return
+
+  var payload: ptr uint8 = addr(data[header_len])
+  var payload_len: int32 = length - header_len
+
+  if protocol == IP_PROTO_ICMP:
+    icmp_handle_packet(src_ip, payload, payload_len)
+
+# ============================================================================
+# Ethernet Frame Handling
+# ============================================================================
+
+proc net_handle_packet() =
+  if packet_len < 14:
+    return
+
+  # Get EtherType
+  var eth_type: int32 = (cast[int32](packet_buf[12]) << 8) | cast[int32](packet_buf[13])
+
+  var payload: ptr uint8 = addr(packet_buf[14])
+  var payload_len: int32 = packet_len - 14
+
+  if eth_type == ETH_TYPE_ARP:
+    arp_handle_packet(payload, payload_len)
+  if eth_type == ETH_TYPE_IP:
+    ip_handle_packet(payload, payload_len)
+
+proc net_poll() =
+  if e1000_found == 0:
+    return
+
+  var len: int32 = e1000_receive_packet()
+  if len > 0:
+    net_handle_packet()
+
+# ============================================================================
+# Network Shell Commands
+# ============================================================================
+
+proc print_mac() =
+  var i: int32 = 0
+  while i < 6:
+    kprint_hex_byte(cast[int32](my_mac[i]))
+    if i < 5:
+      kprint(cast[ptr uint8](":"))
+    i = i + 1
+
+proc print_ip() =
+  kprint_dec(cast[int32](my_ip[0]))
+  kprint(cast[ptr uint8]("."))
+  kprint_dec(cast[int32](my_ip[1]))
+  kprint(cast[ptr uint8]("."))
+  kprint_dec(cast[int32](my_ip[2]))
+  kprint(cast[ptr uint8]("."))
+  kprint_dec(cast[int32](my_ip[3]))
 
 # Main shell loop
 proc shell_main() =
@@ -2064,6 +4948,9 @@ proc shell_main() =
     if ser_avail != 0:
       var sc: int32 = serial_getchar()
       shell_process_char(sc)
+
+    # Poll network for incoming packets
+    net_poll()
 
 # ============================================================================
 # Syscall wrappers (int 0x42)
