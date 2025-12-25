@@ -448,7 +448,7 @@ proc main() =
   # Auto-start HTTP server for testing (set to 1 to enable)
   var auto_httpd: int32 = 1
   if auto_httpd == 1:
-    run_httpd()
+    run_webapp()  # Flask-style demo
 
   # Run simple shell
   shell_main()
@@ -2655,6 +2655,10 @@ proc shell_execute() =
             if cmd_buffer[5] == cast[uint8](0):  # null terminator
               run_httpd()
               return
+  # webapp - Flask-style demo
+  if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("webapp")) == 1:
+    run_webapp()
+    return
   if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("rand")) == 1:
     # Generate pseudo-random number using tick count and LCG
     var seed: int32 = get_tick_count()
@@ -5783,6 +5787,130 @@ proc run_httpd() =
   if conn >= 0:
     tcp_close(conn)
   kprintln(cast[ptr uint8]("[HTTP] Server stopped"))
+
+# ============================================================================
+# Flask-style Web App Demo
+# ============================================================================
+
+# Parse HTTP request path (returns length)
+proc webapp_parse_path(req: ptr uint8, path: ptr uint8, max: int32): int32 =
+  var i: int32 = 0
+  # Skip method
+  while req[i] != 0 and req[i] != 32:
+    i = i + 1
+  if req[i] == 0:
+    return 0
+  i = i + 1
+  # Copy path
+  var len: int32 = 0
+  while req[i] != 0 and req[i] != 32 and req[i] != 63 and len < max - 1:
+    path[len] = req[i]
+    len = len + 1
+    i = i + 1
+  path[len] = 0
+  return len
+
+# Send HTTP response helper
+proc webapp_send(conn: int32, status: int32, ctype: ptr uint8, body: ptr uint8) =
+  if status == 200:
+    discard tcp_write(conn, cast[ptr uint8]("HTTP/1.0 200 OK\r\n"), 17)
+  elif status == 404:
+    discard tcp_write(conn, cast[ptr uint8]("HTTP/1.0 404 Not Found\r\n"), 24)
+  else:
+    discard tcp_write(conn, cast[ptr uint8]("HTTP/1.0 500 Error\r\n"), 20)
+
+  discard tcp_write(conn, cast[ptr uint8]("Content-Type: "), 14)
+  discard tcp_write(conn, ctype, fs_strlen(ctype))
+  discard tcp_write(conn, cast[ptr uint8]("\r\n\r\n"), 4)
+  discard tcp_write(conn, body, fs_strlen(body))
+
+# Response helpers (Flask-style)
+proc html(conn: int32, body: ptr uint8) =
+  webapp_send(conn, 200, cast[ptr uint8]("text/html"), body)
+
+proc json_resp(conn: int32, body: ptr uint8) =
+  webapp_send(conn, 200, cast[ptr uint8]("application/json"), body)
+
+proc not_found(conn: int32) =
+  webapp_send(conn, 404, cast[ptr uint8]("text/html"),
+    cast[ptr uint8]("<h1>404 Not Found</h1>"))
+
+# Flask-style webapp with routing
+proc run_webapp() =
+  kprintln(cast[ptr uint8](" * Flask-style webapp starting..."))
+  kprintln(cast[ptr uint8](" * Running on http://0.0.0.0:80/"))
+  kprintln(cast[ptr uint8](" * Routes: /, /about, /api/status"))
+  kprintln(cast[ptr uint8](" * Press any key to stop"))
+
+  var conn: int32 = tcp_listen(80)
+  if conn < 0:
+    kprintln(cast[ptr uint8](" * Error: cannot bind to port 80"))
+    return
+
+  var path: array[64, uint8]
+  var running: int32 = 1
+
+  while running == 1:
+    if keyboard_available() > 0:
+      keyboard_read_char()
+      running = 0
+      break
+
+    net_poll()
+
+    if tcp_state[conn] == TCP_STATE_ESTABLISHED:
+      # Wait for request
+      var wait: int32 = 0
+      while wait < 200:
+        net_poll()
+        if tcp_recv_ready[conn] == 1:
+          break
+        wait = wait + 1
+
+      if tcp_recv_ready[conn] == 1:
+        # Parse request path
+        var req: ptr uint8 = addr(tcp_recv_buf[conn * TCP_BUF_SIZE])
+        discard webapp_parse_path(req, addr(path[0]), 64)
+        tcp_recv_ready[conn] = 0
+
+        # Log request
+        kprint(cast[ptr uint8](" * GET "))
+        kprintln(addr(path[0]))
+
+        # Route matching (Flask-style!) - using byte comparison
+        var matched: int32 = 0
+
+        # Route: / (just /)
+        if path[0] == 47 and path[1] == 0:
+          html(conn, cast[ptr uint8]("<html><head><title>Flask Demo</title></head><body><h1>Welcome to BrainhairOS!</h1><p>This is a Flask-style web framework.</p><ul><li><a href='/about'>About</a></li><li><a href='/api/status'>API Status</a></li></ul></body></html>"))
+          matched = 1
+
+        # Route: /about
+        if matched == 0:
+          if path[0] == 47 and path[1] == 97 and path[2] == 98 and path[3] == 111 and path[4] == 117 and path[5] == 116 and path[6] == 0:
+            html(conn, cast[ptr uint8]("<html><body><h1>About</h1><p>BrainhairOS is a hobby OS with a TCP/IP stack written from scratch.</p><p><a href='/'>Home</a></p></body></html>"))
+            matched = 1
+
+        # Route: /api/status
+        if matched == 0:
+          if path[0] == 47 and path[1] == 97 and path[2] == 112 and path[3] == 105 and path[4] == 47:
+            # /api/ prefix - check for status
+            if path[5] == 115 and path[6] == 116 and path[7] == 97 and path[8] == 116 and path[9] == 117 and path[10] == 115 and path[11] == 0:
+              json_resp(conn, cast[ptr uint8]("{'status':'ok','os':'BrainhairOS','version':'0.1'}"))
+              matched = 1
+
+        # 404 Not Found
+        if matched == 0:
+          not_found(conn)
+
+      tcp_close(conn)
+      conn = tcp_listen(80)
+      if conn < 0:
+        running = 0
+
+  if conn >= 0:
+    tcp_close(conn)
+  kprintln(cast[ptr uint8](" * Webapp stopped"))
 
 # Sync time via NTP
 proc ntp_sync(): int32 =
