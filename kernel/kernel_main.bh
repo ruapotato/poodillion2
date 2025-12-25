@@ -65,6 +65,7 @@ extern mmio_read32(address: int32): int32
 extern mmio_write32(address: int32, value: int32)
 extern net_memcpy(dest: int32, src: int32, len: int32)
 extern net_memset(dest: int32, val: int32, len: int32)
+extern wait_tick()  # Wait for next interrupt (allows timer to fire)
 
 # Process states
 const PROC_UNUSED: int32 = 0
@@ -423,7 +424,12 @@ proc main() =
   if net_result == 1:
     kprint(cast[ptr uint8]("[OK] Network: "))
     print_mac()
-    kprint(cast[ptr uint8](" @ "))
+    kprintln(cast[ptr uint8](""))
+    # Try to get IP via DHCP
+    var dhcp_result: int32 = dhcp_init()
+    if dhcp_result == 0:
+      kprintln(cast[ptr uint8]("[..] DHCP failed, using static IP"))
+    kprint(cast[ptr uint8]("[OK] IP: "))
     print_ip()
     kprintln(cast[ptr uint8](""))
   else:
@@ -438,6 +444,11 @@ proc main() =
 
   ser_println(cast[ptr uint8](""))
   ser_println(cast[ptr uint8]("Starting kernel shell..."))
+
+  # Auto-start HTTP server for testing (set to 1 to enable)
+  var auto_httpd: int32 = 1
+  if auto_httpd == 1:
+    run_httpd()
 
   # Run simple shell
   shell_main()
@@ -618,6 +629,70 @@ const MAX_ENV_VALUE: int32 = 64
 var env_names: array[512, uint8]   # 16 * 32 = 512
 var env_values: array[1024, uint8] # 16 * 64 = 1024
 var env_count: int32 = 0
+
+# ============================================================================
+# Networking Variables (forward declarations for shell_execute)
+# ============================================================================
+var e1000_mmio_base: int32 = 0          # Memory-mapped I/O base address
+var e1000_irq: int32 = 0                # IRQ line
+var e1000_found: int32 = 0              # 1 if E1000 found
+var my_mac: array[6, uint8]             # Our MAC address
+var my_ip: array[4, uint8]              # Our IP address (set by DHCP or static)
+var broadcast_mac: array[6, uint8]      # Broadcast MAC (FF:FF:FF:FF:FF:FF)
+var arp_ip: array[64, uint8]            # 16 * 4 bytes for ARP cache IPs
+var arp_mac: array[96, uint8]           # 16 * 6 bytes for ARP cache MACs
+var arp_count: int32 = 0                # Number of ARP entries
+var ping_pending: int32 = 0             # Ping request pending
+var ping_seq: int32 = 0                 # Ping sequence number
+var ping_received: int32 = 0            # Ping reply received flag
+var ping_reply_seq: int32 = 0           # Received ping sequence
+var ping_send_time: int32 = 0           # Time ping was sent
+var ping_reply_time: int32 = 0          # Time ping reply received
+var ping_id: int32 = 0x1234             # Ping identifier
+var ping_target_ip: array[4, uint8]     # Target IP for ping
+var net_debug: int32 = 0                # Debug output toggle
+var dns_result_ip: array[4, uint8]      # DNS resolution result
+var dns_result_ready: int32 = 0         # DNS result ready flag
+
+# Static buffers for TCP send (avoid stack overflow)
+var tcp_send_pkt: array[1500, uint8]    # TCP packet buffer
+var tcp_send_ip_pkt: array[1500, uint8] # IP packet buffer
+var tcp_send_in_progress: int32 = 0     # Guard against recursion
+
+# UDP receive state
+var udp_recv_port: int32 = 0                      # Port to listen on
+var udp_recv_data: ptr uint8 = cast[ptr uint8](0) # Received data pointer
+var udp_recv_len: int32 = 0                       # Received data length
+var udp_recv_ready: int32 = 0                     # Data ready flag
+
+# DHCP state
+var dhcp_state: int32 = 0                         # 0=idle, 1=discovering, 2=requesting, 3=bound
+var dhcp_xid: int32 = 0                           # Transaction ID
+var dhcp_server_ip: array[4, uint8]               # DHCP server IP
+var dhcp_offered_ip: array[4, uint8]              # Offered IP address
+var dhcp_gateway: array[4, uint8]                 # Gateway/router IP
+var dhcp_subnet: array[4, uint8]                  # Subnet mask
+var dhcp_dns: array[4, uint8]                     # DNS server IP
+var dhcp_lease_time: int32 = 0                    # Lease time in seconds
+
+# NTP state
+var ntp_synced: int32 = 0                         # 1 if time is synced
+var ntp_timestamp: int32 = 0                      # Unix timestamp (seconds since 1970)
+var ntp_sync_tick: int32 = 0                      # Tick count when synced
+
+# TCP connection state
+const TCP_MAX_CONNS: int32 = 4
+const TCP_BUF_SIZE: int32 = 1024
+# States: 0=closed, 1=syn_sent, 2=established, 3=fin_wait, 4=close_wait
+var tcp_state: array[4, int32]                    # Connection states
+var tcp_local_port: array[4, int32]               # Local ports
+var tcp_remote_port: array[4, int32]              # Remote ports
+var tcp_remote_ip: array[16, uint8]               # Remote IPs (4 bytes each)
+var tcp_seq: array[4, int32]                      # Sequence numbers
+var tcp_ack: array[4, int32]                      # Ack numbers
+var tcp_recv_buf: array[4096, uint8]              # Receive buffers (1024 per conn)
+var tcp_recv_len: array[4, int32]                 # Bytes in receive buffer
+var tcp_recv_ready: array[4, int32]               # Data ready flags
 
 # Get environment variable name at index
 proc env_name_ptr(idx: int32): ptr uint8 =
@@ -852,14 +927,14 @@ proc dir_lookup(dir_ino: int32, name: ptr uint8, name_len: int32): int32 =
       var ent_name_len: int32 = cast[int32](p[offset + 6])
       if ent_name_len == name_len:
         # Compare names
-        var match: int32 = 1
+        var matched: int32 = 1
         var i: int32 = 0
         while i < name_len:
           if p[offset + 8 + i] != name[i]:
-            match = 0
+            matched = 0
             i = name_len  # break
           i = i + 1
-        if match == 1:
+        if matched == 1:
           return ent_ino
     offset = offset + DIRENT_SIZE
   return 0
@@ -905,14 +980,14 @@ proc dir_remove_entry(dir_ino: int32, name: ptr uint8, name_len: int32): int32 =
     if ent_ino != 0:
       var ent_name_len: int32 = cast[int32](p[offset + 6])
       if ent_name_len == name_len:
-        var match: int32 = 1
+        var matched: int32 = 1
         var i: int32 = 0
         while i < name_len:
           if p[offset + 8 + i] != name[i]:
-            match = 0
+            matched = 0
             i = name_len
           i = i + 1
-        if match == 1:
+        if matched == 1:
           # Clear entry
           write32(addr(p[offset]), 0)
           return ent_ino
@@ -1972,7 +2047,7 @@ proc shell_execute() =
     kprintln(cast[ptr uint8]("  Nav:    cd, pwd, stat, size, df"))
     kprintln(cast[ptr uint8]("  Text:   wc, head, grep, xxd, echo"))
     kprintln(cast[ptr uint8]("  Env:    env, export VAR=value"))
-    kprintln(cast[ptr uint8]("  Net:    ping, ifconfig, arp"))
+    kprintln(cast[ptr uint8]("  Net:    ping, ifconfig, arp, dns, ntp, httpd"))
     kprintln(cast[ptr uint8]("  Fun:    banner, hello, spin, guess, countdown"))
     kprintln(cast[ptr uint8]("  Debug:  peek, poke, dump, fill, run, calc"))
     kprintln(cast[ptr uint8](""))
@@ -1986,17 +2061,32 @@ proc shell_execute() =
     kprintln(cast[ptr uint8]("  /sys  - system config (cat /sys/kernel/ostype)"))
     kprintln(cast[ptr uint8]("  /dev  - device files"))
     return
-  if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("clear")) == 1:
-    vga_clear()
-    return
-  if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("cls")) == 1:
-    vga_clear()
-    return
-  if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("pwd")) == 1:
-    var pwd_buf: array[64, uint8]
-    fs_getcwd(addr(pwd_buf[0]), 64)
-    kprintln(addr(pwd_buf[0]))
-    return
+  # Use byte comparison for commands that don't work with str_equals
+  # clear command
+  if cmd_buffer[0] == cast[uint8](99):  # 'c'
+    if cmd_buffer[1] == cast[uint8](108):  # 'l'
+      if cmd_buffer[2] == cast[uint8](101):  # 'e'
+        if cmd_buffer[3] == cast[uint8](97):  # 'a'
+          if cmd_buffer[4] == cast[uint8](114):  # 'r'
+            if cmd_buffer[5] == cast[uint8](0):
+              vga_clear()
+              return
+  # cls command
+  if cmd_buffer[0] == cast[uint8](99):  # 'c'
+    if cmd_buffer[1] == cast[uint8](108):  # 'l'
+      if cmd_buffer[2] == cast[uint8](115):  # 's'
+        if cmd_buffer[3] == cast[uint8](0):
+          vga_clear()
+          return
+  # pwd command
+  if cmd_buffer[0] == cast[uint8](112):  # 'p'
+    if cmd_buffer[1] == cast[uint8](119):  # 'w'
+      if cmd_buffer[2] == cast[uint8](100):  # 'd'
+        if cmd_buffer[3] == cast[uint8](0):
+          var pwd_buf: array[64, uint8]
+          fs_getcwd(addr(pwd_buf[0]), 64)
+          kprintln(addr(pwd_buf[0]))
+          return
   # cd command
   if cmd_buffer[0] == cast[uint8](99):  # 'c'
     if cmd_buffer[1] == cast[uint8](100):  # 'd'
@@ -2350,137 +2440,221 @@ proc shell_execute() =
       kprintln(cast[ptr uint8]("Failed to spawn process!"))
       vga_set_color(VGA_WHITE, VGA_BLACK)
     return
-  if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("ping")) == 1:
-    if cmd_len < 6:
-      kprintln(cast[ptr uint8]("Usage: ping <ip>"))
-      kprintln(cast[ptr uint8]("Example: ping 10.0.2.2"))
-      return
-    # Parse IP address from argument
-    var arg_start: int32 = 5  # After "ping "
-    var dest_ip: array[4, uint8]
-    var octet: int32 = 0
-    var octet_idx: int32 = 0
-    var parse_i: int32 = arg_start
-    while parse_i < cmd_len:
-      var c: int32 = cast[int32](cmd_buffer[parse_i])
-      if c >= 48:
-        if c <= 57:
-          octet = octet * 10 + (c - 48)
-      if c == 46:  # '.'
+  # ping command - check "pi" prefix (pwd has 'w' at pos 1, so "pi" is unique)
+  if cmd_buffer[0] == cast[uint8](112):  # 'p'
+    if cmd_buffer[1] == cast[uint8](105):  # 'i' (not 'w' as in pwd)
+      if cmd_buffer[4] == cast[uint8](32) or cmd_buffer[4] == cast[uint8](0):  # ' ' or null
+        if cmd_len < 6:
+          kprintln(cast[ptr uint8]("Usage: ping <ip>"))
+          kprintln(cast[ptr uint8]("Example: ping 10.0.2.2"))
+          return
+        # Parse IP address from argument
+        var arg_start: int32 = 5  # After "ping "
+        var dest_ip: array[4, uint8]
+        var octet: int32 = 0
+        var octet_idx: int32 = 0
+        var parse_i: int32 = arg_start
+        while parse_i < cmd_len:
+          var c: int32 = cast[int32](cmd_buffer[parse_i])
+          if c >= 48:
+            if c <= 57:
+              octet = octet * 10 + (c - 48)
+          if c == 46:  # '.'
+            if octet_idx < 4:
+              dest_ip[octet_idx] = cast[uint8](octet)
+              octet_idx = octet_idx + 1
+              octet = 0
+          parse_i = parse_i + 1
         if octet_idx < 4:
           dest_ip[octet_idx] = cast[uint8](octet)
-          octet_idx = octet_idx + 1
-          octet = 0
-      parse_i = parse_i + 1
-    if octet_idx < 4:
-      dest_ip[octet_idx] = cast[uint8](octet)
 
-    kprint(cast[ptr uint8]("PING "))
-    kprint_dec(cast[int32](dest_ip[0]))
-    kprint(cast[ptr uint8]("."))
-    kprint_dec(cast[int32](dest_ip[1]))
-    kprint(cast[ptr uint8]("."))
-    kprint_dec(cast[int32](dest_ip[2]))
-    kprint(cast[ptr uint8]("."))
-    kprint_dec(cast[int32](dest_ip[3]))
-    kprintln(cast[ptr uint8](":"))
-
-    # Send 4 pings
-    var ping_count: int32 = 0
-    var recv_count: int32 = 0
-    while ping_count < 4:
-      icmp_send_ping(addr(dest_ip[0]))
-      kprint(cast[ptr uint8]("  seq="))
-      kprint_dec(ping_seq)
-      kprint(cast[ptr uint8](" "))
-
-      # Wait up to 2 seconds for reply (poll network every 10ms)
-      var wait: int32 = 0
-      while wait < 200:
-        net_poll()
-        if ping_received == 1:
-          wait = 300  # Break
-        else:
-          # Simple delay
-          var delay: int32 = 0
-          while delay < 50000:
-            delay = delay + 1
-          wait = wait + 1
-
-      if ping_received == 1:
-        var rtt: int32 = ping_reply_time - ping_send_time
-        vga_set_color(VGA_LIGHT_GREEN, VGA_BLACK)
-        kprint(cast[ptr uint8]("Reply: time="))
-        kprint_dec(rtt)
-        kprintln(cast[ptr uint8]("ms"))
-        vga_set_color(VGA_WHITE, VGA_BLACK)
-        recv_count = recv_count + 1
-        ping_received = 0
-      else:
-        vga_set_color(VGA_LIGHT_RED, VGA_BLACK)
-        kprintln(cast[ptr uint8]("timeout"))
-        vga_set_color(VGA_WHITE, VGA_BLACK)
-
-      ping_count = ping_count + 1
-
-    kprint(cast[ptr uint8]("--- "))
-    kprint_dec(recv_count)
-    kprint(cast[ptr uint8]("/"))
-    kprint_dec(ping_count)
-    kprintln(cast[ptr uint8](" packets received ---"))
-    return
-  if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("ifconfig")) == 1:
-    kprintln(cast[ptr uint8]("Network Configuration:"))
-    kprint(cast[ptr uint8]("  MAC: "))
-    var mac_i: int32 = 0
-    while mac_i < 6:
-      if cast[int32](my_mac[mac_i]) < 16:
-        kprint(cast[ptr uint8]("0"))
-      vga_print_hex(cast[int32](my_mac[mac_i]))
-      if mac_i < 5:
-        kprint(cast[ptr uint8](":"))
-      mac_i = mac_i + 1
-    kprintln(cast[ptr uint8](""))
-    kprint(cast[ptr uint8]("  IP:  "))
-    kprint_dec(cast[int32](my_ip[0]))
-    kprint(cast[ptr uint8]("."))
-    kprint_dec(cast[int32](my_ip[1]))
-    kprint(cast[ptr uint8]("."))
-    kprint_dec(cast[int32](my_ip[2]))
-    kprint(cast[ptr uint8]("."))
-    kprint_dec(cast[int32](my_ip[3]))
-    kprintln(cast[ptr uint8](""))
-    kprint(cast[ptr uint8]("  ARP entries: "))
-    kprint_dec(arp_count)
-    kprintln(cast[ptr uint8](""))
-    return
-  if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("arp")) == 1:
-    kprintln(cast[ptr uint8]("ARP Cache:"))
-    if arp_count == 0:
-      kprintln(cast[ptr uint8]("  (empty)"))
-    else:
-      var arp_i: int32 = 0
-      while arp_i < arp_count:
-        kprint(cast[ptr uint8]("  "))
-        kprint_dec(cast[int32](arp_ip[arp_i * 4]))
+        kprint(cast[ptr uint8]("PING "))
+        kprint_dec(cast[int32](dest_ip[0]))
         kprint(cast[ptr uint8]("."))
-        kprint_dec(cast[int32](arp_ip[arp_i * 4 + 1]))
+        kprint_dec(cast[int32](dest_ip[1]))
         kprint(cast[ptr uint8]("."))
-        kprint_dec(cast[int32](arp_ip[arp_i * 4 + 2]))
+        kprint_dec(cast[int32](dest_ip[2]))
         kprint(cast[ptr uint8]("."))
-        kprint_dec(cast[int32](arp_ip[arp_i * 4 + 3]))
-        kprint(cast[ptr uint8](" -> "))
-        var mac_j: int32 = 0
-        while mac_j < 6:
-          if cast[int32](arp_mac[arp_i * 6 + mac_j]) < 16:
+        kprint_dec(cast[int32](dest_ip[3]))
+        kprintln(cast[ptr uint8](":"))
+
+        # Send 4 pings
+        var ping_count: int32 = 0
+        var recv_count: int32 = 0
+        while ping_count < 4:
+          icmp_send_ping(addr(dest_ip[0]))
+          kprint(cast[ptr uint8]("  seq="))
+          kprint_dec(ping_seq)
+          kprint(cast[ptr uint8](" "))
+
+          # Wait up to 2 seconds for reply (poll network every 10ms)
+          var wait: int32 = 0
+          while wait < 200:
+            net_poll()
+            if ping_received == 1:
+              wait = 300  # Break
+            else:
+              # Simple delay
+              var delay: int32 = 0
+              while delay < 50000:
+                delay = delay + 1
+              wait = wait + 1
+
+          if ping_received == 1:
+            var rtt: int32 = ping_reply_time - ping_send_time
+            vga_set_color(VGA_LIGHT_GREEN, VGA_BLACK)
+            kprint(cast[ptr uint8]("Reply: time="))
+            kprint_dec(rtt)
+            kprintln(cast[ptr uint8]("ms"))
+            vga_set_color(VGA_WHITE, VGA_BLACK)
+            recv_count = recv_count + 1
+            ping_received = 0
+          else:
+            vga_set_color(VGA_LIGHT_RED, VGA_BLACK)
+            kprintln(cast[ptr uint8]("timeout"))
+            vga_set_color(VGA_WHITE, VGA_BLACK)
+
+          ping_count = ping_count + 1
+
+        kprint(cast[ptr uint8]("--- "))
+        kprint_dec(recv_count)
+        kprint(cast[ptr uint8]("/"))
+        kprint_dec(ping_count)
+        kprintln(cast[ptr uint8](" packets received ---"))
+        return
+  # ifconfig command - check "if" prefix + length 8 (fewer nesting levels)
+  if cmd_buffer[0] == cast[uint8](105):  # 'i'
+    if cmd_buffer[1] == cast[uint8](102):  # 'f'
+      if cmd_buffer[8] == cast[uint8](0):  # null at position 8 = 8-char command
+        kprintln(cast[ptr uint8]("Network Configuration:"))
+        kprint(cast[ptr uint8]("  MAC: "))
+        var mac_i: int32 = 0
+        while mac_i < 6:
+          if cast[int32](my_mac[mac_i]) < 16:
             kprint(cast[ptr uint8]("0"))
-          vga_print_hex(cast[int32](arp_mac[arp_i * 6 + mac_j]))
-          if mac_j < 5:
+          vga_print_hex(cast[int32](my_mac[mac_i]))
+          if mac_i < 5:
             kprint(cast[ptr uint8](":"))
-          mac_j = mac_j + 1
+          mac_i = mac_i + 1
         kprintln(cast[ptr uint8](""))
-        arp_i = arp_i + 1
-    return
+        kprint(cast[ptr uint8]("  IP:  "))
+        kprint_dec(cast[int32](my_ip[0]))
+        kprint(cast[ptr uint8]("."))
+        kprint_dec(cast[int32](my_ip[1]))
+        kprint(cast[ptr uint8]("."))
+        kprint_dec(cast[int32](my_ip[2]))
+        kprint(cast[ptr uint8]("."))
+        kprint_dec(cast[int32](my_ip[3]))
+        kprintln(cast[ptr uint8](""))
+        kprint(cast[ptr uint8]("  ARP entries: "))
+        kprint_dec(arp_count)
+        kprintln(cast[ptr uint8](""))
+        return
+  # arp command - use byte comparison for "arp"
+  if cmd_buffer[0] == cast[uint8](97):   # 'a'
+    if cmd_buffer[1] == cast[uint8](114):  # 'r'
+      if cmd_buffer[2] == cast[uint8](112):  # 'p'
+        if cmd_buffer[3] == cast[uint8](0):  # null terminator
+          kprintln(cast[ptr uint8]("ARP Cache:"))
+          if arp_count == 0:
+            kprintln(cast[ptr uint8]("  (empty)"))
+          else:
+            var arp_i: int32 = 0
+            while arp_i < arp_count:
+              kprint(cast[ptr uint8]("  "))
+              kprint_dec(cast[int32](arp_ip[arp_i * 4]))
+              kprint(cast[ptr uint8]("."))
+              kprint_dec(cast[int32](arp_ip[arp_i * 4 + 1]))
+              kprint(cast[ptr uint8]("."))
+              kprint_dec(cast[int32](arp_ip[arp_i * 4 + 2]))
+              kprint(cast[ptr uint8]("."))
+              kprint_dec(cast[int32](arp_ip[arp_i * 4 + 3]))
+              kprint(cast[ptr uint8](" -> "))
+              var mac_j: int32 = 0
+              while mac_j < 6:
+                if cast[int32](arp_mac[arp_i * 6 + mac_j]) < 16:
+                  kprint(cast[ptr uint8]("0"))
+                vga_print_hex(cast[int32](arp_mac[arp_i * 6 + mac_j]))
+                if mac_j < 5:
+                  kprint(cast[ptr uint8](":"))
+                mac_j = mac_j + 1
+              kprintln(cast[ptr uint8](""))
+              arp_i = arp_i + 1
+          return
+  # netdebug command - toggle network debug mode (n-e-t-d = 110,101,116,100)
+  if cmd_buffer[0] == cast[uint8](110):  # 'n'
+    if cmd_buffer[1] == cast[uint8](101):  # 'e'
+      if cmd_buffer[2] == cast[uint8](116):  # 't'
+        if cmd_buffer[3] == cast[uint8](100):  # 'd'
+          if cmd_buffer[4] == cast[uint8](0):  # null (just "netd")
+            if net_debug == 0:
+              net_debug = 1
+              kprintln(cast[ptr uint8]("Network debug: ON"))
+            else:
+              net_debug = 0
+              kprintln(cast[ptr uint8]("Network debug: OFF"))
+            return
+  # dns command - resolve hostname to IP (d-n-s = 100,110,115)
+  if cmd_buffer[0] == cast[uint8](100):  # 'd'
+    if cmd_buffer[1] == cast[uint8](110):  # 'n'
+      if cmd_buffer[2] == cast[uint8](115):  # 's'
+        if cmd_buffer[3] == cast[uint8](32):  # ' '
+          # Get hostname from argument
+          var dns_hostname: ptr uint8 = addr(cmd_buffer[4])
+          if cast[int32](dns_hostname[0]) == 0:
+            kprintln(cast[ptr uint8]("Usage: dns <hostname>"))
+            kprintln(cast[ptr uint8]("Example: dns google.com"))
+            return
+          kprint(cast[ptr uint8]("Resolving "))
+          kprint(dns_hostname)
+          kprintln(cast[ptr uint8]("..."))
+          var result: int32 = dns_resolve(dns_hostname)
+          if result == 1:
+            vga_set_color(VGA_LIGHT_GREEN, VGA_BLACK)
+            kprint(dns_hostname)
+            kprint(cast[ptr uint8](" -> "))
+            kprint_dec(cast[int32](dns_result_ip[0]))
+            kprint(cast[ptr uint8]("."))
+            kprint_dec(cast[int32](dns_result_ip[1]))
+            kprint(cast[ptr uint8]("."))
+            kprint_dec(cast[int32](dns_result_ip[2]))
+            kprint(cast[ptr uint8]("."))
+            kprint_dec(cast[int32](dns_result_ip[3]))
+            kprintln(cast[ptr uint8](""))
+            vga_set_color(VGA_WHITE, VGA_BLACK)
+          else:
+            vga_set_color(VGA_LIGHT_RED, VGA_BLACK)
+            kprintln(cast[ptr uint8]("DNS lookup failed (timeout or no answer)"))
+            vga_set_color(VGA_WHITE, VGA_BLACK)
+          return
+        if cmd_buffer[3] == cast[uint8](0):  # Just "dns" with no args
+          kprintln(cast[ptr uint8]("Usage: dns <hostname>"))
+          kprintln(cast[ptr uint8]("Example: dns google.com"))
+          return
+  # ntp command - sync time (n-t-p = 110,116,112)
+  if cmd_buffer[0] == cast[uint8](110):  # 'n'
+    if cmd_buffer[1] == cast[uint8](116):  # 't'
+      if cmd_buffer[2] == cast[uint8](112):  # 'p'
+        if cmd_buffer[3] == cast[uint8](0):  # null terminator
+          ntp_sync()
+          return
+  # date command - show current time (d-a-t-e = 100,97,116,101)
+  if cmd_buffer[0] == cast[uint8](100):  # 'd'
+    if cmd_buffer[1] == cast[uint8](97):  # 'a'
+      if cmd_buffer[2] == cast[uint8](116):  # 't'
+        if cmd_buffer[3] == cast[uint8](101):  # 'e'
+          if cmd_buffer[4] == cast[uint8](0):  # null terminator
+            print_time()
+            return
+  # httpd command - start simple HTTP server (h-t-t-p-d = 104,116,116,112,100)
+  if cmd_buffer[0] == cast[uint8](104):  # 'h'
+    if cmd_buffer[1] == cast[uint8](116):  # 't'
+      if cmd_buffer[2] == cast[uint8](116):  # 't'
+        if cmd_buffer[3] == cast[uint8](112):  # 'p'
+          if cmd_buffer[4] == cast[uint8](100):  # 'd'
+            if cmd_buffer[5] == cast[uint8](0):  # null terminator
+              run_httpd()
+              return
   if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("rand")) == 1:
     # Generate pseudo-random number using tick count and LCG
     var seed: int32 = get_tick_count()
@@ -3802,6 +3976,7 @@ proc init_builtins() =
   add_builtin(cast[ptr uint8]("ping"))
   add_builtin(cast[ptr uint8]("ifconfig"))
   add_builtin(cast[ptr uint8]("arp"))
+  add_builtin(cast[ptr uint8]("dns"))
 
 # Check if string starts with prefix
 proc starts_with(s: ptr uint8, prefix: ptr uint8, prefix_len: int32): int32 =
@@ -4051,6 +4226,7 @@ const E1000_IMS: int32 = 0x00D0       # Interrupt Mask Set
 const E1000_IMC: int32 = 0x00D8       # Interrupt Mask Clear
 const E1000_RCTL: int32 = 0x0100      # Receive Control
 const E1000_TCTL: int32 = 0x0400      # Transmit Control
+const E1000_TIPG: int32 = 0x0410      # Transmit Inter-Packet Gap
 const E1000_RDBAL: int32 = 0x2800     # RX Descriptor Base Low
 const E1000_RDBAH: int32 = 0x2804     # RX Descriptor Base High
 const E1000_RDLEN: int32 = 0x2808     # RX Descriptor Length
@@ -4061,6 +4237,7 @@ const E1000_TDBAH: int32 = 0x3804     # TX Descriptor Base High
 const E1000_TDLEN: int32 = 0x3808     # TX Descriptor Length
 const E1000_TDH: int32 = 0x3810       # TX Descriptor Head
 const E1000_TDT: int32 = 0x3818       # TX Descriptor Tail
+const E1000_TXDCTL: int32 = 0x3828    # TX Descriptor Control
 const E1000_RAL: int32 = 0x5400       # Receive Address Low
 const E1000_RAH: int32 = 0x5404       # Receive Address High
 const E1000_MTA: int32 = 0x5200       # Multicast Table Array
@@ -4080,16 +4257,9 @@ const E1000_RCTL_SECRC: int32 = 0x04000000 # Strip Ethernet CRC
 const E1000_TCTL_EN: int32 = 0x00000002    # Transmit Enable
 const E1000_TCTL_PSP: int32 = 0x00000008   # Pad Short Packets
 
-# Network state
-var e1000_mmio_base: int32 = 0          # Memory-mapped I/O base address
-var e1000_irq: int32 = 0                # IRQ line
-var e1000_found: int32 = 0              # 1 if E1000 found
-var my_mac: array[6, uint8]             # Our MAC address
-var my_ip: array[4, uint8]              # Our IP address (set by DHCP or static)
-
 # Descriptor ring sizes (must be multiple of 8, each descriptor is 16 bytes)
-const RX_DESC_COUNT: int32 = 32
-const TX_DESC_COUNT: int32 = 32
+const RX_DESC_COUNT: int32 = 8          # Reduced from 32 to fit in memory
+const TX_DESC_COUNT: int32 = 8          # Reduced from 32 to fit in memory
 const RX_BUFFER_SIZE: int32 = 2048
 const TX_BUFFER_SIZE: int32 = 2048
 
@@ -4097,10 +4267,10 @@ const TX_BUFFER_SIZE: int32 = 2048
 # Each descriptor: 16 bytes = 4 dwords
 # [0-7]: buffer address (64-bit), [8-9]: length, [10]: checksum, [11]: status, [12-15]: special/errors
 # Add padding for 16-byte alignment
-var rx_descs_raw: array[528, uint8]     # 32 * 16 bytes + 16 for alignment
-var tx_descs_raw: array[528, uint8]     # 32 * 16 bytes + 16 for alignment
-var rx_buffers: array[65536, uint8]     # 32 * 2048 bytes
-var tx_buffers: array[65536, uint8]     # 32 * 2048 bytes
+var rx_descs_raw: array[144, uint8]     # 8 * 16 bytes + 16 for alignment
+var tx_descs_raw: array[144, uint8]     # 8 * 16 bytes + 16 for alignment
+var rx_buffers: array[16384, uint8]     # 8 * 2048 bytes
+var tx_buffers: array[16384, uint8]     # 8 * 2048 bytes
 var rx_descs_aligned: int32 = 0         # Aligned pointer (set during init)
 var tx_descs_aligned: int32 = 0         # Aligned pointer (set during init)
 var rx_cur: int32 = 0                   # Current RX descriptor index
@@ -4110,11 +4280,8 @@ var tx_cur: int32 = 0                   # Current TX descriptor index
 var packet_buf: array[2048, uint8]
 var packet_len: int32 = 0
 
-# ARP cache (16 entries)
+# ARP cache size constant
 const ARP_CACHE_SIZE: int32 = 16
-var arp_ip: array[64, uint8]            # 16 * 4 bytes
-var arp_mac: array[96, uint8]           # 16 * 6 bytes
-var arp_count: int32 = 0
 
 # TCP connection state
 const TCP_STATE_CLOSED: int32 = 0
@@ -4268,6 +4435,16 @@ proc e1000_init_tx() =
   e1000_write(E1000_TDH, 0)
   e1000_write(E1000_TDT, 0)
 
+  # Configure TXDCTL for write-back
+  # GRAN=1 (bit 24), WTHRESH=1 (bits 16-22), PTHRESH=0 (bits 0-5)
+  var txdctl: int32 = (1 << 24) | (1 << 16)
+  e1000_write(E1000_TXDCTL, txdctl)
+
+  # Set Transmit Inter-Packet Gap (required for TX to work)
+  # IPGT=10, IPGR1=8, IPGR2=6 (typical values for 802.3)
+  var tipg: int32 = 10 | (8 << 10) | (6 << 20)
+  e1000_write(E1000_TIPG, tipg)
+
   # Enable transmitter
   var tctl: int32 = E1000_TCTL_EN | E1000_TCTL_PSP
   tctl = tctl | (0x10 << 4)   # Collision Threshold
@@ -4298,17 +4475,24 @@ proc e1000_reset() =
 
 proc net_init(): int32 =
   # Calculate 16-byte aligned descriptor ring addresses
+  # Round up to next 16-byte boundary using bitmask
   var rx_raw: int32 = cast[int32](addr(rx_descs_raw[0]))
-  rx_descs_aligned = (rx_raw + 15) & 0xFFFFFFF0  # Align to 16 bytes
+  rx_descs_aligned = (rx_raw + 15) & cast[int32](0xFFFFFFF0)
 
   var tx_raw: int32 = cast[int32](addr(tx_descs_raw[0]))
-  tx_descs_aligned = (tx_raw + 15) & 0xFFFFFFF0  # Align to 16 bytes
+  tx_descs_aligned = (tx_raw + 15) & cast[int32](0xFFFFFFF0)
 
   # Set default IP (can be changed via DHCP)
   my_ip[0] = cast[uint8](10)
   my_ip[1] = cast[uint8](0)
   my_ip[2] = cast[uint8](2)
   my_ip[3] = cast[uint8](15)  # 10.0.2.15 (QEMU default)
+
+  # Set broadcast MAC
+  var j: int32 = 0
+  while j < 6:
+    broadcast_mac[j] = cast[uint8](0xFF)
+    j = j + 1
 
   # Find E1000
   if pci_find_e1000() == 0:
@@ -4376,7 +4560,7 @@ proc e1000_send_packet(data: ptr uint8, length: int32): int32 =
   mmio_write32(desc_addr + 8, cmd)
   mmio_write32(desc_addr + 12, 0)         # Clear status
 
-  # Update tail pointer
+  # Update tail pointer to trigger TX
   tx_cur = (tx_cur + 1) % TX_DESC_COUNT
   e1000_write(E1000_TDT, tx_cur)
 
@@ -4535,13 +4719,7 @@ proc arp_send_request(target_ip: ptr uint8) =
     packet[24 + i] = target_ip[i]
     i = i + 1
 
-  # Send as broadcast
-  var broadcast_mac: array[6, uint8]
-  i = 0
-  while i < 6:
-    broadcast_mac[i] = cast[uint8](0xFF)
-    i = i + 1
-
+  # Send as broadcast (use global broadcast_mac)
   eth_send(addr(broadcast_mac[0]), ETH_TYPE_ARP, addr(packet[0]), 28)
 
 proc arp_handle_packet(data: ptr uint8, length: int32) =
@@ -4608,6 +4786,17 @@ proc arp_handle_packet(data: ptr uint8, length: int32) =
 
   if op == ARP_REPLY:
     # Add to ARP cache
+    ser_println(cast[ptr uint8]("[ARP] reply received"))
+    if net_debug == 1:
+      kprint(cast[ptr uint8]("[ARP reply from "))
+      kprint_dec(cast[int32](data[14]))
+      kprint(cast[ptr uint8]("."))
+      kprint_dec(cast[int32](data[15]))
+      kprint(cast[ptr uint8]("."))
+      kprint_dec(cast[int32](data[16]))
+      kprint(cast[ptr uint8]("."))
+      kprint_dec(cast[int32](data[17]))
+      kprintln(cast[ptr uint8]("]"))
     if arp_count < ARP_CACHE_SIZE:
       var idx: int32 = arp_count
       var i: int32 = 0
@@ -4637,6 +4826,11 @@ proc icmp_handle_packet(src_ip: ptr uint8, data: ptr uint8, length: int32) =
     return
 
   var icmp_type: int32 = cast[int32](data[0])
+
+  if net_debug == 1:
+    kprint(cast[ptr uint8]("[ICMP type="))
+    kprint_dec(icmp_type)
+    kprint(cast[ptr uint8]("] "))
 
   if icmp_type == ICMP_ECHO_REQUEST:
     # Build echo reply
@@ -4706,13 +4900,13 @@ proc icmp_handle_packet(src_ip: ptr uint8, data: ptr uint8, length: int32) =
     # Check ARP cache
     i = 0
     while i < arp_count:
-      var match: int32 = 1
+      var matched: int32 = 1
       var j: int32 = 0
       while j < 4:
         if arp_ip[i * 4 + j] != src_ip[j]:
-          match = 0
+          matched = 0
         j = j + 1
-      if match == 1:
+      if matched == 1:
         j = 0
         while j < 6:
           dest_mac[j] = arp_mac[i * 6 + j]
@@ -4720,24 +4914,22 @@ proc icmp_handle_packet(src_ip: ptr uint8, data: ptr uint8, length: int32) =
       i = i + 1
 
     eth_send(addr(dest_mac[0]), ETH_TYPE_IP, addr(reply[0]), total_len)
-  elif icmp_type == ICMP_ECHO_REPLY:
+  if icmp_type == ICMP_ECHO_REPLY:
     # Received ping reply
+    if net_debug == 1:
+      kprint(cast[ptr uint8]("[ICMP Reply, pending="))
+      kprint_dec(ping_pending)
+      kprint(cast[ptr uint8]("] "))
     if ping_pending == 1:
       ping_pending = 0
       ping_received = 1
       # Extract sequence number and record time
       ping_reply_seq = (cast[int32](data[6]) << 8) | cast[int32](data[7])
       ping_reply_time = get_tick_count()
-
-# Ping state tracking
-var ping_pending: int32 = 0
-var ping_received: int32 = 0
-var ping_seq: int32 = 0
-var ping_id: int32 = 0x1234
-var ping_reply_seq: int32 = 0
-var ping_reply_time: int32 = 0
-var ping_send_time: int32 = 0
-var ping_target_ip: array[4, uint8]
+      if net_debug == 1:
+        kprint(cast[ptr uint8]("[Got reply seq="))
+        kprint_dec(ping_reply_seq)
+        kprintln(cast[ptr uint8]("]"))
 
 proc icmp_send_ping(dest_ip: ptr uint8) =
   var pkt: array[128, uint8]
@@ -4802,13 +4994,13 @@ proc icmp_send_ping(dest_ip: ptr uint8) =
   var found: int32 = 0
   i = 0
   while i < arp_count:
-    var match: int32 = 1
+    var matched: int32 = 1
     var j: int32 = 0
     while j < 4:
       if arp_ip[i * 4 + j] != gateway_ip[j]:
-        match = 0
+        matched = 0
       j = j + 1
-    if match == 1:
+    if matched == 1:
       j = 0
       while j < 6:
         dest_mac[j] = arp_mac[i * 6 + j]
@@ -4817,13 +5009,50 @@ proc icmp_send_ping(dest_ip: ptr uint8) =
     i = i + 1
 
   if found == 0:
-    # Send ARP request for gateway first
+    # Send ARP request for gateway and wait for reply
     arp_send_request(addr(gateway_ip[0]))
-    # Use broadcast
-    i = 0
-    while i < 6:
-      dest_mac[i] = cast[uint8](0xFF)
-      i = i + 1
+
+    # Small delay to let TX complete
+    var tx_delay: int32 = 0
+    while tx_delay < 5000:
+      tx_delay = tx_delay + 1
+
+    if net_debug == 1:
+      kprint(cast[ptr uint8]("[Waiting for ARP..."))
+    # Wait up to 1 second for ARP reply using real timer ticks
+    var start_tick: int32 = get_tick_count()
+    var poll_count: int32 = 0
+    var timeout_ticks: int32 = 1000  # 1 second (assuming ~1ms per tick)
+    while (get_tick_count() - start_tick) < timeout_ticks:
+      # Poll for ARP reply
+      net_poll()
+      poll_count = poll_count + 1
+
+      # Check if gateway is now in cache
+      var k: int32 = 0
+      while k < arp_count:
+        var arp_matched: int32 = 1
+        var m: int32 = 0
+        while m < 4:
+          if arp_ip[k * 4 + m] != gateway_ip[m]:
+            arp_matched = 0
+          m = m + 1
+        if arp_matched == 1:
+          m = 0
+          while m < 6:
+            dest_mac[m] = arp_mac[k * 6 + m]
+            m = m + 1
+          found = 1
+          timeout_ticks = 0  # Break outer loop
+        k = k + 1
+
+    if net_debug == 1:
+      kprint_dec(poll_count)
+      kprintln(cast[ptr uint8](" polls]"))
+    if found == 0:
+      # Still no ARP reply, can't send ping
+      kprintln(cast[ptr uint8]("  ARP: no reply from gateway"))
+      return
 
   ping_pending = 1
   ping_received = 0
@@ -4875,13 +5104,1415 @@ proc ip_handle_packet(data: ptr uint8, length: int32) =
       for_us = 1
 
   if for_us == 0:
+    if net_debug == 1:
+      kprintln(cast[ptr uint8]("[IP: not for us]"))
     return
+
+  if net_debug == 1:
+    kprint(cast[ptr uint8]("[IP proto="))
+    kprint_dec(protocol)
+    kprint(cast[ptr uint8]("] "))
 
   var payload: ptr uint8 = addr(data[header_len])
   var payload_len: int32 = length - header_len
 
   if protocol == IP_PROTO_ICMP:
     icmp_handle_packet(src_ip, payload, payload_len)
+  if protocol == IP_PROTO_TCP:
+    tcp_handle_packet(src_ip, payload, payload_len)
+  if protocol == IP_PROTO_UDP:
+    udp_handle_packet(src_ip, payload, payload_len)
+
+# ============================================================================
+# UDP Protocol
+# ============================================================================
+
+proc udp_handle_packet(src_ip: ptr uint8, data: ptr uint8, length: int32) =
+  if length < 8:
+    return
+
+  # Parse UDP header
+  var src_port: int32 = (cast[int32](data[0]) << 8) | cast[int32](data[1])
+  var dest_port: int32 = (cast[int32](data[2]) << 8) | cast[int32](data[3])
+  var udp_len: int32 = (cast[int32](data[4]) << 8) | cast[int32](data[5])
+  # Skip checksum at data[6-7]
+
+  var payload: ptr uint8 = addr(data[8])
+  var payload_len: int32 = udp_len - 8
+
+  if net_debug == 1:
+    kprint(cast[ptr uint8]("[UDP "))
+    kprint_dec(src_port)
+    kprint(cast[ptr uint8]("->"))
+    kprint_dec(dest_port)
+    kprint(cast[ptr uint8](" len="))
+    kprint_dec(payload_len)
+    kprintln(cast[ptr uint8]("]"))
+
+  # Check for DHCP (port 68)
+  if dest_port == 68:
+    if src_port == 67:
+      dhcp_handle_packet(payload, payload_len)
+    return
+
+  # Check if someone is waiting for this port
+  if dest_port == udp_recv_port:
+    if payload_len > 0:
+      udp_recv_data = payload
+      udp_recv_len = payload_len
+      udp_recv_ready = 1
+
+proc udp_send(dest_ip: ptr uint8, src_port: int32, dest_port: int32, data: ptr uint8, length: int32) =
+  var pkt: array[1500, uint8]
+  var i: int32 = 0
+
+  # IP header (20 bytes)
+  pkt[0] = cast[uint8](0x45)   # Version 4, IHL 5
+  pkt[1] = cast[uint8](0)      # TOS
+  var total_len: int32 = 20 + 8 + length  # IP + UDP header + data
+  pkt[2] = cast[uint8]((total_len >> 8) & 0xFF)
+  pkt[3] = cast[uint8](total_len & 0xFF)
+  pkt[4] = cast[uint8](0)      # ID
+  pkt[5] = cast[uint8](0)
+  pkt[6] = cast[uint8](0x40)   # Don't fragment
+  pkt[7] = cast[uint8](0)
+  pkt[8] = cast[uint8](64)     # TTL
+  pkt[9] = cast[uint8](17)     # Protocol: UDP
+  pkt[10] = cast[uint8](0)     # Checksum (will calculate)
+  pkt[11] = cast[uint8](0)
+
+  # Source IP (our IP)
+  i = 0
+  while i < 4:
+    pkt[12 + i] = my_ip[i]
+    i = i + 1
+
+  # Destination IP
+  i = 0
+  while i < 4:
+    pkt[16 + i] = dest_ip[i]
+    i = i + 1
+
+  # Calculate IP header checksum
+  var ip_csum: int32 = ip_checksum(addr(pkt[0]), 20)
+  pkt[10] = cast[uint8]((ip_csum >> 8) & 0xFF)
+  pkt[11] = cast[uint8](ip_csum & 0xFF)
+
+  # UDP header (8 bytes)
+  pkt[20] = cast[uint8]((src_port >> 8) & 0xFF)
+  pkt[21] = cast[uint8](src_port & 0xFF)
+  pkt[22] = cast[uint8]((dest_port >> 8) & 0xFF)
+  pkt[23] = cast[uint8](dest_port & 0xFF)
+  var udp_len: int32 = 8 + length
+  pkt[24] = cast[uint8]((udp_len >> 8) & 0xFF)
+  pkt[25] = cast[uint8](udp_len & 0xFF)
+  pkt[26] = cast[uint8](0)     # Checksum (0 = not used)
+  pkt[27] = cast[uint8](0)
+
+  # Copy payload
+  i = 0
+  while i < length:
+    pkt[28 + i] = data[i]
+    i = i + 1
+
+  # Look up destination MAC via ARP
+  var dest_mac: array[6, uint8]
+  var gateway_ip: array[4, uint8]
+  gateway_ip[0] = cast[uint8](10)
+  gateway_ip[1] = cast[uint8](0)
+  gateway_ip[2] = cast[uint8](2)
+  gateway_ip[3] = cast[uint8](2)
+
+  # Use gateway for external destinations
+  var found: int32 = 0
+  i = 0
+  while i < arp_count:
+    var matched: int32 = 1
+    var j: int32 = 0
+    while j < 4:
+      if arp_ip[i * 4 + j] != gateway_ip[j]:
+        matched = 0
+      j = j + 1
+    if matched == 1:
+      j = 0
+      while j < 6:
+        dest_mac[j] = arp_mac[i * 6 + j]
+        j = j + 1
+      found = 1
+    i = i + 1
+
+  if found == 0:
+    # Send ARP and wait
+    arp_send_request(addr(gateway_ip[0]))
+    var start_tick: int32 = get_tick_count()
+    while (get_tick_count() - start_tick) < 500:
+      net_poll()
+      var k: int32 = 0
+      while k < arp_count:
+        var arp_matched: int32 = 1
+        var m: int32 = 0
+        while m < 4:
+          if arp_ip[k * 4 + m] != gateway_ip[m]:
+            arp_matched = 0
+          m = m + 1
+        if arp_matched == 1:
+          m = 0
+          while m < 6:
+            dest_mac[m] = arp_mac[k * 6 + m]
+            m = m + 1
+          found = 1
+        k = k + 1
+      if found == 1:
+        start_tick = 0  # Break
+
+  if found == 1:
+    eth_send(addr(dest_mac[0]), ETH_TYPE_IP, addr(pkt[0]), total_len)
+
+# ============================================================================
+# DHCP Client
+# ============================================================================
+
+# DHCP message types
+const DHCP_DISCOVER: int32 = 1
+const DHCP_OFFER: int32 = 2
+const DHCP_REQUEST: int32 = 3
+const DHCP_DECLINE: int32 = 4
+const DHCP_ACK: int32 = 5
+const DHCP_NAK: int32 = 6
+const DHCP_RELEASE: int32 = 7
+
+# DHCP ports
+const DHCP_SERVER_PORT: int32 = 67
+const DHCP_CLIENT_PORT: int32 = 68
+
+# DHCP magic cookie
+const DHCP_MAGIC_1: int32 = 0x63
+const DHCP_MAGIC_2: int32 = 0x82
+const DHCP_MAGIC_3: int32 = 0x53
+const DHCP_MAGIC_4: int32 = 0x63
+
+# Send a DHCP packet (broadcast UDP from 0.0.0.0:68 to 255.255.255.255:67)
+proc dhcp_send_packet(data: ptr uint8, length: int32) =
+  var pkt: array[600, uint8]
+  var i: int32 = 0
+
+  # IP header (20 bytes)
+  pkt[0] = cast[uint8](0x45)   # Version 4, IHL 5
+  pkt[1] = cast[uint8](0)      # TOS
+  var total_len: int32 = 20 + 8 + length  # IP + UDP header + data
+  pkt[2] = cast[uint8]((total_len >> 8) & 0xFF)
+  pkt[3] = cast[uint8](total_len & 0xFF)
+  pkt[4] = cast[uint8](0)      # ID
+  pkt[5] = cast[uint8](0)
+  pkt[6] = cast[uint8](0x40)   # Don't fragment
+  pkt[7] = cast[uint8](0)
+  pkt[8] = cast[uint8](64)     # TTL
+  pkt[9] = cast[uint8](17)     # Protocol: UDP
+  pkt[10] = cast[uint8](0)     # Checksum (will calculate)
+  pkt[11] = cast[uint8](0)
+
+  # Source IP: 0.0.0.0
+  pkt[12] = cast[uint8](0)
+  pkt[13] = cast[uint8](0)
+  pkt[14] = cast[uint8](0)
+  pkt[15] = cast[uint8](0)
+
+  # Destination IP: 255.255.255.255 (broadcast)
+  pkt[16] = cast[uint8](255)
+  pkt[17] = cast[uint8](255)
+  pkt[18] = cast[uint8](255)
+  pkt[19] = cast[uint8](255)
+
+  # Calculate IP header checksum
+  var ip_csum: int32 = ip_checksum(addr(pkt[0]), 20)
+  pkt[10] = cast[uint8]((ip_csum >> 8) & 0xFF)
+  pkt[11] = cast[uint8](ip_csum & 0xFF)
+
+  # UDP header (8 bytes)
+  pkt[20] = cast[uint8]((DHCP_CLIENT_PORT >> 8) & 0xFF)  # Source port: 68
+  pkt[21] = cast[uint8](DHCP_CLIENT_PORT & 0xFF)
+  pkt[22] = cast[uint8]((DHCP_SERVER_PORT >> 8) & 0xFF)  # Dest port: 67
+  pkt[23] = cast[uint8](DHCP_SERVER_PORT & 0xFF)
+  var udp_len: int32 = 8 + length
+  pkt[24] = cast[uint8]((udp_len >> 8) & 0xFF)
+  pkt[25] = cast[uint8](udp_len & 0xFF)
+  pkt[26] = cast[uint8](0)     # Checksum (0 = not used)
+  pkt[27] = cast[uint8](0)
+
+  # Copy DHCP payload
+  i = 0
+  while i < length:
+    pkt[28 + i] = data[i]
+    i = i + 1
+
+  # Send as broadcast Ethernet frame
+  var result: int32 = eth_send(addr(broadcast_mac[0]), ETH_TYPE_IP, addr(pkt[0]), total_len)
+  if result != 0:
+    serial_putchar(69)  # 'E'
+    ser_print_hex(result)
+    serial_putchar(10)
+
+# Build DHCP DISCOVER message
+proc dhcp_send_discover() =
+  var pkt: array[548, uint8]
+  var i: int32 = 0
+
+  # Zero the packet
+  while i < 548:
+    pkt[i] = cast[uint8](0)
+    i = i + 1
+
+  # Generate transaction ID
+  dhcp_xid = get_tick_count()
+
+  # DHCP header
+  pkt[0] = cast[uint8](1)      # op: BOOTREQUEST
+  pkt[1] = cast[uint8](1)      # htype: Ethernet
+  pkt[2] = cast[uint8](6)      # hlen: MAC address length
+  pkt[3] = cast[uint8](0)      # hops
+
+  # Transaction ID (4 bytes)
+  pkt[4] = cast[uint8]((dhcp_xid >> 24) & 0xFF)
+  pkt[5] = cast[uint8]((dhcp_xid >> 16) & 0xFF)
+  pkt[6] = cast[uint8]((dhcp_xid >> 8) & 0xFF)
+  pkt[7] = cast[uint8](dhcp_xid & 0xFF)
+
+  # secs (2 bytes) = 0
+  # flags (2 bytes) - set broadcast flag
+  pkt[10] = cast[uint8](0x80)  # Broadcast flag
+  pkt[11] = cast[uint8](0x00)
+
+  # ciaddr, yiaddr, siaddr, giaddr = 0 (already zeroed)
+
+  # chaddr: client hardware address (MAC) at offset 28
+  i = 0
+  while i < 6:
+    pkt[28 + i] = my_mac[i]
+    i = i + 1
+  # Remaining 10 bytes of chaddr are zeros
+
+  # sname (64 bytes) at offset 44 = zeros
+  # file (128 bytes) at offset 108 = zeros
+
+  # DHCP options start at offset 236
+  # Magic cookie
+  pkt[236] = cast[uint8](DHCP_MAGIC_1)
+  pkt[237] = cast[uint8](DHCP_MAGIC_2)
+  pkt[238] = cast[uint8](DHCP_MAGIC_3)
+  pkt[239] = cast[uint8](DHCP_MAGIC_4)
+
+  # Option 53: DHCP Message Type = DISCOVER
+  pkt[240] = cast[uint8](53)   # Option code
+  pkt[241] = cast[uint8](1)    # Length
+  pkt[242] = cast[uint8](DHCP_DISCOVER)
+
+  # Option 55: Parameter Request List
+  pkt[243] = cast[uint8](55)   # Option code
+  pkt[244] = cast[uint8](4)    # Length
+  pkt[245] = cast[uint8](1)    # Subnet mask
+  pkt[246] = cast[uint8](3)    # Router
+  pkt[247] = cast[uint8](6)    # DNS
+  pkt[248] = cast[uint8](51)   # Lease time
+
+  # Option 255: End
+  pkt[249] = cast[uint8](255)
+
+  dhcp_state = 1  # Discovering
+  dhcp_send_packet(addr(pkt[0]), 300)
+
+# Build DHCP REQUEST message
+proc dhcp_send_request() =
+  var pkt: array[548, uint8]
+  var i: int32 = 0
+
+  # Zero the packet
+  while i < 548:
+    pkt[i] = cast[uint8](0)
+    i = i + 1
+
+  # DHCP header
+  pkt[0] = cast[uint8](1)      # op: BOOTREQUEST
+  pkt[1] = cast[uint8](1)      # htype: Ethernet
+  pkt[2] = cast[uint8](6)      # hlen: MAC address length
+  pkt[3] = cast[uint8](0)      # hops
+
+  # Transaction ID (same as discover)
+  pkt[4] = cast[uint8]((dhcp_xid >> 24) & 0xFF)
+  pkt[5] = cast[uint8]((dhcp_xid >> 16) & 0xFF)
+  pkt[6] = cast[uint8]((dhcp_xid >> 8) & 0xFF)
+  pkt[7] = cast[uint8](dhcp_xid & 0xFF)
+
+  # flags - broadcast
+  pkt[10] = cast[uint8](0x80)
+  pkt[11] = cast[uint8](0x00)
+
+  # chaddr: client hardware address (MAC) at offset 28
+  i = 0
+  while i < 6:
+    pkt[28 + i] = my_mac[i]
+    i = i + 1
+
+  # DHCP options start at offset 236
+  # Magic cookie
+  pkt[236] = cast[uint8](DHCP_MAGIC_1)
+  pkt[237] = cast[uint8](DHCP_MAGIC_2)
+  pkt[238] = cast[uint8](DHCP_MAGIC_3)
+  pkt[239] = cast[uint8](DHCP_MAGIC_4)
+
+  # Option 53: DHCP Message Type = REQUEST
+  pkt[240] = cast[uint8](53)
+  pkt[241] = cast[uint8](1)
+  pkt[242] = cast[uint8](DHCP_REQUEST)
+
+  # Option 50: Requested IP Address
+  pkt[243] = cast[uint8](50)
+  pkt[244] = cast[uint8](4)
+  pkt[245] = dhcp_offered_ip[0]
+  pkt[246] = dhcp_offered_ip[1]
+  pkt[247] = dhcp_offered_ip[2]
+  pkt[248] = dhcp_offered_ip[3]
+
+  # Option 54: Server Identifier
+  pkt[249] = cast[uint8](54)
+  pkt[250] = cast[uint8](4)
+  pkt[251] = dhcp_server_ip[0]
+  pkt[252] = dhcp_server_ip[1]
+  pkt[253] = dhcp_server_ip[2]
+  pkt[254] = dhcp_server_ip[3]
+
+  # Option 255: End
+  pkt[255] = cast[uint8](255)
+
+  dhcp_state = 2  # Requesting
+  dhcp_send_packet(addr(pkt[0]), 300)
+
+# Handle incoming DHCP packet (called from udp_handle_packet)
+proc dhcp_handle_packet(data: ptr uint8, length: int32) =
+  if length < 240:
+    return
+
+  # Check op = 2 (BOOTREPLY)
+  if data[0] != cast[uint8](2):
+    return
+
+  # Check transaction ID
+  var rxid: int32 = (cast[int32](data[4]) << 24) | (cast[int32](data[5]) << 16) | (cast[int32](data[6]) << 8) | cast[int32](data[7])
+  if rxid != dhcp_xid:
+    return
+
+  # Check magic cookie at offset 236
+  if data[236] != cast[uint8](DHCP_MAGIC_1):
+    return
+  if data[237] != cast[uint8](DHCP_MAGIC_2):
+    return
+  if data[238] != cast[uint8](DHCP_MAGIC_3):
+    return
+  if data[239] != cast[uint8](DHCP_MAGIC_4):
+    return
+
+  # Get offered IP (yiaddr at offset 16)
+  dhcp_offered_ip[0] = data[16]
+  dhcp_offered_ip[1] = data[17]
+  dhcp_offered_ip[2] = data[18]
+  dhcp_offered_ip[3] = data[19]
+
+  # Parse DHCP options starting at offset 240
+  var i: int32 = 240
+  var msg_type: int32 = 0
+  while i < length:
+    var opt: int32 = cast[int32](data[i])
+    if opt == 255:  # End
+      i = length
+    else:
+      if opt == 0:  # Padding
+        i = i + 1
+      else:
+        var opt_len: int32 = cast[int32](data[i + 1])
+        if opt == 53:  # DHCP Message Type
+          msg_type = cast[int32](data[i + 2])
+        if opt == 54:  # Server Identifier
+          dhcp_server_ip[0] = data[i + 2]
+          dhcp_server_ip[1] = data[i + 3]
+          dhcp_server_ip[2] = data[i + 4]
+          dhcp_server_ip[3] = data[i + 5]
+        if opt == 1:  # Subnet Mask
+          dhcp_subnet[0] = data[i + 2]
+          dhcp_subnet[1] = data[i + 3]
+          dhcp_subnet[2] = data[i + 4]
+          dhcp_subnet[3] = data[i + 5]
+        if opt == 3:  # Router
+          dhcp_gateway[0] = data[i + 2]
+          dhcp_gateway[1] = data[i + 3]
+          dhcp_gateway[2] = data[i + 4]
+          dhcp_gateway[3] = data[i + 5]
+        if opt == 6:  # DNS
+          dhcp_dns[0] = data[i + 2]
+          dhcp_dns[1] = data[i + 3]
+          dhcp_dns[2] = data[i + 4]
+          dhcp_dns[3] = data[i + 5]
+        if opt == 51:  # Lease Time
+          dhcp_lease_time = (cast[int32](data[i + 2]) << 24) | (cast[int32](data[i + 3]) << 16) | (cast[int32](data[i + 4]) << 8) | cast[int32](data[i + 5])
+        i = i + 2 + opt_len
+
+  # Handle message type
+  if msg_type == DHCP_OFFER:
+    if dhcp_state == 1:  # We were discovering
+      # Print "Offer: " using putchar (kprint has issues in packet handler context)
+      vga_putchar(79)
+      serial_putchar(79)
+      vga_putchar(102)
+      serial_putchar(102)
+      vga_putchar(102)
+      serial_putchar(102)
+      vga_putchar(101)
+      serial_putchar(101)
+      vga_putchar(114)
+      serial_putchar(114)
+      vga_putchar(58)
+      serial_putchar(58)
+      vga_putchar(32)
+      serial_putchar(32)
+      print_ip_addr(addr(dhcp_offered_ip[0]))
+      vga_putchar(10)
+      serial_putchar(10)
+      dhcp_send_request()
+
+  if msg_type == DHCP_ACK:
+    if dhcp_state == 2:  # We were requesting
+      # Apply the configuration
+      my_ip[0] = dhcp_offered_ip[0]
+      my_ip[1] = dhcp_offered_ip[1]
+      my_ip[2] = dhcp_offered_ip[2]
+      my_ip[3] = dhcp_offered_ip[3]
+      dhcp_state = 3  # Bound
+      # Print "Bound: " using putchar
+      vga_putchar(66)
+      serial_putchar(66)
+      vga_putchar(111)
+      serial_putchar(111)
+      vga_putchar(117)
+      serial_putchar(117)
+      vga_putchar(110)
+      serial_putchar(110)
+      vga_putchar(100)
+      serial_putchar(100)
+      vga_putchar(58)
+      serial_putchar(58)
+      vga_putchar(32)
+      serial_putchar(32)
+      print_ip()
+      vga_putchar(10)
+      serial_putchar(10)
+
+  if msg_type == DHCP_NAK:
+    dhcp_state = 0  # Back to idle
+    kprintln(cast[ptr uint8]("[DHCP] NAK received"))
+
+# Run DHCP to get an IP address
+proc dhcp_init(): int32 =
+  vga_putchar(91)
+  serial_putchar(91)
+  vga_putchar(68)
+  serial_putchar(68)
+  vga_putchar(72)
+  serial_putchar(72)
+  vga_putchar(67)
+  serial_putchar(67)
+  vga_putchar(80)
+  serial_putchar(80)
+  vga_putchar(93)
+  serial_putchar(93)
+  vga_putchar(32)
+  serial_putchar(32)
+  vga_putchar(68)
+  serial_putchar(68)
+  vga_putchar(105)
+  serial_putchar(105)
+  vga_putchar(115)
+  serial_putchar(115)
+  vga_putchar(99)
+  serial_putchar(99)
+  vga_putchar(10)
+  serial_putchar(10)
+  dhcp_send_discover()
+
+  # Wait for response
+  var start_tick: int32 = get_tick_count()
+  while (get_tick_count() - start_tick) < 300:  # ~3-5 seconds timeout
+    wait_tick()  # Wait for timer interrupt
+    net_poll()
+    if dhcp_state == 3:  # Bound
+      return 1
+    if dhcp_state == 0:  # NAK or failed
+      return 0
+
+  kprintln(cast[ptr uint8]("[DHCP] Timeout"))
+  return 0
+
+# ============================================================================
+# NTP Client
+# ============================================================================
+
+# NTP constants
+const NTP_PORT: int32 = 123
+
+# Get NTP offset as two parts (since 2208988800 > 2^31)
+# 2208988800 = 2000000000 + 208988800
+proc ntp_offset_high(): int32 =
+  return 2000000000
+
+proc ntp_offset_low(): int32 =
+  return 208988800
+
+# Get current Unix timestamp (seconds since 1970)
+proc get_unix_time(): int32 =
+  if ntp_synced == 0:
+    return 0
+  var elapsed_ticks: int32 = get_tick_count() - ntp_sync_tick
+  var elapsed_secs: int32 = elapsed_ticks / 100  # Assuming 100 ticks per second
+  return ntp_timestamp + elapsed_secs
+
+# Send NTP request
+proc ntp_send_request(server_ip: ptr uint8) =
+  var pkt: array[48, uint8]
+  var i: int32 = 0
+
+  # Zero the packet
+  while i < 48:
+    pkt[i] = cast[uint8](0)
+    i = i + 1
+
+  # LI=0, VN=4, Mode=3 (client)
+  pkt[0] = cast[uint8](0x23)  # 00 100 011 = LI=0, VN=4, Mode=3
+
+  # Send via UDP
+  udp_send(server_ip, 123, NTP_PORT, addr(pkt[0]), 48)
+
+# Handle NTP response
+proc ntp_handle_response(data: ptr uint8, length: int32) =
+  if length < 48:
+    return
+
+  # Extract transmit timestamp (bytes 40-47)
+  # NTP timestamp is seconds since 1900-01-01
+  # We only use the seconds part (bytes 40-43), ignoring fraction (44-47)
+  var ntp_secs: int32 = (cast[int32](data[40]) << 24) | (cast[int32](data[41]) << 16) | (cast[int32](data[42]) << 8) | cast[int32](data[43])
+
+  # Convert to Unix timestamp (seconds since 1970)
+  # NTP epoch is 1900, Unix epoch is 1970
+  # Difference is 70 years = 2208988800 seconds
+  # We subtract in two parts since 2208988800 > 2^31
+  # ntp_secs - 2000000000 - 208988800
+  ntp_timestamp = ntp_secs - ntp_offset_high() - ntp_offset_low()
+  ntp_sync_tick = get_tick_count()
+  ntp_synced = 1
+
+# ============================================================================
+# Simple HTTP Server
+# ============================================================================
+
+proc run_httpd() =
+  kprintln(cast[ptr uint8]("[HTTP] Starting server on port 80..."))
+  kprintln(cast[ptr uint8]("[HTTP] Press any key to stop"))
+
+  # Listen on port 80
+  var conn: int32 = tcp_listen(80)
+  if conn < 0:
+    kprintln(cast[ptr uint8]("[HTTP] Failed to create listening socket"))
+    return
+
+  kprintln(cast[ptr uint8]("[HTTP] Listening on 0.0.0.0:80"))
+  kprintln(cast[ptr uint8]("[HTTP] Connect from host: curl http://localhost:5555"))
+
+  # HTTP response header
+  var http_header: ptr uint8 = cast[ptr uint8]("HTTP/1.0 200 OK\r\nContent-Type: text/html\r\n\r\n")
+  var http_body: ptr uint8 = cast[ptr uint8]("<html><head><title>BrainhairOS</title></head><body><h1>Hello from BrainhairOS!</h1><p>This page is served by a TCP/IP stack written from scratch.</p></body></html>")
+
+  var running: int32 = 1
+  while running == 1:
+    # Poll for keyboard input to stop
+    if keyboard_available() > 0:
+      keyboard_read_char()  # Consume the key
+      running = 0
+      break
+
+    # Poll network
+    net_poll()
+
+    # Check if connection established (client connected)
+    if tcp_state[conn] == TCP_STATE_ESTABLISHED:
+      kprintln(cast[ptr uint8]("[HTTP] Client connected!"))
+
+      # Wait for HTTP request
+      var wait_start: int32 = get_tick_count()
+      while (get_tick_count() - wait_start) < 2000:
+        net_poll()
+        if tcp_recv_ready[conn] == 1:
+          # Got request - print first line
+          kprint(cast[ptr uint8]("[HTTP] Request: "))
+          var ri: int32 = 0
+          while ri < tcp_recv_len[conn]:
+            if ri > 40:
+              break
+            var ch: int32 = cast[int32](tcp_recv_buf[conn * TCP_BUF_SIZE + ri])
+            if ch == 13 or ch == 10:
+              break
+            serial_putchar(ch)
+            vga_putchar(ch)
+            ri = ri + 1
+          kprintln(cast[ptr uint8](""))
+          tcp_recv_ready[conn] = 0
+
+          # Send HTTP response
+          kprintln(cast[ptr uint8]("[HTTP] Sending response..."))
+          tcp_write(conn, http_header, fs_strlen(http_header))
+          tcp_write(conn, http_body, fs_strlen(http_body))
+
+          # Close connection
+          tcp_close(conn)
+          kprintln(cast[ptr uint8]("[HTTP] Connection closed"))
+
+          # Re-listen for next connection
+          conn = tcp_listen(80)
+          if conn < 0:
+            kprintln(cast[ptr uint8]("[HTTP] Failed to re-listen"))
+            running = 0
+          break
+
+  # Clean up
+  if conn >= 0:
+    tcp_close(conn)
+  kprintln(cast[ptr uint8]("[HTTP] Server stopped"))
+
+# Sync time via NTP
+proc ntp_sync(): int32 =
+  # Use QEMU's default NTP server (10.0.2.2 usually works as gateway)
+  var ntp_server: array[4, uint8]
+  ntp_server[0] = cast[uint8](10)
+  ntp_server[1] = cast[uint8](0)
+  ntp_server[2] = cast[uint8](2)
+  ntp_server[3] = cast[uint8](2)
+
+  # Set up UDP receive
+  udp_recv_port = 123
+  udp_recv_ready = 0
+
+  kprint(cast[ptr uint8]("[NTP] Syncing with "))
+  print_ip_addr(addr(ntp_server[0]))
+  kprintln(cast[ptr uint8]("..."))
+
+  ntp_send_request(addr(ntp_server[0]))
+
+  # Wait for response
+  var start_tick: int32 = get_tick_count()
+  while (get_tick_count() - start_tick) < 3000:
+    net_poll()
+    if udp_recv_ready == 1:
+      ntp_handle_response(udp_recv_data, udp_recv_len)
+      udp_recv_ready = 0
+      udp_recv_port = 0
+      kprintln(cast[ptr uint8]("[NTP] Time synchronized"))
+      return 1
+
+  udp_recv_port = 0
+  kprintln(cast[ptr uint8]("[NTP] Timeout"))
+  return 0
+
+# Print current date/time (simplified - just shows Unix timestamp for now)
+proc print_time() =
+  if ntp_synced == 0:
+    kprintln(cast[ptr uint8]("Time not synced"))
+    return
+
+  var ts: int32 = get_unix_time()
+  kprint(cast[ptr uint8]("Unix time: "))
+  kprint_dec(ts)
+  kprintln(cast[ptr uint8](""))
+
+  # Calculate date components
+  # Days since 1970-01-01
+  var days: int32 = ts / 86400
+  var time_of_day: int32 = ts - (days * 86400)
+
+  var hours: int32 = time_of_day / 3600
+  var minutes: int32 = (time_of_day - (hours * 3600)) / 60
+  var seconds: int32 = time_of_day - (hours * 3600) - (minutes * 60)
+
+  kprint(cast[ptr uint8]("Time: "))
+  if hours < 10:
+    kprint(cast[ptr uint8]("0"))
+  kprint_dec(hours)
+  kprint(cast[ptr uint8](":"))
+  if minutes < 10:
+    kprint(cast[ptr uint8]("0"))
+  kprint_dec(minutes)
+  kprint(cast[ptr uint8](":"))
+  if seconds < 10:
+    kprint(cast[ptr uint8]("0"))
+  kprint_dec(seconds)
+  kprintln(cast[ptr uint8](" UTC"))
+
+# ============================================================================
+# TCP Protocol
+# ============================================================================
+
+# TCP flags
+const TCP_FIN: int32 = 0x01
+const TCP_SYN: int32 = 0x02
+const TCP_RST: int32 = 0x04
+const TCP_PSH: int32 = 0x08
+const TCP_ACK: int32 = 0x10
+const TCP_URG: int32 = 0x20
+
+# Find a free connection slot
+proc tcp_find_free(): int32 =
+  var i: int32 = 0
+  while i < TCP_MAX_CONNS:
+    if tcp_state[i] == TCP_STATE_CLOSED:
+      return i
+    i = i + 1
+  return -1
+
+# Find connection by remote IP/port
+proc tcp_find_conn(remote_ip: ptr uint8, remote_port: int32, local_port: int32): int32 =
+  var i: int32 = 0
+  while i < TCP_MAX_CONNS:
+    if tcp_state[i] != TCP_STATE_CLOSED:
+      if tcp_local_port[i] == local_port:
+        if tcp_remote_port[i] == remote_port:
+          var ip_match: int32 = 1
+          var j: int32 = 0
+          while j < 4:
+            if tcp_remote_ip[i * 4 + j] != remote_ip[j]:
+              ip_match = 0
+            j = j + 1
+          if ip_match == 1:
+            return i
+    i = i + 1
+  return -1
+
+# Calculate TCP checksum (pseudo-header + TCP)
+proc tcp_checksum(src_ip: ptr uint8, dst_ip: ptr uint8, tcp_data: ptr uint8, tcp_len: int32): int32 =
+  var sum: int32 = 0
+  var i: int32 = 0
+
+  # Pseudo-header
+  sum = sum + (cast[int32](src_ip[0]) << 8) + cast[int32](src_ip[1])
+  sum = sum + (cast[int32](src_ip[2]) << 8) + cast[int32](src_ip[3])
+  sum = sum + (cast[int32](dst_ip[0]) << 8) + cast[int32](dst_ip[1])
+  sum = sum + (cast[int32](dst_ip[2]) << 8) + cast[int32](dst_ip[3])
+  sum = sum + 6  # Protocol TCP
+  sum = sum + tcp_len
+
+  # TCP header + data
+  i = 0
+  while i < tcp_len - 1:
+    sum = sum + (cast[int32](tcp_data[i]) << 8) + cast[int32](tcp_data[i + 1])
+    i = i + 2
+  if (tcp_len & 1) == 1:
+    sum = sum + (cast[int32](tcp_data[tcp_len - 1]) << 8)
+
+  # Fold
+  while (sum >> 16) != 0:
+    sum = (sum & 0xFFFF) + (sum >> 16)
+
+  return (sum ^ 0xFFFF) & 0xFFFF
+
+# Send TCP packet
+proc tcp_send_packet(conn: int32, flags: int32, data: ptr uint8, data_len: int32) =
+  # Guard against recursion (net_poll during ARP wait could cause this)
+  if tcp_send_in_progress == 1:
+    ser_println(cast[ptr uint8]("[TCP] WARNING: recursion detected"))
+    return
+  tcp_send_in_progress = 1
+
+  ser_print(cast[ptr uint8]("[TCP] send_packet conn="))
+  ser_print_hex(conn)
+  ser_print(cast[ptr uint8](" flags="))
+  ser_print_hex(flags)
+  ser_println(cast[ptr uint8](""))
+
+  if conn < 0:
+    tcp_send_in_progress = 0
+    return
+  if conn >= TCP_MAX_CONNS:
+    tcp_send_in_progress = 0
+    return
+
+  # Use static buffers to avoid stack overflow
+  var i: int32 = 0
+  ser_println(cast[ptr uint8]("[TCP] building header"))
+
+  # TCP header (20 bytes minimum)
+  var tcp_header_len: int32 = 20
+
+  # Read connection state from arrays
+  var local_port: int32 = tcp_local_port[conn]
+  var remote_port: int32 = tcp_remote_port[conn]
+  var seq_num: int32 = tcp_seq[conn]
+  var ack_num: int32 = tcp_ack[conn]
+
+  ser_print(cast[ptr uint8]("[TCP] src_port="))
+  ser_print_hex(local_port)
+  ser_print(cast[ptr uint8](" dst_port="))
+  ser_print_hex(remote_port)
+  ser_print(cast[ptr uint8](" seq="))
+  ser_print_hex(seq_num)
+  ser_print(cast[ptr uint8](" ack="))
+  ser_print_hex(ack_num)
+  ser_println(cast[ptr uint8](""))
+
+  # Source port
+  tcp_send_pkt[0] = cast[uint8]((local_port >> 8) & 0xFF)
+  tcp_send_pkt[1] = cast[uint8](local_port & 0xFF)
+
+  # Dest port
+  tcp_send_pkt[2] = cast[uint8]((remote_port >> 8) & 0xFF)
+  tcp_send_pkt[3] = cast[uint8](remote_port & 0xFF)
+
+  # Sequence number
+  tcp_send_pkt[4] = cast[uint8]((seq_num >> 24) & 0xFF)
+  tcp_send_pkt[5] = cast[uint8]((seq_num >> 16) & 0xFF)
+  tcp_send_pkt[6] = cast[uint8]((seq_num >> 8) & 0xFF)
+  tcp_send_pkt[7] = cast[uint8](seq_num & 0xFF)
+
+  # Ack number
+  tcp_send_pkt[8] = cast[uint8]((ack_num >> 24) & 0xFF)
+  tcp_send_pkt[9] = cast[uint8]((ack_num >> 16) & 0xFF)
+  tcp_send_pkt[10] = cast[uint8]((ack_num >> 8) & 0xFF)
+  tcp_send_pkt[11] = cast[uint8](ack_num & 0xFF)
+
+  # Data offset (5 = 20 bytes) + reserved
+  tcp_send_pkt[12] = cast[uint8](0x50)
+
+  # Flags
+  tcp_send_pkt[13] = cast[uint8](flags)
+
+  # Window size (8192)
+  tcp_send_pkt[14] = cast[uint8](0x20)
+  tcp_send_pkt[15] = cast[uint8](0x00)
+
+  # Checksum (placeholder)
+  tcp_send_pkt[16] = cast[uint8](0)
+  tcp_send_pkt[17] = cast[uint8](0)
+
+  # Urgent pointer
+  tcp_send_pkt[18] = cast[uint8](0)
+  tcp_send_pkt[19] = cast[uint8](0)
+
+  # Copy data
+  ser_println(cast[ptr uint8]("[TCP] copying data"))
+  i = 0
+  while i < data_len:
+    tcp_send_pkt[20 + i] = data[i]
+    i = i + 1
+
+  # Calculate checksum
+  ser_println(cast[ptr uint8]("[TCP] calc checksum"))
+  var remote_ip_ptr: ptr uint8 = addr(tcp_remote_ip[conn * 4])
+  var csum: int32 = tcp_checksum(addr(my_ip[0]), remote_ip_ptr, addr(tcp_send_pkt[0]), 20 + data_len)
+  tcp_send_pkt[16] = cast[uint8]((csum >> 8) & 0xFF)
+  tcp_send_pkt[17] = cast[uint8](csum & 0xFF)
+  ser_println(cast[ptr uint8]("[TCP] checksum done"))
+
+  # Wrap in IP and send
+  ser_println(cast[ptr uint8]("[TCP] building IP header"))
+
+  # IP header
+  var total_len: int32 = 20 + 20 + data_len
+  tcp_send_ip_pkt[0] = cast[uint8](0x45)
+  tcp_send_ip_pkt[1] = cast[uint8](0)
+  tcp_send_ip_pkt[2] = cast[uint8]((total_len >> 8) & 0xFF)
+  tcp_send_ip_pkt[3] = cast[uint8](total_len & 0xFF)
+  tcp_send_ip_pkt[4] = cast[uint8](0)
+  tcp_send_ip_pkt[5] = cast[uint8](0)
+  tcp_send_ip_pkt[6] = cast[uint8](0x40)
+  tcp_send_ip_pkt[7] = cast[uint8](0)
+  tcp_send_ip_pkt[8] = cast[uint8](64)
+  tcp_send_ip_pkt[9] = cast[uint8](6)  # TCP
+  tcp_send_ip_pkt[10] = cast[uint8](0)
+  tcp_send_ip_pkt[11] = cast[uint8](0)
+
+  # Source IP
+  i = 0
+  while i < 4:
+    tcp_send_ip_pkt[12 + i] = my_ip[i]
+    i = i + 1
+
+  # Dest IP
+  i = 0
+  while i < 4:
+    tcp_send_ip_pkt[16 + i] = tcp_remote_ip[conn * 4 + i]
+    i = i + 1
+
+  # IP checksum
+  ser_println(cast[ptr uint8]("[TCP] IP checksum"))
+  var ip_csum: int32 = ip_checksum(addr(tcp_send_ip_pkt[0]), 20)
+  tcp_send_ip_pkt[10] = cast[uint8]((ip_csum >> 8) & 0xFF)
+  tcp_send_ip_pkt[11] = cast[uint8](ip_csum & 0xFF)
+  ser_println(cast[ptr uint8]("[TCP] copy TCP to IP"))
+
+  # Copy TCP data
+  i = 0
+  while i < 20 + data_len:
+    tcp_send_ip_pkt[20 + i] = tcp_send_pkt[i]
+    i = i + 1
+  ser_println(cast[ptr uint8]("[TCP] ARP lookup"))
+
+  # Send via ARP lookup
+  var dest_mac: array[6, uint8]
+  var gateway_ip: array[4, uint8]
+  gateway_ip[0] = cast[uint8](10)
+  gateway_ip[1] = cast[uint8](0)
+  gateway_ip[2] = cast[uint8](2)
+  gateway_ip[3] = cast[uint8](2)
+  ser_print(cast[ptr uint8]("[TCP] arp_count="))
+  ser_print_hex(arp_count)
+  ser_println(cast[ptr uint8](""))
+
+  var found: int32 = 0
+  i = 0
+  while i < arp_count:
+    var matched: int32 = 1
+    var j: int32 = 0
+    while j < 4:
+      if arp_ip[i * 4 + j] != gateway_ip[j]:
+        matched = 0
+      j = j + 1
+    if matched == 1:
+      j = 0
+      while j < 6:
+        dest_mac[j] = arp_mac[i * 6 + j]
+        j = j + 1
+      found = 1
+    i = i + 1
+  ser_print(cast[ptr uint8]("[TCP] found="))
+  ser_print_hex(found)
+  ser_println(cast[ptr uint8](""))
+
+  if found == 0:
+    ser_println(cast[ptr uint8]("[TCP] sending ARP request"))
+    arp_send_request(addr(gateway_ip[0]))
+    ser_println(cast[ptr uint8]("[TCP] waiting for ARP reply"))
+    var start_tick: int32 = get_tick_count()
+    while found == 0:
+      if (get_tick_count() - start_tick) >= 500:
+        ser_println(cast[ptr uint8]("[TCP] ARP timeout"))
+        tcp_send_in_progress = 0
+        return
+      net_poll()
+      if arp_count > 0:
+        ser_print(cast[ptr uint8]("[TCP] arp_count now="))
+        ser_print_hex(arp_count)
+        ser_println(cast[ptr uint8](""))
+      var k: int32 = 0
+      while k < arp_count:
+        var arp_matched: int32 = 1
+        var m: int32 = 0
+        while m < 4:
+          if arp_ip[k * 4 + m] != gateway_ip[m]:
+            arp_matched = 0
+          m = m + 1
+        if arp_matched == 1:
+          m = 0
+          while m < 6:
+            dest_mac[m] = arp_mac[k * 6 + m]
+            m = m + 1
+          found = 1
+          ser_println(cast[ptr uint8]("[TCP] found in loop!"))
+        k = k + 1
+      if found == 1:
+        ser_println(cast[ptr uint8]("[TCP] breaking from ARP wait"))
+  ser_println(cast[ptr uint8]("[TCP] ARP wait done"))
+
+  if found == 1:
+    ser_println(cast[ptr uint8]("[TCP] eth_send called"))
+    eth_send(addr(dest_mac[0]), ETH_TYPE_IP, addr(tcp_send_ip_pkt[0]), total_len)
+  else:
+    ser_println(cast[ptr uint8]("[TCP] ERROR: no gateway MAC"))
+
+  tcp_send_in_progress = 0
+
+# Initiate TCP connection
+proc tcp_connect(dest_ip: ptr uint8, dest_port: int32): int32 =
+  var conn: int32 = tcp_find_free()
+  if conn < 0:
+    return -1
+
+  # Set up connection
+  tcp_state[conn] = TCP_STATE_SYN_SENT
+  tcp_local_port[conn] = 49152 + (get_tick_count() & 0x3FFF)  # Random ephemeral port
+  tcp_remote_port[conn] = dest_port
+  var i: int32 = 0
+  while i < 4:
+    tcp_remote_ip[conn * 4 + i] = dest_ip[i]
+    i = i + 1
+  tcp_seq[conn] = get_tick_count()  # Initial seq number
+  tcp_ack[conn] = 0
+  tcp_recv_len[conn] = 0
+  tcp_recv_ready[conn] = 0
+
+  # Send SYN
+  tcp_send_packet(conn, TCP_SYN, cast[ptr uint8](0), 0)
+
+  # Wait for SYN-ACK
+  var start_tick: int32 = get_tick_count()
+  while (get_tick_count() - start_tick) < 5000:
+    net_poll()
+    if tcp_state[conn] == TCP_STATE_ESTABLISHED:
+      return conn
+    if tcp_state[conn] == TCP_STATE_CLOSED:
+      return -1
+
+  # Timeout
+  tcp_state[conn] = TCP_STATE_CLOSED
+  return -1
+
+# Send data on established connection
+proc tcp_write(conn: int32, data: ptr uint8, length: int32): int32 =
+  if conn < 0:
+    return -1
+  if conn >= TCP_MAX_CONNS:
+    return -1
+  if tcp_state[conn] != TCP_STATE_ESTABLISHED:
+    return -1
+
+  tcp_send_packet(conn, TCP_ACK | TCP_PSH, data, length)
+  tcp_seq[conn] = tcp_seq[conn] + length
+  return length
+
+# Read data from connection
+proc tcp_read(conn: int32, buf: ptr uint8, max_len: int32): int32 =
+  if conn < 0:
+    return -1
+  if conn >= TCP_MAX_CONNS:
+    return -1
+  if tcp_recv_ready[conn] == 0:
+    return 0
+
+  var len: int32 = tcp_recv_len[conn]
+  if len > max_len:
+    len = max_len
+
+  var i: int32 = 0
+  while i < len:
+    buf[i] = tcp_recv_buf[conn * TCP_BUF_SIZE + i]
+    i = i + 1
+
+  tcp_recv_ready[conn] = 0
+  tcp_recv_len[conn] = 0
+  return len
+
+# Close TCP connection
+proc tcp_close(conn: int32) =
+  if conn < 0:
+    return
+  if conn >= TCP_MAX_CONNS:
+    return
+  if tcp_state[conn] == TCP_STATE_ESTABLISHED:
+    tcp_send_packet(conn, TCP_FIN | TCP_ACK, cast[ptr uint8](0), 0)
+    tcp_state[conn] = TCP_STATE_FIN_WAIT_1
+  else:
+    tcp_state[conn] = TCP_STATE_CLOSED
+
+# Listen on a TCP port (server)
+proc tcp_listen(port: int32): int32 =
+  var conn: int32 = tcp_find_free()
+  if conn < 0:
+    return -1
+
+  tcp_state[conn] = TCP_STATE_LISTEN
+  tcp_local_port[conn] = port
+  tcp_remote_port[conn] = 0
+  tcp_seq[conn] = 0
+  tcp_ack[conn] = 0
+  tcp_recv_ready[conn] = 0
+  tcp_recv_len[conn] = 0
+
+  # Clear remote IP
+  var i: int32 = 0
+  while i < 4:
+    tcp_remote_ip[conn * 4 + i] = cast[uint8](0)
+    i = i + 1
+
+  return conn
+
+# Check if a listening socket has a pending connection
+proc tcp_accept_ready(conn: int32): int32 =
+  if conn < 0:
+    return 0
+  if conn >= TCP_MAX_CONNS:
+    return 0
+  # Connection is ready when it transitions to ESTABLISHED
+  if tcp_state[conn] == TCP_STATE_ESTABLISHED:
+    return 1
+  return 0
+
+# Find a listening socket for a given port
+proc tcp_find_listener(port: int32): int32 =
+  var i: int32 = 0
+  while i < TCP_MAX_CONNS:
+    if tcp_state[i] == TCP_STATE_LISTEN:
+      if tcp_local_port[i] == port:
+        return i
+    i = i + 1
+  return -1
+
+# Handle incoming TCP packet
+proc tcp_handle_packet(src_ip: ptr uint8, data: ptr uint8, length: int32) =
+  if length < 20:
+    return
+
+  var src_port: int32 = (cast[int32](data[0]) << 8) | cast[int32](data[1])
+  var dst_port: int32 = (cast[int32](data[2]) << 8) | cast[int32](data[3])
+  var seq: int32 = (cast[int32](data[4]) << 24) | (cast[int32](data[5]) << 16) | (cast[int32](data[6]) << 8) | cast[int32](data[7])
+  var ack_num: int32 = (cast[int32](data[8]) << 24) | (cast[int32](data[9]) << 16) | (cast[int32](data[10]) << 8) | cast[int32](data[11])
+  var header_len: int32 = ((cast[int32](data[12]) >> 4) & 0x0F) * 4
+  var flags: int32 = cast[int32](data[13])
+
+  # Debug all incoming TCP packets
+  ser_print(cast[ptr uint8]("[TCP] in: flags="))
+  ser_print_hex(flags)
+  ser_print(cast[ptr uint8](" port="))
+  ser_print_hex(dst_port)
+  ser_println(cast[ptr uint8](""))
+
+  var conn: int32 = tcp_find_conn(src_ip, src_port, dst_port)
+  ser_print(cast[ptr uint8]("[TCP] conn="))
+  ser_print_hex(conn)
+  if conn >= 0:
+    ser_print(cast[ptr uint8](" state="))
+    ser_print_hex(tcp_state[conn])
+  ser_println(cast[ptr uint8](""))
+
+  # If no existing connection, check for listening socket (incoming SYN)
+  if conn < 0:
+    if (flags & TCP_SYN) != 0:
+      if (flags & TCP_ACK) == 0:
+        # Pure SYN - look for listener
+        ser_print(cast[ptr uint8]("[TCP] SYN from port "))
+        ser_print_hex(src_port)
+        ser_print(cast[ptr uint8](" to port "))
+        ser_print_hex(dst_port)
+        ser_print(cast[ptr uint8](" seq="))
+        ser_print_hex(seq)
+        ser_println(cast[ptr uint8](""))
+        conn = tcp_find_listener(dst_port)
+        if conn >= 0:
+          ser_println(cast[ptr uint8]("[TCP] Found listener, sending SYN-ACK"))
+          # Set up connection from listener
+          tcp_remote_port[conn] = src_port
+          var i: int32 = 0
+          while i < 4:
+            tcp_remote_ip[conn * 4 + i] = src_ip[i]
+            i = i + 1
+          # Generate initial sequence number
+          tcp_seq[conn] = get_tick_count()
+          ser_print(cast[ptr uint8]("[TCP] seq before assign="))
+          ser_print_hex(seq)
+          ser_println(cast[ptr uint8](""))
+          var ack_value: int32 = seq + 1
+          ser_print(cast[ptr uint8]("[TCP] ack_value="))
+          ser_print_hex(ack_value)
+          ser_println(cast[ptr uint8](""))
+          # Workaround for compiler bug: use pointer arithmetic
+          var ack_ptr: ptr int32 = cast[ptr int32](addr(tcp_ack[0]))
+          ack_ptr = cast[ptr int32](cast[int32](ack_ptr) + conn * 4)
+          mmio_write32(cast[int32](ack_ptr), ack_value)
+          ser_print(cast[ptr uint8]("[TCP] tcp_ack via ptr="))
+          ser_print_hex(mmio_read32(cast[int32](ack_ptr)))
+          ser_println(cast[ptr uint8](""))
+          ser_print(cast[ptr uint8]("[TCP] tcp_ack[conn]="))
+          ser_print_hex(tcp_ack[conn])
+          ser_println(cast[ptr uint8](""))
+          tcp_state[conn] = TCP_STATE_SYN_RECEIVED
+          # Send SYN-ACK
+          tcp_send_packet(conn, TCP_SYN | TCP_ACK, cast[ptr uint8](0), 0)
+          return
+        else:
+          ser_println(cast[ptr uint8]("[TCP] No listener found"))
+    return  # No matching connection
+
+  # Handle SYN-ACK for connection in SYN_SENT state (client)
+  if tcp_state[conn] == TCP_STATE_SYN_SENT:
+    if (flags & TCP_SYN) != 0:
+      if (flags & TCP_ACK) != 0:
+        tcp_ack[conn] = seq + 1
+        tcp_seq[conn] = tcp_seq[conn] + 1
+        tcp_state[conn] = TCP_STATE_ESTABLISHED
+        # Send ACK
+        tcp_send_packet(conn, TCP_ACK, cast[ptr uint8](0), 0)
+        return
+
+  # Handle ACK for connection in SYN_RECEIVED state (server)
+  if tcp_state[conn] == TCP_STATE_SYN_RECEIVED:
+    if (flags & TCP_ACK) != 0:
+      ser_println(cast[ptr uint8]("[TCP] ACK rcvd -> ESTABLISHED"))
+      tcp_seq[conn] = tcp_seq[conn] + 1
+      tcp_state[conn] = TCP_STATE_ESTABLISHED
+      return
+
+  if tcp_state[conn] == TCP_STATE_ESTABLISHED:
+    # Handle incoming data (with or without PSH flag)
+    var payload_offset: int32 = header_len
+    var payload_len: int32 = length - header_len
+    if payload_len > 0:
+      if payload_len > TCP_BUF_SIZE:
+        payload_len = TCP_BUF_SIZE
+      var i: int32 = 0
+      while i < payload_len:
+        tcp_recv_buf[conn * TCP_BUF_SIZE + i] = data[payload_offset + i]
+        i = i + 1
+      tcp_recv_len[conn] = payload_len
+      tcp_recv_ready[conn] = 1
+      tcp_ack[conn] = seq + payload_len
+      tcp_send_packet(conn, TCP_ACK, cast[ptr uint8](0), 0)
+
+    # Handle FIN
+    if (flags & TCP_FIN) != 0:
+      tcp_ack[conn] = seq + 1
+      tcp_send_packet(conn, TCP_ACK, cast[ptr uint8](0), 0)
+      tcp_state[conn] = TCP_STATE_CLOSE_WAIT
+
+    # Handle RST
+    if (flags & TCP_RST) != 0:
+      tcp_state[conn] = TCP_STATE_CLOSED
+
+# ============================================================================
+# DNS Client
+# ============================================================================
+
+proc dns_resolve(hostname: ptr uint8): int32 =
+  # Build DNS query
+  var query: array[256, uint8]
+  var qlen: int32 = 0
+
+  # Transaction ID
+  var txid: int32 = get_tick_count() & 0xFFFF
+  query[0] = cast[uint8]((txid >> 8) & 0xFF)
+  query[1] = cast[uint8](txid & 0xFF)
+
+  # Flags: standard query, recursion desired
+  query[2] = cast[uint8](0x01)  # RD=1
+  query[3] = cast[uint8](0x00)
+
+  # Questions: 1
+  query[4] = cast[uint8](0)
+  query[5] = cast[uint8](1)
+
+  # Answer RRs, Authority RRs, Additional RRs: 0
+  query[6] = cast[uint8](0)
+  query[7] = cast[uint8](0)
+  query[8] = cast[uint8](0)
+  query[9] = cast[uint8](0)
+  query[10] = cast[uint8](0)
+  query[11] = cast[uint8](0)
+
+  qlen = 12
+
+  # Encode hostname as labels (e.g., "www.google.com" -> "3www6google3com0")
+  var i: int32 = 0
+  var label_start: int32 = qlen
+  qlen = qlen + 1  # Skip length byte
+  while hostname[i] != cast[uint8](0):
+    if hostname[i] == cast[uint8](46):  # '.'
+      # Write label length
+      query[label_start] = cast[uint8](qlen - label_start - 1)
+      label_start = qlen
+      qlen = qlen + 1
+    else:
+      query[qlen] = hostname[i]
+      qlen = qlen + 1
+    i = i + 1
+  # Write last label length and null terminator
+  query[label_start] = cast[uint8](qlen - label_start - 1)
+  query[qlen] = cast[uint8](0)
+  qlen = qlen + 1
+
+  # Query type: A (1) and class: IN (1)
+  query[qlen] = cast[uint8](0)
+  query[qlen + 1] = cast[uint8](1)  # Type A
+  query[qlen + 2] = cast[uint8](0)
+  query[qlen + 3] = cast[uint8](1)  # Class IN
+  qlen = qlen + 4
+
+  # DNS server (QEMU: 10.0.2.3)
+  var dns_server: array[4, uint8]
+  dns_server[0] = cast[uint8](10)
+  dns_server[1] = cast[uint8](0)
+  dns_server[2] = cast[uint8](2)
+  dns_server[3] = cast[uint8](3)
+
+  # Set up to receive on port 53
+  udp_recv_port = 12345  # Our source port
+  udp_recv_ready = 0
+  dns_result_ready = 0
+
+  # Send DNS query
+  udp_send(addr(dns_server[0]), 12345, 53, addr(query[0]), qlen)
+
+  # Wait for response
+  var start_tick: int32 = get_tick_count()
+  while (get_tick_count() - start_tick) < 2000:
+    net_poll()
+    if udp_recv_ready == 1:
+      # Parse DNS response
+      var resp: ptr uint8 = udp_recv_data
+      var resp_len: int32 = udp_recv_len
+
+      if resp_len >= 12:
+        # Check transaction ID
+        var resp_txid: int32 = (cast[int32](resp[0]) << 8) | cast[int32](resp[1])
+        if resp_txid == txid:
+          # Get answer count
+          var answer_count: int32 = (cast[int32](resp[6]) << 8) | cast[int32](resp[7])
+          if answer_count > 0:
+            # Skip question section
+            var offset: int32 = 12
+            # Skip QNAME
+            while offset < resp_len:
+              if resp[offset] == cast[uint8](0):
+                offset = offset + 1
+                break
+              if (cast[int32](resp[offset]) & 0xC0) == 0xC0:
+                offset = offset + 2
+                break
+              offset = offset + cast[int32](resp[offset]) + 1
+            offset = offset + 4  # Skip QTYPE and QCLASS
+
+            # Read answer
+            if offset + 12 <= resp_len:
+              # Skip name (might be pointer)
+              if (cast[int32](resp[offset]) & 0xC0) == 0xC0:
+                offset = offset + 2
+              else:
+                while offset < resp_len:
+                  if resp[offset] == cast[uint8](0):
+                    offset = offset + 1
+                    break
+                  offset = offset + cast[int32](resp[offset]) + 1
+
+              # TYPE (2) + CLASS (2) + TTL (4) + RDLENGTH (2) = 10 bytes
+              if offset + 10 <= resp_len:
+                var ans_type: int32 = (cast[int32](resp[offset]) << 8) | cast[int32](resp[offset + 1])
+                var rdlength: int32 = (cast[int32](resp[offset + 8]) << 8) | cast[int32](resp[offset + 9])
+                offset = offset + 10
+
+                if ans_type == 1:  # Type A
+                  if rdlength == 4:
+                    if offset + 4 <= resp_len:
+                      dns_result_ip[0] = resp[offset]
+                      dns_result_ip[1] = resp[offset + 1]
+                      dns_result_ip[2] = resp[offset + 2]
+                      dns_result_ip[3] = resp[offset + 3]
+                      dns_result_ready = 1
+                      udp_recv_port = 0
+                      return 1
+
+      udp_recv_ready = 0
+
+  udp_recv_port = 0
+  return 0
 
 # ============================================================================
 # Ethernet Frame Handling
@@ -4908,6 +6539,10 @@ proc net_poll() =
 
   var len: int32 = e1000_receive_packet()
   if len > 0:
+    if net_debug == 1:
+      kprint(cast[ptr uint8]("[RX:"))
+      kprint_dec(len)
+      kprint(cast[ptr uint8]("b] "))
     net_handle_packet()
 
 # ============================================================================
@@ -4919,17 +6554,24 @@ proc print_mac() =
   while i < 6:
     kprint_hex_byte(cast[int32](my_mac[i]))
     if i < 5:
-      kprint(cast[ptr uint8](":"))
+      vga_putchar(58)
+      serial_putchar(58)
     i = i + 1
 
+proc print_ip_addr(ip: ptr uint8) =
+  kprint_dec(cast[int32](ip[0]))
+  vga_putchar(46)
+  serial_putchar(46)
+  kprint_dec(cast[int32](ip[1]))
+  vga_putchar(46)
+  serial_putchar(46)
+  kprint_dec(cast[int32](ip[2]))
+  vga_putchar(46)
+  serial_putchar(46)
+  kprint_dec(cast[int32](ip[3]))
+
 proc print_ip() =
-  kprint_dec(cast[int32](my_ip[0]))
-  kprint(cast[ptr uint8]("."))
-  kprint_dec(cast[int32](my_ip[1]))
-  kprint(cast[ptr uint8]("."))
-  kprint_dec(cast[int32](my_ip[2]))
-  kprint(cast[ptr uint8]("."))
-  kprint_dec(cast[int32](my_ip[3]))
+  print_ip_addr(addr(my_ip[0]))
 
 # Main shell loop
 proc shell_main() =

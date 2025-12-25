@@ -12,21 +12,20 @@ stage2_start:
     mov si, msg_stage2
     call print_string
 
-    ; Load kernel from disk (in real mode, using BIOS)
-    ; Kernel is at LBA 18 (dd seek=18), but INT 13h uses 1-based sectors
-    ; LBA 18 = sector 19 for INT 13h (since sectors are 1-based: LBA = sector - 1)
-    mov ah, 0x02            ; BIOS read sectors
-    mov al, 64              ; Read 64 sectors (32KB kernel)
-    mov ch, 0               ; Cylinder 0
-    mov cl, 19              ; Sector 19 (1-based) = LBA 18 (0-based)
-    mov dh, 0               ; Head 0
-    mov dl, [boot_drive]    ; Drive number
-    mov bx, 0x1000          ; Segment
-    mov es, bx
-    xor bx, bx              ; Offset 0 (load to 0x10000)
-    int 0x13                ; BIOS disk read
+    ; Load kernel from disk in two parts (some BIOSes limit sectors per read)
+    ; Part 1: Load first 64KB (128 sectors) to 0x10000
+    mov ah, 0x42            ; Extended read
+    mov dl, [boot_drive]
+    mov si, dap1            ; Disk Address Packet 1
+    int 0x13
+    jc disk_error
 
-    jc disk_error           ; Check if read failed
+    ; Part 2: Load next 16KB (32 sectors) to 0x20000
+    mov ah, 0x42            ; Extended read
+    mov dl, [boot_drive]
+    mov si, dap2            ; Disk Address Packet 2
+    int 0x13
+    jc disk_error
 
     ; Print kernel loaded message
     mov si, msg_kernel_loaded
@@ -107,6 +106,27 @@ print_string:
 ; Messages
 boot_drive: db 0
 msg_stage2: db 'Stage 2 running...', 13, 10, 0
+
+; Disk Address Packets for LBA read (split into two reads)
+align 4
+dap1:
+    db 16           ; Size of DAP (16 bytes)
+    db 0            ; Reserved
+    dw 127          ; Number of sectors to read (127 * 512 = 64KB - 512)
+    dw 0x0000       ; Offset (0)
+    dw 0x1000       ; Segment (0x1000 -> address 0x10000)
+    dd 18           ; LBA low 32 bits (sector 18)
+    dd 0            ; LBA high 32 bits
+
+align 4
+dap2:
+    db 16           ; Size of DAP (16 bytes)
+    db 0            ; Reserved
+    dw 120          ; Number of sectors to read (120 * 512 = 60KB for remainder, supports ~124KB kernel)
+    dw 0x0000       ; Offset (0)
+    dw 0x1FE0       ; Segment (0x1FE0 * 16 = 0x1FE00, right after first 127 sectors)
+    dd 145          ; LBA low 32 bits (sector 18 + 127 = 145)
+    dd 0            ; LBA high 32 bits
 msg_kernel_loaded: db 'Kernel loaded from disk', 13, 10, 0
 msg_disk_error: db 'DISK READ ERROR!', 13, 10, 0
 msg_pmode: db 'Entering protected mode...', 13, 10, 0

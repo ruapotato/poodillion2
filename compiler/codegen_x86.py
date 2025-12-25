@@ -676,8 +676,11 @@ class X86CodeGen:
 
                 # Calculate element size
                 element_size = 1  # Default to 1 byte
-                if pointer_type and isinstance(pointer_type, PointerType):
-                    element_size = self.type_size(pointer_type.base_type)
+                if pointer_type:
+                    if isinstance(pointer_type, PointerType):
+                        element_size = self.type_size(pointer_type.base_type)
+                    elif isinstance(pointer_type, ArrayType):
+                        element_size = self.type_size(pointer_type.element_type)
 
                 # Generate array base address
                 if isinstance(expr.expr.array, CastExpr):
@@ -1122,8 +1125,11 @@ class X86CodeGen:
 
                 # Calculate element size
                 element_size = 1  # Default to 1 byte
-                if pointer_type and isinstance(pointer_type, PointerType):
-                    element_size = self.type_size(pointer_type.base_type)
+                if pointer_type:
+                    if isinstance(pointer_type, PointerType):
+                        element_size = self.type_size(pointer_type.base_type)
+                    elif isinstance(pointer_type, ArrayType):
+                        element_size = self.type_size(pointer_type.element_type)
 
                 # Generate array base address
                 if isinstance(stmt.target.array, CastExpr):
@@ -1661,6 +1667,9 @@ class X86CodeGen:
                 escaped = escaped.replace('""', '')
                 escaped = escaped.replace(', ""', '')
                 escaped = escaped.replace('"", ', '')
+                # Clean up consecutive commas from adjacent byte values (e.g., \r\n -> 13, , 10)
+                while ', , ' in escaped:
+                    escaped = escaped.replace(', , ', ', ')
                 asm.append(f'{label}: db "{escaped}", 0')
             asm.extend(self.data_section)
             asm.append("")

@@ -81,7 +81,8 @@ PROCESS_OBJ = $(BUILD_DIR)/process.o
 IPC_OBJ = $(BUILD_DIR)/ipc.o
 KEYBOARD_OBJ = $(BUILD_DIR)/keyboard.o
 ELF_OBJ = $(BUILD_DIR)/elf.o
-KERNEL_ASM_OBJS = $(SERIAL_OBJ) $(IDT_OBJ) $(ISR_OBJ) $(PAGING_OBJ) $(PROCESS_OBJ) $(IPC_OBJ) $(KEYBOARD_OBJ) $(ELF_OBJ)
+NET_OBJ = $(BUILD_DIR)/net.o
+KERNEL_ASM_OBJS = $(SERIAL_OBJ) $(IDT_OBJ) $(ISR_OBJ) $(PAGING_OBJ) $(PROCESS_OBJ) $(IPC_OBJ) $(KEYBOARD_OBJ) $(ELF_OBJ) $(NET_OBJ)
 
 $(SERIAL_OBJ): kernel/serial.asm | $(BUILD_DIR)
 	@echo "Assembling serial driver..."
@@ -114,6 +115,10 @@ $(KEYBOARD_OBJ): kernel/keyboard.asm | $(BUILD_DIR)
 $(ELF_OBJ): kernel/elf.asm | $(BUILD_DIR)
 	@echo "Assembling ELF loader..."
 	$(AS) $(ASFLAGS_32) kernel/elf.asm -o $(ELF_OBJ)
+
+$(NET_OBJ): kernel/net.asm | $(BUILD_DIR)
+	@echo "Assembling network driver..."
+	$(AS) $(ASFLAGS_32) kernel/net.asm -o $(NET_OBJ)
 
 # Compile Brainhair kernel for GRUB
 BRAINHAIR_KERNEL_OBJ_GRUB = $(BUILD_DIR)/kernel_brainhair.o
@@ -185,9 +190,9 @@ brainhair: $(STAGE1_BIN) $(STAGE2_BIN) kernel-brainhair
 
 # Build and run the BrainhairOS microkernel
 .PHONY: microkernel
-microkernel: $(STAGE1_BIN) $(STAGE2_BIN) $(BRAINHAIR_KERNEL_OBJ) $(BOOT_OBJ) $(IDT_OBJ) $(ISR_OBJ) $(PAGING_OBJ) $(PROCESS_OBJ) $(SERIAL_OBJ) $(IPC_OBJ) $(KEYBOARD_OBJ) $(ELF_OBJ)
+microkernel: $(STAGE1_BIN) $(STAGE2_BIN) $(BRAINHAIR_KERNEL_OBJ) $(BOOT_OBJ) $(IDT_OBJ) $(ISR_OBJ) $(PAGING_OBJ) $(PROCESS_OBJ) $(SERIAL_OBJ) $(IPC_OBJ) $(KEYBOARD_OBJ) $(ELF_OBJ) $(NET_OBJ)
 	@echo "Building BrainhairOS Microkernel..."
-	$(LD) $(LDFLAGS) -o $(BUILD_DIR)/kernel.elf $(BOOT_OBJ) $(SERIAL_OBJ) $(IDT_OBJ) $(ISR_OBJ) $(PAGING_OBJ) $(PROCESS_OBJ) $(IPC_OBJ) $(KEYBOARD_OBJ) $(ELF_OBJ) $(BRAINHAIR_KERNEL_OBJ)
+	$(LD) $(LDFLAGS) -o $(BUILD_DIR)/kernel.elf $(BOOT_OBJ) $(SERIAL_OBJ) $(IDT_OBJ) $(ISR_OBJ) $(PAGING_OBJ) $(PROCESS_OBJ) $(IPC_OBJ) $(KEYBOARD_OBJ) $(ELF_OBJ) $(NET_OBJ) $(BRAINHAIR_KERNEL_OBJ)
 	objcopy -O binary $(BUILD_DIR)/kernel.elf $(KERNEL_BIN)
 	@echo "  Kernel size: $$(stat -c%s $(KERNEL_BIN)) bytes"
 	dd if=/dev/zero of=$(DISK_IMG) bs=512 count=20480 2>/dev/null
@@ -202,14 +207,16 @@ microkernel: $(STAGE1_BIN) $(STAGE2_BIN) $(BRAINHAIR_KERNEL_OBJ) $(BOOT_OBJ) $(I
 .PHONY: run-microkernel
 run-microkernel: microkernel
 	@echo "Booting BrainhairOS Microkernel..."
-	qemu-system-i386 -drive file=$(DISK_IMG),format=raw
+	qemu-system-i386 -drive file=$(DISK_IMG),format=raw \
+		-device e1000,netdev=net0 -netdev user,id=net0
 
 .PHONY: run-microkernel-serial
 run-microkernel-serial: microkernel
 	@echo "Booting BrainhairOS Microkernel (serial output)..."
 	@echo "Press Ctrl-A X to exit QEMU"
 	@echo "========================================"
-	qemu-system-i386 -drive file=$(DISK_IMG),format=raw -display none -serial stdio
+	qemu-system-i386 -drive file=$(DISK_IMG),format=raw -display none -serial stdio \
+		-device e1000,netdev=net0 -netdev user,id=net0
 
 # Build just the kernel
 .PHONY: kernel

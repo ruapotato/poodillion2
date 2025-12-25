@@ -240,6 +240,8 @@ class Lexer:
                     string += '\n'
                 elif esc == 't':
                     string += '\t'
+                elif esc == 'r':
+                    string += '\r'
                 elif esc == '0':
                     string += '\0'
                 else:
@@ -265,6 +267,8 @@ class Lexer:
                 ch = '\n'
             elif esc == 't':
                 ch = '\t'
+            elif esc == 'r':
+                ch = '\r'
             elif esc == '0':
                 ch = '\0'
             else:
