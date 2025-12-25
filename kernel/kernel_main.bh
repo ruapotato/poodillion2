@@ -2,69 +2,69 @@
 # Main kernel entry point - called by boot.asm _start
 
 # External assembly functions - Serial
-extern proc serial_init()
-extern proc serial_putchar(c: int32)
-extern proc serial_print(s: int32)
-extern proc serial_available(): int32
-extern proc serial_getchar(): int32
+extern serial_init()
+extern serial_putchar(c: int32)
+extern serial_print(s: int32)
+extern serial_available(): int32
+extern serial_getchar(): int32
 
 # External assembly functions - IDT
-extern proc init_idt()
-extern proc remap_pic()
-extern proc enable_interrupts()
-extern proc disable_interrupts()
+extern init_idt()
+extern remap_pic()
+extern enable_interrupts()
+extern disable_interrupts()
 
 # External assembly functions - Paging
-extern proc init_paging()
-extern proc alloc_frame(): int32
-extern proc free_frame(frame_addr: int32)
-extern proc map_page(virtual_addr: int32, physical_addr: int32, flags: int32): int32
-extern proc get_physical_address(virtual_addr: int32): int32
-extern proc flush_tlb()
-extern proc set_cr3(pdir: int32)
-extern proc get_cr3(): int32
+extern init_paging()
+extern alloc_frame(): int32
+extern free_frame(frame_addr: int32)
+extern map_page(virtual_addr: int32, physical_addr: int32, flags: int32): int32
+extern get_physical_address(virtual_addr: int32): int32
+extern flush_tlb()
+extern set_cr3(pdir: int32)
+extern get_cr3(): int32
 
 # External assembly functions - Process/Scheduler
-extern proc init_scheduler()
-extern proc create_process(entry: int32, parent: int32): int32
-extern proc schedule(): int32
-extern proc context_switch(new_pid: int32)
-extern proc yield()
-extern proc exit_process(code: int32)
-extern proc get_current_pid(): int32
-extern proc set_process_state(pid: int32, state: int32)
-extern proc timer_tick()
+extern init_scheduler()
+extern create_process(entry: int32, parent: int32): int32
+extern schedule(): int32
+extern context_switch(new_pid: int32)
+extern yield()
+extern exit_process(code: int32)
+extern get_current_pid(): int32
+extern set_process_state(pid: int32, state: int32)
+extern timer_tick()
 
 # Get current tick count
-extern proc get_tick_count(): int32
+extern get_tick_count(): int32
 
 # Get process state (0=unused, 1=ready, 2=running, 3=blocked, 4=zombie)
-extern proc get_process_state(pid: int32): int32
+extern get_process_state(pid: int32): int32
 
 # External assembly functions - Keyboard
-extern proc keyboard_init()
-extern proc keyboard_read_char(): int32
-extern proc keyboard_available(): int32
+extern keyboard_init()
+extern keyboard_read_char(): int32
+extern keyboard_available(): int32
 
 # External assembly functions - Port I/O
-extern proc port_outb(port: int32, value: int32)
-extern proc port_outw(port: int32, value: int32)
-extern proc port_outl(port: int32, value: int32)
-extern proc port_inb(port: int32): int32
-extern proc port_inw(port: int32): int32
-extern proc port_inl(port: int32): int32
+extern port_outb(port: int32, value: int32)
+extern port_outw(port: int32, value: int32)
+extern port_outl(port: int32, value: int32)
+extern port_inb(port: int32): int32
+extern port_inw(port: int32): int32
+extern port_inl(port: int32): int32
 
 # External assembly functions - PCI
-extern proc pci_config_read32(bus: int32, slot: int32, func: int32, offset: int32): int32
-extern proc pci_config_write32(bus: int32, slot: int32, func: int32, offset: int32, value: int32)
-extern proc pci_config_read16(bus: int32, slot: int32, func: int32, offset: int32): int32
-extern proc pci_config_read8(bus: int32, slot: int32, func: int32, offset: int32): int32
+extern pci_config_read32(bus: int32, slot: int32, func: int32, offset: int32): int32
+extern pci_config_write32(bus: int32, slot: int32, func: int32, offset: int32, value: int32)
+extern pci_config_read16(bus: int32, slot: int32, func: int32, offset: int32): int32
+extern pci_config_read8(bus: int32, slot: int32, func: int32, offset: int32): int32
 
 # External assembly functions - MMIO
-extern proc mmio_read32(address: int32): int32
-extern proc mmio_write32(address: int32, value: int32)
-extern proc net_memcpy(dest: int32, src: int32, len: int32)
-extern proc net_memset(dest: int32, val: int32, len: int32)
+extern mmio_read32(address: int32): int32
+extern mmio_write32(address: int32, value: int32)
+extern net_memcpy(dest: int32, src: int32, len: int32)
+extern net_memset(dest: int32, val: int32, len: int32)
 
 # Process states
 const PROC_UNUSED: int32 = 0
