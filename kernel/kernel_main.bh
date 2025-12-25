@@ -456,12 +456,12 @@ proc main() =
   ser_println(cast[ptr uint8]("Starting kernel shell..."))
 
   # Auto-start HTTP server for testing (set to 1 to enable)
-  var auto_httpd: int32 = 0  # Disabled for testing uweb
+  var auto_httpd: int32 = 0  # Disabled
   if auto_httpd == 1:
-    run_webapp()  # Flask-style demo
+    run_httpd()  # Basic HTTP server on port 80
 
   # Auto-start userland webapp for testing (set to 1 to enable)
-  var auto_uweb: int32 = 1
+  var auto_uweb: int32 = 1  # Test userland webapp
   if auto_uweb == 1:
     run_userland_webapp()
 
@@ -4281,8 +4281,8 @@ const E1000_TCTL_EN: int32 = 0x00000002    # Transmit Enable
 const E1000_TCTL_PSP: int32 = 0x00000008   # Pad Short Packets
 
 # Descriptor ring sizes (must be multiple of 8, each descriptor is 16 bytes)
-const RX_DESC_COUNT: int32 = 8          # Reduced from 32 to fit in memory
-const TX_DESC_COUNT: int32 = 8          # Reduced from 32 to fit in memory
+const RX_DESC_COUNT: int32 = 32         # Enough for network traffic
+const TX_DESC_COUNT: int32 = 32         # Enough for HTTP responses
 const RX_BUFFER_SIZE: int32 = 2048
 const TX_BUFFER_SIZE: int32 = 2048
 
