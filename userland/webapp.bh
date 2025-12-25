@@ -1,0 +1,59 @@
+# Example Flask-style Web Application
+# Demonstrates the lib/flask routing API
+
+import "lib/flask"
+import "lib/syscalls"
+
+# =============================================================================
+# Route Handlers
+# =============================================================================
+
+proc index(sock: int32, request: ptr uint8, path: ptr uint8) =
+  html(sock, cast[ptr uint8]("
+<html>
+<head><title>Welcome</title></head>
+<body>
+  <h1>Hello from BrainhairOS!</h1>
+  <p>This is a Flask-style web app.</p>
+  <ul>
+    <li><a href='/about'>About</a></li>
+    <li><a href='/api/status'>API Status</a></li>
+  </ul>
+</body>
+</html>"))
+
+proc about(sock: int32, request: ptr uint8, path: ptr uint8) =
+  html(sock, cast[ptr uint8]("
+<html>
+<head><title>About</title></head>
+<body>
+  <h1>About</h1>
+  <p>BrainhairOS is a hobby operating system with:</p>
+  <ul>
+    <li>Custom bootloader</li>
+    <li>TCP/IP networking stack</li>
+    <li>Brainhair programming language</li>
+  </ul>
+  <p><a href='/'>Back to Home</a></p>
+</body>
+</html>"))
+
+proc api_status(sock: int32, request: ptr uint8, path: ptr uint8) =
+  json(sock, cast[ptr uint8]("{\"status\": \"ok\", \"version\": \"0.1\"}"))
+
+proc api_echo(sock: int32, request: ptr uint8, path: ptr uint8) =
+  text(sock, request)
+
+# =============================================================================
+# Main - Register Routes and Run
+# =============================================================================
+
+proc main(): int32 =
+  # Register routes (Flask-style!)
+  discard route(cast[ptr uint8]("/"), cast[ptr uint8](index))
+  discard route(cast[ptr uint8]("/about"), cast[ptr uint8](about))
+  discard route(cast[ptr uint8]("/api/status"), cast[ptr uint8](api_status))
+  discard post(cast[ptr uint8]("/api/echo"), cast[ptr uint8](api_echo))
+
+  # Run the app!
+  return run(8080)
