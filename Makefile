@@ -82,7 +82,8 @@ IPC_OBJ = $(BUILD_DIR)/ipc.o
 KEYBOARD_OBJ = $(BUILD_DIR)/keyboard.o
 ELF_OBJ = $(BUILD_DIR)/elf.o
 NET_OBJ = $(BUILD_DIR)/net.o
-KERNEL_ASM_OBJS = $(SERIAL_OBJ) $(IDT_OBJ) $(ISR_OBJ) $(PAGING_OBJ) $(PROCESS_OBJ) $(IPC_OBJ) $(KEYBOARD_OBJ) $(ELF_OBJ) $(NET_OBJ)
+USERLAND_BINS_OBJ = $(BUILD_DIR)/userland_bins.o
+KERNEL_ASM_OBJS = $(SERIAL_OBJ) $(IDT_OBJ) $(ISR_OBJ) $(PAGING_OBJ) $(PROCESS_OBJ) $(IPC_OBJ) $(KEYBOARD_OBJ) $(ELF_OBJ) $(NET_OBJ) $(USERLAND_BINS_OBJ)
 
 $(SERIAL_OBJ): kernel/serial.asm | $(BUILD_DIR)
 	@echo "Assembling serial driver..."
@@ -119,6 +120,14 @@ $(ELF_OBJ): kernel/elf.asm | $(BUILD_DIR)
 $(NET_OBJ): kernel/net.asm | $(BUILD_DIR)
 	@echo "Assembling network driver..."
 	$(AS) $(ASFLAGS_32) kernel/net.asm -o $(NET_OBJ)
+
+# Build webapp binary first, then embed it (before USERLAND_DIR is defined)
+$(BIN_DIR)/webapp: userland/webapp.bh lib/syscalls.o | $(BIN_DIR)
+	@./bin/bhbuild userland/webapp.bh $(BIN_DIR)/webapp
+
+$(USERLAND_BINS_OBJ): kernel/userland_bins.asm $(BIN_DIR)/webapp | $(BUILD_DIR)
+	@echo "Embedding userland binaries..."
+	$(AS) $(ASFLAGS_32) kernel/userland_bins.asm -o $(USERLAND_BINS_OBJ)
 
 # Compile Brainhair kernel for GRUB
 BRAINHAIR_KERNEL_OBJ_GRUB = $(BUILD_DIR)/kernel_brainhair.o
@@ -193,6 +202,22 @@ brainhair: $(STAGE1_BIN) $(STAGE2_BIN) kernel-brainhair
 microkernel: $(STAGE1_BIN) $(STAGE2_BIN) $(BRAINHAIR_KERNEL_OBJ) $(BOOT_OBJ) $(IDT_OBJ) $(ISR_OBJ) $(PAGING_OBJ) $(PROCESS_OBJ) $(SERIAL_OBJ) $(IPC_OBJ) $(KEYBOARD_OBJ) $(ELF_OBJ) $(NET_OBJ)
 	@echo "Building BrainhairOS Microkernel..."
 	$(LD) $(LDFLAGS) -o $(BUILD_DIR)/kernel.elf $(BOOT_OBJ) $(SERIAL_OBJ) $(IDT_OBJ) $(ISR_OBJ) $(PAGING_OBJ) $(PROCESS_OBJ) $(IPC_OBJ) $(KEYBOARD_OBJ) $(ELF_OBJ) $(NET_OBJ) $(BRAINHAIR_KERNEL_OBJ)
+	objcopy -O binary $(BUILD_DIR)/kernel.elf $(KERNEL_BIN)
+	@echo "  Kernel size: $$(stat -c%s $(KERNEL_BIN)) bytes"
+	dd if=/dev/zero of=$(DISK_IMG) bs=512 count=20480 2>/dev/null
+	dd if=$(STAGE1_BIN) of=$(DISK_IMG) conv=notrunc bs=512 count=1 2>/dev/null
+	dd if=$(STAGE2_BIN) of=$(DISK_IMG) conv=notrunc bs=512 seek=1 2>/dev/null
+	dd if=$(KERNEL_BIN) of=$(DISK_IMG) conv=notrunc bs=512 seek=18 2>/dev/null
+	@echo ""
+	@echo "✓ BrainhairOS Microkernel built!"
+	@echo "  Disk image: $(DISK_IMG)"
+	@echo "  Run with: make run-microkernel"
+
+# Microkernel with embedded userland webapp
+.PHONY: microkernel-uweb
+microkernel-uweb: $(STAGE1_BIN) $(STAGE2_BIN) $(BRAINHAIR_KERNEL_OBJ) $(BOOT_OBJ) $(IDT_OBJ) $(ISR_OBJ) $(PAGING_OBJ) $(PROCESS_OBJ) $(SERIAL_OBJ) $(IPC_OBJ) $(KEYBOARD_OBJ) $(ELF_OBJ) $(NET_OBJ) $(USERLAND_BINS_OBJ)
+	@echo "Building BrainhairOS Microkernel with embedded webapp..."
+	$(LD) $(LDFLAGS) -o $(BUILD_DIR)/kernel.elf $(BOOT_OBJ) $(SERIAL_OBJ) $(IDT_OBJ) $(ISR_OBJ) $(PAGING_OBJ) $(PROCESS_OBJ) $(IPC_OBJ) $(KEYBOARD_OBJ) $(ELF_OBJ) $(NET_OBJ) $(BRAINHAIR_KERNEL_OBJ) $(USERLAND_BINS_OBJ)
 	objcopy -O binary $(BUILD_DIR)/kernel.elf $(KERNEL_BIN)
 	@echo "  Kernel size: $$(stat -c%s $(KERNEL_BIN)) bytes"
 	dd if=/dev/zero of=$(DISK_IMG) bs=512 count=20480 2>/dev/null

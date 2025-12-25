@@ -12,18 +12,25 @@ stage2_start:
     mov si, msg_stage2
     call print_string
 
-    ; Load kernel from disk in two parts (some BIOSes limit sectors per read)
-    ; Part 1: Load first 64KB (128 sectors) to 0x10000
+    ; Load kernel from disk in three parts (some BIOSes limit sectors per read)
+    ; Part 1: Load first 64KB (127 sectors) to 0x10000
     mov ah, 0x42            ; Extended read
     mov dl, [boot_drive]
     mov si, dap1            ; Disk Address Packet 1
     int 0x13
     jc disk_error
 
-    ; Part 2: Load next 16KB (32 sectors) to 0x20000
+    ; Part 2: Load next 60KB (120 sectors) to 0x1FE00
     mov ah, 0x42            ; Extended read
     mov dl, [boot_drive]
     mov si, dap2            ; Disk Address Packet 2
+    int 0x13
+    jc disk_error
+
+    ; Part 3: Load another 40KB (80 sectors) to handle large kernels with embedded binaries
+    mov ah, 0x42            ; Extended read
+    mov dl, [boot_drive]
+    mov si, dap3            ; Disk Address Packet 3
     int 0x13
     jc disk_error
 
@@ -122,11 +129,22 @@ align 4
 dap2:
     db 16           ; Size of DAP (16 bytes)
     db 0            ; Reserved
-    dw 120          ; Number of sectors to read (120 * 512 = 60KB for remainder, supports ~124KB kernel)
+    dw 120          ; Number of sectors to read (120 * 512 = 60KB for remainder)
     dw 0x0000       ; Offset (0)
     dw 0x1FE0       ; Segment (0x1FE0 * 16 = 0x1FE00, right after first 127 sectors)
     dd 145          ; LBA low 32 bits (sector 18 + 127 = 145)
     dd 0            ; LBA high 32 bits
+
+align 4
+dap3:
+    db 16           ; Size of DAP (16 bytes)
+    db 0            ; Reserved
+    dw 80           ; Number of sectors to read (80 * 512 = 40KB extra, total ~164KB)
+    dw 0x0000       ; Offset (0)
+    dw 0x2EE0       ; Segment (0x1FE0 + 120*512/16 = 0x2EE0, address 0x2EE00)
+    dd 265          ; LBA low 32 bits (sector 18 + 127 + 120 = 265)
+    dd 0            ; LBA high 32 bits
+
 msg_kernel_loaded: db 'Kernel loaded from disk', 13, 10, 0
 msg_disk_error: db 'DISK READ ERROR!', 13, 10, 0
 msg_pmode: db 'Entering protected mode...', 13, 10, 0
