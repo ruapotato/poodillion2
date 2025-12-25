@@ -463,7 +463,16 @@ class X86CodeGen:
             return "eax"
 
         if isinstance(expr, CastExpr):
-            # For now, just generate the expression
+            # Check if we're casting a function name to a pointer (function pointer)
+            if isinstance(expr.expr, Identifier):
+                func_name = expr.expr.name
+                # Check if this is a function name (not a variable)
+                if hasattr(self, 'func_names') and func_name in self.func_names:
+                    # Use LEA to get the address of the function, not MOV
+                    addr = f"[{func_name}]" if self.kernel_mode else f"[rel {func_name}]"
+                    self.emit(f"lea eax, {addr}")
+                    return "eax"
+            # For other casts, just generate the expression
             # Type casting is mostly a no-op in assembly
             return self.gen_expression(expr.expr)
 
@@ -1600,6 +1609,7 @@ class X86CodeGen:
         # First pass: collect constants, extern declarations, struct types, and global variable types
         self.constants = {}
         self.externs = []
+        self.func_names = set()  # Track function names for function pointer support
         for decl in program.declarations:
             if isinstance(decl, StructDecl):
                 # Register struct type for field offset calculations
@@ -1617,6 +1627,10 @@ class X86CodeGen:
             elif isinstance(decl, ExternDecl):
                 # Collect external function names
                 self.externs.append(decl.name)
+                self.func_names.add(decl.name)
+            elif isinstance(decl, ProcDecl):
+                # Track procedure names for function pointer support
+                self.func_names.add(decl.name)
 
         # Generate code for all declarations
         for decl in program.declarations:
