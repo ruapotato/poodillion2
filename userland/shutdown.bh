@@ -4,15 +4,7 @@
 #   shutdown -r  - reboot system
 #   shutdown -p  - power off system
 
-const SYS_write: int32 = 4
-const SYS_exit: int32 = 1
-const SYS_kill: int32 = 37
-const SYS_sync: int32 = 36
-const SYS_reboot: int32 = 88
-const SYS_brk: int32 = 45
-
-const STDOUT: int32 = 1
-const STDERR: int32 = 2
+import "lib/syscalls"
 
 # Signals
 const SIGTERM: int32 = 15
@@ -23,22 +15,8 @@ const LINUX_REBOOT_CMD_HALT: int32 = 0xCDEF0123
 const LINUX_REBOOT_CMD_POWER_OFF: int32 = 0x4321FEDC
 const LINUX_REBOOT_CMD_RESTART: int32 = 0x01234567
 
-extern proc syscall1(num: int32, arg1: int32): int32
-extern proc syscall2(num: int32, arg1: int32, arg2: int32): int32
-extern proc syscall3(num: int32, arg1: int32, arg2: int32, arg3: int32): int32
-extern proc syscall4(num: int32, arg1: int32, arg2: int32, arg3: int32, arg4: int32): int32
-extern proc get_argc(): int32
-extern proc get_argv(index: int32): ptr uint8
-
-proc strlen(s: ptr uint8): int32 =
-  var len: int32 = 0
-  while s[len] != cast[uint8](0):
-    len = len + 1
-  return len
-
-proc print(msg: ptr uint8) =
-  var len: int32 = strlen(msg)
-  discard syscall3(SYS_write, STDOUT, cast[int32](msg), len)
+extern get_argc(): int32
+extern get_argv(index: int32): ptr uint8
 
 proc print_err(msg: ptr uint8) =
   var len: int32 = strlen(msg)

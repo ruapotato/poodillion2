@@ -54,14 +54,14 @@ proc main(): int32 =
     if suffix_len > 0:
       if suffix_len < base_len:
         # Check if path ends with suffix
-        var match: int32 = 1
+        var matched: int32 = 1
         var i: int32 = 0
         while i < suffix_len:
           if path[start_pos + base_len - suffix_len + i] != suffix[i]:
-            match = 0
+            matched = 0
             break
           i = i + 1
-        if match != 0:
+        if matched != 0:
           base_len = base_len - suffix_len
 
   # Output basename

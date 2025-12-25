@@ -2,8 +2,8 @@
 # This kernel calls the serial_print function from assembly
 
 # Declare external functions from assembly
-extern proc serial_print(msg: ptr uint8)
-extern proc serial_putchar(ch: uint8)
+extern serial_print(msg: ptr uint8)
+extern serial_putchar(ch: uint8)
 
 proc main() =
   # Print a message using the external serial_print function

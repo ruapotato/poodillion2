@@ -863,7 +863,7 @@ class Parser:
 
     def parse_extern_decl(self) -> ExternDecl:
         self.advance()  # Skip 'extern'
-        self.expect(TokenType.PROC)
+        # New syntax: extern name() instead of extern proc name()
 
         name = self.expect(TokenType.IDENT).value
         self.expect(TokenType.LPAREN)

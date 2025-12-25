@@ -1,24 +1,9 @@
 # fbinfo - Display framebuffer information
 # Shows resolution, color depth, and other FB parameters
 
-const SYS_open: int32 = 5
-const SYS_close: int32 = 6
-const SYS_ioctl: int32 = 54
-const SYS_write: int32 = 4
-const SYS_exit: int32 = 1
-const SYS_brk: int32 = 45
-
-const STDOUT: int32 = 1
-const O_RDWR: int32 = 2
+import "lib/syscalls"
 
 const FBIOGET_VSCREENINFO: int32 = 0x4600
-
-extern proc syscall1(num: int32, arg1: int32): int32
-extern proc syscall2(num: int32, arg1: int32, arg2: int32): int32
-extern proc syscall3(num: int32, arg1: int32, arg2: int32, arg3: int32): int32
-
-proc print(msg: ptr uint8, len: int32) =
-  discard syscall3(SYS_write, STDOUT, cast[int32](msg), len)
 
 proc print_num(n: int32) =
   # Print a number (simplified - works for numbers < 10000)
@@ -33,9 +18,6 @@ proc print_num(n: int32) =
     discard syscall3(SYS_write, STDOUT, cast[int32](addr(tens)), 1)
   var ones: uint8 = cast[uint8](48 + n % 10)
   discard syscall3(SYS_write, STDOUT, cast[int32](addr(ones)), 1)
-
-proc newline() =
-  print(cast[ptr uint8]("\n"), 1)
 
 proc main() =
   print(cast[ptr uint8]("BrainhairOS Framebuffer Info"), 30)

@@ -5,8 +5,6 @@
 
 import "lib/syscalls"
 
-extern syscall4(num: int32, arg1: int32, arg2: int32, arg3: int32, arg4: int32): int32
-
 proc main(): int32 =
   println("reboot: syncing filesystems...")
 

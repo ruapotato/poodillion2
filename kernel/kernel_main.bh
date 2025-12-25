@@ -4966,7 +4966,7 @@ const SYS_CALL: int32 = 22
 const SYS_REPLY: int32 = 23
 
 # Low-level syscall (in assembly)
-extern proc syscall2(num: int32, arg1: int32, arg2: int32): int32
+extern syscall2(num: int32, arg1: int32, arg2: int32): int32
 
 # IPC syscall wrappers
 proc sys_send(dest: int32, msg: ptr uint8): int32 =
@@ -4980,7 +4980,7 @@ const SYS_SPAWN: int32 = 40
 const SYS_WAIT: int32 = 41
 
 # Low-level syscall with 1 argument
-extern proc syscall1(num: int32, arg1: int32): int32
+extern syscall1(num: int32, arg1: int32): int32
 
 # Process syscall wrappers
 proc sys_spawn(entry: int32): int32 =
