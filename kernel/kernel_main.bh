@@ -95,6 +95,22 @@ extern devfs_get_device_count(): int32
 const DEV_TYPE_CHAR: int32 = 1
 const DEV_TYPE_BLOCK: int32 = 2
 
+# TTY subsystem functions
+extern tty_init()
+extern tty_read(tty_idx: int32, buf: ptr uint8, count: int32): int32
+extern tty_write(tty_idx: int32, buf: ptr uint8, count: int32): int32
+extern tty_input(c: int32)
+extern tty_set_fg(tty_idx: int32, pid: int32)
+extern tty_get_fg(tty_idx: int32): int32
+extern tty_set_flags(tty_idx: int32, flags: int32)
+extern tty_get_flags(tty_idx: int32): int32
+extern tty_get_winsize(tty_idx: int32, rows: ptr int32, cols: ptr int32): int32
+
+# TTY flags
+const TTY_ECHO: int32 = 1
+const TTY_ICANON: int32 = 2
+const TTY_ISIG: int32 = 4
+
 # Get current tick count
 extern get_tick_count(): int32
 
@@ -2006,6 +2022,11 @@ proc main() =
   print_pending(cast[ptr uint8]("Initializing /dev"))
   devfs_init()
   print_ok(cast[ptr uint8]("/dev initialized"))
+
+  # Initialize TTY subsystem
+  print_pending(cast[ptr uint8]("Initializing TTY"))
+  tty_init()
+  print_ok(cast[ptr uint8]("TTY initialized"))
 
   # Enable interrupts
   print_pending(cast[ptr uint8]("Enabling interrupts"))
