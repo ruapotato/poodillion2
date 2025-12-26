@@ -33,6 +33,9 @@ PCB_USER_ESP  equ 64   ; User stack pointer
 ; IPC
 PCB_WAITING   equ 68   ; PID waiting for (-1 = any, 0 = none)
 PCB_MSG_BUF   equ 72   ; Message buffer pointer
+; Exit/wait support
+PCB_EXIT_CODE equ 76   ; Exit code for zombie processes
+PCB_WAIT_PID  equ 80   ; PID we're waiting for (-1 = any child, 0 = not waiting)
 
 PCB_SIZE      equ 128  ; Total size of PCB (with padding)
 
@@ -221,6 +224,106 @@ create_process:
     ret
 
 ; ============================================================================
+; fork - Create a copy of the current process
+; Returns: EAX = child PID to parent, 0 to child, -1 on error
+; ============================================================================
+global fork
+fork:
+    push ebx
+    push ecx
+    push edx
+    push esi
+    push edi
+    push ebp
+
+    ; Find a free slot in process table
+    mov ecx, 1              ; Start from PID 1 (0 is kernel)
+    mov edi, process_table
+    add edi, PCB_SIZE       ; Skip kernel's PCB
+
+.fork_find_slot:
+    cmp ecx, MAX_PROCS
+    jge .fork_no_slots
+
+    mov eax, [edi + PCB_STATE]
+    cmp eax, PROC_UNUSED
+    je .fork_found_slot
+
+    add edi, PCB_SIZE
+    inc ecx
+    jmp .fork_find_slot
+
+.fork_found_slot:
+    ; ECX = child PID, EDI = child PCB pointer
+    push ecx                ; Save child PID
+    push edi                ; Save child PCB pointer
+
+    ; Get parent PCB
+    mov eax, [current_pid]
+    call get_pcb
+    mov esi, eax            ; ESI = parent PCB
+
+    ; Copy parent PCB to child
+    pop edi                 ; Restore child PCB
+    push edi                ; Save again
+    mov ecx, PCB_SIZE / 4
+    rep movsd
+
+    ; Restore pointers
+    pop edi                 ; Child PCB
+    pop ecx                 ; Child PID
+
+    ; Set child-specific fields
+    mov [edi + PCB_PID], ecx
+    mov dword [edi + PCB_STATE], PROC_READY
+    mov eax, [current_pid]
+    mov [edi + PCB_PARENT], eax
+
+    ; Set up child's kernel stack (separate from parent)
+    mov eax, ecx
+    inc eax
+    shl eax, 12             ; * 4096
+    add eax, kernel_stacks
+    mov [edi + PCB_STACK_TOP], eax
+    mov [edi + PCB_ESP], eax
+
+    ; Child returns 0 from fork
+    mov dword [edi + PCB_EAX], 0
+
+    ; Set child's EIP to return address (after fork call)
+    ; Get return address from our stack frame
+    mov eax, [esp + 24]     ; Return address (after pushed regs)
+    mov [edi + PCB_EIP], eax
+
+    ; Clear wait status
+    mov dword [edi + PCB_WAIT_PID], 0
+    mov dword [edi + PCB_EXIT_CODE], 0
+
+    ; Increment ready count
+    inc dword [ready_count]
+
+    ; Parent returns child PID
+    mov eax, ecx
+
+    pop ebp
+    pop edi
+    pop esi
+    pop edx
+    pop ecx
+    pop ebx
+    ret
+
+.fork_no_slots:
+    mov eax, -1
+    pop ebp
+    pop edi
+    pop esi
+    pop edx
+    pop ecx
+    pop ebx
+    ret
+
+; ============================================================================
 ; schedule - Select next process to run (round-robin)
 ; Returns: EAX = PID of next process to run
 ; ============================================================================
@@ -383,6 +486,9 @@ yield:
 ; ============================================================================
 global exit_process
 exit_process:
+    push ebx
+    push esi
+
     ; Get current PCB
     mov eax, [current_pid]
     call get_pcb
@@ -391,12 +497,47 @@ exit_process:
 
     mov edi, eax
 
+    ; Save exit code
+    mov eax, [esp + 12]         ; Exit code (accounting for pushed regs)
+    mov [edi + PCB_EXIT_CODE], eax
+
     ; Mark as ZOMBIE
     mov dword [edi + PCB_STATE], PROC_ZOMBIE
 
     ; Decrement ready count
     dec dword [ready_count]
 
+    ; Get our parent PID
+    mov ebx, [edi + PCB_PARENT]
+
+    ; Check if parent is waiting for us
+    mov eax, ebx
+    call get_pcb
+    test eax, eax
+    jz .no_parent
+
+    mov esi, eax                ; ESI = parent PCB
+
+    ; Check if parent is blocked waiting
+    mov eax, [esi + PCB_STATE]
+    cmp eax, PROC_BLOCKED
+    jne .no_parent
+
+    ; Check if parent is waiting for us specifically or any child (-1)
+    mov eax, [esi + PCB_WAIT_PID]
+    cmp eax, 0
+    je .no_parent               ; Not waiting for anyone
+    cmp eax, -1
+    je .wake_parent             ; Waiting for any child
+    cmp eax, [current_pid]
+    jne .no_parent              ; Not waiting for us
+
+.wake_parent:
+    ; Wake up the parent
+    mov dword [esi + PCB_STATE], PROC_READY
+    inc dword [ready_count]
+
+.no_parent:
     ; Schedule next process
     call schedule
 
@@ -408,6 +549,164 @@ exit_process:
 .halt:
     cli
     hlt
+
+; ============================================================================
+; waitpid - Wait for a child process to exit
+; Input:
+;   [esp+4] = PID to wait for (-1 = any child)
+; Returns: EAX = PID of exited child, or -1 on error
+;          [esp+8] = pointer to store exit status (or NULL)
+; ============================================================================
+global waitpid
+waitpid:
+    push ebx
+    push ecx
+    push edi
+    push esi
+
+    mov ebx, [esp + 20]         ; PID to wait for
+    mov esi, [esp + 24]         ; Status pointer (may be NULL)
+
+    ; Get current PCB
+    mov eax, [current_pid]
+    call get_pcb
+    test eax, eax
+    jz .error
+
+    mov edi, eax                ; EDI = our PCB
+
+.check_children:
+    ; Look for zombie children
+    mov ecx, 0                  ; Start from PID 0
+
+.scan_loop:
+    cmp ecx, MAX_PROCS
+    jge .no_zombie_found
+
+    ; Get PCB for this PID
+    mov eax, ecx
+    push ecx
+    call get_pcb
+    pop ecx
+    test eax, eax
+    jz .next_child
+
+    ; Check if this is our child
+    push eax
+    mov eax, [eax + PCB_PARENT]
+    cmp eax, [current_pid]
+    pop eax
+    jne .next_child
+
+    ; Check if it's a zombie
+    cmp dword [eax + PCB_STATE], PROC_ZOMBIE
+    jne .next_child
+
+    ; Check if we're waiting for this specific child or any child
+    cmp ebx, -1
+    je .found_zombie            ; Waiting for any
+    cmp ebx, ecx
+    je .found_zombie            ; Waiting for this one
+
+.next_child:
+    inc ecx
+    jmp .scan_loop
+
+.found_zombie:
+    ; ECX = child PID, EAX = child PCB
+    push ecx                    ; Save child PID
+
+    ; Get exit code
+    mov ebx, [eax + PCB_EXIT_CODE]
+
+    ; Store exit status if pointer provided
+    test esi, esi
+    jz .no_status
+    mov [esi], ebx
+
+.no_status:
+    ; Free the child's PCB (mark as UNUSED)
+    mov dword [eax + PCB_STATE], PROC_UNUSED
+    mov dword [eax + PCB_PID], 0
+
+    ; Return child PID
+    pop eax
+
+    pop esi
+    pop edi
+    pop ecx
+    pop ebx
+    ret
+
+.no_zombie_found:
+    ; No zombie children yet - check if we have any children at all
+    mov ecx, 0
+    xor eax, eax                ; Child count
+
+.count_children:
+    cmp ecx, MAX_PROCS
+    jge .done_counting
+
+    push eax
+    mov eax, ecx
+    push ecx
+    call get_pcb
+    pop ecx
+    mov edx, eax
+    pop eax
+
+    test edx, edx
+    jz .count_next
+
+    ; Check if this is our child and not unused
+    cmp dword [edx + PCB_STATE], PROC_UNUSED
+    je .count_next
+    push eax
+    mov eax, [edx + PCB_PARENT]
+    cmp eax, [current_pid]
+    pop eax
+    jne .count_next
+
+    ; Check if waiting for specific child
+    cmp ebx, -1
+    je .has_child
+    cmp ebx, ecx
+    jne .count_next
+
+.has_child:
+    inc eax
+
+.count_next:
+    inc ecx
+    jmp .count_children
+
+.done_counting:
+    test eax, eax
+    jz .error                   ; No children to wait for
+
+    ; Block ourselves waiting for child
+    mov dword [edi + PCB_STATE], PROC_BLOCKED
+    mov [edi + PCB_WAIT_PID], ebx
+    dec dword [ready_count]
+
+    ; Schedule another process
+    call schedule
+
+    ; Context switch
+    push eax
+    call context_switch
+    add esp, 4
+
+    ; We're back - a child must have exited
+    jmp .check_children
+
+.error:
+    mov eax, -1
+    pop esi
+    pop edi
+    pop ecx
+    pop ebx
+    ret
 
 ; ============================================================================
 ; timer_tick - Called by timer interrupt to potentially reschedule
@@ -430,6 +729,22 @@ timer_tick:
 global get_current_pid
 get_current_pid:
     mov eax, [current_pid]
+    ret
+
+; ============================================================================
+; getppid - Get parent PID of current process
+; Returns: EAX = parent PID
+; ============================================================================
+global getppid
+getppid:
+    mov eax, [current_pid]
+    call get_pcb
+    test eax, eax
+    jz .no_parent
+    mov eax, [eax + PCB_PARENT]
+    ret
+.no_parent:
+    xor eax, eax
     ret
 
 ; ============================================================================

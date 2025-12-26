@@ -31,6 +31,9 @@ extern schedule(): int32
 extern context_switch(new_pid: int32)
 extern yield()
 extern exit_process(code: int32)
+extern fork(): int32
+extern waitpid(pid: int32, status_ptr: ptr int32): int32
+extern getppid(): int32
 extern get_current_pid(): int32
 extern set_process_state(pid: int32, state: int32)
 extern timer_tick()
@@ -3735,14 +3738,11 @@ proc shell_execute() =
     kprintln(cast[ptr uint8]("---  --------"))
     var ps_pid: int32 = 0
     var ps_count: int32 = 0
-    while ps_pid < 64:
+    while ps_pid < 16:
       var state: int32 = get_process_state(ps_pid)
-      if state > 0:  # Not unused
+      if state > 0:  # Not unused (state >= 1)
         kprint_dec(ps_pid)
-        if ps_pid < 10:
-          kprint(cast[ptr uint8]("    "))
-        else:
-          kprint(cast[ptr uint8]("   "))
+        kprint(cast[ptr uint8]("    "))
         if state == 1:
           vga_set_color(VGA_YELLOW, VGA_BLACK)
           kprintln(cast[ptr uint8]("READY"))
@@ -3763,6 +3763,36 @@ proc shell_execute() =
     kprint(cast[ptr uint8]("Total: "))
     kprint_dec(ps_count)
     kprintln(cast[ptr uint8](" process(es)"))
+    return
+  if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("fork")) == 1:
+    kprintln(cast[ptr uint8]("Testing fork()..."))
+    var pid: int32 = fork()
+    if pid < 0:
+      vga_set_color(VGA_LIGHT_RED, VGA_BLACK)
+      kprintln(cast[ptr uint8]("fork() failed!"))
+      vga_set_color(VGA_WHITE, VGA_BLACK)
+      return
+    if pid == 0:
+      # Child process
+      vga_set_color(VGA_LIGHT_GREEN, VGA_BLACK)
+      kprint(cast[ptr uint8]("Child process (PID "))
+      kprint_dec(get_current_pid())
+      kprintln(cast[ptr uint8](") running!"))
+      vga_set_color(VGA_WHITE, VGA_BLACK)
+      exit_process(42)  # Exit with code 42
+      # Never returns
+    # Parent process
+    kprint(cast[ptr uint8]("Parent: forked child PID "))
+    kprint_dec(pid)
+    kprintln(cast[ptr uint8](""))
+    kprintln(cast[ptr uint8]("Parent: waiting for child..."))
+    var status: int32 = 0
+    var wpid: int32 = waitpid(pid, addr(status))
+    kprint(cast[ptr uint8]("Parent: child "))
+    kprint_dec(wpid)
+    kprint(cast[ptr uint8](" exited with code "))
+    kprint_dec(status)
+    kprintln(cast[ptr uint8](""))
     return
   if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("color")) == 1:
     kprint(cast[ptr uint8]("Colors: "))
@@ -8735,6 +8765,9 @@ proc sys_recv(from_pid: int32, buf: ptr uint8): int32 =
 # Process syscall numbers
 const SYS_SPAWN: int32 = 40
 const SYS_WAIT: int32 = 41
+const SYS_GETPPID: int32 = 42
+const SYS_WAITPID: int32 = 43
+const SYS_FORK: int32 = 44
 
 # Low-level syscall with 1 argument
 extern syscall1(num: int32, arg1: int32): int32
@@ -8745,6 +8778,18 @@ proc sys_spawn(entry: int32): int32 =
 
 proc sys_wait(): int32 =
   return syscall1(SYS_WAIT, 0)
+
+proc sys_getppid(): int32 =
+  return syscall1(SYS_GETPPID, 0)
+
+proc sys_waitpid(pid: int32, status_ptr: ptr int32): int32 =
+  return syscall2(SYS_WAITPID, pid, cast[int32](status_ptr))
+
+proc sys_exit(code: int32) =
+  syscall1(SYS_EXIT, code)
+
+proc sys_fork(): int32 =
+  return syscall1(SYS_FORK, 0)
 
 # Networking syscall numbers
 const SYS_NET_LISTEN: int32 = 50      # tcp_listen(port) -> conn

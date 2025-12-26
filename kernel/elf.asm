@@ -208,3 +208,34 @@ elf_info:
     pop ebx
     pop eax
     ret
+
+; ============================================================================
+; Stub implementations (when userland_bins.asm is not linked)
+; These are weak symbols overridden by userland_bins.asm when included
+; ============================================================================
+
+; get_webapp_bin - Return pointer to embedded webapp (stub: returns 0)
+global get_webapp_bin
+get_webapp_bin:
+    xor eax, eax
+    ret
+
+; get_webapp_bin_size - Return size of embedded webapp (stub: returns 0)
+global get_webapp_bin_size
+get_webapp_bin_size:
+    xor eax, eax
+    ret
+
+; call_entry - Call an entry point (function pointer)
+; Input: [esp+4] = entry point address
+global call_entry
+call_entry:
+    push ebp
+    mov ebp, esp
+    mov eax, [ebp + 8]      ; Get entry point
+    test eax, eax
+    jz .done
+    call eax                ; Call it
+.done:
+    pop ebp
+    ret

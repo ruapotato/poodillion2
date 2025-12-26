@@ -283,6 +283,8 @@ isr_common:
 ; ============================================================================
 extern timer_tick
 extern keyboard_handler
+extern ata_irq14_handler
+extern ata_irq15_handler
 
 irq_common:
     ; Save all registers
@@ -316,6 +318,18 @@ irq_common:
     jmp .send_eoi
 
 .not_keyboard:
+    cmp eax, 46             ; IRQ 14 = Primary ATA (interrupt 46)
+    jne .not_ata_primary
+    call ata_irq14_handler
+    jmp .send_eoi
+
+.not_ata_primary:
+    cmp eax, 47             ; IRQ 15 = Secondary ATA (interrupt 47)
+    jne .not_ata_secondary
+    call ata_irq15_handler
+    jmp .send_eoi
+
+.not_ata_secondary:
     ; Other IRQs - just acknowledge and return
 
 .send_eoi:
@@ -413,6 +427,15 @@ isr_syscall:
     cmp eax, 41         ; SYS_wait
     je .syscall_wait
 
+    cmp eax, 42         ; SYS_getppid
+    je .syscall_getppid
+
+    cmp eax, 43         ; SYS_waitpid
+    je .syscall_waitpid
+
+    cmp eax, 44         ; SYS_fork
+    je .syscall_fork
+
     ; Networking syscalls (50-57)
     cmp eax, 50         ; SYS_NET_LISTEN
     je .syscall_net_listen
@@ -438,14 +461,22 @@ isr_syscall:
     cmp eax, 57         ; SYS_NET_POLL
     je .syscall_net_poll
 
+    cmp eax, 58         ; SYS_NET_HAS_DATA
+    je .syscall_net_has_data
+
     ; Unknown syscall - return -1
     mov eax, -1
     jmp .syscall_done
 
 .syscall_exit:
-    ; exit() - for now just halt
-    cli
-    hlt
+    ; exit(code) - terminate process
+    ; EBX = exit code
+    extern exit_process
+    mov eax, [esp + 20]     ; EBX (exit code)
+    push eax
+    call exit_process
+    ; exit_process never returns
+    add esp, 4
     jmp .syscall_done
 
 .syscall_getpid:
@@ -521,10 +552,37 @@ isr_syscall:
     jmp .syscall_done
 
 .syscall_wait:
-    ; wait() - yield until child exits
-    ; For now, just yield
-    call yield
-    xor eax, eax
+    ; wait() - wait for any child to exit
+    ; Returns: PID of exited child, or -1 on error
+    extern waitpid
+    push 0                  ; status pointer = NULL
+    push -1                 ; pid = -1 (any child)
+    call waitpid
+    add esp, 8
+    jmp .syscall_done
+
+.syscall_getppid:
+    ; getppid() - get parent PID
+    extern getppid
+    call getppid
+    jmp .syscall_done
+
+.syscall_waitpid:
+    ; waitpid(pid, status_ptr) - wait for specific child
+    ; EBX = pid (-1 for any), ECX = status_ptr (may be NULL)
+    mov eax, [esp + 20]     ; EBX (pid)
+    mov ebx, [esp + 16]     ; ECX (status_ptr)
+    push ebx
+    push eax
+    call waitpid
+    add esp, 8
+    jmp .syscall_done
+
+.syscall_fork:
+    ; fork() - create child process
+    ; Returns: child PID to parent, 0 to child, -1 on error
+    extern fork
+    call fork
     jmp .syscall_done
 
 ; ============= Networking syscalls =============
@@ -637,6 +695,17 @@ isr_syscall:
     extern net_poll
     call net_poll
     xor eax, eax            ; return 0
+    jmp .syscall_done
+
+.syscall_net_has_data:
+    ; net_has_data(conn) -> 1 if data ready, 0 otherwise
+    ; EBX = conn
+    ; Calls tcp_has_data(conn) function
+    extern tcp_has_data
+    mov eax, [esp + 12]     ; EBX (conn)
+    push eax
+    call tcp_has_data
+    add esp, 4
     jmp .syscall_done
 
 .syscall_done:
