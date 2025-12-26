@@ -499,6 +499,25 @@ isr_syscall:
     cmp eax, 63         ; SYS_RAISE
     je .syscall_raise
 
+    ; User/group syscalls (70-77)
+    cmp eax, 70         ; SYS_GETUID
+    je .syscall_getuid
+
+    cmp eax, 71         ; SYS_GETGID
+    je .syscall_getgid
+
+    cmp eax, 72         ; SYS_GETEUID
+    je .syscall_geteuid
+
+    cmp eax, 73         ; SYS_GETEGID
+    je .syscall_getegid
+
+    cmp eax, 74         ; SYS_SETUID
+    je .syscall_setuid
+
+    cmp eax, 75         ; SYS_SETGID
+    je .syscall_setgid
+
     ; Unknown syscall - return -1
     mov eax, -1
     jmp .syscall_done
@@ -875,6 +894,48 @@ isr_syscall:
     call sys_exec
     add esp, 8
     ; If we get here, exec failed
+    jmp .syscall_done
+
+.syscall_getuid:
+    ; getuid() -> UID
+    extern sys_getuid
+    call sys_getuid
+    jmp .syscall_done
+
+.syscall_getgid:
+    ; getgid() -> GID
+    extern sys_getgid
+    call sys_getgid
+    jmp .syscall_done
+
+.syscall_geteuid:
+    ; geteuid() -> EUID
+    extern sys_geteuid
+    call sys_geteuid
+    jmp .syscall_done
+
+.syscall_getegid:
+    ; getegid() -> EGID
+    extern sys_getegid
+    call sys_getegid
+    jmp .syscall_done
+
+.syscall_setuid:
+    ; setuid(uid) -> 0 or -1
+    extern sys_setuid
+    mov eax, [esp + 20]     ; EBX (uid)
+    push eax
+    call sys_setuid
+    add esp, 4
+    jmp .syscall_done
+
+.syscall_setgid:
+    ; setgid(gid) -> 0 or -1
+    extern sys_setgid
+    mov eax, [esp + 20]     ; EBX (gid)
+    push eax
+    call sys_setgid
+    add esp, 4
     jmp .syscall_done
 
 .syscall_done:

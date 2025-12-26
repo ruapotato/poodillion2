@@ -36,6 +36,14 @@ extern sys_exec(elf_ptr: int32, argv: int32): int32
 extern sys_execve(path: ptr uint8, argv: int32, envp: int32): int32
 extern waitpid(pid: int32, status_ptr: ptr int32): int32
 extern getppid(): int32
+
+# User/group functions
+extern sys_getuid(): int32
+extern sys_getgid(): int32
+extern sys_geteuid(): int32
+extern sys_getegid(): int32
+extern sys_setuid(uid: int32): int32
+extern sys_setgid(gid: int32): int32
 extern get_current_pid(): int32
 extern set_process_state(pid: int32, state: int32)
 extern timer_tick()
@@ -3263,6 +3271,29 @@ proc build_absolute_path(rel_path: ptr uint8, abs_path: ptr uint8, max_len: int3
   abs_path[pos] = cast[uint8](0)
   return pos
 
+# /etc/passwd content generator
+# Returns the content: "root:x:0:0:root:/root:/bin/sh\nnobody:x:65534:65534:nobody:/:/bin/false\n"
+proc vfs_etc_passwd(buf: ptr uint8): int32 =
+  # Use string copy approach
+  var passwd_str: ptr uint8 = cast[ptr uint8]("root:x:0:0:root:/root:/bin/sh\nnobody:x:65534:65534:nobody:/:/bin/false\n")
+  var i: int32 = 0
+  while cast[int32](passwd_str[i]) != 0:
+    buf[i] = passwd_str[i]
+    i = i + 1
+  buf[i] = cast[uint8](0)
+  return i
+
+# /etc/group content generator
+# Returns the content: "root:x:0:\nwheel:x:10:root\nnogroup:x:65534:\n"
+proc vfs_etc_group(buf: ptr uint8): int32 =
+  var group_str: ptr uint8 = cast[ptr uint8]("root:x:0:\nwheel:x:10:root\nnogroup:x:65534:\n")
+  var i: int32 = 0
+  while cast[int32](group_str[i]) != 0:
+    buf[i] = group_str[i]
+    i = i + 1
+  buf[i] = cast[uint8](0)
+  return i
+
 # Check if path is a virtual file and generate content
 # Returns: content length, or -1 if not a virtual file
 proc vfs_read(path: ptr uint8, buf: ptr uint8, max_size: int32): int32 =
@@ -3288,6 +3319,11 @@ proc vfs_read(path: ptr uint8, buf: ptr uint8, max_size: int32): int32 =
     return vfs_sys_version(buf)
   if path_equals(path, cast[ptr uint8]("/sys/kernel/ostype")) == 1:
     return vfs_sys_ostype(buf)
+  # /etc files
+  if path_equals(path, cast[ptr uint8]("/etc/passwd")) == 1:
+    return vfs_etc_passwd(buf)
+  if path_equals(path, cast[ptr uint8]("/etc/group")) == 1:
+    return vfs_etc_group(buf)
   # Not a virtual file
   return -1
 
@@ -3864,6 +3900,7 @@ proc shell_execute() =
     kprintln(cast[ptr uint8]("  Fun:    banner, hello, spin, guess, countdown"))
     kprintln(cast[ptr uint8]("  Debug:  peek, poke, dump, fill, run, calc"))
     kprintln(cast[ptr uint8]("  Disk:   mkfs, dmount, dumount, dls, dcat, dwrite, dmkdir, dinfo"))
+    kprintln(cast[ptr uint8]("  User:   id, whoami, groups"))
     kprintln(cast[ptr uint8](""))
     kprintln(cast[ptr uint8]("Shell features:"))
     kprintln(cast[ptr uint8]("  Pipes: cmd1 | cmd2 (grep, head, wc)"))
@@ -6152,6 +6189,60 @@ proc shell_execute() =
                 kprintln(cast[ptr uint8](" free"))
                 last_exit_code = 0
                 return
+
+    # id command - show user and group IDs
+    if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("id")) == 1:
+      var uid: int32 = sys_getuid()
+      var gid: int32 = sys_getgid()
+      var euid: int32 = sys_geteuid()
+      var egid: int32 = sys_getegid()
+      kprint(cast[ptr uint8]("uid="))
+      kprint_dec(uid)
+      if uid == 0:
+        kprint(cast[ptr uint8]("(root)"))
+      kprint(cast[ptr uint8](" gid="))
+      kprint_dec(gid)
+      if gid == 0:
+        kprint(cast[ptr uint8]("(root)"))
+      if euid != uid:
+        kprint(cast[ptr uint8](" euid="))
+        kprint_dec(euid)
+      if egid != gid:
+        kprint(cast[ptr uint8](" egid="))
+        kprint_dec(egid)
+      kprintln(cast[ptr uint8](""))
+      last_exit_code = 0
+      return
+
+    # whoami command - show current user
+    if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("whoami")) == 1:
+      var uid: int32 = sys_geteuid()
+      if uid == 0:
+        kprintln(cast[ptr uint8]("root"))
+      else:
+        if uid == 65534:
+          kprintln(cast[ptr uint8]("nobody"))
+        else:
+          kprint(cast[ptr uint8]("user"))
+          kprint_dec(uid)
+          kprintln(cast[ptr uint8](""))
+      last_exit_code = 0
+      return
+
+    # groups command - show group membership
+    if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("groups")) == 1:
+      var gid: int32 = sys_getgid()
+      if gid == 0:
+        kprintln(cast[ptr uint8]("root wheel"))
+      else:
+        if gid == 65534:
+          kprintln(cast[ptr uint8]("nogroup"))
+        else:
+          kprint(cast[ptr uint8]("group"))
+          kprint_dec(gid)
+          kprintln(cast[ptr uint8](""))
+      last_exit_code = 0
+      return
 
     # true command - always succeeds
     if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("true")) == 1:

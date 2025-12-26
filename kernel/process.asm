@@ -37,6 +37,11 @@ PCB_MSG_BUF   equ 72   ; Message buffer pointer
 ; Exit/wait support
 PCB_EXIT_CODE equ 76   ; Exit code for zombie processes
 PCB_WAIT_PID  equ 80   ; PID we're waiting for (-1 = any child, 0 = not waiting)
+; User/group support
+PCB_UID       equ 84   ; User ID (0 = root)
+PCB_GID       equ 88   ; Group ID (0 = root/wheel)
+PCB_EUID      equ 92   ; Effective User ID
+PCB_EGID      equ 96   ; Effective Group ID
 
 PCB_SIZE      equ 128  ; Total size of PCB (with padding)
 
@@ -208,6 +213,13 @@ create_process:
     mov [edi + PCB_ESI], eax
     mov [edi + PCB_EDI], eax
     mov [edi + PCB_EBP], eax
+
+    ; Initialize UID/GID (default to root)
+    xor eax, eax
+    mov [edi + PCB_UID], eax
+    mov [edi + PCB_GID], eax
+    mov [edi + PCB_EUID], eax
+    mov [edi + PCB_EGID], eax
 
     ; Increment ready count
     inc dword [ready_count]
@@ -437,6 +449,110 @@ global sys_execve
 sys_execve:
     ; For now, just return error - filesystem exec not implemented yet
     mov eax, -1
+    ret
+
+; ============================================================================
+; sys_getuid - Get real user ID
+; Returns: EAX = UID
+; ============================================================================
+global sys_getuid
+sys_getuid:
+    mov eax, [current_pid]
+    call get_pcb
+    mov eax, [eax + PCB_UID]
+    ret
+
+; ============================================================================
+; sys_getgid - Get real group ID
+; Returns: EAX = GID
+; ============================================================================
+global sys_getgid
+sys_getgid:
+    mov eax, [current_pid]
+    call get_pcb
+    mov eax, [eax + PCB_GID]
+    ret
+
+; ============================================================================
+; sys_geteuid - Get effective user ID
+; Returns: EAX = EUID
+; ============================================================================
+global sys_geteuid
+sys_geteuid:
+    mov eax, [current_pid]
+    call get_pcb
+    mov eax, [eax + PCB_EUID]
+    ret
+
+; ============================================================================
+; sys_getegid - Get effective group ID
+; Returns: EAX = EGID
+; ============================================================================
+global sys_getegid
+sys_getegid:
+    mov eax, [current_pid]
+    call get_pcb
+    mov eax, [eax + PCB_EGID]
+    ret
+
+; ============================================================================
+; sys_setuid - Set user ID (only root can do this)
+; Input: [esp+4] = new UID
+; Returns: 0 on success, -1 on error
+; ============================================================================
+global sys_setuid
+sys_setuid:
+    push ebx
+    mov eax, [current_pid]
+    call get_pcb
+    mov ebx, eax            ; EBX = current PCB
+
+    ; Check if root (EUID == 0)
+    mov eax, [ebx + PCB_EUID]
+    test eax, eax
+    jnz .setuid_fail        ; Not root, cannot setuid
+
+    ; Set UID
+    mov eax, [esp + 8]      ; New UID
+    mov [ebx + PCB_UID], eax
+    mov [ebx + PCB_EUID], eax
+    xor eax, eax            ; Return 0
+    pop ebx
+    ret
+
+.setuid_fail:
+    mov eax, -1
+    pop ebx
+    ret
+
+; ============================================================================
+; sys_setgid - Set group ID (only root can do this)
+; Input: [esp+4] = new GID
+; Returns: 0 on success, -1 on error
+; ============================================================================
+global sys_setgid
+sys_setgid:
+    push ebx
+    mov eax, [current_pid]
+    call get_pcb
+    mov ebx, eax            ; EBX = current PCB
+
+    ; Check if root (EUID == 0)
+    mov eax, [ebx + PCB_EUID]
+    test eax, eax
+    jnz .setgid_fail        ; Not root, cannot setgid
+
+    ; Set GID
+    mov eax, [esp + 8]      ; New GID
+    mov [ebx + PCB_GID], eax
+    mov [ebx + PCB_EGID], eax
+    xor eax, eax            ; Return 0
+    pop ebx
+    ret
+
+.setgid_fail:
+    mov eax, -1
+    pop ebx
     ret
 
 ; ============================================================================
