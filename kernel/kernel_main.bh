@@ -38,6 +38,16 @@ extern get_current_pid(): int32
 extern set_process_state(pid: int32, state: int32)
 extern timer_tick()
 
+# Pipe/FD functions
+extern init_pipes()
+extern setup_std_fds(pid: int32)
+extern sys_pipe(fds: ptr int32): int32
+extern sys_read(fd: int32, buf: ptr uint8, count: int32): int32
+extern sys_write(fd: int32, buf: ptr uint8, count: int32): int32
+extern sys_close(fd: int32): int32
+extern sys_dup(fd: int32): int32
+extern sys_dup2(old_fd: int32, new_fd: int32): int32
+
 # Get current tick count
 extern get_tick_count(): int32
 
@@ -1919,6 +1929,12 @@ proc main() =
   print_pending(cast[ptr uint8]("Initializing scheduler"))
   init_scheduler()
   print_ok(cast[ptr uint8]("Scheduler initialized"))
+
+  # Initialize pipes and file descriptors
+  print_pending(cast[ptr uint8]("Initializing pipes"))
+  init_pipes()
+  setup_std_fds(0)  # Set up stdin/stdout/stderr for kernel process
+  print_ok(cast[ptr uint8]("Pipes initialized"))
 
   # Enable interrupts
   print_pending(cast[ptr uint8]("Enabling interrupts"))
@@ -8762,12 +8778,20 @@ proc sys_send(dest: int32, msg: ptr uint8): int32 =
 proc sys_recv(from_pid: int32, buf: ptr uint8): int32 =
   return syscall2(SYS_RECV, from_pid, cast[int32](buf))
 
+# File descriptor syscall numbers
+const SYS_READ: int32 = 3
+const SYS_WRITE: int32 = 4
+const SYS_CLOSE: int32 = 7
+
 # Process syscall numbers
 const SYS_SPAWN: int32 = 40
 const SYS_WAIT: int32 = 41
 const SYS_GETPPID: int32 = 42
 const SYS_WAITPID: int32 = 43
 const SYS_FORK: int32 = 44
+const SYS_PIPE: int32 = 45
+const SYS_DUP: int32 = 46
+const SYS_DUP2: int32 = 47
 
 # Low-level syscall with 1 argument
 extern syscall1(num: int32, arg1: int32): int32

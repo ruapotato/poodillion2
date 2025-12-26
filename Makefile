@@ -82,8 +82,10 @@ IPC_OBJ = $(BUILD_DIR)/ipc.o
 KEYBOARD_OBJ = $(BUILD_DIR)/keyboard.o
 ELF_OBJ = $(BUILD_DIR)/elf.o
 NET_OBJ = $(BUILD_DIR)/net.o
+ATA_OBJ = $(BUILD_DIR)/ata.o
+PIPE_OBJ = $(BUILD_DIR)/pipe.o
 USERLAND_BINS_OBJ = $(BUILD_DIR)/userland_bins.o
-KERNEL_ASM_OBJS = $(SERIAL_OBJ) $(IDT_OBJ) $(ISR_OBJ) $(PAGING_OBJ) $(PROCESS_OBJ) $(IPC_OBJ) $(KEYBOARD_OBJ) $(ELF_OBJ) $(NET_OBJ) $(USERLAND_BINS_OBJ)
+KERNEL_ASM_OBJS = $(SERIAL_OBJ) $(IDT_OBJ) $(ISR_OBJ) $(PAGING_OBJ) $(PROCESS_OBJ) $(IPC_OBJ) $(KEYBOARD_OBJ) $(ELF_OBJ) $(NET_OBJ) $(ATA_OBJ) $(PIPE_OBJ) $(USERLAND_BINS_OBJ)
 
 $(SERIAL_OBJ): kernel/serial.asm | $(BUILD_DIR)
 	@echo "Assembling serial driver..."
@@ -120,6 +122,14 @@ $(ELF_OBJ): kernel/elf.asm | $(BUILD_DIR)
 $(NET_OBJ): kernel/net.asm | $(BUILD_DIR)
 	@echo "Assembling network driver..."
 	$(AS) $(ASFLAGS_32) kernel/net.asm -o $(NET_OBJ)
+
+$(ATA_OBJ): kernel/ata.asm | $(BUILD_DIR)
+	@echo "Assembling ATA driver..."
+	$(AS) $(ASFLAGS_32) kernel/ata.asm -o $(ATA_OBJ)
+
+$(PIPE_OBJ): kernel/pipe.asm | $(BUILD_DIR)
+	@echo "Assembling pipe subsystem..."
+	$(AS) $(ASFLAGS_32) kernel/pipe.asm -o $(PIPE_OBJ)
 
 # Build webapp binary first, then embed it (before USERLAND_DIR is defined)
 $(BIN_DIR)/webapp: userland/webapp.bh lib/syscalls.o | $(BIN_DIR)
@@ -199,9 +209,9 @@ brainhair: $(STAGE1_BIN) $(STAGE2_BIN) kernel-brainhair
 
 # Build and run the BrainhairOS microkernel
 .PHONY: microkernel
-microkernel: $(STAGE1_BIN) $(STAGE2_BIN) $(BRAINHAIR_KERNEL_OBJ) $(BOOT_OBJ) $(IDT_OBJ) $(ISR_OBJ) $(PAGING_OBJ) $(PROCESS_OBJ) $(SERIAL_OBJ) $(IPC_OBJ) $(KEYBOARD_OBJ) $(ELF_OBJ) $(NET_OBJ)
+microkernel: $(STAGE1_BIN) $(STAGE2_BIN) $(BRAINHAIR_KERNEL_OBJ) $(BOOT_OBJ) $(IDT_OBJ) $(ISR_OBJ) $(PAGING_OBJ) $(PROCESS_OBJ) $(SERIAL_OBJ) $(IPC_OBJ) $(KEYBOARD_OBJ) $(ELF_OBJ) $(NET_OBJ) $(ATA_OBJ) $(PIPE_OBJ)
 	@echo "Building BrainhairOS Microkernel..."
-	$(LD) $(LDFLAGS) -o $(BUILD_DIR)/kernel.elf $(BOOT_OBJ) $(SERIAL_OBJ) $(IDT_OBJ) $(ISR_OBJ) $(PAGING_OBJ) $(PROCESS_OBJ) $(IPC_OBJ) $(KEYBOARD_OBJ) $(ELF_OBJ) $(NET_OBJ) $(BRAINHAIR_KERNEL_OBJ)
+	$(LD) $(LDFLAGS) -o $(BUILD_DIR)/kernel.elf $(BOOT_OBJ) $(SERIAL_OBJ) $(IDT_OBJ) $(ISR_OBJ) $(PAGING_OBJ) $(PROCESS_OBJ) $(IPC_OBJ) $(KEYBOARD_OBJ) $(ELF_OBJ) $(NET_OBJ) $(ATA_OBJ) $(PIPE_OBJ) $(BRAINHAIR_KERNEL_OBJ)
 	objcopy -O binary $(BUILD_DIR)/kernel.elf $(KERNEL_BIN)
 	@echo "  Kernel size: $$(stat -c%s $(KERNEL_BIN)) bytes"
 	dd if=/dev/zero of=$(DISK_IMG) bs=512 count=20480 2>/dev/null
@@ -215,9 +225,9 @@ microkernel: $(STAGE1_BIN) $(STAGE2_BIN) $(BRAINHAIR_KERNEL_OBJ) $(BOOT_OBJ) $(I
 
 # Microkernel with embedded userland webapp
 .PHONY: microkernel-uweb
-microkernel-uweb: $(STAGE1_BIN) $(STAGE2_BIN) $(BRAINHAIR_KERNEL_OBJ) $(BOOT_OBJ) $(IDT_OBJ) $(ISR_OBJ) $(PAGING_OBJ) $(PROCESS_OBJ) $(SERIAL_OBJ) $(IPC_OBJ) $(KEYBOARD_OBJ) $(ELF_OBJ) $(NET_OBJ) $(USERLAND_BINS_OBJ)
+microkernel-uweb: $(STAGE1_BIN) $(STAGE2_BIN) $(BRAINHAIR_KERNEL_OBJ) $(BOOT_OBJ) $(IDT_OBJ) $(ISR_OBJ) $(PAGING_OBJ) $(PROCESS_OBJ) $(SERIAL_OBJ) $(IPC_OBJ) $(KEYBOARD_OBJ) $(ELF_OBJ) $(NET_OBJ) $(ATA_OBJ) $(USERLAND_BINS_OBJ)
 	@echo "Building BrainhairOS Microkernel with embedded webapp..."
-	$(LD) $(LDFLAGS) -o $(BUILD_DIR)/kernel.elf $(BOOT_OBJ) $(SERIAL_OBJ) $(IDT_OBJ) $(ISR_OBJ) $(PAGING_OBJ) $(PROCESS_OBJ) $(IPC_OBJ) $(KEYBOARD_OBJ) $(ELF_OBJ) $(NET_OBJ) $(BRAINHAIR_KERNEL_OBJ) $(USERLAND_BINS_OBJ)
+	$(LD) $(LDFLAGS) -o $(BUILD_DIR)/kernel.elf $(BOOT_OBJ) $(SERIAL_OBJ) $(IDT_OBJ) $(ISR_OBJ) $(PAGING_OBJ) $(PROCESS_OBJ) $(IPC_OBJ) $(KEYBOARD_OBJ) $(ELF_OBJ) $(NET_OBJ) $(ATA_OBJ) $(BRAINHAIR_KERNEL_OBJ) $(USERLAND_BINS_OBJ)
 	objcopy -O binary $(BUILD_DIR)/kernel.elf $(KERNEL_BIN)
 	@echo "  Kernel size: $$(stat -c%s $(KERNEL_BIN)) bytes"
 	dd if=/dev/zero of=$(DISK_IMG) bs=512 count=20480 2>/dev/null
@@ -914,3 +924,34 @@ distro: userland rootfs initramfs
 	@echo "Initramfs: distro/brainhair-full.cpio.gz"
 	@echo ""
 	@echo "Test with: make test-qemu"
+
+# =============================================================================
+# Test Targets
+# =============================================================================
+
+.PHONY: test test-quick test-userland test-kernel test-http
+
+# Run full test suite
+test:
+	@echo "Running BrainhairOS test suite..."
+	@./tests/run_tests.sh
+
+# Run quick tests (no QEMU)
+test-quick:
+	@echo "Running quick tests..."
+	@./tests/run_tests.sh --quick
+
+# Test userland utilities only
+test-userland:
+	@echo "Testing userland utilities..."
+	@./tests/test_userland.sh
+
+# Test kernel boot
+test-kernel: microkernel-uweb
+	@echo "Testing kernel boot..."
+	@./tests/test_kernel.sh
+
+# Test HTTP server
+test-http: microkernel-uweb
+	@echo "Testing HTTP server..."
+	@./tests/test_http.sh

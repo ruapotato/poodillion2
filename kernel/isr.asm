@@ -403,11 +403,20 @@ isr_syscall:
     cmp eax, 1          ; SYS_exit
     je .syscall_exit
 
+    cmp eax, 3          ; SYS_read
+    je .syscall_read
+
+    cmp eax, 4          ; SYS_write
+    je .syscall_write
+
     cmp eax, 5          ; SYS_getpid
     je .syscall_getpid
 
     cmp eax, 6          ; SYS_yield
     je .syscall_yield
+
+    cmp eax, 7          ; SYS_close
+    je .syscall_close
 
     cmp eax, 20         ; SYS_send
     je .syscall_send
@@ -435,6 +444,15 @@ isr_syscall:
 
     cmp eax, 44         ; SYS_fork
     je .syscall_fork
+
+    cmp eax, 45         ; SYS_pipe
+    je .syscall_pipe
+
+    cmp eax, 46         ; SYS_dup
+    je .syscall_dup
+
+    cmp eax, 47         ; SYS_dup2
+    je .syscall_dup2
 
     ; Networking syscalls (50-57)
     cmp eax, 50         ; SYS_NET_LISTEN
@@ -583,6 +601,76 @@ isr_syscall:
     ; Returns: child PID to parent, 0 to child, -1 on error
     extern fork
     call fork
+    jmp .syscall_done
+
+.syscall_read:
+    ; read(fd, buf, count) -> bytes_read
+    ; EBX = fd, ECX = buf, EDX = count
+    extern sys_read
+    mov eax, [esp + 12]     ; EDX (count)
+    push eax
+    mov eax, [esp + 20]     ; ECX (buf)
+    push eax
+    mov eax, [esp + 28]     ; EBX (fd)
+    push eax
+    call sys_read
+    add esp, 12
+    jmp .syscall_done
+
+.syscall_write:
+    ; write(fd, buf, count) -> bytes_written
+    ; EBX = fd, ECX = buf, EDX = count
+    extern sys_write
+    mov eax, [esp + 12]     ; EDX (count)
+    push eax
+    mov eax, [esp + 20]     ; ECX (buf)
+    push eax
+    mov eax, [esp + 28]     ; EBX (fd)
+    push eax
+    call sys_write
+    add esp, 12
+    jmp .syscall_done
+
+.syscall_close:
+    ; close(fd) -> 0/-1
+    ; EBX = fd
+    extern sys_close
+    mov eax, [esp + 20]     ; EBX (fd)
+    push eax
+    call sys_close
+    add esp, 4
+    jmp .syscall_done
+
+.syscall_pipe:
+    ; pipe(fds) -> 0/-1
+    ; EBX = pointer to int32[2]
+    extern sys_pipe
+    mov eax, [esp + 20]     ; EBX (fds pointer)
+    push eax
+    call sys_pipe
+    add esp, 4
+    jmp .syscall_done
+
+.syscall_dup:
+    ; dup(fd) -> new_fd
+    ; EBX = fd
+    extern sys_dup
+    mov eax, [esp + 20]     ; EBX (fd)
+    push eax
+    call sys_dup
+    add esp, 4
+    jmp .syscall_done
+
+.syscall_dup2:
+    ; dup2(old_fd, new_fd) -> new_fd
+    ; EBX = old_fd, ECX = new_fd
+    extern sys_dup2
+    mov eax, [esp + 16]     ; ECX (new_fd)
+    push eax
+    mov eax, [esp + 24]     ; EBX (old_fd)
+    push eax
+    call sys_dup2
+    add esp, 8
     jmp .syscall_done
 
 ; ============= Networking syscalls =============
