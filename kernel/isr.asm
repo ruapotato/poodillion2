@@ -482,6 +482,10 @@ isr_syscall:
     cmp eax, 58         ; SYS_NET_HAS_DATA
     je .syscall_net_has_data
 
+    ; Process execution syscall (59)
+    cmp eax, 59         ; SYS_EXEC
+    je .syscall_exec
+
     ; Signal syscalls (60-63)
     cmp eax, 60         ; SYS_KILL
     je .syscall_kill
@@ -857,6 +861,20 @@ isr_syscall:
     push eax
     call sys_raise
     add esp, 4
+    jmp .syscall_done
+
+.syscall_exec:
+    ; exec(elf_ptr, argv) -> -1 on error, does not return on success
+    ; EBX = pointer to ELF image in memory
+    ; ECX = argument string pointer (can be 0)
+    extern sys_exec
+    mov eax, [esp + 16]     ; ECX (argv)
+    push eax
+    mov eax, [esp + 24]     ; EBX (elf_ptr)
+    push eax
+    call sys_exec
+    add esp, 8
+    ; If we get here, exec failed
     jmp .syscall_done
 
 .syscall_done:

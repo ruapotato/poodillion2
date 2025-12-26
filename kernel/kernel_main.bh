@@ -32,6 +32,8 @@ extern context_switch(new_pid: int32)
 extern yield()
 extern exit_process(code: int32)
 extern fork(): int32
+extern sys_exec(elf_ptr: int32, argv: int32): int32
+extern sys_execve(path: ptr uint8, argv: int32, envp: int32): int32
 extern waitpid(pid: int32, status_ptr: ptr int32): int32
 extern getppid(): int32
 extern get_current_pid(): int32
@@ -2136,6 +2138,38 @@ var history_pos: int32 = 0       # Current position when browsing (-1 = current 
 var saved_cmd: array[256, uint8] # Saved current command when browsing history
 var saved_len: int32 = 0
 
+# Exit code of last command (for $? support)
+var last_exit_code: int32 = 0
+
+# Find && operator in command (returns position or -1)
+proc find_and_chain(buf: ptr uint8, len: int32): int32 =
+  var i: int32 = 0
+  while i < len - 1:
+    if cast[int32](buf[i]) == 38:       # '&'
+      if cast[int32](buf[i + 1]) == 38:  # '&'
+        return i
+    i = i + 1
+  return -1
+
+# Find || operator in command (returns position or -1)
+proc find_or_chain(buf: ptr uint8, len: int32): int32 =
+  var i: int32 = 0
+  while i < len - 1:
+    if cast[int32](buf[i]) == 124:       # '|'
+      if cast[int32](buf[i + 1]) == 124:  # '|'
+        return i
+    i = i + 1
+  return -1
+
+# Find ; operator in command (returns position or -1)
+proc find_semicolon(buf: ptr uint8, len: int32): int32 =
+  var i: int32 = 0
+  while i < len:
+    if cast[int32](buf[i]) == 59:  # ';'
+      return i
+    i = i + 1
+  return -1
+
 # Get pointer to history entry
 proc history_ptr(idx: int32): ptr uint8 =
   return addr(history[idx * HISTORY_LINE_LEN])
@@ -3539,6 +3573,140 @@ proc shell_execute() =
   if cmd_len == 0:
     return
 
+  # Check for command chaining operators (;, &&, ||)
+  # Process ; first (lowest precedence)
+  var semi_pos: int32 = find_semicolon(addr(cmd_buffer[0]), cmd_len)
+  if semi_pos >= 0:
+    # Split at semicolon
+    var right_chain: array[128, uint8]
+    var chain_start: int32 = semi_pos + 1
+    # Skip leading spaces
+    while chain_start < cmd_len:
+      if cast[int32](cmd_buffer[chain_start]) != 32:
+        break
+      chain_start = chain_start + 1
+    var ci: int32 = 0
+    while chain_start + ci < cmd_len:
+      right_chain[ci] = cmd_buffer[chain_start + ci]
+      ci = ci + 1
+    right_chain[ci] = cast[uint8](0)
+    var right_chain_len: int32 = ci
+
+    # Terminate left command
+    cmd_buffer[semi_pos] = cast[uint8](0)
+    cmd_len = semi_pos
+    # Trim trailing spaces
+    while cmd_len > 0:
+      if cast[int32](cmd_buffer[cmd_len - 1]) != 32:
+        break
+      cmd_len = cmd_len - 1
+      cmd_buffer[cmd_len] = cast[uint8](0)
+
+    # Execute left command
+    if cmd_len > 0:
+      shell_execute()
+
+    # Execute right command unconditionally
+    if right_chain_len > 0:
+      var cj: int32 = 0
+      while cj < right_chain_len:
+        cmd_buffer[cj] = right_chain[cj]
+        cj = cj + 1
+      cmd_buffer[cj] = cast[uint8](0)
+      cmd_len = right_chain_len
+      shell_execute()
+    return
+
+  # Check for && (run second only if first succeeds)
+  var and_pos: int32 = find_and_chain(addr(cmd_buffer[0]), cmd_len)
+  if and_pos >= 0:
+    # Split at &&
+    var right_and: array[128, uint8]
+    var and_start: int32 = and_pos + 2  # Skip both &
+    # Skip leading spaces
+    while and_start < cmd_len:
+      if cast[int32](cmd_buffer[and_start]) != 32:
+        break
+      and_start = and_start + 1
+    var ai: int32 = 0
+    while and_start + ai < cmd_len:
+      right_and[ai] = cmd_buffer[and_start + ai]
+      ai = ai + 1
+    right_and[ai] = cast[uint8](0)
+    var right_and_len: int32 = ai
+
+    # Terminate left command
+    cmd_buffer[and_pos] = cast[uint8](0)
+    cmd_len = and_pos
+    # Trim trailing spaces
+    while cmd_len > 0:
+      if cast[int32](cmd_buffer[cmd_len - 1]) != 32:
+        break
+      cmd_len = cmd_len - 1
+      cmd_buffer[cmd_len] = cast[uint8](0)
+
+    # Execute left command
+    last_exit_code = 0  # Assume success
+    if cmd_len > 0:
+      shell_execute()
+
+    # Execute right command only if left succeeded
+    if last_exit_code == 0:
+      if right_and_len > 0:
+        var aj: int32 = 0
+        while aj < right_and_len:
+          cmd_buffer[aj] = right_and[aj]
+          aj = aj + 1
+        cmd_buffer[aj] = cast[uint8](0)
+        cmd_len = right_and_len
+        shell_execute()
+    return
+
+  # Check for || (run second only if first fails)
+  var or_pos: int32 = find_or_chain(addr(cmd_buffer[0]), cmd_len)
+  if or_pos >= 0:
+    # Split at ||
+    var right_or: array[128, uint8]
+    var or_start: int32 = or_pos + 2  # Skip both |
+    # Skip leading spaces
+    while or_start < cmd_len:
+      if cast[int32](cmd_buffer[or_start]) != 32:
+        break
+      or_start = or_start + 1
+    var oi: int32 = 0
+    while or_start + oi < cmd_len:
+      right_or[oi] = cmd_buffer[or_start + oi]
+      oi = oi + 1
+    right_or[oi] = cast[uint8](0)
+    var right_or_len: int32 = oi
+
+    # Terminate left command
+    cmd_buffer[or_pos] = cast[uint8](0)
+    cmd_len = or_pos
+    # Trim trailing spaces
+    while cmd_len > 0:
+      if cast[int32](cmd_buffer[cmd_len - 1]) != 32:
+        break
+      cmd_len = cmd_len - 1
+      cmd_buffer[cmd_len] = cast[uint8](0)
+
+    # Execute left command
+    last_exit_code = 1  # Assume failure
+    if cmd_len > 0:
+      shell_execute()
+
+    # Execute right command only if left failed
+    if last_exit_code != 0:
+      if right_or_len > 0:
+        var oj: int32 = 0
+        while oj < right_or_len:
+          cmd_buffer[oj] = right_or[oj]
+          oj = oj + 1
+        cmd_buffer[oj] = cast[uint8](0)
+        cmd_len = right_or_len
+        shell_execute()
+    return
+
   # Check for pipe
   var pipe_pos: int32 = find_pipe(addr(cmd_buffer[0]), cmd_len)
   if pipe_pos > 0:
@@ -3700,7 +3868,9 @@ proc shell_execute() =
     kprintln(cast[ptr uint8]("Shell features:"))
     kprintln(cast[ptr uint8]("  Pipes: cmd1 | cmd2 (grep, head, wc)"))
     kprintln(cast[ptr uint8]("  Redirect: echo text > file, echo text >> file"))
-    kprintln(cast[ptr uint8]("  Variables: echo $HOME, export MY_VAR=value"))
+    kprintln(cast[ptr uint8]("  Variables: echo $HOME, echo $?, export MY_VAR=value"))
+    kprintln(cast[ptr uint8]("  Chaining: cmd1 && cmd2, cmd1 || cmd2, cmd1 ; cmd2"))
+    kprintln(cast[ptr uint8]("  Builtins: true, false, exit [code], test, ["))
     kprintln(cast[ptr uint8](""))
     kprintln(cast[ptr uint8]("Virtual filesystems:"))
     kprintln(cast[ptr uint8]("  /proc - kernel info (cat /proc/version)"))
@@ -5741,22 +5911,28 @@ proc shell_execute() =
                   while i < cmd_len:
                     var ch: int32 = cast[int32](cmd_buffer[i])
                     if ch == 36:  # '$' - variable expansion
-                      # Extract variable name
-                      var var_name: array[32, uint8]
-                      var vi: int32 = 0
                       i = i + 1
-                      while i < cmd_len:
-                        var vc: int32 = cast[int32](cmd_buffer[i])
-                        if vc == 32 or vc == 0 or vc == 36 or vc == 10:
-                          break
-                        var_name[vi] = cast[uint8](vc)
-                        vi = vi + 1
-                        i = i + 1
-                      var_name[vi] = cast[uint8](0)
-                      # Look up variable
-                      var val: ptr uint8 = env_get(addr(var_name[0]))
-                      if cast[int32](val) != 0:
-                        kprint(val)
+                      if i < cmd_len:
+                        # Check for special $? (exit code)
+                        if cast[int32](cmd_buffer[i]) == 63:  # '?'
+                          kprint_dec(last_exit_code)
+                          i = i + 1
+                        else:
+                          # Extract regular variable name
+                          var var_name: array[32, uint8]
+                          var vi: int32 = 0
+                          while i < cmd_len:
+                            var vc: int32 = cast[int32](cmd_buffer[i])
+                            if vc == 32 or vc == 0 or vc == 36 or vc == 10:
+                              break
+                            var_name[vi] = cast[uint8](vc)
+                            vi = vi + 1
+                            i = i + 1
+                          var_name[vi] = cast[uint8](0)
+                          # Look up variable
+                          var val: ptr uint8 = env_get(addr(var_name[0]))
+                          if cast[int32](val) != 0:
+                            kprint(val)
                       # Don't increment i again, loop will check current position
                     else:
                       vga_putchar(ch)
@@ -5974,12 +6150,213 @@ proc shell_execute() =
                 kprint(cast[ptr uint8](" total, "))
                 kprint_dec(brfs_mount_free_inodes[m])
                 kprintln(cast[ptr uint8](" free"))
+                last_exit_code = 0
                 return
+
+    # true command - always succeeds
+    if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("true")) == 1:
+      last_exit_code = 0
+      return
+
+    # false command - always fails
+    if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("false")) == 1:
+      last_exit_code = 1
+      return
+
+    # test command (also [ ... ]) - evaluate conditional expressions
+    # Usage: test -e file | test -d file | test -f file | test -z string | test -n string
+    #        test str1 = str2 | test str1 != str2 | test n1 -eq n2 | test n1 -ne n2
+    #        test n1 -lt n2 | test n1 -gt n2 | test n1 -le n2 | test n1 -ge n2
+    if cmd_buffer[0] == cast[uint8](116):  # 't'
+      if cmd_buffer[1] == cast[uint8](101):  # 'e'
+        if cmd_buffer[2] == cast[uint8](115):  # 's'
+          if cmd_buffer[3] == cast[uint8](116):  # 't'
+            if cmd_buffer[4] == cast[uint8](32):  # ' '
+              var arg1: ptr uint8 = find_arg(addr(cmd_buffer[0]), 1)
+              var arg2: ptr uint8 = find_arg(addr(cmd_buffer[0]), 2)
+              var arg3: ptr uint8 = find_arg(addr(cmd_buffer[0]), 3)
+              if cast[int32](arg1) != 0:
+                # File tests: -e, -d, -f
+                if cast[int32](arg1[0]) == 45:  # '-'
+                  if cast[int32](arg1[1]) == 101:  # 'e' - file exists
+                    if cast[int32](arg2) != 0:
+                      var inode: int32 = path_resolve(arg2)
+                      if inode > 0:
+                        last_exit_code = 0
+                      else:
+                        last_exit_code = 1
+                      return
+                  if cast[int32](arg1[1]) == 100:  # 'd' - is directory
+                    if cast[int32](arg2) != 0:
+                      var inode: int32 = path_resolve(arg2)
+                      if inode > 0:
+                        if inode_is_dir(inode) == 1:
+                          last_exit_code = 0
+                        else:
+                          last_exit_code = 1
+                      else:
+                        last_exit_code = 1
+                      return
+                  if cast[int32](arg1[1]) == 102:  # 'f' - is regular file
+                    if cast[int32](arg2) != 0:
+                      var inode: int32 = path_resolve(arg2)
+                      if inode > 0:
+                        if inode_is_dir(inode) == 0:
+                          last_exit_code = 0
+                        else:
+                          last_exit_code = 1
+                      else:
+                        last_exit_code = 1
+                      return
+                  if cast[int32](arg1[1]) == 122:  # 'z' - string is empty
+                    if cast[int32](arg2) != 0:
+                      if cast[int32](arg2[0]) == 0:
+                        last_exit_code = 0
+                      else:
+                        last_exit_code = 1
+                    else:
+                      last_exit_code = 0  # no arg = empty
+                    return
+                  if cast[int32](arg1[1]) == 110:  # 'n' - string is not empty
+                    if cast[int32](arg2) != 0:
+                      if cast[int32](arg2[0]) != 0:
+                        last_exit_code = 0
+                      else:
+                        last_exit_code = 1
+                    else:
+                      last_exit_code = 1  # no arg = fail
+                    return
+                else:
+                  # Binary comparisons: str1 = str2, str1 != str2, n1 -op n2
+                  if cast[int32](arg2) != 0:
+                    # String equality: arg1 = arg2
+                    if cast[int32](arg2[0]) == 61:  # '='
+                      if cast[int32](arg2[1]) == 0:
+                        if cast[int32](arg3) != 0:
+                          if str_equals(arg1, arg3) == 1:
+                            last_exit_code = 0
+                          else:
+                            last_exit_code = 1
+                          return
+                    # String inequality: arg1 != arg2
+                    if cast[int32](arg2[0]) == 33:  # '!'
+                      if cast[int32](arg2[1]) == 61:  # '='
+                        if cast[int32](arg3) != 0:
+                          if str_equals(arg1, arg3) == 1:
+                            last_exit_code = 1
+                          else:
+                            last_exit_code = 0
+                          return
+                    # Integer comparisons: arg1 -op arg2
+                    if cast[int32](arg2[0]) == 45:  # '-'
+                      var n1: int32 = parse_int(arg1)
+                      var n2: int32 = parse_int(arg3)
+                      # -eq
+                      if cast[int32](arg2[1]) == 101:  # 'e'
+                        if cast[int32](arg2[2]) == 113:  # 'q'
+                          if n1 == n2:
+                            last_exit_code = 0
+                          else:
+                            last_exit_code = 1
+                          return
+                      # -ne
+                      if cast[int32](arg2[1]) == 110:  # 'n'
+                        if cast[int32](arg2[2]) == 101:  # 'e'
+                          if n1 != n2:
+                            last_exit_code = 0
+                          else:
+                            last_exit_code = 1
+                          return
+                      # -lt
+                      if cast[int32](arg2[1]) == 108:  # 'l'
+                        if cast[int32](arg2[2]) == 116:  # 't'
+                          if n1 < n2:
+                            last_exit_code = 0
+                          else:
+                            last_exit_code = 1
+                          return
+                      # -le
+                      if cast[int32](arg2[1]) == 108:  # 'l'
+                        if cast[int32](arg2[2]) == 101:  # 'e'
+                          if n1 <= n2:
+                            last_exit_code = 0
+                          else:
+                            last_exit_code = 1
+                          return
+                      # -gt
+                      if cast[int32](arg2[1]) == 103:  # 'g'
+                        if cast[int32](arg2[2]) == 116:  # 't'
+                          if n1 > n2:
+                            last_exit_code = 0
+                          else:
+                            last_exit_code = 1
+                          return
+                      # -ge
+                      if cast[int32](arg2[1]) == 103:  # 'g'
+                        if cast[int32](arg2[2]) == 101:  # 'e'
+                          if n1 >= n2:
+                            last_exit_code = 0
+                          else:
+                            last_exit_code = 1
+                          return
+              kprintln(cast[ptr uint8]("Usage: test -e file | test str1 = str2 | test n1 -eq n2"))
+              last_exit_code = 2
+              return
+
+    # [ ... ] command (alias for test)
+    if cmd_buffer[0] == cast[uint8](91):  # '['
+      if cmd_buffer[1] == cast[uint8](32):  # ' '
+        # Strip trailing ] if present
+        var test_len: int32 = cmd_len
+        if cmd_buffer[test_len - 1] == cast[uint8](93):  # ']'
+          test_len = test_len - 1
+          # Also strip space before ]
+          if test_len > 0:
+            if cmd_buffer[test_len - 1] == cast[uint8](32):
+              test_len = test_len - 1
+          cmd_buffer[test_len] = cast[uint8](0)
+        # Convert [ to test and run
+        cmd_buffer[0] = cast[uint8](116)  # 't'
+        cmd_buffer[1] = cast[uint8](101)  # 'e'
+        var shift_i: int32 = 2
+        while shift_i < test_len:
+          cmd_buffer[shift_i] = cmd_buffer[shift_i]
+          shift_i = shift_i + 1
+        # Insert "st " after "te"
+        # Actually easier: just insert "test" at the beginning
+        # Move everything right by 3 chars
+        var move_i: int32 = test_len + 2
+        while move_i >= 2:
+          cmd_buffer[move_i + 2] = cmd_buffer[move_i]
+          move_i = move_i - 1
+        cmd_buffer[0] = cast[uint8](116)  # 't'
+        cmd_buffer[1] = cast[uint8](101)  # 'e'
+        cmd_buffer[2] = cast[uint8](115)  # 's'
+        cmd_buffer[3] = cast[uint8](116)  # 't'
+        cmd_len = test_len + 3
+        cmd_buffer[cmd_len] = cast[uint8](0)
+        shell_execute()
+        return
+
+    # exit command - exit the shell (for scripts)
+    if cmd_buffer[0] == cast[uint8](101):  # 'e'
+      if cmd_buffer[1] == cast[uint8](120):  # 'x'
+        if cmd_buffer[2] == cast[uint8](105):  # 'i'
+          if cmd_buffer[3] == cast[uint8](116):  # 't'
+            if cmd_buffer[4] == cast[uint8](0) or cmd_buffer[4] == cast[uint8](32):
+              # Check for exit code argument
+              if cmd_buffer[4] == cast[uint8](32):
+                var exit_code: int32 = parse_int(addr(cmd_buffer[5]))
+                last_exit_code = exit_code
+              kprintln(cast[ptr uint8]("exit"))
+              # In a real shell this would exit - for now just set exit code
+              return
 
     vga_set_color(VGA_LIGHT_RED, VGA_BLACK)
     kprint(cast[ptr uint8]("Unknown command: "))
     vga_set_color(VGA_WHITE, VGA_BLACK)
     kprintln(addr(cmd_buffer[0]))
+    last_exit_code = 127  # Command not found
 
 # Built-in commands for tab completion
 var builtin_cmds: array[512, uint8]

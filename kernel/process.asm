@@ -81,6 +81,11 @@ kernel_stacks:
 
 section .text
 
+; External ELF loader functions (for exec)
+extern elf_validate
+extern elf_get_entry
+extern elf_load
+
 ; ============================================================================
 ; init_scheduler - Initialize the scheduler
 ; ============================================================================
@@ -322,6 +327,116 @@ fork:
     pop edx
     pop ecx
     pop ebx
+    ret
+
+; ============================================================================
+; sys_exec - Replace current process image with new program
+; Input:
+;   [esp+4] = pointer to ELF image in memory
+;   [esp+8] = argument string pointer (can be 0)
+; Returns: -1 on error, does not return on success
+; ============================================================================
+global sys_exec
+sys_exec:
+    push ebx
+    push ecx
+    push edx
+    push esi
+    push edi
+    push ebp
+
+    ; Get parameters
+    mov esi, [esp + 28]     ; ELF pointer
+    mov ebx, [esp + 32]     ; argv (unused for now)
+
+    ; Validate ELF
+    push esi
+    call elf_validate
+    add esp, 4
+    test eax, eax
+    jz .exec_error
+
+    ; Get entry point
+    push esi
+    call elf_get_entry
+    add esp, 4
+    mov ebx, eax            ; Save entry point in EBX
+
+    ; Load ELF segments (use virtual addresses from ELF)
+    push dword 0            ; dest_base = 0 (use vaddr)
+    push esi                ; ELF pointer
+    call elf_load
+    add esp, 8
+    test eax, eax
+    jz .exec_error
+
+    ; Get current process PCB
+    mov ecx, [current_pid]
+    mov eax, ecx
+    imul eax, PCB_SIZE
+    add eax, process_table
+    mov edi, eax            ; EDI = current PCB
+
+    ; Reset process state
+    mov [edi + PCB_EIP], ebx        ; New entry point
+
+    ; Reset stack to top
+    mov eax, ecx
+    inc eax
+    shl eax, 12             ; * 4096
+    add eax, kernel_stacks
+    mov [edi + PCB_STACK_TOP], eax
+    mov [edi + PCB_ESP], eax
+
+    ; Clear registers
+    xor eax, eax
+    mov [edi + PCB_EAX], eax
+    mov [edi + PCB_EBX], eax
+    mov [edi + PCB_ECX], eax
+    mov [edi + PCB_EDX], eax
+    mov [edi + PCB_ESI], eax
+    mov [edi + PCB_EDI], eax
+    mov [edi + PCB_EBP], eax
+
+    ; Reset EFLAGS
+    mov dword [edi + PCB_EFLAGS], 0x202
+
+    ; Now we need to "return" to the new program
+    ; This is done by restoring the new context
+    ; Set up stack for iret/context switch
+
+    ; Load new stack pointer
+    mov esp, [edi + PCB_ESP]
+
+    ; Push return context for the new program
+    ; We'll jump directly to the entry point
+    mov eax, [edi + PCB_EIP]
+    jmp eax                 ; Jump to new program entry point
+
+    ; Should never reach here
+
+.exec_error:
+    mov eax, -1
+    pop ebp
+    pop edi
+    pop esi
+    pop edx
+    pop ecx
+    pop ebx
+    ret
+
+; ============================================================================
+; sys_execve - exec with path resolution (for filesystem programs)
+; Input:
+;   [esp+4] = path string pointer
+;   [esp+8] = argv array pointer
+;   [esp+12] = envp array pointer
+; Returns: -1 on error, does not return on success
+; ============================================================================
+global sys_execve
+sys_execve:
+    ; For now, just return error - filesystem exec not implemented yet
+    mov eax, -1
     ret
 
 ; ============================================================================
