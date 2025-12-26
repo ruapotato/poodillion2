@@ -34,7 +34,7 @@ PCB_STATE       equ 4
 PCB_WAITING     equ 68
 PCB_MSG_BUF     equ 72
 PCB_SIZE        equ 128
-MAX_PROCS       equ 64
+MAX_PROCS       equ 16
 
 section .bss
 

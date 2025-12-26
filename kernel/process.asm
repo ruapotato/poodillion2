@@ -37,7 +37,7 @@ PCB_MSG_BUF   equ 72   ; Message buffer pointer
 PCB_SIZE      equ 128  ; Total size of PCB (with padding)
 
 ; Maximum number of processes
-MAX_PROCS     equ 64
+MAX_PROCS     equ 16
 
 section .data
 

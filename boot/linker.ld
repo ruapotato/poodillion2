@@ -28,8 +28,10 @@ SECTIONS
     /* Read-write data (uninitialized) and stack */
     .bss ALIGN(4K) : AT(ADDR(.bss))
     {
+        _bss_start = .;
         *(COMMON)
         *(.bss)
+        _bss_end = .;
     }
 
     /* End of kernel */

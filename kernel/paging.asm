@@ -63,6 +63,11 @@ init_paging:
     push ecx
     push edx
     push edi
+    push es             ; Save ES
+
+    ; Ensure ES is set to data segment for rep stosd
+    mov ax, ds
+    mov es, ax
 
     ; Clear page directory
     mov edi, page_directory
@@ -126,6 +131,7 @@ init_paging:
     or eax, 0x80000000      ; Set PG bit
     mov cr0, eax
 
+    pop es              ; Restore ES
     pop edi
     pop edx
     pop ecx

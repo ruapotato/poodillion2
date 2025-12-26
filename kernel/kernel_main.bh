@@ -70,6 +70,15 @@ extern elf_validate(elf_ptr: int32): int32
 extern elf_get_entry(elf_ptr: int32): int32
 extern elf_load(elf_ptr: int32, dest_base: int32): int32
 
+# External assembly functions - ATA/IDE disk driver
+extern ata_read_sectors_pio(drive: int32, lba: int32, count: int32, buf: ptr uint8): int32
+extern ata_write_sectors_pio(drive: int32, lba: int32, count: int32, buf: ptr uint8): int32
+extern ata_identify(drive: int32): int32
+extern ata_soft_reset(controller: int32): int32
+extern ata_irq14_handler(): int32
+extern ata_irq15_handler(): int32
+extern ata_get_identify_buffer(): ptr uint8
+
 # Embedded userland binaries (accessor functions)
 extern get_webapp_bin(): int32
 extern get_webapp_bin_size(): int32
@@ -217,6 +226,28 @@ proc ser_println(s: ptr uint8) =
   serial_putchar(13)
   serial_putchar(10)
 
+# Print integer to serial
+proc ser_print_int(num: int32) =
+  if num < 0:
+    serial_putchar(45)  # '-'
+    num = 0 - num
+  if num == 0:
+    serial_putchar(48)  # '0'
+    return
+
+  var buf: array[12, uint8]
+  var i: int32 = 0
+  while num > 0:
+    var digit: int32 = num - (num / 10) * 10  # num % 10
+    buf[i] = cast[uint8](48 + digit)
+    num = num / 10
+    i = i + 1
+
+  # Print in reverse order
+  while i > 0:
+    i = i - 1
+    serial_putchar(cast[int32](buf[i]))
+
 # Print single character to serial
 proc ser_putchar(c: int32) =
   serial_putchar(c)
@@ -346,6 +377,1490 @@ proc print_pending(msg: ptr uint8) =
   ser_print(cast[ptr uint8]("[..] "))
   ser_println(msg)
 
+# Print status skip line (for optional features not available)
+proc print_skip(msg: ptr uint8) =
+  vga_set_color(VGA_YELLOW, VGA_BLACK)
+  vga_print(cast[ptr uint8]("  ["))
+  vga_set_color(VGA_DARK_GREY, VGA_BLACK)
+  vga_print(cast[ptr uint8]("--"))
+  vga_set_color(VGA_YELLOW, VGA_BLACK)
+  vga_print(cast[ptr uint8]("] "))
+  vga_set_color(VGA_DARK_GREY, VGA_BLACK)
+  vga_println(msg)
+  ser_print(cast[ptr uint8]("[--] "))
+  ser_println(msg)
+
+# =============================================================================
+# ATA/IDE Disk Driver
+# =============================================================================
+
+const ATA_MAX_DRIVES: int32 = 4
+const ATA_SECTOR_SIZE: int32 = 512
+const ATA_TYPE_NONE: int32 = 0
+const ATA_TYPE_ATA: int32 = 1
+
+# Drive info arrays
+var ata_drives_present: array[4, int32]
+var ata_drives_type: array[4, int32]
+var ata_drives_sectors: array[4, int32]
+var ata_drives_model: array[164, uint8]
+var ata_initialized: int32 = 0
+
+# Copy model string from identify buffer (byte-swapped)
+proc ata_copy_model(drive: int32, offset: int32, length: int32) =
+  var i: int32 = 0
+  var src: ptr uint8 = ata_get_identify_buffer()
+  var dst_offset: int32 = drive * 41
+
+  while i < length:
+    var byte_offset: int32 = offset + i
+    ata_drives_model[dst_offset + i] = src[byte_offset + 1]
+    ata_drives_model[dst_offset + i + 1] = src[byte_offset]
+    i = i + 2
+
+  # Null terminate and trim
+  i = length - 1
+  while i >= 0:
+    var c: uint8 = ata_drives_model[dst_offset + i]
+    if c != cast[uint8](32) and c != cast[uint8](0):
+      break
+    ata_drives_model[dst_offset + i] = cast[uint8](0)
+    i = i - 1
+  ata_drives_model[dst_offset + 40] = cast[uint8](0)
+
+# Get model string pointer
+proc ata_get_model(drive: int32): ptr uint8 =
+  if drive < 0 or drive >= ATA_MAX_DRIVES:
+    return cast[ptr uint8](0)
+  return addr(ata_drives_model[drive * 41])
+
+# Probe a single drive
+proc ata_probe_drive(drive: int32): int32 =
+  ser_print(cast[ptr uint8]("[ATA] Probing drive "))
+  ser_print_int(drive)
+  ser_print(cast[ptr uint8]("... "))
+
+  ata_drives_present[drive] = 0
+  ata_drives_type[drive] = ATA_TYPE_NONE
+  ata_drives_sectors[drive] = 0
+
+  var result: int32 = ata_identify(drive)
+  if result != 0:
+    ser_println(cast[ptr uint8]("not found"))
+    return 0
+
+  ata_drives_present[drive] = 1
+  ata_drives_type[drive] = ATA_TYPE_ATA
+
+  # Get total sectors from words 60-61
+  var buf: ptr uint8 = ata_get_identify_buffer()
+  var sectors_lo: int32 = cast[int32](buf[120]) | (cast[int32](buf[121]) << 8)
+  var sectors_hi: int32 = cast[int32](buf[122]) | (cast[int32](buf[123]) << 8)
+  ata_drives_sectors[drive] = sectors_lo | (sectors_hi << 16)
+
+  ata_copy_model(drive, 54, 40)
+
+  ser_print(cast[ptr uint8]("found: "))
+  ser_println(ata_get_model(drive))
+
+  var size_mb: int32 = ata_drives_sectors[drive] / 2048
+  ser_print(cast[ptr uint8]("       Size: "))
+  ser_print_int(size_mb)
+  ser_println(cast[ptr uint8](" MB"))
+
+  return 1
+
+# Initialize ATA subsystem
+proc ata_init(): int32 =
+  if ata_initialized != 0:
+    return 0
+
+  ser_println(cast[ptr uint8]("[ATA] Initializing ATA subsystem..."))
+
+  discard ata_soft_reset(0)
+  discard ata_soft_reset(1)
+
+  var drives_found: int32 = 0
+  var i: int32 = 0
+  while i < ATA_MAX_DRIVES:
+    drives_found = drives_found + ata_probe_drive(i)
+    i = i + 1
+
+  if drives_found == 0:
+    ser_println(cast[ptr uint8]("[ATA] No drives detected"))
+  else:
+    ser_print(cast[ptr uint8]("[ATA] Found "))
+    ser_print_int(drives_found)
+    ser_println(cast[ptr uint8](" drive(s)"))
+
+  ata_initialized = 1
+  return drives_found
+
+# Check if drive is present
+proc ata_drive_present(drive: int32): int32 =
+  if drive < 0 or drive >= ATA_MAX_DRIVES:
+    return 0
+  return ata_drives_present[drive]
+
+# Get drive size in sectors
+proc ata_drive_sectors(drive: int32): int32 =
+  if drive < 0 or drive >= ATA_MAX_DRIVES:
+    return 0
+  return ata_drives_sectors[drive]
+
+# Read sectors from drive
+proc ata_read(drive: int32, lba: int32, count: int32, buf: ptr uint8): int32 =
+  if drive < 0 or drive >= ATA_MAX_DRIVES:
+    return -1
+  if ata_drives_present[drive] == 0:
+    return -1
+  if count <= 0 or count > 256:
+    return -1
+  if lba < 0:
+    return -1
+  var max_sectors: int32 = ata_drives_sectors[drive]
+  if lba + count > max_sectors:
+    return -1
+  return ata_read_sectors_pio(drive, lba, count, buf)
+
+# Write sectors to drive
+proc ata_write(drive: int32, lba: int32, count: int32, buf: ptr uint8): int32 =
+  if drive < 0 or drive >= ATA_MAX_DRIVES:
+    return -1
+  if ata_drives_present[drive] == 0:
+    return -1
+  if count <= 0 or count > 256:
+    return -1
+  if lba < 0:
+    return -1
+  var max_sectors: int32 = ata_drives_sectors[drive]
+  if lba + count > max_sectors:
+    return -1
+  return ata_write_sectors_pio(drive, lba, count, buf)
+
+# =============================================================================
+# Block Device Layer
+# =============================================================================
+# Unified interface for all block storage devices (ATA, AHCI, ramdisk, etc.)
+
+const BLKDEV_MAX: int32 = 16
+const BLKDEV_SECTOR_SIZE: int32 = 512
+
+# Device types
+const BLKDEV_TYPE_NONE: int32 = 0
+const BLKDEV_TYPE_ATA: int32 = 1
+const BLKDEV_TYPE_AHCI: int32 = 2
+const BLKDEV_TYPE_RAMDISK: int32 = 3
+const BLKDEV_TYPE_NVME: int32 = 4
+const BLKDEV_TYPE_PARTITION: int32 = 5
+
+# Block device structure (per device)
+# For each device: type, driver_index, sector_count, name offset
+var blkdev_types: array[16, int32]
+var blkdev_drv_idx: array[16, int32]
+var blkdev_sectors: array[16, int32]
+var blkdev_names: array[256, uint8]  # 16 devices * 16 chars each
+var blkdev_count: int32 = 0
+
+# Register a block device
+# Returns: device index, or -1 on error
+proc blkdev_register(dev_type: int32, drv_idx: int32, sectors: int32, name: ptr uint8): int32 =
+  if blkdev_count >= BLKDEV_MAX:
+    return -1
+
+  var idx: int32 = blkdev_count
+  blkdev_types[idx] = dev_type
+  blkdev_drv_idx[idx] = drv_idx
+  blkdev_sectors[idx] = sectors
+
+  # Copy name (max 15 chars + null)
+  var name_offset: int32 = idx * 16
+  var i: int32 = 0
+  while i < 15:
+    var c: uint8 = name[i]
+    if c == cast[uint8](0):
+      break
+    blkdev_names[name_offset + i] = c
+    i = i + 1
+  blkdev_names[name_offset + i] = cast[uint8](0)
+
+  blkdev_count = blkdev_count + 1
+
+  ser_print(cast[ptr uint8]("[BLKDEV] Registered "))
+  ser_print(name)
+  ser_print(cast[ptr uint8](" ("))
+  ser_print_int(sectors)
+  ser_println(cast[ptr uint8](" sectors)"))
+
+  return idx
+
+# Get device name
+proc blkdev_get_name(dev: int32): ptr uint8 =
+  if dev < 0 or dev >= blkdev_count:
+    return cast[ptr uint8](0)
+  return addr(blkdev_names[dev * 16])
+
+# Get device type
+proc blkdev_get_type(dev: int32): int32 =
+  if dev < 0 or dev >= blkdev_count:
+    return BLKDEV_TYPE_NONE
+  return blkdev_types[dev]
+
+# Get device sector count
+proc blkdev_get_sectors(dev: int32): int32 =
+  if dev < 0 or dev >= blkdev_count:
+    return 0
+  return blkdev_sectors[dev]
+
+# Get device size in MB
+proc blkdev_get_size_mb(dev: int32): int32 =
+  return blkdev_get_sectors(dev) / 2048
+
+# Forward declaration needed for partition I/O (defined later in file)
+# partition_read and partition_write are called via device type dispatch
+
+# Read sectors from block device
+proc blkdev_read(dev: int32, lba: int32, count: int32, buf: ptr uint8): int32 =
+  if dev < 0 or dev >= blkdev_count:
+    return -1
+  if count <= 0:
+    return -1
+
+  var dev_type: int32 = blkdev_types[dev]
+  var drv_idx: int32 = blkdev_drv_idx[dev]
+
+  if dev_type == 1:  # BLKDEV_TYPE_ATA
+    return ata_read(drv_idx, lba, count, buf)
+  if dev_type == 5:  # BLKDEV_TYPE_PARTITION
+    # For partitions, drv_idx is the partition index
+    # Translate LBA to parent device LBA
+    var part_idx: int32 = drv_idx
+    if part_idx < 0 or part_idx >= part_count:
+      return -1
+    var parent_dev: int32 = part_parent_dev[part_idx]
+    var start_lba: int32 = part_start_lba[part_idx]
+    var part_sectors_val: int32 = part_sectors[part_idx]
+    # Bounds check
+    if lba < 0 or lba + count > part_sectors_val:
+      return -1
+    # Read from parent device at adjusted LBA
+    return blkdev_read(parent_dev, start_lba + lba, count, buf)
+  # Future: AHCI, NVMe, ramdisk handlers here
+
+  return -1
+
+# Write sectors to block device
+proc blkdev_write(dev: int32, lba: int32, count: int32, buf: ptr uint8): int32 =
+  if dev < 0 or dev >= blkdev_count:
+    return -1
+  if count <= 0:
+    return -1
+
+  var dev_type: int32 = blkdev_types[dev]
+  var drv_idx: int32 = blkdev_drv_idx[dev]
+
+  if dev_type == 1:  # BLKDEV_TYPE_ATA
+    return ata_write(drv_idx, lba, count, buf)
+  if dev_type == 5:  # BLKDEV_TYPE_PARTITION
+    # For partitions, drv_idx is the partition index
+    var part_idx: int32 = drv_idx
+    if part_idx < 0 or part_idx >= part_count:
+      return -1
+    var parent_dev: int32 = part_parent_dev[part_idx]
+    var start_lba: int32 = part_start_lba[part_idx]
+    var part_sectors_val: int32 = part_sectors[part_idx]
+    # Bounds check
+    if lba < 0 or lba + count > part_sectors_val:
+      return -1
+    # Write to parent device at adjusted LBA
+    return blkdev_write(parent_dev, start_lba + lba, count, buf)
+  # Future: AHCI, NVMe, ramdisk handlers here
+
+  return -1
+
+# Initialize block device layer and register all known devices
+proc blkdev_init() =
+  # Reset state
+  blkdev_count = 0
+  var i: int32 = 0
+  while i < BLKDEV_MAX:
+    blkdev_types[i] = BLKDEV_TYPE_NONE
+    blkdev_drv_idx[i] = 0
+    blkdev_sectors[i] = 0
+    i = i + 1
+
+  # Register all detected ATA drives
+  i = 0
+  while i < ATA_MAX_DRIVES:
+    if ata_drives_present[i] != 0:
+      # Build device name: hda, hdb, hdc, hdd
+      var name: array[4, uint8]
+      name[0] = cast[uint8](104)  # 'h'
+      name[1] = cast[uint8](100)  # 'd'
+      name[2] = cast[uint8](97 + i)  # 'a' + i
+      name[3] = cast[uint8](0)
+      discard blkdev_register(BLKDEV_TYPE_ATA, i, ata_drives_sectors[i], addr(name[0]))
+    i = i + 1
+
+  ser_print(cast[ptr uint8]("[BLKDEV] Total devices: "))
+  ser_print_int(blkdev_count)
+  ser_println(cast[ptr uint8](""))
+
+# List all block devices
+proc blkdev_list() =
+  ser_println(cast[ptr uint8]("Block Devices:"))
+  ser_println(cast[ptr uint8]("=============="))
+
+  if blkdev_count == 0:
+    ser_println(cast[ptr uint8]("  No block devices registered"))
+    return
+
+  var i: int32 = 0
+  while i < blkdev_count:
+    ser_print(cast[ptr uint8]("  "))
+    ser_print(blkdev_get_name(i))
+    ser_print(cast[ptr uint8](": "))
+
+    var dev_type: int32 = blkdev_types[i]
+    if dev_type == BLKDEV_TYPE_ATA:
+      ser_print(cast[ptr uint8]("ATA"))
+    elif dev_type == BLKDEV_TYPE_AHCI:
+      ser_print(cast[ptr uint8]("AHCI"))
+    elif dev_type == BLKDEV_TYPE_RAMDISK:
+      ser_print(cast[ptr uint8]("RAM"))
+    elif dev_type == BLKDEV_TYPE_NVME:
+      ser_print(cast[ptr uint8]("NVMe"))
+    else:
+      ser_print(cast[ptr uint8]("???"))
+
+    ser_print(cast[ptr uint8](" "))
+    ser_print_int(blkdev_get_size_mb(i))
+    ser_println(cast[ptr uint8](" MB"))
+
+    i = i + 1
+
+# Find block device by name
+proc blkdev_find(name: ptr uint8): int32 =
+  var i: int32 = 0
+  while i < blkdev_count:
+    # Compare names (16 bytes per entry)
+    var dev_name: ptr uint8 = addr(blkdev_names[i * 16])
+    if str_equals(dev_name, name) == 1:
+      return i
+    i = i + 1
+  return -1
+
+# =============================================================================
+# Partition Table Support
+# =============================================================================
+# Parses MBR partition tables and registers partitions as block devices
+
+const PART_MAX: int32 = 16
+const PART_TYPE_EMPTY: int32 = 0x00
+const PART_TYPE_FAT12: int32 = 0x01
+const PART_TYPE_FAT16_SMALL: int32 = 0x04
+const PART_TYPE_EXTENDED: int32 = 0x05
+const PART_TYPE_FAT16: int32 = 0x06
+const PART_TYPE_NTFS: int32 = 0x07
+const PART_TYPE_FAT32: int32 = 0x0B
+const PART_TYPE_FAT32_LBA: int32 = 0x0C
+const PART_TYPE_FAT16_LBA: int32 = 0x0E
+const PART_TYPE_EXTENDED_LBA: int32 = 0x0F
+const PART_TYPE_LINUX: int32 = 0x83
+const PART_TYPE_LINUX_SWAP: int32 = 0x82
+const PART_TYPE_LINUX_LVM: int32 = 0x8E
+
+# Partition info structure
+var part_parent_dev: array[16, int32]   # Parent block device
+var part_start_lba: array[16, int32]    # Start sector
+var part_sectors: array[16, int32]      # Number of sectors
+var part_type: array[16, int32]         # Partition type
+var part_count: int32 = 0
+
+# Sector buffer for reading MBR
+var part_sector_buf: array[512, uint8]
+
+# Read 16-bit little-endian value from buffer
+proc read_le16(buf: ptr uint8, offset: int32): int32 =
+  var lo: int32 = cast[int32](buf[offset])
+  var hi: int32 = cast[int32](buf[offset + 1])
+  return lo | (hi << 8)
+
+# Read 32-bit little-endian value from buffer
+proc read_le32(buf: ptr uint8, offset: int32): int32 =
+  var b0: int32 = cast[int32](buf[offset])
+  var b1: int32 = cast[int32](buf[offset + 1])
+  var b2: int32 = cast[int32](buf[offset + 2])
+  var b3: int32 = cast[int32](buf[offset + 3])
+  return b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
+
+# Get partition type name
+proc part_type_name(ptype: int32): ptr uint8 =
+  if ptype == 0:
+    return cast[ptr uint8]("Empty")
+  if ptype == 1:
+    return cast[ptr uint8]("FAT12")
+  if ptype == 4:
+    return cast[ptr uint8]("FAT16<32M")
+  if ptype == 5:
+    return cast[ptr uint8]("Extended")
+  if ptype == 6:
+    return cast[ptr uint8]("FAT16")
+  if ptype == 7:
+    return cast[ptr uint8]("NTFS")
+  if ptype == 11:
+    return cast[ptr uint8]("FAT32")
+  if ptype == 12:
+    return cast[ptr uint8]("FAT32 LBA")
+  if ptype == 14:
+    return cast[ptr uint8]("FAT16 LBA")
+  if ptype == 15:
+    return cast[ptr uint8]("Ext LBA")
+  if ptype == 130:
+    return cast[ptr uint8]("Swap")
+  if ptype == 131:
+    return cast[ptr uint8]("Linux")
+  if ptype == 142:
+    return cast[ptr uint8]("LVM")
+  return cast[ptr uint8]("Unknown")
+
+# Parse MBR partition table entry
+# Entry is 16 bytes at offset 446 + (entry_num * 16)
+# Returns: 1 if valid partition, 0 if empty
+proc parse_mbr_entry(buf: ptr uint8, entry_num: int32, dev: int32): int32 =
+  var entry_offset: int32 = 446 + (entry_num * 16)
+
+  # Byte 0: Boot flag (0x80 = bootable, 0x00 = not)
+  # Bytes 1-3: CHS start (ignored, use LBA)
+  # Byte 4: Partition type
+  var ptype: int32 = cast[int32](buf[entry_offset + 4])
+
+  if ptype == PART_TYPE_EMPTY:
+    return 0
+
+  # Bytes 8-11: LBA start (little-endian)
+  var lba_start: int32 = read_le32(buf, entry_offset + 8)
+
+  # Bytes 12-15: Number of sectors (little-endian)
+  var num_sectors: int32 = read_le32(buf, entry_offset + 12)
+
+  if num_sectors == 0:
+    return 0
+
+  # Store partition info
+  if part_count < PART_MAX:
+    var idx: int32 = part_count
+    part_parent_dev[idx] = dev
+    part_start_lba[idx] = lba_start
+    part_sectors[idx] = num_sectors
+    part_type[idx] = ptype
+    part_count = part_count + 1
+
+    # Create partition name (e.g., "hdb1")
+    var part_name: array[8, uint8]
+    var parent_name: ptr uint8 = blkdev_get_name(dev)
+    var i: int32 = 0
+    while i < 6:
+      var c: uint8 = parent_name[i]
+      if c == cast[uint8](0):
+        break
+      part_name[i] = c
+      i = i + 1
+    # Add partition number (1-4)
+    part_name[i] = cast[uint8](49 + entry_num)  # '1' + entry_num
+    part_name[i + 1] = cast[uint8](0)
+
+    # Register partition as block device
+    discard blkdev_register(5, idx, num_sectors, addr(part_name[0]))  # 5 = BLKDEV_TYPE_PARTITION
+
+    ser_print(cast[ptr uint8]("  Partition "))
+    ser_print_int(entry_num + 1)
+    ser_print(cast[ptr uint8](": "))
+    ser_print(part_type_name(ptype))
+    ser_print(cast[ptr uint8](" @ LBA "))
+    ser_print_int(lba_start)
+    ser_print(cast[ptr uint8](", "))
+    ser_print_int(num_sectors / 2048)
+    ser_println(cast[ptr uint8](" MB"))
+
+    return 1
+
+  return 0
+
+# Scan a block device for MBR partitions
+# Returns: number of partitions found
+proc partition_scan(dev: int32): int32 =
+  if dev < 0 or dev >= blkdev_count:
+    return 0
+
+  ser_print(cast[ptr uint8]("[PART] Scanning "))
+  ser_print(blkdev_get_name(dev))
+  ser_println(cast[ptr uint8](" for partitions..."))
+
+  # Read sector 0 (MBR)
+  var result: int32 = blkdev_read(dev, 0, 1, addr(part_sector_buf[0]))
+  if result < 0:
+    ser_println(cast[ptr uint8]("[PART] Failed to read MBR"))
+    return 0
+
+  # Check MBR signature (0x55AA at offset 510)
+  var sig_lo: int32 = cast[int32](part_sector_buf[510])
+  var sig_hi: int32 = cast[int32](part_sector_buf[511])
+  if sig_lo != 0x55 or sig_hi != 0xAA:
+    ser_println(cast[ptr uint8]("[PART] No MBR signature found"))
+    return 0
+
+  # Parse 4 primary partition entries
+  var found: int32 = 0
+  var i: int32 = 0
+  while i < 4:
+    found = found + parse_mbr_entry(addr(part_sector_buf[0]), i, dev)
+    i = i + 1
+
+  if found == 0:
+    ser_println(cast[ptr uint8]("[PART] No partitions found"))
+
+  return found
+
+# Scan all block devices for partitions
+# Only scan physical devices (ATA, AHCI, NVMe), not partitions
+proc partition_scan_all(): int32 =
+  var total: int32 = 0
+  var num_devices: int32 = blkdev_count  # Capture count before adding partitions
+  var i: int32 = 0
+  while i < num_devices:
+    # Skip partition devices - only scan physical drives
+    var dev_type: int32 = blkdev_types[i]
+    if dev_type != 5:  # 5 = BLKDEV_TYPE_PARTITION
+      total = total + partition_scan(i)
+    i = i + 1
+  return total
+
+# Get partition start LBA
+proc partition_get_start(idx: int32): int32 =
+  if idx < 0 or idx >= part_count:
+    return 0
+  return part_start_lba[idx]
+
+# Get partition size in sectors
+proc partition_get_sectors(idx: int32): int32 =
+  if idx < 0 or idx >= part_count:
+    return 0
+  return part_sectors[idx]
+
+# Get partition type
+proc partition_get_type(idx: int32): int32 =
+  if idx < 0 or idx >= part_count:
+    return PART_TYPE_EMPTY
+  return part_type[idx]
+
+# Get parent device
+proc partition_get_device(idx: int32): int32 =
+  if idx < 0 or idx >= part_count:
+    return -1
+  return part_parent_dev[idx]
+
+# Read sectors from a partition (LBA relative to partition start)
+proc partition_read(idx: int32, lba: int32, count: int32, buf: ptr uint8): int32 =
+  if idx < 0 or idx >= part_count:
+    return -1
+  if lba < 0 or count <= 0:
+    return -1
+  if lba + count > part_sectors[idx]:
+    return -1
+
+  var dev: int32 = part_parent_dev[idx]
+  var abs_lba: int32 = part_start_lba[idx] + lba
+  return blkdev_read(dev, abs_lba, count, buf)
+
+# Write sectors to a partition (LBA relative to partition start)
+proc partition_write(idx: int32, lba: int32, count: int32, buf: ptr uint8): int32 =
+  if idx < 0 or idx >= part_count:
+    return -1
+  if lba < 0 or count <= 0:
+    return -1
+  if lba + count > part_sectors[idx]:
+    return -1
+
+  var dev: int32 = part_parent_dev[idx]
+  var abs_lba: int32 = part_start_lba[idx] + lba
+  return blkdev_write(dev, abs_lba, count, buf)
+
+# List all partitions
+proc partition_list() =
+  ser_println(cast[ptr uint8]("Partitions:"))
+  ser_println(cast[ptr uint8]("==========="))
+
+  if part_count == 0:
+    ser_println(cast[ptr uint8]("  No partitions found"))
+    return
+
+  var i: int32 = 0
+  while i < part_count:
+    ser_print(cast[ptr uint8]("  "))
+    ser_print(blkdev_get_name(part_parent_dev[i]))
+    ser_print_int(i + 1)
+    ser_print(cast[ptr uint8](": "))
+    ser_print(part_type_name(part_type[i]))
+    ser_print(cast[ptr uint8](" "))
+    ser_print_int(part_sectors[i] / 2048)
+    ser_println(cast[ptr uint8](" MB"))
+    i = i + 1
+
+# =============================================================================
+# BrainFS - Persistent ext2-like Filesystem
+# =============================================================================
+
+# BrainFS uses 1KB blocks (2 sectors per block)
+const BRFS_BLOCK_SIZE: int32 = 1024
+const BRFS_SECTORS_PER_BLOCK: int32 = 2
+const BRFS_MAGIC: int32 = 1112560962  # 0x42524653 = "BRFS" (little-endian: 0x53465242)
+const BRFS_VERSION: int32 = 1
+const BRFS_INODE_SIZE: int32 = 32
+const BRFS_INODES_PER_BLOCK: int32 = 32  # 1024 / 32 = 32
+const BRFS_ROOT_INODE: int32 = 1
+const BRFS_MAX_MOUNTS: int32 = 4
+const BRFS_DIRENTRY_SIZE: int32 = 32
+
+# File types for mode field
+const BRFS_S_IFREG: int32 = 32768   # 0x8000 - regular file
+const BRFS_S_IFDIR: int32 = 16384   # 0x4000 - directory
+
+# Mount table - tracks mounted BrainFS filesystems
+var brfs_mount_dev: array[4, int32]         # Block device ID
+var brfs_mount_active: array[4, int32]      # 1 if mounted
+var brfs_mount_total_blocks: array[4, int32]
+var brfs_mount_total_inodes: array[4, int32]
+var brfs_mount_free_blocks: array[4, int32]
+var brfs_mount_free_inodes: array[4, int32]
+var brfs_mount_inode_bmp_start: array[4, int32]
+var brfs_mount_block_bmp_start: array[4, int32]
+var brfs_mount_inode_tbl_start: array[4, int32]
+var brfs_mount_first_data_block: array[4, int32]
+
+# Block buffer for disk I/O (1KB = 2 sectors)
+var brfs_block_buf: array[1024, uint8]
+var brfs_block_buf2: array[1024, uint8]  # Second buffer for operations needing two
+
+# Initialize BrainFS mount table
+proc brfs_init() =
+  var i: int32 = 0
+  while i < BRFS_MAX_MOUNTS:
+    brfs_mount_dev[i] = -1
+    brfs_mount_active[i] = 0
+    i = i + 1
+
+# Read a block from mounted filesystem
+proc brfs_bread(mount_id: int32, blk: int32, buf: ptr uint8): int32 =
+  if mount_id < 0 or mount_id >= BRFS_MAX_MOUNTS:
+    return -1
+  if brfs_mount_active[mount_id] == 0:
+    return -1
+  var dev: int32 = brfs_mount_dev[mount_id]
+  var lba: int32 = blk * BRFS_SECTORS_PER_BLOCK
+  return blkdev_read(dev, lba, BRFS_SECTORS_PER_BLOCK, buf)
+
+# Write a block to mounted filesystem
+proc brfs_bwrite(mount_id: int32, blk: int32, buf: ptr uint8): int32 =
+  if mount_id < 0 or mount_id >= BRFS_MAX_MOUNTS:
+    return -1
+  if brfs_mount_active[mount_id] == 0:
+    return -1
+  var dev: int32 = brfs_mount_dev[mount_id]
+  var lba: int32 = blk * BRFS_SECTORS_PER_BLOCK
+  return blkdev_write(dev, lba, BRFS_SECTORS_PER_BLOCK, buf)
+
+# Calculate filesystem layout for given size in sectors
+# Returns: number of data blocks available
+proc brfs_calc_layout(total_sectors: int32, out_inode_blocks: ptr int32, out_first_data: ptr int32): int32 =
+  var total_blocks: int32 = total_sectors / BRFS_SECTORS_PER_BLOCK
+
+  # Block 0: superblock
+  # Block 1: inode bitmap (can track 8192 inodes with 1KB)
+  # Block 2: block bitmap (can track 8192 blocks with 1KB)
+  # Block 3+: inode table + data blocks
+
+  # Calculate how many inodes we can have (1 inode per 4 data blocks is reasonable)
+  var max_inodes: int32 = total_blocks / 4
+  if max_inodes > 8192:
+    max_inodes = 8192  # Max for 1 block bitmap
+  if max_inodes < 64:
+    max_inodes = 64  # Minimum
+
+  # How many blocks for inode table?
+  var inode_blocks: int32 = (max_inodes + BRFS_INODES_PER_BLOCK - 1) / BRFS_INODES_PER_BLOCK
+
+  # First data block
+  var first_data: int32 = 3 + inode_blocks
+
+  out_inode_blocks[0] = inode_blocks
+  out_first_data[0] = first_data
+
+  return total_blocks - first_data
+
+# Format a block device as BrainFS
+proc brfs_mkfs(dev: int32): int32 =
+  var sectors: int32 = blkdev_get_sectors(dev)
+  if sectors < 32:  # Minimum 16KB
+    ser_println(cast[ptr uint8]("[BRFS] Device too small"))
+    return -1
+
+  ser_print(cast[ptr uint8]("[BRFS] Formatting device "))
+  ser_print_int(dev)
+  ser_print(cast[ptr uint8](" ("))
+  ser_print_int(sectors)
+  ser_println(cast[ptr uint8](" sectors)"))
+
+  var total_blocks: int32 = sectors / BRFS_SECTORS_PER_BLOCK
+  var inode_blocks: int32 = 0
+  var first_data: int32 = 0
+  var data_blocks: int32 = brfs_calc_layout(sectors, addr(inode_blocks), addr(first_data))
+  var total_inodes: int32 = inode_blocks * BRFS_INODES_PER_BLOCK
+
+  ser_print(cast[ptr uint8]("[BRFS] Layout: "))
+  ser_print_int(total_blocks)
+  ser_print(cast[ptr uint8](" blocks, "))
+  ser_print_int(total_inodes)
+  ser_print(cast[ptr uint8](" inodes, "))
+  ser_print_int(data_blocks)
+  ser_println(cast[ptr uint8](" data blocks"))
+
+  # Clear block buffer
+  var i: int32 = 0
+  while i < BRFS_BLOCK_SIZE:
+    brfs_block_buf[i] = cast[uint8](0)
+    i = i + 1
+
+  # Write superblock (block 0)
+  write32(addr(brfs_block_buf[0]), BRFS_MAGIC)      # Magic
+  write32(addr(brfs_block_buf[4]), BRFS_VERSION)    # Version
+  write32(addr(brfs_block_buf[8]), BRFS_BLOCK_SIZE) # Block size
+  write32(addr(brfs_block_buf[12]), total_blocks)   # Total blocks
+  write32(addr(brfs_block_buf[16]), total_inodes)   # Total inodes
+  write32(addr(brfs_block_buf[20]), data_blocks - 1) # Free blocks (root dir uses 1)
+  write32(addr(brfs_block_buf[24]), total_inodes - 1) # Free inodes (root uses 1)
+  write32(addr(brfs_block_buf[28]), first_data)     # First data block
+  write32(addr(brfs_block_buf[32]), 1)              # Inode bitmap at block 1
+  write32(addr(brfs_block_buf[36]), 2)              # Block bitmap at block 2
+  write32(addr(brfs_block_buf[40]), 3)              # Inode table at block 3
+  write32(addr(brfs_block_buf[44]), BRFS_ROOT_INODE) # Root inode number
+
+  var lba: int32 = 0
+  if blkdev_write(dev, lba, BRFS_SECTORS_PER_BLOCK, addr(brfs_block_buf[0])) < 0:
+    ser_println(cast[ptr uint8]("[BRFS] Failed to write superblock"))
+    return -1
+
+  # Clear and write inode bitmap (block 1)
+  i = 0
+  while i < BRFS_BLOCK_SIZE:
+    brfs_block_buf[i] = cast[uint8](0)
+    i = i + 1
+  # Mark inode 0 and 1 as used (0 is reserved, 1 is root)
+  brfs_block_buf[0] = cast[uint8](3)  # Bits 0 and 1 set
+  lba = BRFS_SECTORS_PER_BLOCK
+  if blkdev_write(dev, lba, BRFS_SECTORS_PER_BLOCK, addr(brfs_block_buf[0])) < 0:
+    ser_println(cast[ptr uint8]("[BRFS] Failed to write inode bitmap"))
+    return -1
+
+  # Clear and write block bitmap (block 2)
+  i = 0
+  while i < BRFS_BLOCK_SIZE:
+    brfs_block_buf[i] = cast[uint8](0)
+    i = i + 1
+  # Mark blocks 0 to first_data-1 as used (superblock, bitmaps, inode table)
+  # Also mark first data block as used (for root directory)
+  i = 0
+  while i <= first_data:
+    var byte_idx: int32 = i / 8
+    var bit_idx: int32 = i & 7
+    var byte_val: int32 = cast[int32](brfs_block_buf[byte_idx])
+    brfs_block_buf[byte_idx] = cast[uint8](byte_val | (1 << bit_idx))
+    i = i + 1
+  lba = 2 * BRFS_SECTORS_PER_BLOCK
+  if blkdev_write(dev, lba, BRFS_SECTORS_PER_BLOCK, addr(brfs_block_buf[0])) < 0:
+    ser_println(cast[ptr uint8]("[BRFS] Failed to write block bitmap"))
+    return -1
+
+  # Clear inode table blocks
+  i = 0
+  while i < BRFS_BLOCK_SIZE:
+    brfs_block_buf[i] = cast[uint8](0)
+    i = i + 1
+  i = 0
+  while i < inode_blocks:
+    lba = (3 + i) * BRFS_SECTORS_PER_BLOCK
+    if blkdev_write(dev, lba, BRFS_SECTORS_PER_BLOCK, addr(brfs_block_buf[0])) < 0:
+      ser_println(cast[ptr uint8]("[BRFS] Failed to clear inode table"))
+      return -1
+    i = i + 1
+
+  # Create root inode (inode 1) - it's in the first inode table block (block 3)
+  # Read block 3
+  lba = 3 * BRFS_SECTORS_PER_BLOCK
+  var read_result: int32 = blkdev_read(dev, lba, BRFS_SECTORS_PER_BLOCK, addr(brfs_block_buf[0]))
+  if read_result < 0:
+    return -1
+
+  # Root inode is at offset 0 (inode 1 is first, inode 0 doesn't exist)
+  # Actually, inode 1 is at offset 0 in the table (inodes are 1-indexed)
+  var root_offset: int32 = 0  # Inode 1 at offset 0
+  write16(addr(brfs_block_buf[root_offset]), BRFS_S_IFDIR | 493)  # drwxr-xr-x (0755 + dir flag)
+  write16(addr(brfs_block_buf[root_offset + 2]), 2)   # Link count (. and ..)
+  write32(addr(brfs_block_buf[root_offset + 4]), 64)  # Size (2 entries * 32 bytes)
+  write32(addr(brfs_block_buf[root_offset + 8]), 0)   # Created timestamp
+  write32(addr(brfs_block_buf[root_offset + 12]), 0)  # Modified timestamp
+  write32(addr(brfs_block_buf[root_offset + 16]), first_data)  # Block 0 = first data block
+  write32(addr(brfs_block_buf[root_offset + 20]), 0)  # Block 1 = none
+  write32(addr(brfs_block_buf[root_offset + 24]), 0)  # Block 2 = none
+  write32(addr(brfs_block_buf[root_offset + 28]), 0)  # Indirect block = none
+
+  if blkdev_write(dev, lba, BRFS_SECTORS_PER_BLOCK, addr(brfs_block_buf[0])) < 0:
+    ser_println(cast[ptr uint8]("[BRFS] Failed to write root inode"))
+    return -1
+
+  # Create root directory data block with . and .. entries
+  i = 0
+  while i < BRFS_BLOCK_SIZE:
+    brfs_block_buf[i] = cast[uint8](0)
+    i = i + 1
+
+  # Entry 1: "." -> inode 1
+  write32(addr(brfs_block_buf[0]), 1)     # Inode 1
+  write16(addr(brfs_block_buf[4]), 32)    # Entry length
+  brfs_block_buf[6] = cast[uint8](1)      # Name length
+  brfs_block_buf[7] = cast[uint8](2)      # Type: directory
+  brfs_block_buf[8] = cast[uint8](46)     # '.'
+
+  # Entry 2: ".." -> inode 1 (parent of root is itself)
+  write32(addr(brfs_block_buf[32]), 1)    # Inode 1
+  write16(addr(brfs_block_buf[36]), 32)   # Entry length
+  brfs_block_buf[38] = cast[uint8](2)     # Name length
+  brfs_block_buf[39] = cast[uint8](2)     # Type: directory
+  brfs_block_buf[40] = cast[uint8](46)    # '.'
+  brfs_block_buf[41] = cast[uint8](46)    # '.'
+
+  lba = first_data * BRFS_SECTORS_PER_BLOCK
+  if blkdev_write(dev, lba, BRFS_SECTORS_PER_BLOCK, addr(brfs_block_buf[0])) < 0:
+    ser_println(cast[ptr uint8]("[BRFS] Failed to write root directory"))
+    return -1
+
+  ser_println(cast[ptr uint8]("[BRFS] Filesystem created successfully"))
+  return 0
+
+# Mount a BrainFS filesystem
+proc brfs_mount(dev: int32): int32 =
+  # Find free mount slot
+  var mount_id: int32 = -1
+  var i: int32 = 0
+  while i < BRFS_MAX_MOUNTS:
+    if brfs_mount_active[i] == 0:
+      mount_id = i
+      i = BRFS_MAX_MOUNTS  # break
+    i = i + 1
+
+  if mount_id < 0:
+    ser_println(cast[ptr uint8]("[BRFS] No free mount slots"))
+    return -1
+
+  # Read superblock
+  var lba: int32 = 0
+  if blkdev_read(dev, lba, BRFS_SECTORS_PER_BLOCK, addr(brfs_block_buf[0])) < 0:
+    ser_println(cast[ptr uint8]("[BRFS] Failed to read superblock"))
+    return -1
+
+  # Verify magic
+  var magic: int32 = read32(addr(brfs_block_buf[0]))
+  if magic != BRFS_MAGIC:
+    ser_print(cast[ptr uint8]("[BRFS] Bad magic: "))
+    ser_print_hex(magic)
+    ser_println(cast[ptr uint8](""))
+    return -1
+
+  # Read superblock fields
+  brfs_mount_dev[mount_id] = dev
+  brfs_mount_total_blocks[mount_id] = read32(addr(brfs_block_buf[12]))
+  brfs_mount_total_inodes[mount_id] = read32(addr(brfs_block_buf[16]))
+  brfs_mount_free_blocks[mount_id] = read32(addr(brfs_block_buf[20]))
+  brfs_mount_free_inodes[mount_id] = read32(addr(brfs_block_buf[24]))
+  brfs_mount_first_data_block[mount_id] = read32(addr(brfs_block_buf[28]))
+  brfs_mount_inode_bmp_start[mount_id] = read32(addr(brfs_block_buf[32]))
+  brfs_mount_block_bmp_start[mount_id] = read32(addr(brfs_block_buf[36]))
+  brfs_mount_inode_tbl_start[mount_id] = read32(addr(brfs_block_buf[40]))
+  brfs_mount_active[mount_id] = 1
+
+  ser_print(cast[ptr uint8]("[BRFS] Mounted device "))
+  ser_print_int(dev)
+  ser_print(cast[ptr uint8](" as mount "))
+  ser_print_int(mount_id)
+  ser_print(cast[ptr uint8](" ("))
+  ser_print_int(brfs_mount_total_blocks[mount_id])
+  ser_print(cast[ptr uint8](" blocks, "))
+  ser_print_int(brfs_mount_free_blocks[mount_id])
+  ser_println(cast[ptr uint8](" free)"))
+
+  return mount_id
+
+# Unmount a BrainFS filesystem
+proc brfs_unmount(mount_id: int32): int32 =
+  if mount_id < 0 or mount_id >= BRFS_MAX_MOUNTS:
+    return -1
+  if brfs_mount_active[mount_id] == 0:
+    return -1
+
+  # Sync superblock with updated free counts
+  var dev: int32 = brfs_mount_dev[mount_id]
+  var lba: int32 = 0
+  if blkdev_read(dev, lba, BRFS_SECTORS_PER_BLOCK, addr(brfs_block_buf[0])) < 0:
+    return -1
+
+  write32(addr(brfs_block_buf[20]), brfs_mount_free_blocks[mount_id])
+  write32(addr(brfs_block_buf[24]), brfs_mount_free_inodes[mount_id])
+
+  if blkdev_write(dev, lba, BRFS_SECTORS_PER_BLOCK, addr(brfs_block_buf[0])) < 0:
+    return -1
+
+  brfs_mount_active[mount_id] = 0
+  brfs_mount_dev[mount_id] = -1
+
+  ser_print(cast[ptr uint8]("[BRFS] Unmounted mount "))
+  ser_print_int(mount_id)
+  ser_println(cast[ptr uint8](""))
+
+  return 0
+
+# Read an inode from disk
+proc brfs_iget(mount_id: int32, ino: int32, buf: ptr uint8): int32 =
+  if mount_id < 0 or mount_id >= BRFS_MAX_MOUNTS:
+    return -1
+  if brfs_mount_active[mount_id] == 0:
+    return -1
+  if ino < 1 or ino > brfs_mount_total_inodes[mount_id]:
+    return -1
+
+  # Calculate which block the inode is in
+  var inode_idx: int32 = ino - 1  # Inodes are 1-indexed
+  var block_in_table: int32 = inode_idx / BRFS_INODES_PER_BLOCK
+  var offset_in_block: int32 = (inode_idx & 31) * BRFS_INODE_SIZE  # & 31 = % 32
+  var block_num: int32 = brfs_mount_inode_tbl_start[mount_id] + block_in_table
+
+  if brfs_bread(mount_id, block_num, addr(brfs_block_buf[0])) < 0:
+    return -1
+
+  # Copy inode to output buffer
+  var i: int32 = 0
+  while i < BRFS_INODE_SIZE:
+    buf[i] = brfs_block_buf[offset_in_block + i]
+    i = i + 1
+
+  return 0
+
+# Write an inode to disk
+proc brfs_iput(mount_id: int32, ino: int32, buf: ptr uint8): int32 =
+  if mount_id < 0 or mount_id >= BRFS_MAX_MOUNTS:
+    return -1
+  if brfs_mount_active[mount_id] == 0:
+    return -1
+  if ino < 1 or ino > brfs_mount_total_inodes[mount_id]:
+    return -1
+
+  var inode_idx: int32 = ino - 1
+  var block_in_table: int32 = inode_idx / BRFS_INODES_PER_BLOCK
+  var offset_in_block: int32 = (inode_idx & 31) * BRFS_INODE_SIZE
+  var block_num: int32 = brfs_mount_inode_tbl_start[mount_id] + block_in_table
+
+  # Read the block first
+  if brfs_bread(mount_id, block_num, addr(brfs_block_buf[0])) < 0:
+    return -1
+
+  # Copy inode data
+  var i: int32 = 0
+  while i < BRFS_INODE_SIZE:
+    brfs_block_buf[offset_in_block + i] = buf[i]
+    i = i + 1
+
+  # Write back
+  return brfs_bwrite(mount_id, block_num, addr(brfs_block_buf[0]))
+
+# Allocate a new inode
+proc brfs_ialloc(mount_id: int32): int32 =
+  if mount_id < 0 or mount_id >= BRFS_MAX_MOUNTS:
+    return -1
+  if brfs_mount_active[mount_id] == 0:
+    return -1
+  if brfs_mount_free_inodes[mount_id] <= 0:
+    return -1
+
+  # Read inode bitmap
+  var bmp_block: int32 = brfs_mount_inode_bmp_start[mount_id]
+  if brfs_bread(mount_id, bmp_block, addr(brfs_block_buf[0])) < 0:
+    return -1
+
+  # Find first free bit (starting from bit 1, since 0 is reserved)
+  var i: int32 = 1
+  var max_inodes: int32 = brfs_mount_total_inodes[mount_id]
+  while i <= max_inodes:
+    var byte_idx: int32 = i / 8
+    var bit_idx: int32 = i & 7
+    var byte_val: int32 = cast[int32](brfs_block_buf[byte_idx])
+    if (byte_val & (1 << bit_idx)) == 0:
+      # Found free inode - mark as used
+      brfs_block_buf[byte_idx] = cast[uint8](byte_val | (1 << bit_idx))
+      if brfs_bwrite(mount_id, bmp_block, addr(brfs_block_buf[0])) < 0:
+        return -1
+      brfs_mount_free_inodes[mount_id] = brfs_mount_free_inodes[mount_id] - 1
+      return i
+    i = i + 1
+
+  return -1
+
+# Free an inode
+proc brfs_ifree(mount_id: int32, ino: int32): int32 =
+  if mount_id < 0 or mount_id >= BRFS_MAX_MOUNTS:
+    return -1
+  if ino < 1 or ino > brfs_mount_total_inodes[mount_id]:
+    return -1
+
+  var bmp_block: int32 = brfs_mount_inode_bmp_start[mount_id]
+  if brfs_bread(mount_id, bmp_block, addr(brfs_block_buf[0])) < 0:
+    return -1
+
+  var byte_idx: int32 = ino / 8
+  var bit_idx: int32 = ino & 7
+  var byte_val: int32 = cast[int32](brfs_block_buf[byte_idx])
+  var mask: int32 = 255 - (1 << bit_idx)
+  brfs_block_buf[byte_idx] = cast[uint8](byte_val & mask)
+
+  if brfs_bwrite(mount_id, bmp_block, addr(brfs_block_buf[0])) < 0:
+    return -1
+
+  brfs_mount_free_inodes[mount_id] = brfs_mount_free_inodes[mount_id] + 1
+  return 0
+
+# Allocate a data block
+proc brfs_balloc(mount_id: int32): int32 =
+  if mount_id < 0 or mount_id >= BRFS_MAX_MOUNTS:
+    return -1
+  if brfs_mount_free_blocks[mount_id] <= 0:
+    return -1
+
+  var bmp_block: int32 = brfs_mount_block_bmp_start[mount_id]
+  if brfs_bread(mount_id, bmp_block, addr(brfs_block_buf[0])) < 0:
+    return -1
+
+  var first_data: int32 = brfs_mount_first_data_block[mount_id]
+  var total_blocks: int32 = brfs_mount_total_blocks[mount_id]
+  var i: int32 = first_data
+  while i < total_blocks:
+    var byte_idx: int32 = i / 8
+    var bit_idx: int32 = i & 7
+    var byte_val: int32 = cast[int32](brfs_block_buf[byte_idx])
+    if (byte_val & (1 << bit_idx)) == 0:
+      brfs_block_buf[byte_idx] = cast[uint8](byte_val | (1 << bit_idx))
+      if brfs_bwrite(mount_id, bmp_block, addr(brfs_block_buf[0])) < 0:
+        return -1
+      brfs_mount_free_blocks[mount_id] = brfs_mount_free_blocks[mount_id] - 1
+      return i
+    i = i + 1
+
+  return -1
+
+# Free a data block
+proc brfs_bfree(mount_id: int32, blk: int32): int32 =
+  if mount_id < 0 or mount_id >= BRFS_MAX_MOUNTS:
+    return -1
+  if blk < brfs_mount_first_data_block[mount_id] or blk >= brfs_mount_total_blocks[mount_id]:
+    return -1
+
+  var bmp_block: int32 = brfs_mount_block_bmp_start[mount_id]
+  if brfs_bread(mount_id, bmp_block, addr(brfs_block_buf[0])) < 0:
+    return -1
+
+  var byte_idx: int32 = blk / 8
+  var bit_idx: int32 = blk & 7
+  var byte_val: int32 = cast[int32](brfs_block_buf[byte_idx])
+  var mask: int32 = 255 - (1 << bit_idx)
+  brfs_block_buf[byte_idx] = cast[uint8](byte_val & mask)
+
+  if brfs_bwrite(mount_id, bmp_block, addr(brfs_block_buf[0])) < 0:
+    return -1
+
+  brfs_mount_free_blocks[mount_id] = brfs_mount_free_blocks[mount_id] + 1
+  return 0
+
+# Lookup a name in a directory, returns inode number or -1
+proc brfs_lookup(mount_id: int32, dir_ino: int32, name: ptr uint8): int32 =
+  var inode_buf: array[32, uint8]
+  if brfs_iget(mount_id, dir_ino, addr(inode_buf[0])) < 0:
+    return -1
+
+  var mode: int32 = read16(addr(inode_buf[0]))
+  if (mode & 61440) != BRFS_S_IFDIR:  # 61440 = 0xF000 mask
+    return -1  # Not a directory
+
+  var size: int32 = read32(addr(inode_buf[4]))
+  var name_len: int32 = fs_strlen(name)
+
+  # Read each data block of directory
+  var blk_idx: int32 = 0
+  while blk_idx < 3:
+    var blk: int32 = read32(addr(inode_buf[16 + blk_idx * 4]))
+    if blk == 0:
+      blk_idx = blk_idx + 1
+      continue
+
+    if brfs_bread(mount_id, blk, addr(brfs_block_buf2[0])) < 0:
+      return -1
+
+    # Scan directory entries
+    var offset: int32 = 0
+    while offset < BRFS_BLOCK_SIZE:
+      var entry_ino: int32 = read32(addr(brfs_block_buf2[offset]))
+      if entry_ino == 0:
+        offset = offset + BRFS_DIRENTRY_SIZE
+        continue
+
+      var entry_name_len: int32 = cast[int32](brfs_block_buf2[offset + 6])
+      if entry_name_len == name_len:
+        # Compare names
+        var is_match: int32 = 1
+        var j: int32 = 0
+        while j < name_len:
+          if brfs_block_buf2[offset + 8 + j] != name[j]:
+            is_match = 0
+            j = name_len
+          j = j + 1
+        if is_match == 1:
+          return entry_ino
+      offset = offset + BRFS_DIRENTRY_SIZE
+    blk_idx = blk_idx + 1
+
+  # TODO: Handle indirect block for large directories
+
+  return -1
+
+# Read directory entries
+# Returns next offset, or -1 if done
+proc brfs_readdir(mount_id: int32, dir_ino: int32, offset: int32, out_ino: ptr int32, out_name: ptr uint8, out_type: ptr int32): int32 =
+  var inode_buf: array[32, uint8]
+  if brfs_iget(mount_id, dir_ino, addr(inode_buf[0])) < 0:
+    return -1
+
+  var size: int32 = read32(addr(inode_buf[4]))
+
+  # Calculate which block and offset within block
+  var entries_per_block: int32 = BRFS_BLOCK_SIZE / BRFS_DIRENTRY_SIZE
+  var entry_num: int32 = offset / BRFS_DIRENTRY_SIZE
+  var blk_idx: int32 = entry_num / entries_per_block
+  var entry_in_block: int32 = entry_num - (blk_idx * entries_per_block)
+
+  while blk_idx < 3:
+    var blk: int32 = read32(addr(inode_buf[16 + blk_idx * 4]))
+    if blk == 0:
+      blk_idx = blk_idx + 1
+      entry_in_block = 0
+      continue
+
+    if brfs_bread(mount_id, blk, addr(brfs_block_buf2[0])) < 0:
+      return -1
+
+    while entry_in_block < entries_per_block:
+      var off: int32 = entry_in_block * BRFS_DIRENTRY_SIZE
+      var entry_ino: int32 = read32(addr(brfs_block_buf2[off]))
+
+      if entry_ino != 0:
+        out_ino[0] = entry_ino
+        out_type[0] = cast[int32](brfs_block_buf2[off + 7])
+        var name_len: int32 = cast[int32](brfs_block_buf2[off + 6])
+        var j: int32 = 0
+        while j < name_len:
+          out_name[j] = brfs_block_buf2[off + 8 + j]
+          j = j + 1
+        out_name[name_len] = cast[uint8](0)
+        return (blk_idx * entries_per_block + entry_in_block + 1) * BRFS_DIRENTRY_SIZE
+
+      entry_in_block = entry_in_block + 1
+
+    blk_idx = blk_idx + 1
+    entry_in_block = 0
+
+  return -1
+
+# Add an entry to a directory
+proc brfs_add_direntry(mount_id: int32, dir_ino: int32, name: ptr uint8, new_ino: int32, ftype: int32): int32 =
+  var inode_buf: array[32, uint8]
+  if brfs_iget(mount_id, dir_ino, addr(inode_buf[0])) < 0:
+    return -1
+
+  var name_len: int32 = fs_strlen(name)
+  if name_len > 24:
+    name_len = 24
+
+  # Find first free slot in directory
+  var blk_idx: int32 = 0
+  while blk_idx < 3:
+    var blk: int32 = read32(addr(inode_buf[16 + blk_idx * 4]))
+    if blk == 0:
+      # Need to allocate a new block
+      blk = brfs_balloc(mount_id)
+      if blk < 0:
+        return -1
+      # Clear the new block
+      var k: int32 = 0
+      while k < BRFS_BLOCK_SIZE:
+        brfs_block_buf2[k] = cast[uint8](0)
+        k = k + 1
+      if brfs_bwrite(mount_id, blk, addr(brfs_block_buf2[0])) < 0:
+        discard brfs_bfree(mount_id, blk)
+        return -1
+      # Update inode
+      write32(addr(inode_buf[16 + blk_idx * 4]), blk)
+      if brfs_iput(mount_id, dir_ino, addr(inode_buf[0])) < 0:
+        discard brfs_bfree(mount_id, blk)
+        return -1
+
+    if brfs_bread(mount_id, blk, addr(brfs_block_buf2[0])) < 0:
+      return -1
+
+    var offset: int32 = 0
+    while offset < BRFS_BLOCK_SIZE:
+      var entry_ino: int32 = read32(addr(brfs_block_buf2[offset]))
+      if entry_ino == 0:
+        # Found free slot
+        write32(addr(brfs_block_buf2[offset]), new_ino)
+        write16(addr(brfs_block_buf2[offset + 4]), BRFS_DIRENTRY_SIZE)
+        brfs_block_buf2[offset + 6] = cast[uint8](name_len)
+        brfs_block_buf2[offset + 7] = cast[uint8](ftype)
+        var j: int32 = 0
+        while j < name_len:
+          brfs_block_buf2[offset + 8 + j] = name[j]
+          j = j + 1
+        while j < 24:
+          brfs_block_buf2[offset + 8 + j] = cast[uint8](0)
+          j = j + 1
+        if brfs_bwrite(mount_id, blk, addr(brfs_block_buf2[0])) < 0:
+          return -1
+        # Update directory size
+        var old_size: int32 = read32(addr(inode_buf[4]))
+        var new_offset: int32 = blk_idx * BRFS_BLOCK_SIZE + offset + BRFS_DIRENTRY_SIZE
+        if new_offset > old_size:
+          write32(addr(inode_buf[4]), new_offset)
+          discard brfs_iput(mount_id, dir_ino, addr(inode_buf[0]))
+        return 0
+      offset = offset + BRFS_DIRENTRY_SIZE
+    blk_idx = blk_idx + 1
+
+  return -1  # Directory full
+
+# Create a file in a directory
+proc brfs_create(mount_id: int32, dir_ino: int32, name: ptr uint8): int32 =
+  # Check if name already exists
+  if brfs_lookup(mount_id, dir_ino, name) > 0:
+    return -1  # Already exists
+
+  # Allocate new inode
+  var new_ino: int32 = brfs_ialloc(mount_id)
+  if new_ino < 0:
+    return -1
+
+  # Initialize inode
+  var inode_buf: array[32, uint8]
+  var i: int32 = 0
+  while i < 32:
+    inode_buf[i] = cast[uint8](0)
+    i = i + 1
+  write16(addr(inode_buf[0]), BRFS_S_IFREG | 420)  # -rw-r--r-- (0644)
+  write16(addr(inode_buf[2]), 1)  # Link count
+
+  if brfs_iput(mount_id, new_ino, addr(inode_buf[0])) < 0:
+    discard brfs_ifree(mount_id, new_ino)
+    return -1
+
+  # Add directory entry
+  if brfs_add_direntry(mount_id, dir_ino, name, new_ino, 1) < 0:
+    discard brfs_ifree(mount_id, new_ino)
+    return -1
+
+  return new_ino
+
+# Create a directory
+proc brfs_mkdir(mount_id: int32, parent_ino: int32, name: ptr uint8): int32 =
+  # Check if name already exists
+  if brfs_lookup(mount_id, parent_ino, name) > 0:
+    return -1
+
+  # Allocate new inode
+  var new_ino: int32 = brfs_ialloc(mount_id)
+  if new_ino < 0:
+    return -1
+
+  # Allocate block for directory data
+  var blk: int32 = brfs_balloc(mount_id)
+  if blk < 0:
+    discard brfs_ifree(mount_id, new_ino)
+    return -1
+
+  # Initialize directory block with . and ..
+  var i: int32 = 0
+  while i < BRFS_BLOCK_SIZE:
+    brfs_block_buf2[i] = cast[uint8](0)
+    i = i + 1
+
+  # Entry for "."
+  write32(addr(brfs_block_buf2[0]), new_ino)
+  write16(addr(brfs_block_buf2[4]), 32)
+  brfs_block_buf2[6] = cast[uint8](1)
+  brfs_block_buf2[7] = cast[uint8](2)  # Directory type
+  brfs_block_buf2[8] = cast[uint8](46)  # '.'
+
+  # Entry for ".."
+  write32(addr(brfs_block_buf2[32]), parent_ino)
+  write16(addr(brfs_block_buf2[36]), 32)
+  brfs_block_buf2[38] = cast[uint8](2)
+  brfs_block_buf2[39] = cast[uint8](2)
+  brfs_block_buf2[40] = cast[uint8](46)
+  brfs_block_buf2[41] = cast[uint8](46)
+
+  if brfs_bwrite(mount_id, blk, addr(brfs_block_buf2[0])) < 0:
+    discard brfs_bfree(mount_id, blk)
+    discard brfs_ifree(mount_id, new_ino)
+    return -1
+
+  # Initialize inode
+  var inode_buf: array[32, uint8]
+  i = 0
+  while i < 32:
+    inode_buf[i] = cast[uint8](0)
+    i = i + 1
+  write16(addr(inode_buf[0]), BRFS_S_IFDIR | 493)  # drwxr-xr-x (0755)
+  write16(addr(inode_buf[2]), 2)  # Link count (. and ..)
+  write32(addr(inode_buf[4]), 64)  # Size (2 entries)
+  write32(addr(inode_buf[16]), blk)  # First block
+
+  if brfs_iput(mount_id, new_ino, addr(inode_buf[0])) < 0:
+    discard brfs_bfree(mount_id, blk)
+    discard brfs_ifree(mount_id, new_ino)
+    return -1
+
+  # Add entry in parent directory
+  if brfs_add_direntry(mount_id, parent_ino, name, new_ino, 2) < 0:
+    discard brfs_bfree(mount_id, blk)
+    discard brfs_ifree(mount_id, new_ino)
+    return -1
+
+  # Update parent link count
+  var parent_buf: array[32, uint8]
+  if brfs_iget(mount_id, parent_ino, addr(parent_buf[0])) == 0:
+    var links: int32 = read16(addr(parent_buf[2]))
+    write16(addr(parent_buf[2]), links + 1)
+    discard brfs_iput(mount_id, parent_ino, addr(parent_buf[0]))
+
+  return new_ino
+
+# Read file data
+proc brfs_read_file(mount_id: int32, ino: int32, offset: int32, buf: ptr uint8, len: int32): int32 =
+  var inode_buf: array[32, uint8]
+  if brfs_iget(mount_id, ino, addr(inode_buf[0])) < 0:
+    return -1
+
+  var size: int32 = read32(addr(inode_buf[4]))
+  if offset >= size:
+    return 0
+
+  var to_read: int32 = len
+  if offset + to_read > size:
+    to_read = size - offset
+
+  var bytes_read: int32 = 0
+  while bytes_read < to_read:
+    var file_offset: int32 = offset + bytes_read
+    var blk_idx: int32 = file_offset / BRFS_BLOCK_SIZE
+    var off_in_block: int32 = file_offset - (blk_idx * BRFS_BLOCK_SIZE)
+
+    if blk_idx >= 3:
+      break  # TODO: Handle indirect blocks
+
+    var blk: int32 = read32(addr(inode_buf[16 + blk_idx * 4]))
+    if blk == 0:
+      break
+
+    if brfs_bread(mount_id, blk, addr(brfs_block_buf2[0])) < 0:
+      return -1
+
+    var chunk: int32 = BRFS_BLOCK_SIZE - off_in_block
+    if chunk > to_read - bytes_read:
+      chunk = to_read - bytes_read
+
+    var j: int32 = 0
+    while j < chunk:
+      buf[bytes_read + j] = brfs_block_buf2[off_in_block + j]
+      j = j + 1
+
+    bytes_read = bytes_read + chunk
+
+  return bytes_read
+
+# Write file data
+proc brfs_write_file(mount_id: int32, ino: int32, offset: int32, buf: ptr uint8, len: int32): int32 =
+  var inode_buf: array[32, uint8]
+  if brfs_iget(mount_id, ino, addr(inode_buf[0])) < 0:
+    return -1
+
+  var bytes_written: int32 = 0
+  while bytes_written < len:
+    var file_offset: int32 = offset + bytes_written
+    var blk_idx: int32 = file_offset / BRFS_BLOCK_SIZE
+    var off_in_block: int32 = file_offset - (blk_idx * BRFS_BLOCK_SIZE)
+
+    if blk_idx >= 3:
+      break  # TODO: Handle indirect blocks
+
+    var blk: int32 = read32(addr(inode_buf[16 + blk_idx * 4]))
+    if blk == 0:
+      # Allocate new block
+      blk = brfs_balloc(mount_id)
+      if blk < 0:
+        break
+      # Clear the block
+      var k: int32 = 0
+      while k < BRFS_BLOCK_SIZE:
+        brfs_block_buf2[k] = cast[uint8](0)
+        k = k + 1
+      write32(addr(inode_buf[16 + blk_idx * 4]), blk)
+    else:
+      if brfs_bread(mount_id, blk, addr(brfs_block_buf2[0])) < 0:
+        break
+
+    var chunk: int32 = BRFS_BLOCK_SIZE - off_in_block
+    if chunk > len - bytes_written:
+      chunk = len - bytes_written
+
+    var j: int32 = 0
+    while j < chunk:
+      brfs_block_buf2[off_in_block + j] = buf[bytes_written + j]
+      j = j + 1
+
+    if brfs_bwrite(mount_id, blk, addr(brfs_block_buf2[0])) < 0:
+      break
+
+    bytes_written = bytes_written + chunk
+
+  # Update size if needed
+  var old_size: int32 = read32(addr(inode_buf[4]))
+  if offset + bytes_written > old_size:
+    write32(addr(inode_buf[4]), offset + bytes_written)
+
+  if brfs_iput(mount_id, ino, addr(inode_buf[0])) < 0:
+    return -1
+
+  return bytes_written
+
+# Global active mount for shell commands
+var brfs_active_mount: int32 = -1
+
+# =============================================================================
+# Main Entry Point
+# =============================================================================
+
 proc main() =
   # Initialize serial first for debug output
   serial_init()
@@ -368,6 +1883,35 @@ proc main() =
   init_paging()
   print_ok(cast[ptr uint8]("Paging enabled (16MB identity mapped)"))
 
+  # Initialize ATA disk driver
+  print_pending(cast[ptr uint8]("Initializing ATA"))
+  var ata_drives: int32 = ata_init()
+  if ata_drives > 0:
+    print_ok(cast[ptr uint8]("ATA initialized"))
+  else:
+    print_skip(cast[ptr uint8]("ATA: no drives"))
+
+  # Initialize block device layer
+  print_pending(cast[ptr uint8]("Initializing block devices"))
+  blkdev_init()
+  if blkdev_count > 0:
+    print_ok(cast[ptr uint8]("Block devices registered"))
+  else:
+    print_skip(cast[ptr uint8]("No block devices"))
+
+  # Scan for partitions
+  print_pending(cast[ptr uint8]("Scanning partitions"))
+  var partitions: int32 = partition_scan_all()
+  if partitions > 0:
+    print_ok(cast[ptr uint8]("Partitions found"))
+  else:
+    print_skip(cast[ptr uint8]("No partitions"))
+
+  # Initialize BrainFS
+  print_pending(cast[ptr uint8]("Initializing BrainFS"))
+  brfs_init()
+  print_ok(cast[ptr uint8]("BrainFS ready"))
+
   # Initialize scheduler
   print_pending(cast[ptr uint8]("Initializing scheduler"))
   init_scheduler()
@@ -387,31 +1931,6 @@ proc main() =
   ser_println(cast[ptr uint8](""))
   ser_println(cast[ptr uint8]("Kernel initialization complete!"))
 
-  # Test hex printing with known value
-  ser_print(cast[ptr uint8]("Test hex (0xDEADBEEF): "))
-  ser_print_hex(0xDEADBEEF)
-  ser_println(cast[ptr uint8](""))
-
-  # Display timer ticks to prove timer interrupt is working
-  ser_print(cast[ptr uint8]("Timer ticks: "))
-
-  # Wait for some timer ticks, then display the count
-  var i: int32 = 0
-  while i < 3:
-    # Simple delay loop
-    var j: int32 = 0
-    while j < 5000000:
-      j = j + 1
-
-    # Show current tick count
-    var ticks: int32 = get_tick_count()
-    ser_print_hex(ticks)
-    ser_print(cast[ptr uint8](" "))
-    i = i + 1
-
-  ser_println(cast[ptr uint8](""))
-  ser_println(cast[ptr uint8]("Timer test complete!"))
-
   # Initialize keyboard
   print_pending(cast[ptr uint8]("Initializing keyboard"))
   keyboard_init()
@@ -428,22 +1947,9 @@ proc main() =
   # Initialize tab completion
   init_builtins()
 
-  # Initialize networking
-  print_pending(cast[ptr uint8]("Initializing network"))
-  var net_result: int32 = net_init()
-  if net_result == 1:
-    kprint(cast[ptr uint8]("[OK] Network: "))
-    print_mac()
-    kprintln(cast[ptr uint8](""))
-    # Try to get IP via DHCP
-    var dhcp_result: int32 = dhcp_init()
-    if dhcp_result == 0:
-      kprintln(cast[ptr uint8]("[..] DHCP failed, using static IP"))
-    kprint(cast[ptr uint8]("[OK] IP: "))
-    print_ip()
-    kprintln(cast[ptr uint8](""))
-  else:
-    print_ok(cast[ptr uint8]("Network: No NIC found"))
+  # Initialize networking (DISABLED - mmio_write32 stalls)
+  # TODO: Fix e1000_init_rx mmio writes
+  print_ok(cast[ptr uint8]("Network: DISABLED"))
 
   kprintln(cast[ptr uint8](""))
   vga_set_color(VGA_LIGHT_GREEN, VGA_BLACK)
@@ -461,7 +1967,7 @@ proc main() =
     run_httpd()  # Basic HTTP server on port 80
 
   # Auto-start userland webapp for testing (set to 1 to enable)
-  var auto_uweb: int32 = 1  # Test userland webapp
+  var auto_uweb: int32 = 0  # DISABLED - network not working
   if auto_uweb == 1:
     run_userland_webapp()
 
@@ -673,6 +2179,7 @@ var dns_result_ready: int32 = 0         # DNS result ready flag
 var tcp_send_pkt: array[1500, uint8]    # TCP packet buffer
 var tcp_send_ip_pkt: array[1500, uint8] # IP packet buffer
 var tcp_send_in_progress: int32 = 0     # Guard against recursion
+var eth_send_frame: array[1518, uint8]  # Ethernet frame buffer (avoid stack overflow)
 
 # UDP receive state
 var udp_recv_port: int32 = 0                      # Port to listen on
@@ -1282,11 +2789,23 @@ proc fs_write(path: ptr uint8, content: ptr uint8, size: int32): int32 =
 
 proc fs_init() =
   # Clear all filesystem data (32KB)
+  # Work around Brainhair compiler bug with large constants (>= 0x8000)
   var i: int32 = 0
-  while i < 32768:
+  var limit: int32 = 16000
+  while i < limit:
     fs_data[i] = cast[uint8](0)
     i = i + 1
-
+  limit = 31000
+  while i < limit:
+    fs_data[i] = cast[uint8](0)
+    i = i + 1
+  # For the last part, avoid using 32768 directly - use 32767 + 1
+  limit = 32767
+  while i < limit:
+    fs_data[i] = cast[uint8](0)
+    i = i + 1
+  # Clear the last byte
+  fs_data[32767] = cast[uint8](0)
   # Set up superblock (block 0)
   var sb: ptr uint8 = fs_block_ptr(0)
   write32(addr(sb[0]), 0xBF5F5342)  # Magic "BSFS"
@@ -2065,6 +3584,7 @@ proc shell_execute() =
     kprintln(cast[ptr uint8]("  Net:    ping, ifconfig, arp, dns, ntp, httpd, uweb"))
     kprintln(cast[ptr uint8]("  Fun:    banner, hello, spin, guess, countdown"))
     kprintln(cast[ptr uint8]("  Debug:  peek, poke, dump, fill, run, calc"))
+    kprintln(cast[ptr uint8]("  Disk:   mkfs, dmount, dumount, dls, dcat, dwrite, dmkdir, dinfo"))
     kprintln(cast[ptr uint8](""))
     kprintln(cast[ptr uint8]("Shell features:"))
     kprintln(cast[ptr uint8]("  Pipes: cmd1 | cmd2 (grep, head, wc)"))
@@ -3824,6 +5344,90 @@ proc shell_execute() =
     vga_set_color(VGA_WHITE, VGA_BLACK)
     kprintln(cast[ptr uint8](""))
     return
+  # lsblk - list block devices
+  if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("lsblk")) == 1:
+    kprintln(cast[ptr uint8]("Block devices:"))
+    var i: int32 = 0
+    while i < blkdev_count:
+      kprint(cast[ptr uint8]("  "))
+      kprint(addr(blkdev_names[i * 16]))
+      kprint(cast[ptr uint8](": "))
+      kprint_dec(blkdev_sectors[i])
+      kprintln(cast[ptr uint8](" sectors"))
+      i = i + 1
+    return
+  # mkfs <dev> - format device with BrainFS
+  if cmd_len >= 5:
+    if cmd_buffer[0] == cast[uint8](109):  # 'm'
+      if cmd_buffer[1] == cast[uint8](107):  # 'k'
+        if cmd_buffer[2] == cast[uint8](102):  # 'f'
+          if cmd_buffer[3] == cast[uint8](115):  # 's'
+            if cmd_buffer[4] == cast[uint8](32):  # ' '
+              var dev_name: ptr uint8 = find_arg(addr(cmd_buffer[0]), 1)
+              if cast[int32](dev_name) == 0:
+                kprintln(cast[ptr uint8]("Usage: mkfs <device>"))
+                return
+              # Find device by name
+              var dev: int32 = blkdev_find(dev_name)
+              if dev < 0:
+                kprint(cast[ptr uint8]("Device not found: "))
+                kprintln(dev_name)
+                return
+              var result: int32 = brfs_mkfs(dev)
+              if result == 0:
+                kprintln(cast[ptr uint8]("Filesystem created successfully"))
+              else:
+                kprint(cast[ptr uint8]("mkfs failed: "))
+                kprint_dec(result)
+                kprintln(cast[ptr uint8](""))
+              return
+  # mount <dev> - mount BrainFS device
+  if cmd_len >= 6:
+    if cmd_buffer[0] == cast[uint8](109):  # 'm'
+      if cmd_buffer[1] == cast[uint8](111):  # 'o'
+        if cmd_buffer[2] == cast[uint8](117):  # 'u'
+          if cmd_buffer[3] == cast[uint8](110):  # 'n'
+            if cmd_buffer[4] == cast[uint8](116):  # 't'
+              if cmd_buffer[5] == cast[uint8](32):  # ' '
+                var dev_name: ptr uint8 = find_arg(addr(cmd_buffer[0]), 1)
+                if cast[int32](dev_name) == 0:
+                  kprintln(cast[ptr uint8]("Usage: mount <device>"))
+                  return
+                var dev: int32 = blkdev_find(dev_name)
+                if dev < 0:
+                  kprint(cast[ptr uint8]("Device not found: "))
+                  kprintln(dev_name)
+                  return
+                var result: int32 = brfs_mount(dev)
+                if result >= 0:
+                  kprint(cast[ptr uint8]("Mounted as mount "))
+                  kprint_dec(result)
+                  kprintln(cast[ptr uint8](""))
+                else:
+                  kprint(cast[ptr uint8]("mount failed: "))
+                  kprint_dec(result)
+                  kprintln(cast[ptr uint8](""))
+                return
+  # lsmnt - list mounted filesystems
+  if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("lsmnt")) == 1:
+    kprintln(cast[ptr uint8]("Mounted filesystems:"))
+    var i: int32 = 0
+    var found: int32 = 0
+    while i < BRFS_MAX_MOUNTS:
+      if brfs_mount_active[i] == 1:
+        var dev: int32 = brfs_mount_dev[i]
+        kprint(cast[ptr uint8]("  mount "))
+        kprint_dec(i)
+        kprint(cast[ptr uint8](": "))
+        kprint(addr(blkdev_names[dev * 16]))
+        kprint(cast[ptr uint8](" ("))
+        kprint_dec(brfs_mount_total_blocks[i])
+        kprintln(cast[ptr uint8](" blocks)"))
+        found = 1
+      i = i + 1
+    if found == 0:
+      kprintln(cast[ptr uint8]("  (none)"))
+    return
   if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("mem")) == 1:
     kprintln(cast[ptr uint8]("Memory Map:"))
     kprintln(cast[ptr uint8]("  Kernel: 0x10000 - 0x1FFFF (64KB)"))
@@ -3919,6 +5523,217 @@ proc shell_execute() =
                       serial_putchar(ch)
                       i = i + 1
                   kprintln(cast[ptr uint8](""))
+                return
+
+    # BrainFS commands: mkfs, dmount, dumount, dls, dcat, dwrite, dmkdir
+    # mkfs <dev> - Format a partition as BrainFS
+    if cmd_buffer[0] == cast[uint8](109):  # 'm'
+      if cmd_buffer[1] == cast[uint8](107):  # 'k'
+        if cmd_buffer[2] == cast[uint8](102):  # 'f'
+          if cmd_buffer[3] == cast[uint8](115):  # 's'
+            if cmd_buffer[4] == cast[uint8](32):  # ' '
+              var dev_arg: ptr uint8 = find_arg(addr(cmd_buffer[0]), 1)
+              if cast[int32](dev_arg) == 0:
+                kprintln(cast[ptr uint8]("Usage: mkfs <device>"))
+                return
+              var dev: int32 = parse_int(dev_arg)
+              if dev < 0 or dev >= blkdev_count:
+                kprintln(cast[ptr uint8]("Invalid device"))
+                return
+              kprint(cast[ptr uint8]("Formatting device "))
+              kprint_dec(dev)
+              kprintln(cast[ptr uint8](" as BrainFS..."))
+              if brfs_mkfs(dev) == 0:
+                kprintln(cast[ptr uint8]("Filesystem created successfully"))
+              else:
+                kprintln(cast[ptr uint8]("Failed to create filesystem"))
+              return
+
+    # dmount <dev> - Mount a BrainFS partition
+    if cmd_buffer[0] == cast[uint8](100):  # 'd'
+      if cmd_buffer[1] == cast[uint8](109):  # 'm'
+        if cmd_buffer[2] == cast[uint8](111):  # 'o'
+          if cmd_buffer[3] == cast[uint8](117):  # 'u'
+            if cmd_buffer[4] == cast[uint8](110):  # 'n'
+              if cmd_buffer[5] == cast[uint8](116):  # 't'
+                if cmd_buffer[6] == cast[uint8](32):  # ' '
+                  var dev_arg: ptr uint8 = find_arg(addr(cmd_buffer[0]), 1)
+                  if cast[int32](dev_arg) == 0:
+                    kprintln(cast[ptr uint8]("Usage: dmount <device>"))
+                    return
+                  var dev: int32 = parse_int(dev_arg)
+                  if dev < 0 or dev >= blkdev_count:
+                    kprintln(cast[ptr uint8]("Invalid device"))
+                    return
+                  var mount_id: int32 = brfs_mount(dev)
+                  if mount_id >= 0:
+                    brfs_active_mount = mount_id
+                    kprint(cast[ptr uint8]("Mounted as mount "))
+                    kprint_dec(mount_id)
+                    kprintln(cast[ptr uint8](""))
+                  else:
+                    kprintln(cast[ptr uint8]("Failed to mount"))
+                  return
+
+    # dumount - Unmount the active BrainFS mount
+    if cmd_buffer[0] == cast[uint8](100):  # 'd'
+      if cmd_buffer[1] == cast[uint8](117):  # 'u'
+        if cmd_buffer[2] == cast[uint8](109):  # 'm'
+          if cmd_buffer[3] == cast[uint8](111):  # 'o'
+            if cmd_buffer[4] == cast[uint8](117):  # 'u'
+              if cmd_buffer[5] == cast[uint8](110):  # 'n'
+                if cmd_buffer[6] == cast[uint8](116):  # 't'
+                  if cmd_buffer[7] == cast[uint8](0):
+                    if brfs_active_mount < 0:
+                      kprintln(cast[ptr uint8]("No filesystem mounted"))
+                      return
+                    if brfs_unmount(brfs_active_mount) == 0:
+                      kprintln(cast[ptr uint8]("Unmounted successfully"))
+                      brfs_active_mount = -1
+                    else:
+                      kprintln(cast[ptr uint8]("Failed to unmount"))
+                    return
+
+    # dls [path] - List directory on mounted disk
+    if cmd_buffer[0] == cast[uint8](100):  # 'd'
+      if cmd_buffer[1] == cast[uint8](108):  # 'l'
+        if cmd_buffer[2] == cast[uint8](115):  # 's'
+          if cmd_buffer[3] == cast[uint8](0) or cmd_buffer[3] == cast[uint8](32):
+            if brfs_active_mount < 0:
+              kprintln(cast[ptr uint8]("No filesystem mounted (use dmount)"))
+              return
+            var dir_ino: int32 = BRFS_ROOT_INODE
+            # TODO: Handle path argument
+            kprintln(cast[ptr uint8]("Directory listing:"))
+            var offset: int32 = 0
+            var entry_ino: int32 = 0
+            var entry_name: array[32, uint8]
+            var entry_type: int32 = 0
+            while 1:
+              offset = brfs_readdir(brfs_active_mount, dir_ino, offset, addr(entry_ino), addr(entry_name[0]), addr(entry_type))
+              if offset < 0:
+                break
+              if entry_type == 2:
+                vga_set_color(VGA_LIGHT_BLUE, VGA_BLACK)
+                kprint(addr(entry_name[0]))
+                kprint(cast[ptr uint8]("/"))
+                vga_set_color(VGA_WHITE, VGA_BLACK)
+              else:
+                kprint(addr(entry_name[0]))
+              kprintln(cast[ptr uint8](""))
+            return
+
+    # dcat <filename> - Show file contents from mounted disk
+    if cmd_buffer[0] == cast[uint8](100):  # 'd'
+      if cmd_buffer[1] == cast[uint8](99):  # 'c'
+        if cmd_buffer[2] == cast[uint8](97):  # 'a'
+          if cmd_buffer[3] == cast[uint8](116):  # 't'
+            if cmd_buffer[4] == cast[uint8](32):  # ' '
+              if brfs_active_mount < 0:
+                kprintln(cast[ptr uint8]("No filesystem mounted"))
+                return
+              var name_arg: ptr uint8 = find_arg(addr(cmd_buffer[0]), 1)
+              if cast[int32](name_arg) == 0:
+                kprintln(cast[ptr uint8]("Usage: dcat <filename>"))
+                return
+              var ino: int32 = brfs_lookup(brfs_active_mount, BRFS_ROOT_INODE, name_arg)
+              if ino < 0:
+                kprintln(cast[ptr uint8]("File not found"))
+                return
+              var file_buf: array[1024, uint8]
+              var bytes: int32 = brfs_read_file(brfs_active_mount, ino, 0, addr(file_buf[0]), 1024)
+              if bytes > 0:
+                var k: int32 = 0
+                while k < bytes:
+                  vga_putchar(cast[int32](file_buf[k]))
+                  serial_putchar(cast[int32](file_buf[k]))
+                  k = k + 1
+                if file_buf[bytes - 1] != cast[uint8](10):
+                  kprintln(cast[ptr uint8](""))
+              return
+
+    # dwrite <filename> <text> - Write to file on disk
+    if cmd_buffer[0] == cast[uint8](100):  # 'd'
+      if cmd_buffer[1] == cast[uint8](119):  # 'w'
+        if cmd_buffer[2] == cast[uint8](114):  # 'r'
+          if cmd_buffer[3] == cast[uint8](105):  # 'i'
+            if cmd_buffer[4] == cast[uint8](116):  # 't'
+              if cmd_buffer[5] == cast[uint8](101):  # 'e'
+                if cmd_buffer[6] == cast[uint8](32):  # ' '
+                  if brfs_active_mount < 0:
+                    kprintln(cast[ptr uint8]("No filesystem mounted"))
+                    return
+                  var name_arg: ptr uint8 = find_arg(addr(cmd_buffer[0]), 1)
+                  var text_arg: ptr uint8 = find_arg(addr(cmd_buffer[0]), 2)
+                  if cast[int32](name_arg) == 0 or cast[int32](text_arg) == 0:
+                    kprintln(cast[ptr uint8]("Usage: dwrite <filename> <text>"))
+                    return
+                  var ino: int32 = brfs_lookup(brfs_active_mount, BRFS_ROOT_INODE, name_arg)
+                  if ino < 0:
+                    # Create file
+                    ino = brfs_create(brfs_active_mount, BRFS_ROOT_INODE, name_arg)
+                    if ino < 0:
+                      kprintln(cast[ptr uint8]("Failed to create file"))
+                      return
+                  var text_len: int32 = fs_strlen(text_arg)
+                  var written: int32 = brfs_write_file(brfs_active_mount, ino, 0, text_arg, text_len)
+                  if written > 0:
+                    kprint(cast[ptr uint8]("Wrote "))
+                    kprint_dec(written)
+                    kprintln(cast[ptr uint8](" bytes"))
+                  else:
+                    kprintln(cast[ptr uint8]("Write failed"))
+                  return
+
+    # dmkdir <dirname> - Create directory on disk
+    if cmd_buffer[0] == cast[uint8](100):  # 'd'
+      if cmd_buffer[1] == cast[uint8](109):  # 'm'
+        if cmd_buffer[2] == cast[uint8](107):  # 'k'
+          if cmd_buffer[3] == cast[uint8](100):  # 'd'
+            if cmd_buffer[4] == cast[uint8](105):  # 'i'
+              if cmd_buffer[5] == cast[uint8](114):  # 'r'
+                if cmd_buffer[6] == cast[uint8](32):  # ' '
+                  if brfs_active_mount < 0:
+                    kprintln(cast[ptr uint8]("No filesystem mounted"))
+                    return
+                  var name_arg: ptr uint8 = find_arg(addr(cmd_buffer[0]), 1)
+                  if cast[int32](name_arg) == 0:
+                    kprintln(cast[ptr uint8]("Usage: dmkdir <dirname>"))
+                    return
+                  var ino: int32 = brfs_mkdir(brfs_active_mount, BRFS_ROOT_INODE, name_arg)
+                  if ino > 0:
+                    kprintln(cast[ptr uint8]("Directory created"))
+                  else:
+                    kprintln(cast[ptr uint8]("Failed to create directory"))
+                  return
+
+    # dinfo - Show mounted disk info
+    if cmd_buffer[0] == cast[uint8](100):  # 'd'
+      if cmd_buffer[1] == cast[uint8](105):  # 'i'
+        if cmd_buffer[2] == cast[uint8](110):  # 'n'
+          if cmd_buffer[3] == cast[uint8](102):  # 'f'
+            if cmd_buffer[4] == cast[uint8](111):  # 'o'
+              if cmd_buffer[5] == cast[uint8](0):
+                if brfs_active_mount < 0:
+                  kprintln(cast[ptr uint8]("No filesystem mounted"))
+                  return
+                var m: int32 = brfs_active_mount
+                kprint(cast[ptr uint8]("Mount ID: "))
+                kprint_dec(m)
+                kprintln(cast[ptr uint8](""))
+                kprint(cast[ptr uint8]("Device:   "))
+                kprint_dec(brfs_mount_dev[m])
+                kprintln(cast[ptr uint8](""))
+                kprint(cast[ptr uint8]("Blocks:   "))
+                kprint_dec(brfs_mount_total_blocks[m])
+                kprint(cast[ptr uint8](" total, "))
+                kprint_dec(brfs_mount_free_blocks[m])
+                kprintln(cast[ptr uint8](" free"))
+                kprint(cast[ptr uint8]("Inodes:   "))
+                kprint_dec(brfs_mount_total_inodes[m])
+                kprint(cast[ptr uint8](" total, "))
+                kprint_dec(brfs_mount_free_inodes[m])
+                kprintln(cast[ptr uint8](" free"))
                 return
 
     vga_set_color(VGA_LIGHT_RED, VGA_BLACK)
@@ -4281,7 +6096,7 @@ const E1000_TCTL_EN: int32 = 0x00000002    # Transmit Enable
 const E1000_TCTL_PSP: int32 = 0x00000008   # Pad Short Packets
 
 # Descriptor ring sizes (must be multiple of 8, each descriptor is 16 bytes)
-const RX_DESC_COUNT: int32 = 32         # Enough for network traffic
+const RX_DESC_COUNT: int32 = 16         # Increased for better handling
 const TX_DESC_COUNT: int32 = 32         # Enough for HTTP responses
 const RX_BUFFER_SIZE: int32 = 2048
 const TX_BUFFER_SIZE: int32 = 2048
@@ -4290,9 +6105,9 @@ const TX_BUFFER_SIZE: int32 = 2048
 # Each descriptor: 16 bytes = 4 dwords
 # [0-7]: buffer address (64-bit), [8-9]: length, [10]: checksum, [11]: status, [12-15]: special/errors
 # Add padding for 16-byte alignment
-var rx_descs_raw: array[144, uint8]     # 8 * 16 bytes + 16 for alignment
+var rx_descs_raw: array[272, uint8]     # 16 * 16 bytes + 16 for alignment
 var tx_descs_raw: array[144, uint8]     # 8 * 16 bytes + 16 for alignment
-var rx_buffers: array[16384, uint8]     # 8 * 2048 bytes
+var rx_buffers: array[32768, uint8]     # 16 * 2048 bytes
 var tx_buffers: array[16384, uint8]     # 8 * 2048 bytes
 var rx_descs_aligned: int32 = 0         # Aligned pointer (set during init)
 var tx_descs_aligned: int32 = 0         # Aligned pointer (set during init)
@@ -4394,40 +6209,66 @@ proc e1000_read_mac() =
   e1000_write(E1000_RAL, ral)
   e1000_write(E1000_RAH, (rah & 0xFFFF) | 0x80000000)  # Set AV bit
 
+proc e1000_reset_rx() =
+  # Sync rx_cur with hardware's RDH (where next packet will arrive)
+  # This is safer than trying to reset the entire ring
+  var rdh: int32 = e1000_read(E1000_RDH)
+  var rdt: int32 = e1000_read(E1000_RDT)
+  ser_print(cast[ptr uint8]("[RX] RDH="))
+  ser_print_hex(rdh)
+  ser_print(cast[ptr uint8](" RDT="))
+  ser_print_hex(rdt)
+  ser_print(cast[ptr uint8](" old_cur="))
+  ser_print_hex(rx_cur)
+  ser_println(cast[ptr uint8](""))
+  rx_cur = rdh
+
 proc e1000_init_rx() =
+  kprint(cast[ptr uint8]("r0"))
   # Set up RX descriptor ring
   var i: int32 = 0
   while i < RX_DESC_COUNT:
+    kprint(cast[ptr uint8]("."))
     var desc_addr: int32 = rx_descs_aligned + (i * 16)
     var buf_addr: int32 = cast[int32](addr(rx_buffers[0])) + (i * RX_BUFFER_SIZE)
+    kprint(cast[ptr uint8]("a"))
 
     # Buffer address (64-bit, low 32 bits)
     mmio_write32(desc_addr, buf_addr)
+    kprint(cast[ptr uint8]("b"))
     mmio_write32(desc_addr + 4, 0)  # High 32 bits
+    kprint(cast[ptr uint8]("c"))
 
     # Clear status
     mmio_write32(desc_addr + 8, 0)
+    kprint(cast[ptr uint8]("d"))
     mmio_write32(desc_addr + 12, 0)
+    kprint(cast[ptr uint8]("e"))
 
     i = i + 1
 
+  kprint(cast[ptr uint8]("r1"))
   # Set RX descriptor base address
   e1000_write(E1000_RDBAL, rx_descs_aligned)
   e1000_write(E1000_RDBAH, 0)
 
+  kprint(cast[ptr uint8]("r2"))
   # Set RX descriptor length (in bytes)
   e1000_write(E1000_RDLEN, RX_DESC_COUNT * 16)
 
+  kprint(cast[ptr uint8]("r3"))
   # Set head and tail
   e1000_write(E1000_RDH, 0)
   e1000_write(E1000_RDT, RX_DESC_COUNT - 1)
 
+  kprint(cast[ptr uint8]("r4"))
   # Enable receiver (with promiscuous mode for debugging)
   # UPE = Unicast Promiscuous Enable (bit 3)
   # MPE = Multicast Promiscuous Enable (bit 4)
   var rctl: int32 = E1000_RCTL_EN | E1000_RCTL_BAM | E1000_RCTL_BSIZE_2048 | E1000_RCTL_SECRC
   rctl = rctl | 0x18  # Add UPE and MPE bits
   e1000_write(E1000_RCTL, rctl)
+  kprint(cast[ptr uint8]("r5"))
 
 
 proc e1000_init_tx() =
@@ -4480,8 +6321,13 @@ proc e1000_reset() =
   e1000_write(E1000_CTRL, ctrl | E1000_CTRL_RST)
 
   # Wait for reset to complete
+  # (Using nested loops to work around compiler bug with large constants)
   var i: int32 = 0
-  while i < 100000:
+  var j: int32 = 0
+  while i < 100:
+    j = 0
+    while j < 1000:
+      j = j + 1
     i = i + 1
 
   # Set link up
@@ -4497,6 +6343,7 @@ proc e1000_reset() =
     i = i + 1
 
 proc net_init(): int32 =
+  kprint(cast[ptr uint8]("1"))
   # Calculate 16-byte aligned descriptor ring addresses
   # Round up to next 16-byte boundary using bitmask
   var rx_raw: int32 = cast[int32](addr(rx_descs_raw[0]))
@@ -4517,10 +6364,12 @@ proc net_init(): int32 =
     broadcast_mac[j] = cast[uint8](0xFF)
     j = j + 1
 
+  kprint(cast[ptr uint8]("2"))
   # Find E1000
   if pci_find_e1000() == 0:
     return 0  # Not found
 
+  kprint(cast[ptr uint8]("3"))
   e1000_found = 1
 
   # Map MMIO region (128KB should be enough for E1000)
@@ -4531,16 +6380,21 @@ proc net_init(): int32 =
     i = i + 1
   flush_tlb()
 
+  kprint(cast[ptr uint8]("4"))
   # Reset device
   e1000_reset()
 
+  kprint(cast[ptr uint8]("5"))
   # Read MAC address
   e1000_read_mac()
 
+  kprint(cast[ptr uint8]("6"))
   # Initialize RX and TX
   e1000_init_rx()
+  kprint(cast[ptr uint8]("6b"))
   e1000_init_tx()
 
+  kprint(cast[ptr uint8]("7"))
   # Enable interrupts for RX
   e1000_write(E1000_IMS, 0x1F6DC)  # RXT0, RXO, RXDMT0, etc.
 
@@ -4589,20 +6443,25 @@ proc e1000_send_packet(data: ptr uint8, length: int32): int32 =
 
   return 0
 
+var rx_poll_count: int32 = 0
+
 proc e1000_receive_packet(): int32 =
   if e1000_found == 0:
     return 0
+
+  rx_poll_count = rx_poll_count + 1
 
   var desc_idx: int32 = rx_cur
   var desc_addr: int32 = rx_descs_aligned + (desc_idx * 16)
 
   # Check if packet received (DD bit set in status)
-  # Status byte is at offset 12 of the RX descriptor
+  # Status byte is at offset 12 of the RX descriptor (legacy format)
+  # Read as 32-bit word, status is in bits 0-7
   var status_word: int32 = mmio_read32(desc_addr + 12)
-  var status: int32 = status_word & 0xFF  # Status byte is low 8 bits
+  var status: int32 = status_word & 0xFF
 
   if (status & 0x01) == 0:
-    return 0  # No packet
+    return 0  # No packet - DD bit not set
 
   # Get packet length
   var info: int32 = mmio_read32(desc_addr + 8)
@@ -4622,6 +6481,11 @@ proc e1000_receive_packet(): int32 =
   rx_cur = (rx_cur + 1) % RX_DESC_COUNT
   e1000_write(E1000_RDT, old_rx_cur)
 
+  # Debug: show rx ring state
+  ser_print(cast[ptr uint8]("!"))
+  ser_print_hex(old_rx_cur)
+  ser_print(cast[ptr uint8]("/"))
+
   return length
 
 # ============================================================================
@@ -4632,39 +6496,39 @@ const ETH_TYPE_IP: int32 = 0x0800
 const ETH_TYPE_ARP: int32 = 0x0806
 
 proc eth_send(dest_mac: ptr uint8, eth_type: int32, data: ptr uint8, data_len: int32): int32 =
-  var frame: array[1518, uint8]
+  # Use global eth_send_frame buffer to avoid 1518-byte stack allocation
   var i: int32 = 0
 
   # Destination MAC (6 bytes)
   while i < 6:
-    frame[i] = dest_mac[i]
+    eth_send_frame[i] = dest_mac[i]
     i = i + 1
 
   # Source MAC (6 bytes)
   i = 0
   while i < 6:
-    frame[6 + i] = my_mac[i]
+    eth_send_frame[6 + i] = my_mac[i]
     i = i + 1
 
   # EtherType (2 bytes, big-endian)
-  frame[12] = cast[uint8]((eth_type >> 8) & 0xFF)
-  frame[13] = cast[uint8](eth_type & 0xFF)
+  eth_send_frame[12] = cast[uint8]((eth_type >> 8) & 0xFF)
+  eth_send_frame[13] = cast[uint8](eth_type & 0xFF)
 
   # Data
   i = 0
   while i < data_len:
-    frame[14 + i] = data[i]
+    eth_send_frame[14 + i] = data[i]
     i = i + 1
 
   # Pad to minimum 60 bytes if needed
   var total_len: int32 = 14 + data_len
   if total_len < 60:
     while total_len < 60:
-      frame[total_len] = cast[uint8](0)
+      eth_send_frame[total_len] = cast[uint8](0)
       total_len = total_len + 1
     total_len = 60
 
-  return e1000_send_packet(addr(frame[0]), total_len)
+  return e1000_send_packet(addr(eth_send_frame[0]), total_len)
 
 # ============================================================================
 # IP Checksum
@@ -5142,7 +7006,9 @@ proc ip_handle_packet(data: ptr uint8, length: int32) =
   if protocol == IP_PROTO_ICMP:
     icmp_handle_packet(src_ip, payload, payload_len)
   if protocol == IP_PROTO_TCP:
+    ser_print(cast[ptr uint8]("T"))
     tcp_handle_packet(src_ip, payload, payload_len)
+    ser_print(cast[ptr uint8]("."))
   if protocol == IP_PROTO_UDP:
     udp_handle_packet(src_ip, payload, payload_len)
 
@@ -5895,10 +7761,36 @@ proc run_userland_webapp() =
   vga_print_hex(entry)
   kprintln(cast[ptr uint8](""))
 
+  # Debug: verify code was loaded correctly by printing first few bytes
+  kprint(cast[ptr uint8](" * Code @ entry: "))
+  var entry_ptr: ptr uint8 = cast[ptr uint8](entry)
+  var j: int32 = 0
+  while j < 8:
+    vga_print_hex(cast[int32](entry_ptr[j]))
+    kprint(cast[ptr uint8](" "))
+    j = j + 1
+  kprintln(cast[ptr uint8](""))
+
+  # Debug: check code at expected index address (0x0804B9A3)
+  kprint(cast[ptr uint8](" * Code @ 0x0804B9A3: "))
+  var idx_ptr: ptr uint8 = cast[ptr uint8](0x0804B9A3)
+  j = 0
+  while j < 8:
+    vga_print_hex(cast[int32](idx_ptr[j]))
+    kprint(cast[ptr uint8](" "))
+    j = j + 1
+  kprintln(cast[ptr uint8](""))
+
   # Call entry point directly (for testing)
   # This runs the webapp in kernel mode
   kprintln(cast[ptr uint8](" * Calling webapp entry point directly..."))
   call_entry(entry)
+
+  # Debug: print route_handlers[0] after webapp returns (it shouldn't return, but just in case)
+  kprint(cast[ptr uint8](" * route_handlers[0] = 0x"))
+  var rh_ptr: ptr int32 = cast[ptr int32](0x0804C560)  # Approximate address of route_handlers
+  vga_print_hex(rh_ptr[0])
+  kprintln(cast[ptr uint8](""))
 
 # Flask-style webapp with routing (kernel mode)
 proc run_webapp() =
@@ -6070,7 +7962,8 @@ proc tcp_find_free(): int32 =
 proc tcp_find_conn(remote_ip: ptr uint8, remote_port: int32, local_port: int32): int32 =
   var i: int32 = 0
   while i < TCP_MAX_CONNS:
-    if tcp_state[i] != TCP_STATE_CLOSED:
+    var st: int32 = tcp_state[i]
+    if st != TCP_STATE_CLOSED:
       if tcp_local_port[i] == local_port:
         if tcp_remote_port[i] == remote_port:
           var ip_match: int32 = 1
@@ -6115,15 +8008,8 @@ proc tcp_checksum(src_ip: ptr uint8, dst_ip: ptr uint8, tcp_data: ptr uint8, tcp
 proc tcp_send_packet(conn: int32, flags: int32, data: ptr uint8, data_len: int32) =
   # Guard against recursion (net_poll during ARP wait could cause this)
   if tcp_send_in_progress == 1:
-    ser_println(cast[ptr uint8]("[TCP] WARNING: recursion detected"))
     return
   tcp_send_in_progress = 1
-
-  ser_print(cast[ptr uint8]("[TCP] send_packet conn="))
-  ser_print_hex(conn)
-  ser_print(cast[ptr uint8](" flags="))
-  ser_print_hex(flags)
-  ser_println(cast[ptr uint8](""))
 
   if conn < 0:
     tcp_send_in_progress = 0
@@ -6134,7 +8020,6 @@ proc tcp_send_packet(conn: int32, flags: int32, data: ptr uint8, data_len: int32
 
   # Use static buffers to avoid stack overflow
   var i: int32 = 0
-  ser_println(cast[ptr uint8]("[TCP] building header"))
 
   # TCP header (20 bytes minimum)
   var tcp_header_len: int32 = 20
@@ -6144,16 +8029,6 @@ proc tcp_send_packet(conn: int32, flags: int32, data: ptr uint8, data_len: int32
   var remote_port: int32 = tcp_remote_port[conn]
   var seq_num: int32 = tcp_seq[conn]
   var ack_num: int32 = tcp_ack[conn]
-
-  ser_print(cast[ptr uint8]("[TCP] src_port="))
-  ser_print_hex(local_port)
-  ser_print(cast[ptr uint8](" dst_port="))
-  ser_print_hex(remote_port)
-  ser_print(cast[ptr uint8](" seq="))
-  ser_print_hex(seq_num)
-  ser_print(cast[ptr uint8](" ack="))
-  ser_print_hex(ack_num)
-  ser_println(cast[ptr uint8](""))
 
   # Source port
   tcp_send_pkt[0] = cast[uint8]((local_port >> 8) & 0xFF)
@@ -6194,22 +8069,18 @@ proc tcp_send_packet(conn: int32, flags: int32, data: ptr uint8, data_len: int32
   tcp_send_pkt[19] = cast[uint8](0)
 
   # Copy data
-  ser_println(cast[ptr uint8]("[TCP] copying data"))
   i = 0
   while i < data_len:
     tcp_send_pkt[20 + i] = data[i]
     i = i + 1
 
   # Calculate checksum
-  ser_println(cast[ptr uint8]("[TCP] calc checksum"))
   var remote_ip_ptr: ptr uint8 = addr(tcp_remote_ip[conn * 4])
   var csum: int32 = tcp_checksum(addr(my_ip[0]), remote_ip_ptr, addr(tcp_send_pkt[0]), 20 + data_len)
   tcp_send_pkt[16] = cast[uint8]((csum >> 8) & 0xFF)
   tcp_send_pkt[17] = cast[uint8](csum & 0xFF)
-  ser_println(cast[ptr uint8]("[TCP] checksum done"))
 
   # Wrap in IP and send
-  ser_println(cast[ptr uint8]("[TCP] building IP header"))
 
   # IP header
   var total_len: int32 = 20 + 20 + data_len
@@ -6239,18 +8110,15 @@ proc tcp_send_packet(conn: int32, flags: int32, data: ptr uint8, data_len: int32
     i = i + 1
 
   # IP checksum
-  ser_println(cast[ptr uint8]("[TCP] IP checksum"))
   var ip_csum: int32 = ip_checksum(addr(tcp_send_ip_pkt[0]), 20)
   tcp_send_ip_pkt[10] = cast[uint8]((ip_csum >> 8) & 0xFF)
   tcp_send_ip_pkt[11] = cast[uint8](ip_csum & 0xFF)
-  ser_println(cast[ptr uint8]("[TCP] copy TCP to IP"))
 
   # Copy TCP data
   i = 0
   while i < 20 + data_len:
     tcp_send_ip_pkt[20 + i] = tcp_send_pkt[i]
     i = i + 1
-  ser_println(cast[ptr uint8]("[TCP] ARP lookup"))
 
   # Send via ARP lookup
   var dest_mac: array[6, uint8]
@@ -6259,9 +8127,6 @@ proc tcp_send_packet(conn: int32, flags: int32, data: ptr uint8, data_len: int32
   gateway_ip[1] = cast[uint8](0)
   gateway_ip[2] = cast[uint8](2)
   gateway_ip[3] = cast[uint8](2)
-  ser_print(cast[ptr uint8]("[TCP] arp_count="))
-  ser_print_hex(arp_count)
-  ser_println(cast[ptr uint8](""))
 
   var found: int32 = 0
   i = 0
@@ -6279,25 +8144,15 @@ proc tcp_send_packet(conn: int32, flags: int32, data: ptr uint8, data_len: int32
         j = j + 1
       found = 1
     i = i + 1
-  ser_print(cast[ptr uint8]("[TCP] found="))
-  ser_print_hex(found)
-  ser_println(cast[ptr uint8](""))
 
   if found == 0:
-    ser_println(cast[ptr uint8]("[TCP] sending ARP request"))
     arp_send_request(addr(gateway_ip[0]))
-    ser_println(cast[ptr uint8]("[TCP] waiting for ARP reply"))
     var start_tick: int32 = get_tick_count()
     while found == 0:
       if (get_tick_count() - start_tick) >= 500:
-        ser_println(cast[ptr uint8]("[TCP] ARP timeout"))
         tcp_send_in_progress = 0
         return
       net_poll()
-      if arp_count > 0:
-        ser_print(cast[ptr uint8]("[TCP] arp_count now="))
-        ser_print_hex(arp_count)
-        ser_println(cast[ptr uint8](""))
       var k: int32 = 0
       while k < arp_count:
         var arp_matched: int32 = 1
@@ -6312,17 +8167,11 @@ proc tcp_send_packet(conn: int32, flags: int32, data: ptr uint8, data_len: int32
             dest_mac[m] = arp_mac[k * 6 + m]
             m = m + 1
           found = 1
-          ser_println(cast[ptr uint8]("[TCP] found in loop!"))
         k = k + 1
-      if found == 1:
-        ser_println(cast[ptr uint8]("[TCP] breaking from ARP wait"))
-  ser_println(cast[ptr uint8]("[TCP] ARP wait done"))
 
   if found == 1:
-    ser_println(cast[ptr uint8]("[TCP] eth_send called"))
+    ser_println(cast[ptr uint8]("TX"))
     eth_send(addr(dest_mac[0]), ETH_TYPE_IP, addr(tcp_send_ip_pkt[0]), total_len)
-  else:
-    ser_println(cast[ptr uint8]("[TCP] ERROR: no gateway MAC"))
 
   tcp_send_in_progress = 0
 
@@ -6414,15 +8263,20 @@ proc tcp_read(conn: int32, buf: ptr uint8, max_len: int32): int32 =
 
 # Close TCP connection
 proc tcp_close(conn: int32) =
+  ser_print(cast[ptr uint8]("[TCP] close conn="))
+  ser_print_hex(conn)
+  ser_print(cast[ptr uint8](" state="))
+  ser_print_hex(tcp_state[conn])
+  ser_println(cast[ptr uint8](""))
   if conn < 0:
     return
   if conn >= TCP_MAX_CONNS:
     return
-  if tcp_state[conn] == TCP_STATE_ESTABLISHED:
-    tcp_send_packet(conn, TCP_FIN | TCP_ACK, cast[ptr uint8](0), 0)
-    tcp_state[conn] = TCP_STATE_FIN_WAIT_1
-  else:
-    tcp_state[conn] = TCP_STATE_CLOSED
+  # Send RST to force-close connection
+  if tcp_state[conn] != TCP_STATE_CLOSED:
+    ser_println(cast[ptr uint8]("[TCP] Sending RST"))
+    tcp_send_packet(conn, TCP_RST | TCP_ACK, cast[ptr uint8](0), 0)
+  tcp_state[conn] = TCP_STATE_CLOSED
 
 # Listen on a TCP port (server)
 proc tcp_listen(port: int32): int32 =
@@ -6473,6 +8327,15 @@ proc tcp_accept_ready(conn: int32): int32 =
     return 1
   return 0
 
+# Check if a socket has data available to read
+# Returns: 1 if data ready, 0 otherwise
+proc tcp_has_data(conn: int32): int32 =
+  if conn < 0:
+    return 0
+  if conn >= TCP_MAX_CONNS:
+    return 0
+  return tcp_recv_ready[conn]
+
 # Find a listening socket for a given port
 proc tcp_find_listener(port: int32): int32 =
   ser_print(cast[ptr uint8]("[TCP] Finding listener for port "))
@@ -6504,19 +8367,13 @@ proc tcp_handle_packet(src_ip: ptr uint8, data: ptr uint8, length: int32) =
   var header_len: int32 = ((cast[int32](data[12]) >> 4) & 0x0F) * 4
   var flags: int32 = cast[int32](data[13])
 
-  # Debug all incoming TCP packets
-  ser_print(cast[ptr uint8]("[TCP] in: flags="))
+  ser_print(cast[ptr uint8]("f="))
   ser_print_hex(flags)
-  ser_print(cast[ptr uint8](" port="))
-  ser_print_hex(dst_port)
   ser_println(cast[ptr uint8](""))
 
   var conn: int32 = tcp_find_conn(src_ip, src_port, dst_port)
-  ser_print(cast[ptr uint8]("[TCP] conn="))
+  ser_print(cast[ptr uint8]("c="))
   ser_print_hex(conn)
-  if conn >= 0:
-    ser_print(cast[ptr uint8](" state="))
-    ser_print_hex(tcp_state[conn])
   ser_println(cast[ptr uint8](""))
 
   # If no existing connection, check for listening socket (incoming SYN)
@@ -6524,47 +8381,28 @@ proc tcp_handle_packet(src_ip: ptr uint8, data: ptr uint8, length: int32) =
     if (flags & TCP_SYN) != 0:
       if (flags & TCP_ACK) == 0:
         # Pure SYN - look for listener
-        ser_print(cast[ptr uint8]("[TCP] SYN from port "))
-        ser_print_hex(src_port)
-        ser_print(cast[ptr uint8](" to port "))
-        ser_print_hex(dst_port)
-        ser_print(cast[ptr uint8](" seq="))
-        ser_print_hex(seq)
-        ser_println(cast[ptr uint8](""))
+        ser_println(cast[ptr uint8]("SYN"))
         conn = tcp_find_listener(dst_port)
         if conn >= 0:
-          ser_println(cast[ptr uint8]("[TCP] Found listener, sending SYN-ACK"))
-          # Set up connection from listener
+          ser_print(cast[ptr uint8]("SYN-ACK conn="))
+          ser_print_hex(conn)
+          ser_print(cast[ptr uint8](" remote_port="))
+          ser_print_hex(src_port)
           tcp_remote_port[conn] = src_port
-          var i: int32 = 0
-          while i < 4:
-            tcp_remote_ip[conn * 4 + i] = src_ip[i]
-            i = i + 1
-          # Generate initial sequence number
+          var j: int32 = 0
+          while j < 4:
+            tcp_remote_ip[conn * 4 + j] = src_ip[j]
+            j = j + 1
           tcp_seq[conn] = get_tick_count()
-          ser_print(cast[ptr uint8]("[TCP] seq before assign="))
-          ser_print_hex(seq)
-          ser_println(cast[ptr uint8](""))
-          var ack_value: int32 = seq + 1
-          ser_print(cast[ptr uint8]("[TCP] ack_value="))
-          ser_print_hex(ack_value)
-          ser_println(cast[ptr uint8](""))
-          # Workaround for compiler bug: use pointer arithmetic
-          var ack_ptr: ptr int32 = cast[ptr int32](addr(tcp_ack[0]))
-          ack_ptr = cast[ptr int32](cast[int32](ack_ptr) + conn * 4)
-          mmio_write32(cast[int32](ack_ptr), ack_value)
-          ser_print(cast[ptr uint8]("[TCP] tcp_ack via ptr="))
-          ser_print_hex(mmio_read32(cast[int32](ack_ptr)))
-          ser_println(cast[ptr uint8](""))
-          ser_print(cast[ptr uint8]("[TCP] tcp_ack[conn]="))
+          tcp_ack[conn] = seq + 1
+          ser_print(cast[ptr uint8](" seq="))
+          ser_print_hex(tcp_seq[conn])
+          ser_print(cast[ptr uint8](" ack="))
           ser_print_hex(tcp_ack[conn])
           ser_println(cast[ptr uint8](""))
           tcp_state[conn] = TCP_STATE_SYN_RECEIVED
-          # Send SYN-ACK
           tcp_send_packet(conn, TCP_SYN | TCP_ACK, cast[ptr uint8](0), 0)
           return
-        else:
-          ser_println(cast[ptr uint8]("[TCP] No listener found"))
     return  # No matching connection
 
   # Handle SYN-ACK for connection in SYN_SENT state (client)
@@ -6580,6 +8418,12 @@ proc tcp_handle_packet(src_ip: ptr uint8, data: ptr uint8, length: int32) =
 
   # Handle ACK for connection in SYN_RECEIVED state (server)
   if tcp_state[conn] == TCP_STATE_SYN_RECEIVED:
+    if (flags & TCP_SYN) != 0:
+      if (flags & TCP_ACK) == 0:
+        # SYN retransmission - resend SYN-ACK
+        ser_println(cast[ptr uint8]("[TCP] SYN retrans -> SYN-ACK"))
+        tcp_send_packet(conn, TCP_SYN | TCP_ACK, cast[ptr uint8](0), 0)
+        return
     if (flags & TCP_ACK) != 0:
       ser_println(cast[ptr uint8]("[TCP] ACK rcvd -> ESTABLISHED"))
       tcp_seq[conn] = tcp_seq[conn] + 1
@@ -6613,6 +8457,40 @@ proc tcp_handle_packet(src_ip: ptr uint8, data: ptr uint8, length: int32) =
 
     # Handle RST
     if (flags & TCP_RST) != 0:
+      tcp_state[conn] = TCP_STATE_CLOSED
+
+  # Handle FIN_WAIT_1 state (we sent FIN, waiting for ACK and/or FIN)
+  if tcp_state[conn] == TCP_STATE_FIN_WAIT_1:
+    if (flags & TCP_ACK) != 0:
+      if (flags & TCP_FIN) != 0:
+        # Got FIN+ACK - send ACK and go to CLOSED (skip TIME_WAIT for simplicity)
+        ser_println(cast[ptr uint8]("[TCP] FIN_WAIT_1: got FIN+ACK -> CLOSED"))
+        tcp_ack[conn] = seq + 1
+        tcp_send_packet(conn, TCP_ACK, cast[ptr uint8](0), 0)
+        tcp_state[conn] = TCP_STATE_CLOSED
+      else:
+        # Got ACK only - go to FIN_WAIT_2
+        ser_println(cast[ptr uint8]("[TCP] FIN_WAIT_1: got ACK -> FIN_WAIT_2"))
+        tcp_state[conn] = TCP_STATE_FIN_WAIT_2
+    elif (flags & TCP_FIN) != 0:
+      # Got FIN only - simultaneous close
+      ser_println(cast[ptr uint8]("[TCP] FIN_WAIT_1: got FIN -> CLOSING"))
+      tcp_ack[conn] = seq + 1
+      tcp_send_packet(conn, TCP_ACK, cast[ptr uint8](0), 0)
+      tcp_state[conn] = TCP_STATE_CLOSING
+
+  # Handle FIN_WAIT_2 state (waiting for FIN from peer)
+  if tcp_state[conn] == TCP_STATE_FIN_WAIT_2:
+    if (flags & TCP_FIN) != 0:
+      ser_println(cast[ptr uint8]("[TCP] FIN_WAIT_2: got FIN -> CLOSED"))
+      tcp_ack[conn] = seq + 1
+      tcp_send_packet(conn, TCP_ACK, cast[ptr uint8](0), 0)
+      tcp_state[conn] = TCP_STATE_CLOSED
+
+  # Handle CLOSING state (simultaneous close, waiting for ACK)
+  if tcp_state[conn] == TCP_STATE_CLOSING:
+    if (flags & TCP_ACK) != 0:
+      ser_println(cast[ptr uint8]("[TCP] CLOSING: got ACK -> CLOSED"))
       tcp_state[conn] = TCP_STATE_CLOSED
 
 # ============================================================================
@@ -6877,3 +8755,4 @@ const SYS_NET_RECV: int32 = 54        # tcp_read(conn, buf, max) -> read
 const SYS_NET_CLOSE: int32 = 55       # tcp_close(conn)
 const SYS_NET_STATE: int32 = 56       # tcp_state[conn] -> state
 const SYS_NET_POLL: int32 = 57        # net_poll() - process packets
+const SYS_NET_HAS_DATA: int32 = 58    # tcp_recv_ready[conn] -> 0/1

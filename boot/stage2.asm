@@ -139,7 +139,7 @@ align 4
 dap3:
     db 16           ; Size of DAP (16 bytes)
     db 0            ; Reserved
-    dw 80           ; Number of sectors to read (80 * 512 = 40KB extra, total ~164KB)
+    dw 127          ; Number of sectors to read (127 * 512 = 64KB, total ~190KB)
     dw 0x0000       ; Offset (0)
     dw 0x2EE0       ; Segment (0x1FE0 + 120*512/16 = 0x2EE0, address 0x2EE00)
     dd 265          ; LBA low 32 bits (sector 18 + 127 + 120 = 265)
