@@ -86,8 +86,9 @@ ATA_OBJ = $(BUILD_DIR)/ata.o
 PIPE_OBJ = $(BUILD_DIR)/pipe.o
 VFS_OBJ = $(BUILD_DIR)/vfs.o
 SIGNAL_OBJ = $(BUILD_DIR)/signal.o
+DEVFS_OBJ = $(BUILD_DIR)/devfs.o
 USERLAND_BINS_OBJ = $(BUILD_DIR)/userland_bins.o
-KERNEL_ASM_OBJS = $(SERIAL_OBJ) $(IDT_OBJ) $(ISR_OBJ) $(PAGING_OBJ) $(PROCESS_OBJ) $(IPC_OBJ) $(KEYBOARD_OBJ) $(ELF_OBJ) $(NET_OBJ) $(ATA_OBJ) $(PIPE_OBJ) $(VFS_OBJ) $(SIGNAL_OBJ) $(USERLAND_BINS_OBJ)
+KERNEL_ASM_OBJS = $(SERIAL_OBJ) $(IDT_OBJ) $(ISR_OBJ) $(PAGING_OBJ) $(PROCESS_OBJ) $(IPC_OBJ) $(KEYBOARD_OBJ) $(ELF_OBJ) $(NET_OBJ) $(ATA_OBJ) $(PIPE_OBJ) $(VFS_OBJ) $(SIGNAL_OBJ) $(DEVFS_OBJ) $(USERLAND_BINS_OBJ)
 
 $(SERIAL_OBJ): kernel/serial.asm | $(BUILD_DIR)
 	@echo "Assembling serial driver..."
@@ -140,6 +141,10 @@ $(VFS_OBJ): kernel/vfs.asm | $(BUILD_DIR)
 $(SIGNAL_OBJ): kernel/signal.asm | $(BUILD_DIR)
 	@echo "Assembling signal subsystem..."
 	$(AS) $(ASFLAGS_32) kernel/signal.asm -o $(SIGNAL_OBJ)
+
+$(DEVFS_OBJ): kernel/devfs.asm | $(BUILD_DIR)
+	@echo "Assembling devfs..."
+	$(AS) $(ASFLAGS_32) kernel/devfs.asm -o $(DEVFS_OBJ)
 
 # Build webapp binary first, then embed it (before USERLAND_DIR is defined)
 $(BIN_DIR)/webapp: userland/webapp.bh lib/syscalls.o | $(BIN_DIR)
@@ -219,9 +224,9 @@ brainhair: $(STAGE1_BIN) $(STAGE2_BIN) kernel-brainhair
 
 # Build and run the BrainhairOS microkernel
 .PHONY: microkernel
-microkernel: $(STAGE1_BIN) $(STAGE2_BIN) $(BRAINHAIR_KERNEL_OBJ) $(BOOT_OBJ) $(IDT_OBJ) $(ISR_OBJ) $(PAGING_OBJ) $(PROCESS_OBJ) $(SERIAL_OBJ) $(IPC_OBJ) $(KEYBOARD_OBJ) $(ELF_OBJ) $(NET_OBJ) $(ATA_OBJ) $(PIPE_OBJ) $(VFS_OBJ) $(SIGNAL_OBJ)
+microkernel: $(STAGE1_BIN) $(STAGE2_BIN) $(BRAINHAIR_KERNEL_OBJ) $(BOOT_OBJ) $(IDT_OBJ) $(ISR_OBJ) $(PAGING_OBJ) $(PROCESS_OBJ) $(SERIAL_OBJ) $(IPC_OBJ) $(KEYBOARD_OBJ) $(ELF_OBJ) $(NET_OBJ) $(ATA_OBJ) $(PIPE_OBJ) $(VFS_OBJ) $(SIGNAL_OBJ) $(DEVFS_OBJ)
 	@echo "Building BrainhairOS Microkernel..."
-	$(LD) $(LDFLAGS) -o $(BUILD_DIR)/kernel.elf $(BOOT_OBJ) $(SERIAL_OBJ) $(IDT_OBJ) $(ISR_OBJ) $(PAGING_OBJ) $(PROCESS_OBJ) $(IPC_OBJ) $(KEYBOARD_OBJ) $(ELF_OBJ) $(NET_OBJ) $(ATA_OBJ) $(PIPE_OBJ) $(VFS_OBJ) $(SIGNAL_OBJ) $(BRAINHAIR_KERNEL_OBJ)
+	$(LD) $(LDFLAGS) -o $(BUILD_DIR)/kernel.elf $(BOOT_OBJ) $(SERIAL_OBJ) $(IDT_OBJ) $(ISR_OBJ) $(PAGING_OBJ) $(PROCESS_OBJ) $(IPC_OBJ) $(KEYBOARD_OBJ) $(ELF_OBJ) $(NET_OBJ) $(ATA_OBJ) $(PIPE_OBJ) $(VFS_OBJ) $(SIGNAL_OBJ) $(DEVFS_OBJ) $(BRAINHAIR_KERNEL_OBJ)
 	objcopy -O binary $(BUILD_DIR)/kernel.elf $(KERNEL_BIN)
 	@echo "  Kernel size: $$(stat -c%s $(KERNEL_BIN)) bytes"
 	dd if=/dev/zero of=$(DISK_IMG) bs=512 count=20480 2>/dev/null

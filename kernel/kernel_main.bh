@@ -82,6 +82,19 @@ const SIGCHLD: int32 = 17
 const SIGCONT: int32 = 18
 const SIGSTOP: int32 = 19
 
+# Device filesystem functions
+extern devfs_init()
+extern devfs_lookup(name: ptr uint8): int32
+extern devfs_read(dev: int32, buf: ptr uint8, count: int32): int32
+extern devfs_write(dev: int32, buf: ptr uint8, count: int32): int32
+extern devfs_get_name(dev: int32): ptr uint8
+extern devfs_get_type(dev: int32): int32
+extern devfs_get_device_count(): int32
+
+# Device types
+const DEV_TYPE_CHAR: int32 = 1
+const DEV_TYPE_BLOCK: int32 = 2
+
 # Get current tick count
 extern get_tick_count(): int32
 
@@ -1989,6 +2002,11 @@ proc main() =
   init_signals()
   print_ok(cast[ptr uint8]("Signals initialized"))
 
+  # Initialize device filesystem
+  print_pending(cast[ptr uint8]("Initializing /dev"))
+  devfs_init()
+  print_ok(cast[ptr uint8]("/dev initialized"))
+
   # Enable interrupts
   print_pending(cast[ptr uint8]("Enabling interrupts"))
   enable_interrupts()
@@ -3861,6 +3879,36 @@ proc shell_execute() =
       else:
         kprintln(cast[ptr uint8]("(null)"))
       m_idx = m_idx + 1
+    return
+  # devices - list /dev devices
+  if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("devices")) == 1:
+    kprintln(cast[ptr uint8]("Name       Type"))
+    kprintln(cast[ptr uint8]("----       ----"))
+    var dev_idx: int32 = 0
+    var dev_count: int32 = devfs_get_device_count()
+    while dev_idx < dev_count:
+      var dev_name: ptr uint8 = devfs_get_name(dev_idx)
+      if dev_name != cast[ptr uint8](0):
+        kprint(dev_name)
+        # Pad with spaces
+        var name_len: int32 = fs_strlen(dev_name)
+        while name_len < 11:
+          kprint(cast[ptr uint8](" "))
+          name_len = name_len + 1
+        var dev_type: int32 = devfs_get_type(dev_idx)
+        if dev_type == DEV_TYPE_CHAR:
+          vga_set_color(VGA_LIGHT_GREEN, VGA_BLACK)
+          kprintln(cast[ptr uint8]("char"))
+        elif dev_type == DEV_TYPE_BLOCK:
+          vga_set_color(VGA_LIGHT_CYAN, VGA_BLACK)
+          kprintln(cast[ptr uint8]("block"))
+        else:
+          kprintln(cast[ptr uint8]("unknown"))
+        vga_set_color(VGA_WHITE, VGA_BLACK)
+      dev_idx = dev_idx + 1
+    kprint(cast[ptr uint8]("Total: "))
+    kprint_dec(dev_count)
+    kprintln(cast[ptr uint8](" device(s)"))
     return
   if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("fork")) == 1:
     kprintln(cast[ptr uint8]("Testing fork()..."))
