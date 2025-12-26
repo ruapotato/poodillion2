@@ -48,6 +48,40 @@ extern sys_close(fd: int32): int32
 extern sys_dup(fd: int32): int32
 extern sys_dup2(old_fd: int32, new_fd: int32): int32
 
+# VFS mount table functions
+extern vfs_init()
+extern vfs_mount(path: ptr uint8, fs_type: int32, device: int32, root_inode: int32): int32
+extern vfs_mount_count(): int32
+extern vfs_get_mount_path(idx: int32): ptr uint8
+extern vfs_get_mount_type(idx: int32): int32
+
+# VFS filesystem types
+const FS_TYPE_NONE: int32 = 0
+const FS_TYPE_RAMFS: int32 = 1
+const FS_TYPE_BRAINFS: int32 = 2
+const FS_TYPE_DEVFS: int32 = 3
+const FS_TYPE_PROCFS: int32 = 4
+const FS_TYPE_SYSFS: int32 = 5
+
+# Signal functions
+extern init_signals()
+extern sys_kill(pid: int32, sig: int32): int32
+extern sys_signal(sig: int32, handler: int32): int32
+extern sys_raise(sig: int32): int32
+extern check_signals(): int32
+
+# Signal numbers (POSIX)
+const SIGHUP: int32 = 1
+const SIGINT: int32 = 2
+const SIGQUIT: int32 = 3
+const SIGKILL: int32 = 9
+const SIGUSR1: int32 = 10
+const SIGUSR2: int32 = 12
+const SIGTERM: int32 = 15
+const SIGCHLD: int32 = 17
+const SIGCONT: int32 = 18
+const SIGSTOP: int32 = 19
+
 # Get current tick count
 extern get_tick_count(): int32
 
@@ -105,6 +139,7 @@ const PROC_READY: int32 = 1
 const PROC_RUNNING: int32 = 2
 const PROC_BLOCKED: int32 = 3
 const PROC_ZOMBIE: int32 = 4
+const PROC_STOPPED: int32 = 5
 
 # Paging flags
 const PTE_PRESENT: int32 = 1
@@ -1935,6 +1970,24 @@ proc main() =
   init_pipes()
   setup_std_fds(0)  # Set up stdin/stdout/stderr for kernel process
   print_ok(cast[ptr uint8]("Pipes initialized"))
+
+  # Initialize VFS
+  print_pending(cast[ptr uint8]("Initializing VFS"))
+  vfs_init()
+  # Mount root filesystem (ramfs for now)
+  vfs_mount(cast[ptr uint8]("/"), FS_TYPE_RAMFS, 0, 1)
+  # Mount /dev
+  vfs_mount(cast[ptr uint8]("/dev"), FS_TYPE_DEVFS, 0, 1)
+  # Mount /proc
+  vfs_mount(cast[ptr uint8]("/proc"), FS_TYPE_PROCFS, 0, 1)
+  # Mount /sys
+  vfs_mount(cast[ptr uint8]("/sys"), FS_TYPE_SYSFS, 0, 1)
+  print_ok(cast[ptr uint8]("VFS initialized"))
+
+  # Initialize signals
+  print_pending(cast[ptr uint8]("Initializing signals"))
+  init_signals()
+  print_ok(cast[ptr uint8]("Signals initialized"))
 
   # Enable interrupts
   print_pending(cast[ptr uint8]("Enabling interrupts"))
@@ -3771,6 +3824,9 @@ proc shell_execute() =
         elif state == 4:
           vga_set_color(VGA_DARK_GREY, VGA_BLACK)
           kprintln(cast[ptr uint8]("ZOMBIE"))
+        elif state == 5:
+          vga_set_color(VGA_BROWN, VGA_BLACK)
+          kprintln(cast[ptr uint8]("STOPPED"))
         else:
           kprintln(cast[ptr uint8]("UNKNOWN"))
         vga_set_color(VGA_WHITE, VGA_BLACK)
@@ -3779,6 +3835,32 @@ proc shell_execute() =
     kprint(cast[ptr uint8]("Total: "))
     kprint_dec(ps_count)
     kprintln(cast[ptr uint8](" process(es)"))
+    return
+  if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("mounts")) == 1:
+    kprintln(cast[ptr uint8]("Filesystem   Mount Point"))
+    kprintln(cast[ptr uint8]("---------    -----------"))
+    var m_idx: int32 = 0
+    var m_count: int32 = vfs_mount_count()
+    while m_idx < m_count:
+      var fs_type: int32 = vfs_get_mount_type(m_idx)
+      if fs_type == FS_TYPE_RAMFS:
+        kprint(cast[ptr uint8]("ramfs        "))
+      elif fs_type == FS_TYPE_BRAINFS:
+        kprint(cast[ptr uint8]("brainfs      "))
+      elif fs_type == FS_TYPE_DEVFS:
+        kprint(cast[ptr uint8]("devfs        "))
+      elif fs_type == FS_TYPE_PROCFS:
+        kprint(cast[ptr uint8]("procfs       "))
+      elif fs_type == FS_TYPE_SYSFS:
+        kprint(cast[ptr uint8]("sysfs        "))
+      else:
+        kprint(cast[ptr uint8]("unknown      "))
+      var m_path: ptr uint8 = vfs_get_mount_path(m_idx)
+      if m_path != cast[ptr uint8](0):
+        kprintln(m_path)
+      else:
+        kprintln(cast[ptr uint8]("(null)"))
+      m_idx = m_idx + 1
     return
   if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("fork")) == 1:
     kprintln(cast[ptr uint8]("Testing fork()..."))
@@ -3810,6 +3892,49 @@ proc shell_execute() =
     kprint_dec(status)
     kprintln(cast[ptr uint8](""))
     return
+  # kill <pid> [signal] - send signal to process
+  # Check for "kill " (k=107, i=105, l=108, l=108, space=32)
+  if cmd_buffer[0] == cast[uint8](107):  # 'k'
+    if cmd_buffer[1] == cast[uint8](105):  # 'i'
+      if cmd_buffer[2] == cast[uint8](108):  # 'l'
+        if cmd_buffer[3] == cast[uint8](108):  # 'l'
+          if cmd_buffer[4] == cast[uint8](32):  # ' '
+            # Parse PID
+            var kill_ptr: ptr uint8 = addr(cmd_buffer[5])
+            var kill_pid: int32 = parse_int(kill_ptr)
+            # Check for signal arg (default is SIGTERM=15)
+            var kill_sig: int32 = SIGTERM
+            # Find space after PID
+            var kill_idx: int32 = 0
+            while kill_ptr[kill_idx] != 0 and kill_ptr[kill_idx] != 32:
+              kill_idx = kill_idx + 1
+            if kill_ptr[kill_idx] == 32:
+              # Skip spaces
+              while kill_ptr[kill_idx] == 32:
+                kill_idx = kill_idx + 1
+              if kill_ptr[kill_idx] != 0:
+                kill_sig = parse_int(addr(kill_ptr[kill_idx]))
+            # Validate
+            if kill_pid <= 0:
+              vga_set_color(VGA_LIGHT_RED, VGA_BLACK)
+              kprintln(cast[ptr uint8]("Usage: kill <pid> [signal]"))
+              vga_set_color(VGA_WHITE, VGA_BLACK)
+              return
+            # Send signal
+            var kill_result: int32 = sys_kill(kill_pid, kill_sig)
+            if kill_result == 0:
+              vga_set_color(VGA_LIGHT_GREEN, VGA_BLACK)
+              kprint(cast[ptr uint8]("Sent signal "))
+              kprint_dec(kill_sig)
+              kprint(cast[ptr uint8](" to PID "))
+              kprint_dec(kill_pid)
+              kprintln(cast[ptr uint8](""))
+              vga_set_color(VGA_WHITE, VGA_BLACK)
+            else:
+              vga_set_color(VGA_LIGHT_RED, VGA_BLACK)
+              kprintln(cast[ptr uint8]("Failed to send signal"))
+              vga_set_color(VGA_WHITE, VGA_BLACK)
+            return
   if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("color")) == 1:
     kprint(cast[ptr uint8]("Colors: "))
     var c: int32 = 0

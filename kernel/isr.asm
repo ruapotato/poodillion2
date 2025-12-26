@@ -482,6 +482,19 @@ isr_syscall:
     cmp eax, 58         ; SYS_NET_HAS_DATA
     je .syscall_net_has_data
 
+    ; Signal syscalls (60-63)
+    cmp eax, 60         ; SYS_KILL
+    je .syscall_kill
+
+    cmp eax, 61         ; SYS_SIGNAL
+    je .syscall_signal
+
+    cmp eax, 62         ; SYS_SIGPROCMASK
+    je .syscall_sigprocmask
+
+    cmp eax, 63         ; SYS_RAISE
+    je .syscall_raise
+
     ; Unknown syscall - return -1
     mov eax, -1
     jmp .syscall_done
@@ -793,6 +806,56 @@ isr_syscall:
     mov eax, [esp + 12]     ; EBX (conn)
     push eax
     call tcp_has_data
+    add esp, 4
+    jmp .syscall_done
+
+; ============= Signal syscalls =============
+
+.syscall_kill:
+    ; kill(pid, sig) -> 0/-1
+    ; EBX = pid, ECX = sig
+    extern sys_kill
+    mov eax, [esp + 16]     ; ECX (sig)
+    push eax
+    mov eax, [esp + 24]     ; EBX (pid)
+    push eax
+    call sys_kill
+    add esp, 8
+    jmp .syscall_done
+
+.syscall_signal:
+    ; signal(sig, handler) -> old_handler
+    ; EBX = sig, ECX = handler
+    extern sys_signal
+    mov eax, [esp + 16]     ; ECX (handler)
+    push eax
+    mov eax, [esp + 24]     ; EBX (sig)
+    push eax
+    call sys_signal
+    add esp, 8
+    jmp .syscall_done
+
+.syscall_sigprocmask:
+    ; sigprocmask(how, set, oldset) -> 0/-1
+    ; EBX = how, ECX = set, EDX = oldset
+    extern sys_sigprocmask
+    mov eax, [esp + 12]     ; EDX (oldset)
+    push eax
+    mov eax, [esp + 20]     ; ECX (set)
+    push eax
+    mov eax, [esp + 28]     ; EBX (how)
+    push eax
+    call sys_sigprocmask
+    add esp, 12
+    jmp .syscall_done
+
+.syscall_raise:
+    ; raise(sig) -> 0
+    ; EBX = sig
+    extern sys_raise
+    mov eax, [esp + 20]     ; EBX (sig)
+    push eax
+    call sys_raise
     add esp, 4
     jmp .syscall_done
 

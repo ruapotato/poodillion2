@@ -9,6 +9,7 @@ PROC_READY    equ 1
 PROC_RUNNING  equ 2
 PROC_BLOCKED  equ 3
 PROC_ZOMBIE   equ 4
+PROC_STOPPED  equ 5   ; Stopped by signal (SIGSTOP/SIGTSTP)
 
 ; Process Control Block offsets (must match kernel_main.bh)
 PCB_PID       equ 0    ; int32 - Process ID
