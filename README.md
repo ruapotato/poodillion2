@@ -89,7 +89,8 @@ psh> bin/ps
 - **Hierarchical filesystem** - ext2-like with inodes, directories, files
 - **Virtual filesystems** - /proc, /sys, /dev with dynamic content
 - **ELF loader** - Load and execute userspace programs
-- **Networking** - E1000 NIC driver, ARP, IP, ICMP protocols
+- **Networking** - E1000 NIC driver, ARP, IP, ICMP, UDP, DHCP, TCP protocols
+- **HTTP Server** - Flask-style web framework with routing and handlers
 
 **Microkernel Shell** (50+ built-in commands):
 - **File ops**: ls, cat, cp, mv, rm, mkdir, touch, stat, size, df
@@ -114,12 +115,45 @@ make run-microkernel     # QEMU with VGA display
 make run-microkernel-serial  # Headless via serial console
 ```
 
+**Flask-Style Web Framework**:
+```brainhair
+import "lib/flask"
+
+proc index(sock: int32, request: ptr uint8, path: ptr uint8) =
+  text(sock, cast[ptr uint8]("Hello from BrainhairOS!"))
+
+proc user_handler(sock: int32, request: ptr uint8, path: ptr uint8) =
+  var id: ptr uint8 = get_route_param(cast[ptr uint8]("id"))
+  text(sock, id)
+
+proc search(sock: int32, request: ptr uint8, path: ptr uint8) =
+  var q: ptr uint8 = get_query_param(cast[ptr uint8]("q"))
+  if cast[int32](q) != 0:
+    text(sock, q)
+
+proc main(): int32 =
+  discard route(cast[ptr uint8]("/"), cast[ptr uint8](index))
+  discard get(cast[ptr uint8]("/users/:id"), cast[ptr uint8](user_handler))
+  discard get(cast[ptr uint8]("/search"), cast[ptr uint8](search))
+  return run(8080)
+```
+
+Features:
+- **Route registration** - `route()`, `get()`, `post()`, `put()`, `delete()`, `any()`
+- **Dynamic routes** - `/users/:id` with `get_route_param("id")`
+- **Query strings** - `?q=hello&page=2` with `get_query_param("q")`
+- **Request headers** - `get_header("Content-Type")`, `get_content_length()`
+- **URL encoding** - `url_encode()`, `url_decode()`
+- **Response helpers** - `html()`, `text()`, `json()`, `redirect()`, `not_found()`, `server_error()`
+- **Full TCP stack** - SYN/ACK handshake, data transfer
+
 **Userland Utilities** (all in Brainhair, no libc):
 - **echo** (8.9KB) - Display text output
 - **cat** (5.1KB) - Concatenate and display files
 - **edit** (11KB) - CLI text editor with ANSI colors!
 - **true** (4.8KB) - Exit with success code
 - **false** (4.8KB) - Exit with failure code
+- **webapp** (17KB) - Example Flask-style web application
 
 **Type-Aware Shell** ⭐ NEW:
 - **psh** (14KB) - BrainhairOS Shell with schema awareness!
@@ -141,7 +175,70 @@ make run-microkernel-serial  # Headless via serial console
 - Pure syscalls, no graphics libraries
 - All shapes compile from Brainhair to x86
 
-**Desktop Environment** 🖥️ NEW (X11/Wayland alternative!):
+**VTNext Desktop Environment** 🖥️ NEW - Full Graphical Desktop!
+
+BrainhairOS now includes a complete graphical desktop environment rendered over serial/TCP using the VTNext protocol. It's like X11 but simpler - apps send drawing commands that get rendered by a pygame-based terminal.
+
+**Desktop Features:**
+- **Draggable windows** - Click and drag titlebars to move windows
+- **Window manager** - Dynamic window creation, close buttons, z-ordering
+- **Taskbar** - App launcher buttons (Term, Demo, Pong)
+- **Desktop icons** - Terminal, Files, Settings
+- **Mouse + keyboard input** - Full event handling with keydown/keyup
+
+**Built-in Apps:**
+- **Demo** - Colorful graphics demo (rectangles, circles, lines, text)
+- **Pong** - Classic game with AI opponent, smooth paddle controls
+- **Terminal windows** - Open multiple terminal windows
+
+**Run the Desktop:**
+```bash
+# Install pygame
+pip install pygame
+
+# Launch with helper script (recommended)
+./tools/run_vtnext_tcp.sh
+
+# Desktop starts automatically after boot
+# Controls:
+#   D - Launch Demo
+#   P - Launch Pong (W/S or arrows to move, Q to quit)
+#   T - Open Terminal window
+#   Q - Quit desktop
+#   Ctrl+Q - Close the terminal app
+#   Mouse - Click buttons, drag windows by titlebar
+```
+
+**VTNext Protocol:**
+- **Escape sequence based** - `\x1b]vtn;command;params\x07`
+- **Rich primitives** - rect, circle, line, rounded rect, text
+- **Double buffered** - `clear` draws to back buffer, `present` flips
+- **Input events** - click, move, up, keydown, keyup
+- **RGBA colors** - Full alpha channel support
+
+**VTNext Commands:**
+```
+clear;r;g;b;a          - Clear back buffer with color
+present                - Flip buffers to display frame
+rect;x;y;z;w;h;...     - Draw rectangle (filled or outlined)
+circle;x;y;z;r;...     - Draw circle
+line;x1;y1;x2;y2;...   - Draw line
+rrect;x;y;z;w;h;rad;.. - Rounded rectangle
+text;x;y;z;font;scale;r;g;b;a;"string" - Draw text
+cursor;show|hide       - Control cursor visibility
+input;raw|cooked       - Set input mode
+```
+
+**Input Events (terminal → kernel):**
+```
+click;x;y;button       - Mouse button pressed
+move;x;y               - Mouse moved (while dragging)
+up;x;y;button          - Mouse button released
+keydown;keycode        - Key pressed
+keyup;keycode          - Key released
+```
+
+**Desktop Environment** 🖥️ (X11/Wayland alternative!):
 - **bds** (24KB) - Brainhair Display Server
   - Integrated floating window manager
   - Taskbar with window buttons and launcher
@@ -406,7 +503,10 @@ brainhair2/
 ├── lib/               # System Libraries
 │   ├── syscalls.bh   # Syscall wrappers (45+)
 │   ├── syscalls.asm   # Assembly syscall stubs
-│   └── schema.bh     # Data schema definitions
+│   ├── schema.bh     # Data schema definitions
+│   ├── flask.bh      # Flask-style web framework
+│   ├── net.bh        # Networking API
+│   └── string.bh     # String utilities (split, replace, case conversion)
 │
 ├── userland/          # Unix Utilities
 │   ├── psh.bh        # ✅ Type-Aware Shell with pipelines! 🎨
@@ -450,10 +550,16 @@ brainhair2/
 │   ├── kernel_main.bh # Entry point, scheduler, filesystem, networking
 │   ├── paging.asm     # Virtual memory with dynamic page tables
 │   ├── net.asm        # E1000 NIC driver, PCI enumeration
+│   ├── vtnext.asm     # VTNext graphics protocol implementation
 │   └── idt.asm        # Interrupt handling
 │
 ├── boot/              # Bootloader
 │   └── multiboot.asm  # GRUB multiboot
+│
+├── tools/             # Development & Host Tools
+│   ├── vtnext_terminal.py  # VTNext graphics renderer (pygame)
+│   ├── run_vtnext_tcp.sh   # Helper to run QEMU + VTNext terminal
+│   └── test_vtnext_render.py # VTNext rendering test
 │
 └── Makefile           # Build system
 ```
@@ -581,6 +687,28 @@ make userland
 # Clean
 rm -rf bin/
 ```
+
+### Run Tests
+
+```bash
+# Run full test suite (includes QEMU tests)
+make test
+
+# Run quick tests (no QEMU, faster)
+make test-quick
+
+# Run specific test categories
+make test-userland    # Test userland utilities
+make test-kernel      # Test kernel boot in QEMU
+make test-http        # Test HTTP server in QEMU
+```
+
+The test suite covers:
+- **Toolchain tests** - Compiler, assembler, linker availability
+- **Compilation tests** - Compiling simple programs, kernel modules
+- **Userland tests** - 25+ utility functionality tests
+- **Kernel boot tests** - IDT, paging, scheduler, networking
+- **HTTP server tests** - Flask routing, TCP connections
 
 ### Self-Hosted Toolchain (NEW!)
 
@@ -773,29 +901,32 @@ All code is free software. Fork it, hack it, improve it!
 Project:    BrainhairOS - Data-Oriented Operating System
 Language:   Brainhair (custom compiled language)
 Runtime:    Zero dependencies (no libc, no stdlib)
-Utilities:  18 working + Type-Aware Shell!
-            (echo, cat, edit, true, false, ps, inspect, where, count,
-             head, tail, select, psh, fbinfo, clear, pixel, line, rect, circle)
-Size:       ~167KB total for all utilities
-Platform:   Linux x86/x86_64 (32-bit executables)
-Status:     🚀 Active Development - NETWORKING STACK ADDED! 🌐
+Utilities:  100+ working commands + Type-Aware Shell!
+Platform:   Linux x86/x86_64 (32-bit executables) + bare-metal i386
+Status:     🚀 Active Development - TCP/HTTP STACK COMPLETE! 🌐
 
 Vision:     Unix performance + PowerShell composability + Native Graphics!
 Innovation: Binary typed data streams + Direct framebuffer manipulation
 Goal:       Self-hosting, type-safe, zero-copy, SQL-queryable OS!
 
-✅ Complete: Type-aware shell with automatic schema detection and formatting!
+✅ Complete: Type-aware shell with automatic schema detection!
 ✅ Complete: Full data pipeline! (ps | where | select | head | tail | count)
 ✅ Complete: Graphics primitives! (clear, pixel, line, rect, circle)
-✅ Complete: Networking! E1000 NIC, ARP, IP, ICMP (ping, ifconfig, arp)
-✅ Complete: Compiler Phase 0-2 infrastructure!
-            - Error handling with source locations
-            - Symbol table with proper scoping
-            - Type checker (988 lines!)
-            - Mid-Level IR (SSA form)
-            - MIR to x86 code generation
-            - 71 tests passing!
-Next:       Phase 3 (Memory Safety) → Phase 4 (LLVM Backend) → Self-hosting!
+✅ Complete: Full TCP/IP stack! (E1000, ARP, IP, ICMP, UDP, DHCP, TCP)
+✅ Complete: Flask-style web framework (routes, query params, headers, URL encoding)!
+✅ Complete: Comprehensive test suite (toolchain, userland, kernel, HTTP)
+✅ Complete: Desktop environment (bds, term, fm, gedit, calc, sysmon)
+✅ Complete: 100+ Unix utilities (coreutils, procutils, netutils, etc.)
+✅ Complete: Compiler Phase 0-2 infrastructure (71 tests passing!)
+✅ Complete: VTNext graphics protocol with Linux terminal renderer!
+✅ Complete: VTNext Desktop Environment with draggable windows, Pong, Demo!
+
+Known Limitations:
+- QEMU SLiRP NAT has issues with rapid TCP port reuse
+  (first HTTP request works, subsequent may timeout)
+- Use TAP networking for production testing
+
+Next:       SQL query engine → Self-hosting compiler → Distributed queries!
 ```
 
 **Try it now**:
