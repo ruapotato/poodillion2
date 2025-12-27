@@ -8990,24 +8990,37 @@ proc run_vtn_pong_kernel() =
 
   var ball_x: int32 = 512
   var ball_y: int32 = 384
-  var ball_dx: int32 = 5
-  var ball_dy: int32 = 3
-  var paddle_y: int32 = 334
-  var score: int32 = 0
+  var ball_dx: int32 = 3  # Slower ball
+  var ball_dy: int32 = 2
+  var player_y: int32 = 334   # Player paddle (right)
+  var ai_y: int32 = 334       # AI paddle (left)
+  var player_score: int32 = 0
+  var ai_score: int32 = 0
   var running: int32 = 1
 
   while running != 0:
     # Clear
     vtn_clear(0, 20, 40)
 
-    # Draw paddle (right side)
-    vtn_rect(950, paddle_y, 20, 100, 200, 200, 200, 1)
+    # Draw center line
+    var line_y: int32 = 20
+    while line_y < 748:
+      vtn_rect(508, line_y, 8, 20, 60, 60, 80, 1)
+      line_y = line_y + 40
+
+    # Draw AI paddle (left side)
+    vtn_rect(30, ai_y, 20, 100, 150, 150, 200, 1)
+
+    # Draw player paddle (right side)
+    vtn_rect(974, player_y, 20, 100, 200, 200, 200, 1)
 
     # Draw ball
-    vtn_circle(ball_x, ball_y, 15, 255, 255, 100)
+    vtn_circle(ball_x, ball_y, 12, 255, 255, 100)
 
-    # Draw score
-    vtn_text(50, 30, 255, 255, 255, cast[ptr uint8]("Pong - W/S to move, Q to quit"))
+    # Draw scores
+    vtn_text(400, 30, 255, 255, 255, cast[ptr uint8]("AI"))
+    vtn_text(560, 30, 255, 255, 255, cast[ptr uint8]("You"))
+    vtn_text(50, 740, 200, 200, 200, cast[ptr uint8]("W/S to move, Q to quit"))
 
     # Present frame
     vtn_send(cast[ptr uint8]("present"))
@@ -9016,42 +9029,67 @@ proc run_vtn_pong_kernel() =
     ball_x = ball_x + ball_dx
     ball_y = ball_y + ball_dy
 
-    # Bounce off walls
-    if ball_y < 20 or ball_y > 748:
+    # Bounce off top/bottom walls
+    if ball_y < 30:
+      ball_y = 30
       ball_dy = 0 - ball_dy
-    if ball_x < 20:
-      ball_dx = 0 - ball_dx
+    if ball_y > 738:
+      ball_y = 738
+      ball_dy = 0 - ball_dy
 
-    # Check paddle collision
-    if ball_x > 940 and ball_x < 980:
-      if ball_y > paddle_y and ball_y < paddle_y + 100:
+    # AI paddle follows ball (with some delay/imperfection)
+    var ai_center: int32 = ai_y + 50
+    if ball_x < 512:  # Only track when ball is on AI's side
+      if ball_y < ai_center - 10:
+        ai_y = ai_y - 3
+      if ball_y > ai_center + 10:
+        ai_y = ai_y + 3
+    # Keep AI paddle in bounds
+    if ai_y < 0:
+      ai_y = 0
+    if ai_y > 668:
+      ai_y = 668
+
+    # Check AI paddle collision (left)
+    if ball_x < 60 and ball_x > 30:
+      if ball_y > ai_y and ball_y < ai_y + 100:
         ball_dx = 0 - ball_dx
-        score = score + 1
+        ball_x = 60
 
-    # Ball out of bounds - reset
-    if ball_x > 1000:
+    # Check player paddle collision (right)
+    if ball_x > 964 and ball_x < 994:
+      if ball_y > player_y and ball_y < player_y + 100:
+        ball_dx = 0 - ball_dx
+        ball_x = 964
+
+    # Ball out of bounds - score and reset
+    if ball_x < 10:
+      player_score = player_score + 1
       ball_x = 512
       ball_y = 384
+      ball_dx = 3
+    if ball_x > 1014:
+      ai_score = ai_score + 1
+      ball_x = 512
+      ball_y = 384
+      ball_dx = 0 - 3
 
     # Check for input
     var ch: int32 = serial_getchar()
     if ch == 113 or ch == 81:  # q/Q
       running = 0
-    if ch == 119 or ch == 87 or ch == 27:  # w/W or up arrow (ESC[A)
-      if ch == 27:
-        discard serial_getchar()  # [
-        discard serial_getchar()  # A
-      paddle_y = paddle_y - 30
-      if paddle_y < 0:
-        paddle_y = 0
-    if ch == 115 or ch == 83:  # s/S or down
-      paddle_y = paddle_y + 30
-      if paddle_y > 668:
-        paddle_y = 668
+    if ch == 119 or ch == 87:  # w/W - move up
+      player_y = player_y - 25
+      if player_y < 0:
+        player_y = 0
+    if ch == 115 or ch == 83:  # s/S - move down
+      player_y = player_y + 25
+      if player_y > 668:
+        player_y = 668
 
-    # Frame rate limiter (~15-20 fps)
+    # Frame rate limiter
     var delay: int32 = 0
-    while delay < 100000:
+    while delay < 80000:
       delay = delay + 1
 
   vtn_send(cast[ptr uint8]("cursor;show"))

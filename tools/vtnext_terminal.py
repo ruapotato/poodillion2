@@ -314,9 +314,8 @@ class VTNextTerminal:
                     color = (r, g, b)
                     font = self.get_font(font_id, scale)
                     text_surface = font.render(text_part, True, color)
-                    # Center text at x,y
-                    text_rect = text_surface.get_rect(center=(x, y))
-                    self.back_buffer.blit(text_surface, text_rect)
+                    # Position text with x,y as top-left corner
+                    self.back_buffer.blit(text_surface, (x, y))
 
             elif cmd == 'sprite':
                 # sprite;id;x;y;layer - draw a sprite
