@@ -93,8 +93,8 @@ class VTNextTerminal:
             self.log_file = open(log_file, 'a')
             self.log("=== VTNext Terminal Started ===")
 
-        # Enable key repeat for held keys (delay 200ms, repeat every 50ms)
-        pygame.key.set_repeat(200, 50)
+        # Track held keys for key down/up events
+        self.keys_held = set()
 
         # Clear the screen initially
         self.screen.fill(self.bg_color)
@@ -374,8 +374,14 @@ class VTNextTerminal:
                     if event.key == pygame.K_q and (event.mod & pygame.KMOD_CTRL):
                         self.running = False
                     else:
-                        # Send keypress to serial/TCP
-                        self.send_key(event)
+                        # Track held keys and send key down event
+                        self.keys_held.add(event.key)
+                        self.send_key_down(event)
+                elif event.type == pygame.KEYUP:
+                    # Send key up event
+                    if event.key in self.keys_held:
+                        self.keys_held.discard(event.key)
+                        self.send_key_up(event)
                 elif event.type == pygame.MOUSEBUTTONDOWN:
                     # Send click event to OS (simpler than down/up)
                     x, y = event.pos
@@ -481,6 +487,58 @@ class VTNextTerminal:
             except Exception as e:
                 self.log(f"KEY SEND ERROR: {e}")
                 print(f"Send error: {e}", file=sys.stderr)
+
+    def send_key_down(self, event):
+        """Send key down event via VTN protocol"""
+        key = event.key
+        # Map pygame key codes to simple codes
+        keycode = self._get_keycode(event)
+        if keycode:
+            msg = f"\x1b]vtn;keydown;{keycode}\x07"
+            self._send_raw(msg)
+            self.log(f"KEYDOWN: {keycode}")
+
+    def send_key_up(self, event):
+        """Send key up event via VTN protocol"""
+        keycode = self._get_keycode(event)
+        if keycode:
+            msg = f"\x1b]vtn;keyup;{keycode}\x07"
+            self._send_raw(msg)
+            self.log(f"KEYUP: {keycode}")
+
+    def _get_keycode(self, event):
+        """Get keycode for VTN events"""
+        key = event.key
+        # Map common keys to simple codes
+        key_map = {
+            pygame.K_w: 119,      # 'w'
+            pygame.K_s: 115,      # 's'
+            pygame.K_a: 97,       # 'a'
+            pygame.K_d: 100,      # 'd'
+            pygame.K_UP: 38,      # up arrow
+            pygame.K_DOWN: 40,    # down arrow
+            pygame.K_LEFT: 37,    # left arrow
+            pygame.K_RIGHT: 39,   # right arrow
+            pygame.K_SPACE: 32,   # space
+            pygame.K_q: 113,      # 'q'
+            pygame.K_p: 112,      # 'p'
+            pygame.K_ESCAPE: 27,  # escape
+        }
+        return key_map.get(key, 0)
+
+    def _send_raw(self, msg):
+        """Send raw message to serial/TCP"""
+        if hasattr(self, 'input_source'):
+            try:
+                data = msg.encode('utf-8')
+                if hasattr(self.input_source, 'sock'):
+                    self.input_source.sock.send(data)
+                elif hasattr(self.input_source, 'write'):
+                    self.input_source.write(data)
+                    if hasattr(self.input_source, 'flush'):
+                        self.input_source.flush()
+            except Exception as e:
+                self.log(f"SEND ERROR: {e}")
 
     def send_mouse_event(self, event_type, x, y, button=0):
         """Send mouse event to the OS"""

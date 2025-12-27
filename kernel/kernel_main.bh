@@ -8815,6 +8815,13 @@ proc handle_mouse_move(x: int32, y: int32) =
 # Global flag for redraw request (set by mouse handlers)
 var desktop_needs_redraw: int32 = 0
 
+# Global key state tracking
+var key_w_held: int32 = 0
+var key_s_held: int32 = 0
+var key_up_held: int32 = 0
+var key_down_held: int32 = 0
+var key_q_held: int32 = 0
+
 # Parse VTN input after ESC has been received
 proc parse_mouse_input_with_esc() =
   var buf: array[32, uint8]
@@ -8880,6 +8887,50 @@ proc parse_mouse_input_with_esc() =
       if event_type == 3:
         handle_mouse_up(x, y, 1)
         desktop_needs_redraw = 1
+
+    # Check for "keydown" (buf[4]='k', buf[5]='e', buf[6]='y', buf[7]='d')
+    if buf[4] == 107 and buf[5] == 101 and buf[6] == 121 and buf[7] == 100:  # k-e-y-d
+      # Parse keycode after "keydown;"
+      var keycode: int32 = 0
+      var j: int32 = 12  # After "keydown;"
+      while j < i:
+        var c: int32 = cast[int32](buf[j])
+        if c >= 48 and c <= 57:
+          keycode = keycode * 10 + (c - 48)
+        j = j + 1
+      # Set key held state
+      if keycode == 119:  # 'w'
+        key_w_held = 1
+      if keycode == 115:  # 's'
+        key_s_held = 1
+      if keycode == 38:   # up arrow
+        key_up_held = 1
+      if keycode == 40:   # down arrow
+        key_down_held = 1
+      if keycode == 113:  # 'q'
+        key_q_held = 1
+
+    # Check for "keyup" (buf[4]='k', buf[5]='e', buf[6]='y', buf[7]='u')
+    if buf[4] == 107 and buf[5] == 101 and buf[6] == 121 and buf[7] == 117:  # k-e-y-u
+      # Parse keycode after "keyup;"
+      var keycode: int32 = 0
+      var j: int32 = 10  # After "keyup;"
+      while j < i:
+        var c: int32 = cast[int32](buf[j])
+        if c >= 48 and c <= 57:
+          keycode = keycode * 10 + (c - 48)
+        j = j + 1
+      # Clear key held state
+      if keycode == 119:  # 'w'
+        key_w_held = 0
+      if keycode == 115:  # 's'
+        key_s_held = 0
+      if keycode == 38:   # up arrow
+        key_up_held = 0
+      if keycode == 40:   # down arrow
+        key_down_held = 0
+      if keycode == 113:  # 'q'
+        key_q_held = 0
 
 proc parse_mouse_input() =
   var ch: int32 = serial_getchar()
@@ -9010,6 +9061,13 @@ proc run_vtn_pong_kernel() =
   vtn_send(cast[ptr uint8]("input;raw"))
   vtn_send(cast[ptr uint8]("cursor;hide"))
 
+  # Reset key states
+  key_w_held = 0
+  key_s_held = 0
+  key_up_held = 0
+  key_down_held = 0
+  key_q_held = 0
+
   var ball_x: int32 = 512
   var ball_y: int32 = 384
   var ball_dx: int32 = 3  # Slower ball
@@ -9096,16 +9154,22 @@ proc run_vtn_pong_kernel() =
       ball_y = 384
       ball_dx = 0 - 3
 
-    # Check for input
+    # Check for input (parse VTN sequences for keydown/keyup)
     var ch: int32 = serial_getchar()
-    if ch == 113 or ch == 81:  # q/Q
+    if ch == 27:  # ESC - VTN sequence
+      parse_mouse_input_with_esc()
+    if ch == 113 or ch == 81:  # q/Q direct press
       running = 0
-    if ch == 119 or ch == 87:  # w/W - move up
-      player_y = player_y - 25
+    if key_q_held == 1:  # q keydown event
+      running = 0
+
+    # Move paddle based on held keys (smooth movement)
+    if key_w_held == 1 or key_up_held == 1:
+      player_y = player_y - 8
       if player_y < 0:
         player_y = 0
-    if ch == 115 or ch == 83:  # s/S - move down
-      player_y = player_y + 25
+    if key_s_held == 1 or key_down_held == 1:
+      player_y = player_y + 8
       if player_y > 668:
         player_y = 668
 
