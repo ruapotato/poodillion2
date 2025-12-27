@@ -8812,6 +8812,9 @@ proc handle_mouse_move(x: int32, y: int32) =
       win_y[win_dragging] = 768 - 50
 
 # Parse mouse/keyboard input from serial
+# Global flag for redraw request (set by mouse handlers)
+var desktop_needs_redraw: int32 = 0
+
 # Parse VTN input after ESC has been received
 proc parse_mouse_input_with_esc() =
   var buf: array[32, uint8]
@@ -8829,35 +8832,54 @@ proc parse_mouse_input_with_esc() =
     else:
       timeout = timeout + 1
 
+  # Check for ]vtn; format
+  if i > 6 and buf[0] == 93 and buf[1] == 118:  # ]v
+    # Determine event type: click, move, or up
+    # click has 'k' at position 6, move has 'e' at position 5, up has 'p' at position 4
+    var event_type: int32 = 0  # 0=unknown, 1=click, 2=move, 3=up
+    var parse_start: int32 = 0
 
-  # Check for ]vtn;click; format
-  if i > 10 and buf[0] == 93 and buf[1] == 118:  # ]v
-    var x: int32 = 0
-    var y: int32 = 0
-    var state: int32 = 0  # 0=before k, 1=reading x, 2=reading y
-    var found_k: int32 = 0
-    var j: int32 = 0
-    while j < i:
-      var c: int32 = cast[int32](buf[j])
-      if found_k == 0:
-        # Looking for 'k' in "click"
-        if c == 107:
-          found_k = 1
-      else:
-        # After 'k', parse ;x;y;button
+    # Check for "click" (buf[4]='c', buf[5]='l', buf[6]='i', buf[7]='c', buf[8]='k')
+    if buf[4] == 99 and buf[5] == 108 and buf[6] == 105:  # c-l-i
+      event_type = 1
+      parse_start = 10  # After "click;"
+    # Check for "move" (buf[4]='m', buf[5]='o', buf[6]='v', buf[7]='e')
+    if buf[4] == 109 and buf[5] == 111 and buf[6] == 118:  # m-o-v
+      event_type = 2
+      parse_start = 9  # After "move;"
+    # Check for "up" (buf[4]='u', buf[5]='p')
+    if buf[4] == 117 and buf[5] == 112:  # u-p
+      event_type = 3
+      parse_start = 7  # After "up;"
+
+    if event_type > 0:
+      # Parse x;y coordinates
+      var x: int32 = 0
+      var y: int32 = 0
+      var state: int32 = 0  # 0=reading x, 1=reading y
+      var j: int32 = parse_start
+      while j < i:
+        var c: int32 = cast[int32](buf[j])
         if c >= 48 and c <= 57:  # digit
-          if state == 1:
+          if state == 0:
             x = x * 10 + (c - 48)
-          if state == 2:
+          if state == 1:
             y = y * 10 + (c - 48)
         if c == 59:  # semicolon
           state = state + 1
-          if state > 2:
+          if state > 1:
             j = i  # exit loop
-      j = j + 1
+        j = j + 1
 
-    if x > 0 or y > 0:
-      handle_mouse_down(x, y, 1)
+      # Dispatch to appropriate handler
+      if event_type == 1:
+        handle_mouse_down(x, y, 1)
+      if event_type == 2:
+        handle_mouse_move(x, y)
+        desktop_needs_redraw = 1
+      if event_type == 3:
+        handle_mouse_up(x, y, 1)
+        desktop_needs_redraw = 1
 
 proc parse_mouse_input() =
   var ch: int32 = serial_getchar()
@@ -9127,6 +9149,7 @@ proc run_vtn_desktop() =
   discard win_create(300, 150, 420, 280, cast[ptr uint8]("Welcome"), WIN_CLOSABLE)
 
   desktop_running = 1
+  desktop_needs_redraw = 0
   mouse_clicked = 0
   mouse_x = 512
   mouse_y = 384
@@ -9135,6 +9158,11 @@ proc run_vtn_desktop() =
   var needs_redraw: int32 = 1
 
   while desktop_running != 0:
+    # Check global redraw flag (set by mouse handlers)
+    if desktop_needs_redraw == 1:
+      desktop_needs_redraw = 0
+      needs_redraw = 1
+
     # Only redraw when needed
     if needs_redraw == 1:
       needs_redraw = 0
@@ -9146,18 +9174,30 @@ proc run_vtn_desktop() =
       desktop_draw_icons()
       desktop_draw_clock()
 
-      # Draw test window
-      vtn_rect(300, 150, 420, 280, 45, 50, 60, 1)  # Window body
-      vtn_rect(300, 150, 420, 28, 70, 100, 150, 1)  # Titlebar
-      vtn_rect(694, 154, 20, 20, 200, 60, 60, 1)   # Close button
-      vtn_text(700, 164, 255, 255, 255, cast[ptr uint8]("X"))
-      vtn_text(310, 164, 255, 255, 255, cast[ptr uint8]("Welcome"))
+      # Draw all windows dynamically
+      win_draw_all()
 
-      # Welcome content
-      vtn_text(320, 200, 200, 200, 200, cast[ptr uint8]("Welcome to BrainhairOS!"))
-      vtn_text(320, 230, 180, 180, 180, cast[ptr uint8]("VTNext Desktop Environment"))
-      vtn_text(320, 270, 150, 150, 150, cast[ptr uint8]("Click taskbar buttons below"))
-      vtn_text(320, 300, 150, 200, 150, cast[ptr uint8]("Q=quit D=demo P=pong"))
+      # Draw window content for each window
+      var wi: int32 = 0
+      while wi < win_count:
+        if (win_flags[wi] & WIN_VISIBLE) != 0:
+          var title: ptr uint8 = win_get_title(wi)
+          # Draw Welcome window content
+          if title[0] == 87:  # 'W' for Welcome
+            var wx: int32 = win_x[wi] + 20
+            var wy: int32 = win_y[wi] + 40
+            vtn_text(wx, wy, 200, 200, 200, cast[ptr uint8]("Welcome to BrainhairOS!"))
+            vtn_text(wx, wy + 30, 180, 180, 180, cast[ptr uint8]("VTNext Desktop Environment"))
+            vtn_text(wx, wy + 70, 150, 150, 150, cast[ptr uint8]("Drag windows by titlebar"))
+            vtn_text(wx, wy + 100, 150, 150, 150, cast[ptr uint8]("Click X to close"))
+            vtn_text(wx, wy + 140, 150, 200, 150, cast[ptr uint8]("Q=quit D=demo P=pong T=term"))
+          # Draw Terminal window content
+          if title[0] == 84:  # 'T' for Terminal
+            var tx: int32 = win_x[wi] + 10
+            var ty: int32 = win_y[wi] + 40
+            vtn_rect(tx, ty, win_w[wi] - 20, win_h[wi] - 50, 20, 20, 30, 1)
+            vtn_text(tx + 5, ty + 5, 100, 255, 100, cast[ptr uint8]("bhos> _"))
+        wi = wi + 1
 
       # Draw taskbar (always on top)
       desktop_draw_taskbar()
@@ -9187,6 +9227,11 @@ proc run_vtn_desktop() =
       vtn_send(cast[ptr uint8]("input;raw"))
       vtn_send(cast[ptr uint8]("cursor;hide"))
       needs_redraw = 1
+    if input_ch == 116 or input_ch == 84:
+      # t/T - terminal window
+      if win_count < 4:
+        discard win_create(100, 100, 400, 300, cast[ptr uint8]("Terminal"), WIN_CLOSABLE)
+        needs_redraw = 1
 
     # Handle taskbar clicks
     if mouse_clicked == 1:
@@ -9196,6 +9241,11 @@ proc run_vtn_desktop() =
       if click_in_rect(mouse_click_x, mouse_click_y, 4, 724, 80, 40) == 1:
         # Apps button - just redraw for now
         discard 0
+      if click_in_rect(mouse_click_x, mouse_click_y, 90, 724, 70, 40) == 1:
+        # Term button - open terminal window
+        if win_count < 4:
+          discard win_create(120 + win_count * 30, 120 + win_count * 30, 400, 300, cast[ptr uint8]("Terminal"), WIN_CLOSABLE)
+        needs_redraw = 1
       if click_in_rect(mouse_click_x, mouse_click_y, 165, 724, 70, 40) == 1:
         run_vtn_demo_kernel()
         vtn_send(cast[ptr uint8]("input;raw"))

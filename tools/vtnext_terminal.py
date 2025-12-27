@@ -93,6 +93,9 @@ class VTNextTerminal:
             self.log_file = open(log_file, 'a')
             self.log("=== VTNext Terminal Started ===")
 
+        # Enable key repeat for held keys (delay 200ms, repeat every 50ms)
+        pygame.key.set_repeat(200, 50)
+
         # Clear the screen initially
         self.screen.fill(self.bg_color)
         pygame.display.flip()
@@ -386,9 +389,18 @@ class VTNextTerminal:
                     self.mouse_x, self.mouse_y = x, y
                     button = event.button
                     self.mouse_buttons &= ~(1 << (button - 1))
+                    if button == 1:  # Left button released
+                        self.send_mouse_up(x, y, button)
                 elif event.type == pygame.MOUSEMOTION:
                     x, y = event.pos
                     self.mouse_x, self.mouse_y = x, y
+                    # Send move events while dragging (left button held)
+                    if self.mouse_buttons & 1:
+                        now = time.time()
+                        # Throttle to ~30 move events per second
+                        if now - self.last_mouse_send > 0.033:
+                            self.send_mouse_move(x, y)
+                            self.last_mouse_send = now
 
             # Process commands from reader thread
             try:
