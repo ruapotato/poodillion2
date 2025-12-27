@@ -4,6 +4,9 @@
 # Import VTNext graphics renderer
 import "vtnext"
 
+# Import file locking implementation
+import "flock_impl"
+
 # External assembly functions - Serial
 extern serial_init()
 extern serial_putchar(c: int32)
@@ -35,6 +38,13 @@ extern context_switch(new_pid: int32)
 extern yield()
 extern exit_process(code: int32)
 extern fork(): int32
+extern thread_create(entry: int32, arg: int32): int32
+extern thread_exit(code: int32)
+extern thread_yield()
+extern get_thread_id(): int32
+extern is_thread(): int32
+extern thread_join(tid: int32, status_ptr: ptr int32): int32
+extern thread_detach(tid: int32): int32
 extern sys_exec(elf_ptr: int32, argv: int32): int32
 extern sys_execve(path: ptr uint8, argv: int32, envp: int32): int32
 extern waitpid(pid: int32, status_ptr: ptr int32): int32
@@ -75,6 +85,7 @@ const FS_TYPE_BRAINFS: int32 = 2
 const FS_TYPE_DEVFS: int32 = 3
 const FS_TYPE_PROCFS: int32 = 4
 const FS_TYPE_SYSFS: int32 = 5
+const FS_TYPE_TMPFS: int32 = 6
 
 # Signal functions
 extern init_signals()
@@ -139,6 +150,12 @@ extern keyboard_available(): int32
 extern vtn_init()
 extern vtn_set_fb_info(fb_base: int32, width: int32, height: int32, bpp: int32)
 
+# External assembly functions - ChaCha20 encryption
+extern chacha20_init(key: ptr uint8, nonce: ptr uint8, counter: int32)
+extern chacha20_block()
+extern chacha20_encrypt(input: ptr uint8, output: ptr uint8, length: int32, key: ptr uint8, nonce: ptr uint8, counter: int32)
+extern chacha20_get_block(): ptr uint8
+
 # Multiboot framebuffer info (from boot/multiboot.asm)
 extern multiboot_fb_addr(): int32
 extern multiboot_fb_width(): int32
@@ -195,6 +212,136 @@ extern call_entry(entry: int32)
 extern call_entry_with_stack(entry: int32, stack_ptr: int32)
 extern net_memset(dest: int32, val: int32, len: int32)
 extern wait_tick()  # Wait for next interrupt (allows timer to fire)
+
+# Test thread function for kernel thread testing
+proc test_thread_func(arg: int32) =
+  ser_print(cast[ptr uint8]("[THREAD] Hello from thread! arg = "))
+  ser_print_int(arg)
+  ser_print(cast[ptr uint8](", TID = "))
+  ser_print_int(get_thread_id())
+  ser_print(cast[ptr uint8](", is_thread = "))
+  ser_print_int(is_thread())
+  kprintln(cast[ptr uint8](""))
+
+  var i: int32 = 0
+  while i < 3:
+    ser_print(cast[ptr uint8]("[THREAD] Counting: "))
+    ser_print_int(i)
+    kprintln(cast[ptr uint8](""))
+    thread_yield()
+    i = i + 1
+
+  kprintln(cast[ptr uint8]("[THREAD] Thread exiting..."))
+  thread_exit(0)
+
+# Socket test server thread
+var socket_test_server_done: int32 = 0
+proc socket_test_server(arg: int32) =
+  ser_println(cast[ptr uint8]("[SOCK SERVER] Starting server..."))
+
+  # Debug: check unix_find_free
+  ser_print(cast[ptr uint8]("[SOCK SERVER] unix_state[0] = "))
+  ser_print_int(unix_state[0])
+  ser_print(cast[ptr uint8](", CLOSED = "))
+  ser_print_int(UNIX_STATE_CLOSED)
+  ser_println(cast[ptr uint8](""))
+  var free_id: int32 = unix_find_free()
+  ser_print(cast[ptr uint8]("[SOCK SERVER] unix_find_free = "))
+  ser_print_int(free_id)
+  ser_println(cast[ptr uint8](""))
+
+  # Listen on socket
+  var listen_id: int32 = unix_listen(cast[ptr uint8]("/tmp/test.sock"))
+  if listen_id < 0:
+    ser_println(cast[ptr uint8]("[SOCK SERVER] ERROR: Failed to listen"))
+    socket_test_server_done = 1
+    thread_exit(1)
+
+  ser_print(cast[ptr uint8]("[SOCK SERVER] Listening on socket "))
+  ser_print_int(listen_id)
+  ser_println(cast[ptr uint8](""))
+
+  # Poll for connection
+  var wait_count: int32 = 0
+  while unix_accept_ready(listen_id) == 0 and wait_count < 100:
+    thread_yield()
+    wait_count = wait_count + 1
+
+  if wait_count >= 100:
+    ser_println(cast[ptr uint8]("[SOCK SERVER] ERROR: Timeout waiting for client"))
+    discard unix_close(listen_id)
+    socket_test_server_done = 1
+    thread_exit(1)
+
+  # Accept connection
+  var conn_id: int32 = unix_accept(listen_id)
+  if conn_id < 0:
+    ser_println(cast[ptr uint8]("[SOCK SERVER] ERROR: Failed to accept"))
+    discard unix_close(listen_id)
+    socket_test_server_done = 1
+    thread_exit(1)
+
+  ser_print(cast[ptr uint8]("[SOCK SERVER] Accepted connection "))
+  ser_print_int(conn_id)
+  ser_println(cast[ptr uint8](""))
+
+  # Wait for data
+  wait_count = 0
+  while unix_has_data(conn_id) == 0 and wait_count < 50:
+    thread_yield()
+    wait_count = wait_count + 1
+
+  # Receive data
+  var recv_buf: array[64, uint8]
+  var recv_len: int32 = unix_recv(conn_id, addr(recv_buf[0]), 63)
+  if recv_len > 0:
+    recv_buf[recv_len] = cast[uint8](0)  # Null-terminate
+    ser_print(cast[ptr uint8]("[SOCK SERVER] Received: "))
+    ser_println(addr(recv_buf[0]))
+  else:
+    ser_println(cast[ptr uint8]("[SOCK SERVER] No data received"))
+
+  discard unix_close(conn_id)
+  discard unix_close(listen_id)
+  ser_println(cast[ptr uint8]("[SOCK SERVER] Server done"))
+  socket_test_server_done = 1
+  thread_exit(0)
+
+# Socket test client thread
+proc socket_test_client(arg: int32) =
+  # Wait a bit for server to start
+  var i: int32 = 0
+  while i < 5:
+    thread_yield()
+    i = i + 1
+
+  ser_println(cast[ptr uint8]("[SOCK CLIENT] Connecting..."))
+
+  var sock_id: int32 = unix_connect(cast[ptr uint8]("/tmp/test.sock"))
+  if sock_id < 0:
+    ser_println(cast[ptr uint8]("[SOCK CLIENT] ERROR: Failed to connect"))
+    thread_exit(1)
+
+  ser_print(cast[ptr uint8]("[SOCK CLIENT] Connected on socket "))
+  ser_print_int(sock_id)
+  ser_println(cast[ptr uint8](""))
+
+  # Wait for connection to complete
+  i = 0
+  while i < 5:
+    thread_yield()
+    i = i + 1
+
+  # Send data
+  var msg: ptr uint8 = cast[ptr uint8]("Hello Unix Socket!")
+  var sent: int32 = unix_send(sock_id, msg, 18)
+  ser_print(cast[ptr uint8]("[SOCK CLIENT] Sent "))
+  ser_print_int(sent)
+  ser_println(cast[ptr uint8](" bytes"))
+
+  discard unix_close(sock_id)
+  ser_println(cast[ptr uint8]("[SOCK CLIENT] Client done"))
+  thread_exit(0)
 
 # Process states
 const PROC_UNUSED: int32 = 0
@@ -694,6 +841,14 @@ var blkdev_sectors: array[16, int32]
 var blkdev_names: array[256, uint8]  # 16 devices * 16 chars each
 var blkdev_count: int32 = 0
 
+# Partition info (forward declared for partition read/write)
+# PART_MAX defined later in Partition Table section
+var part_parent_dev: array[16, int32]   # Parent block device
+var part_start_lba: array[16, int32]    # Start sector
+var part_sectors: array[16, int32]      # Number of sectors
+var part_type: array[16, int32]         # Partition type
+var part_count: int32 = 0
+
 # Register a block device
 # Returns: device index, or -1 on error
 proc blkdev_register(dev_type: int32, drv_idx: int32, sectors: int32, name: ptr uint8): int32 =
@@ -902,12 +1057,7 @@ const PART_TYPE_LINUX: int32 = 0x83
 const PART_TYPE_LINUX_SWAP: int32 = 0x82
 const PART_TYPE_LINUX_LVM: int32 = 0x8E
 
-# Partition info structure
-var part_parent_dev: array[16, int32]   # Parent block device
-var part_start_lba: array[16, int32]    # Start sector
-var part_sectors: array[16, int32]      # Number of sectors
-var part_type: array[16, int32]         # Partition type
-var part_count: int32 = 0
+# (Note: Partition arrays are declared earlier with blkdev layer)
 
 # Sector buffer for reading MBR
 var part_sector_buf: array[512, uint8]
@@ -1157,6 +1307,7 @@ const BRFS_DIRENTRY_SIZE: int32 = 32
 # File types for mode field
 const BRFS_S_IFREG: int32 = 32768   # 0x8000 - regular file
 const BRFS_S_IFDIR: int32 = 16384   # 0x4000 - directory
+const BRFS_S_IFLNK: int32 = 40960   # 0xA000 - symbolic link
 
 # Mount table - tracks mounted BrainFS filesystems
 var brfs_mount_dev: array[4, int32]         # Block device ID
@@ -1888,6 +2039,224 @@ proc brfs_mkdir(mount_id: int32, parent_ino: int32, name: ptr uint8): int32 =
 
   return new_ino
 
+# Create a symbolic link
+proc brfs_symlink(mount_id: int32, dir_ino: int32, name: ptr uint8, target: ptr uint8): int32 =
+  # Check if name already exists
+  if brfs_lookup(mount_id, dir_ino, name) > 0:
+    return -1
+
+  # Allocate new inode for symlink
+  var new_ino: int32 = brfs_ialloc(mount_id)
+  if new_ino < 0:
+    return -1
+
+  # Allocate block for symlink target
+  var blk: int32 = brfs_balloc(mount_id)
+  if blk < 0:
+    discard brfs_ifree(mount_id, new_ino)
+    return -1
+
+  # Calculate target length
+  var target_len: int32 = 0
+  while target[target_len] != cast[uint8](0):
+    target_len = target_len + 1
+  if target_len > 1023:
+    target_len = 1023
+
+  # Write target to block
+  var i: int32 = 0
+  while i < 1024:
+    brfs_block_buf[i] = cast[uint8](0)
+    i = i + 1
+  i = 0
+  while i < target_len:
+    brfs_block_buf[i] = target[i]
+    i = i + 1
+
+  if brfs_bwrite(mount_id, blk, addr(brfs_block_buf[0])) < 0:
+    discard brfs_bfree(mount_id, blk)
+    discard brfs_ifree(mount_id, new_ino)
+    return -1
+
+  # Initialize symlink inode
+  var inode_buf: array[32, uint8]
+  i = 0
+  while i < 32:
+    inode_buf[i] = cast[uint8](0)
+    i = i + 1
+  write16(addr(inode_buf[0]), BRFS_S_IFLNK | 511)  # lrwxrwxrwx (0777)
+  write16(addr(inode_buf[2]), 1)  # Link count
+  write32(addr(inode_buf[4]), target_len)  # Size = target length
+  write32(addr(inode_buf[16]), blk)  # First data block
+
+  if brfs_iput(mount_id, new_ino, addr(inode_buf[0])) < 0:
+    discard brfs_bfree(mount_id, blk)
+    discard brfs_ifree(mount_id, new_ino)
+    return -1
+
+  # Add directory entry (type 3 = symlink)
+  if brfs_add_direntry(mount_id, dir_ino, name, new_ino, 3) < 0:
+    discard brfs_bfree(mount_id, blk)
+    discard brfs_ifree(mount_id, new_ino)
+    return -1
+
+  return new_ino
+
+# Read symbolic link target
+proc brfs_readlink(mount_id: int32, ino: int32, buf: ptr uint8, bufsize: int32): int32 =
+  var inode_buf: array[32, uint8]
+  if brfs_iget(mount_id, ino, addr(inode_buf[0])) < 0:
+    return -1
+
+  # Check if this is a symlink
+  var mode: int32 = read16(addr(inode_buf[0]))
+  if (mode & 61440) != BRFS_S_IFLNK:  # 0xF000 mask
+    return -1  # Not a symlink
+
+  var size: int32 = read32(addr(inode_buf[4]))
+  if size == 0:
+    return 0
+
+  var blk: int32 = read32(addr(inode_buf[16]))
+  if blk == 0:
+    return -1
+
+  if brfs_bread(mount_id, blk, addr(brfs_block_buf[0])) < 0:
+    return -1
+
+  var to_copy: int32 = size
+  if to_copy >= bufsize:
+    to_copy = bufsize - 1
+
+  var i: int32 = 0
+  while i < to_copy:
+    buf[i] = brfs_block_buf[i]
+    i = i + 1
+  buf[to_copy] = cast[uint8](0)
+
+  return to_copy
+
+# Create a hard link
+proc brfs_link(mount_id: int32, dir_ino: int32, name: ptr uint8, target_ino: int32): int32 =
+  # Check if name already exists
+  if brfs_lookup(mount_id, dir_ino, name) > 0:
+    return -1
+
+  # Get target inode
+  var inode_buf: array[32, uint8]
+  if brfs_iget(mount_id, target_ino, addr(inode_buf[0])) < 0:
+    return -1
+
+  # Check it's a regular file (not directory or symlink)
+  var mode: int32 = read16(addr(inode_buf[0]))
+  if (mode & 61440) == BRFS_S_IFDIR:  # Cannot hardlink directories
+    return -1
+
+  # Increment link count
+  var nlinks: int32 = read16(addr(inode_buf[2]))
+  nlinks = nlinks + 1
+  write16(addr(inode_buf[2]), nlinks)
+
+  if brfs_iput(mount_id, target_ino, addr(inode_buf[0])) < 0:
+    return -1
+
+  # Determine file type for directory entry
+  var ftype: int32 = 1  # Regular file
+  if (mode & 61440) == BRFS_S_IFLNK:
+    ftype = 3  # Symlink
+
+  # Add directory entry pointing to same inode
+  if brfs_add_direntry(mount_id, dir_ino, name, target_ino, ftype) < 0:
+    # Rollback link count
+    discard brfs_iget(mount_id, target_ino, addr(inode_buf[0]))
+    nlinks = read16(addr(inode_buf[2])) - 1
+    write16(addr(inode_buf[2]), nlinks)
+    discard brfs_iput(mount_id, target_ino, addr(inode_buf[0]))
+    return -1
+
+  return 0
+
+# Unlink (remove) a file or symlink from a directory
+# Decrements link count; frees inode and data blocks when count reaches 0
+proc brfs_unlink(mount_id: int32, dir_ino: int32, name: ptr uint8): int32 =
+  # Look up the file to get its inode
+  var target_ino: int32 = brfs_lookup(mount_id, dir_ino, name)
+  if target_ino <= 0:
+    return -1  # File not found
+
+  # Get target inode info
+  var inode_buf: array[32, uint8]
+  if brfs_iget(mount_id, target_ino, addr(inode_buf[0])) < 0:
+    return -1
+
+  # Check it's not a directory
+  var mode: int32 = read16(addr(inode_buf[0]))
+  if (mode & 61440) == BRFS_S_IFDIR:
+    return -1  # Cannot unlink directories (use rmdir)
+
+  # Find and remove directory entry
+  var dir_buf: array[32, uint8]
+  if brfs_iget(mount_id, dir_ino, addr(dir_buf[0])) < 0:
+    return -1
+
+  var name_len: int32 = fs_strlen(name)
+  var found: int32 = 0
+  var blk_idx: int32 = 0
+
+  while blk_idx < 3 and found == 0:
+    var blk: int32 = read32(addr(dir_buf[16 + blk_idx * 4]))
+    if blk == 0:
+      blk_idx = blk_idx + 1
+      continue
+
+    if brfs_bread(mount_id, blk, addr(brfs_block_buf2[0])) < 0:
+      return -1
+
+    var offset: int32 = 0
+    while offset < BRFS_BLOCK_SIZE:
+      var entry_ino: int32 = read32(addr(brfs_block_buf2[offset]))
+      if entry_ino == target_ino:
+        var entry_name_len: int32 = cast[int32](brfs_block_buf2[offset + 6])
+        if entry_name_len == name_len:
+          # Compare names
+          var is_match: int32 = 1
+          var j: int32 = 0
+          while j < name_len:
+            if brfs_block_buf2[offset + 8 + j] != name[j]:
+              is_match = 0
+            j = j + 1
+          if is_match == 1:
+            # Clear directory entry
+            write32(addr(brfs_block_buf2[offset]), 0)
+            if brfs_bwrite(mount_id, blk, addr(brfs_block_buf2[0])) < 0:
+              return -1
+            found = 1
+      offset = offset + BRFS_DIRENTRY_SIZE
+    blk_idx = blk_idx + 1
+
+  if found == 0:
+    return -1  # Entry not found
+
+  # Decrement link count
+  var nlinks: int32 = read16(addr(inode_buf[2]))
+  nlinks = nlinks - 1
+
+  if nlinks > 0:
+    # Still has links, just update link count
+    write16(addr(inode_buf[2]), nlinks)
+    discard brfs_iput(mount_id, target_ino, addr(inode_buf[0]))
+  else:
+    # No more links, free blocks and inode
+    var bi: int32 = 0
+    while bi < 3:
+      var blk: int32 = read32(addr(inode_buf[16 + bi * 4]))
+      if blk != 0:
+        discard brfs_bfree(mount_id, blk)
+      bi = bi + 1
+    discard brfs_ifree(mount_id, target_ino)
+
+  return 0
+
 # Read file data
 proc brfs_read_file(mount_id: int32, ino: int32, offset: int32, buf: ptr uint8, len: int32): int32 =
   var inode_buf: array[32, uint8]
@@ -2067,6 +2436,254 @@ proc brfs_auto_mount(): int32 =
   ser_println(cast[ptr uint8]("[BRFS] No secondary disk found for filesystem"))
   ser_println(cast[ptr uint8]("[BRFS] Add a second disk with: qemu ... -hdb data.img"))
   return -1
+
+# =============================================================================
+# TmpFS - In-memory temporary filesystem
+# =============================================================================
+
+const TMPFS_DEFAULT_SIZE: int32 = 1048576  # 1MB default
+const TMPFS_MAX_INODES: int32 = 64
+const TMPFS_MAX_NAME: int32 = 32
+const TMPFS_MAX_FILESIZE: int32 = 65536  # 64KB max per file
+
+# Inode types
+const TMPFS_TYPE_UNUSED: int32 = 0
+const TMPFS_TYPE_FILE: int32 = 1
+const TMPFS_TYPE_DIR: int32 = 2
+
+# TmpFS state
+var tmpfs_active_mount: int32 = -1
+var tmpfs_mounted: int32 = 0
+
+# Inode table - stored as parallel arrays
+var tmpfs_inode_type: array[64, int32]    # Type (unused/file/dir)
+var tmpfs_inode_parent: array[64, int32]  # Parent inode
+var tmpfs_inode_size: array[64, int32]    # Size (files only)
+var tmpfs_inode_data: array[64, int32]    # Pointer to data
+var tmpfs_inode_names: array[2048, uint8] # Name storage (64 * 32)
+
+# Simple string compare
+proc tmpfs_strcmp(a: ptr uint8, b: ptr uint8): int32 =
+  var i: int32 = 0
+  while a[i] != cast[uint8](0) and b[i] != cast[uint8](0):
+    if a[i] != b[i]:
+      return 1
+    i = i + 1
+  if a[i] != b[i]:
+    return 1
+  return 0
+
+# Get name for inode
+proc tmpfs_get_name(ino: int32): ptr uint8 =
+  var offset: int32 = ino * TMPFS_MAX_NAME
+  return addr(tmpfs_inode_names[offset])
+
+# Set name for inode
+proc tmpfs_set_name(ino: int32, name: ptr uint8) =
+  var offset: int32 = ino * TMPFS_MAX_NAME
+  var i: int32 = 0
+  while name[i] != cast[uint8](0) and i < TMPFS_MAX_NAME - 1:
+    tmpfs_inode_names[offset + i] = name[i]
+    i = i + 1
+  tmpfs_inode_names[offset + i] = cast[uint8](0)
+
+# Create tmpfs filesystem
+proc tmpfs_mkfs(max_size: int32): int32 =
+  discard max_size
+  if tmpfs_mounted != 0:
+    return -1  # Already mounted
+
+  # Initialize all inodes as unused
+  var i: int32 = 0
+  while i < TMPFS_MAX_INODES:
+    tmpfs_inode_type[i] = TMPFS_TYPE_UNUSED
+    tmpfs_inode_parent[i] = -1
+    tmpfs_inode_size[i] = 0
+    tmpfs_inode_data[i] = 0
+    i = i + 1
+
+  # Create root directory as inode 0
+  tmpfs_inode_type[0] = TMPFS_TYPE_DIR
+  tmpfs_inode_parent[0] = 0
+  tmpfs_set_name(0, cast[ptr uint8]("/"))
+
+  tmpfs_mounted = 1
+  return 0  # Return mount ID 0
+
+# Unmount tmpfs
+proc tmpfs_unmount(mount_id: int32): int32 =
+  discard mount_id
+  if tmpfs_mounted == 0:
+    return -1
+  tmpfs_mounted = 0
+  return 0
+
+# Read directory entries
+# Returns number of entries written to buffer
+proc tmpfs_readdir(mount_id: int32, dir_ino: int32, buf: ptr uint8, max_entries: int32): int32 =
+  discard mount_id
+  if tmpfs_mounted == 0:
+    return -1
+  if dir_ino < 0 or dir_ino >= TMPFS_MAX_INODES:
+    return -1
+  if tmpfs_inode_type[dir_ino] != TMPFS_TYPE_DIR:
+    return -1
+
+  var count: int32 = 0
+  var buf_pos: int32 = 0
+  var i: int32 = 0
+
+  while i < TMPFS_MAX_INODES and count < max_entries:
+    if tmpfs_inode_type[i] != TMPFS_TYPE_UNUSED and tmpfs_inode_parent[i] == dir_ino and i != dir_ino:
+      # Copy name to buffer
+      var name: ptr uint8 = tmpfs_get_name(i)
+      var j: int32 = 0
+      while name[j] != cast[uint8](0) and j < 31:
+        buf[buf_pos] = name[j]
+        buf_pos = buf_pos + 1
+        j = j + 1
+      buf[buf_pos] = cast[uint8](0)
+      buf_pos = buf_pos + 1
+      count = count + 1
+    i = i + 1
+
+  return count
+
+# Allocate a new inode
+proc tmpfs_alloc_inode(): int32 =
+  var i: int32 = 1  # Skip root
+  while i < TMPFS_MAX_INODES:
+    if tmpfs_inode_type[i] == TMPFS_TYPE_UNUSED:
+      return i
+    i = i + 1
+  return -1  # No free inodes
+
+# Create file or directory
+proc tmpfs_create(mount_id: int32, dir_ino: int32, name: ptr uint8, is_dir: int32): int32 =
+  discard mount_id
+  if tmpfs_mounted == 0:
+    return -1
+  if dir_ino < 0 or dir_ino >= TMPFS_MAX_INODES:
+    return -1
+  if tmpfs_inode_type[dir_ino] != TMPFS_TYPE_DIR:
+    return -1
+
+  # Check if already exists
+  if tmpfs_lookup(mount_id, dir_ino, name) >= 0:
+    return -1
+
+  var new_ino: int32 = tmpfs_alloc_inode()
+  if new_ino < 0:
+    return -1
+
+  if is_dir != 0:
+    tmpfs_inode_type[new_ino] = TMPFS_TYPE_DIR
+  else:
+    tmpfs_inode_type[new_ino] = TMPFS_TYPE_FILE
+
+  tmpfs_inode_parent[new_ino] = dir_ino
+  tmpfs_inode_size[new_ino] = 0
+  tmpfs_inode_data[new_ino] = 0
+  tmpfs_set_name(new_ino, name)
+
+  return new_ino
+
+# Look up file/directory by name in parent
+proc tmpfs_lookup(mount_id: int32, dir_ino: int32, name: ptr uint8): int32 =
+  discard mount_id
+  if tmpfs_mounted == 0:
+    return -1
+  if dir_ino < 0 or dir_ino >= TMPFS_MAX_INODES:
+    return -1
+
+  var i: int32 = 0
+  while i < TMPFS_MAX_INODES:
+    if tmpfs_inode_type[i] != TMPFS_TYPE_UNUSED and tmpfs_inode_parent[i] == dir_ino:
+      var inode_name: ptr uint8 = tmpfs_get_name(i)
+      if tmpfs_strcmp(inode_name, name) == 0:
+        return i
+    i = i + 1
+
+  return -1  # Not found
+
+# Write data to file (replaces existing content)
+proc tmpfs_write(mount_id: int32, ino: int32, data: ptr uint8, len: int32): int32 =
+  discard mount_id
+  if tmpfs_mounted == 0:
+    return -1
+  if ino < 0 or ino >= TMPFS_MAX_INODES:
+    return -1
+  if tmpfs_inode_type[ino] != TMPFS_TYPE_FILE:
+    return -1
+  if len > TMPFS_MAX_FILESIZE:
+    len = TMPFS_MAX_FILESIZE
+
+  # Allocate memory for data if needed
+  if tmpfs_inode_data[ino] == 0 and len > 0:
+    # Use static buffer per inode (simplified - uses inode index * 64KB offset)
+    tmpfs_inode_data[ino] = 0x800000 + (ino * TMPFS_MAX_FILESIZE)
+
+  if len > 0:
+    var dest: ptr uint8 = cast[ptr uint8](tmpfs_inode_data[ino])
+    var i: int32 = 0
+    while i < len:
+      dest[i] = data[i]
+      i = i + 1
+
+  tmpfs_inode_size[ino] = len
+  return len
+
+# Read data from file
+proc tmpfs_read(mount_id: int32, ino: int32, buf: ptr uint8, max_len: int32): int32 =
+  discard mount_id
+  if tmpfs_mounted == 0:
+    return -1
+  if ino < 0 or ino >= TMPFS_MAX_INODES:
+    return -1
+  if tmpfs_inode_type[ino] != TMPFS_TYPE_FILE:
+    return -1
+
+  var size: int32 = tmpfs_inode_size[ino]
+  if size == 0:
+    return 0
+
+  var to_read: int32 = size
+  if to_read > max_len:
+    to_read = max_len
+
+  var src: ptr uint8 = cast[ptr uint8](tmpfs_inode_data[ino])
+  var i: int32 = 0
+  while i < to_read:
+    buf[i] = src[i]
+    i = i + 1
+
+  return to_read
+
+# Delete file or empty directory
+proc tmpfs_unlink(mount_id: int32, dir_ino: int32, name: ptr uint8): int32 =
+  discard mount_id
+  if tmpfs_mounted == 0:
+    return -1
+
+  var ino: int32 = tmpfs_lookup(mount_id, dir_ino, name)
+  if ino < 0:
+    return -1
+
+  # If directory, check if empty
+  if tmpfs_inode_type[ino] == TMPFS_TYPE_DIR:
+    var i: int32 = 0
+    while i < TMPFS_MAX_INODES:
+      if tmpfs_inode_type[i] != TMPFS_TYPE_UNUSED and tmpfs_inode_parent[i] == ino:
+        return -1  # Directory not empty
+      i = i + 1
+
+  # Free the inode
+  tmpfs_inode_type[ino] = TMPFS_TYPE_UNUSED
+  tmpfs_inode_parent[ino] = -1
+  tmpfs_inode_size[ino] = 0
+  tmpfs_inode_data[ino] = 0
+
+  return 0
 
 # =============================================================================
 # Init System - Reads startup configuration from disk
@@ -2299,6 +2916,11 @@ proc main() =
   setup_std_fds(0)  # Set up stdin/stdout/stderr for kernel process
   print_ok(cast[ptr uint8]("Pipes initialized"))
 
+  # Initialize file locking
+  print_pending(cast[ptr uint8]("Initializing file locks"))
+  flock_init()
+  print_ok(cast[ptr uint8]("File locks initialized"))
+
   # Initialize VFS
   print_pending(cast[ptr uint8]("Initializing VFS"))
   vfs_init()
@@ -2369,6 +2991,133 @@ proc main() =
   kprintln(cast[ptr uint8](""))
 
   ser_println(cast[ptr uint8](""))
+
+  # === Thread Test (automatic on boot) ===
+  ser_println(cast[ptr uint8]("[THREAD TEST] Starting thread test..."))
+  ser_print(cast[ptr uint8]("[THREAD TEST] Main PID: "))
+  ser_print_int(get_current_pid())
+  ser_print(cast[ptr uint8](", TID: "))
+  ser_print_int(get_thread_id())
+  ser_print(cast[ptr uint8](", is_thread: "))
+  ser_print_int(is_thread())
+  ser_println(cast[ptr uint8](""))
+
+  var test_tid: int32 = thread_create(cast[int32](addr(test_thread_func)), 42)
+  if test_tid < 0:
+    ser_println(cast[ptr uint8]("[THREAD TEST] ERROR: Failed to create thread"))
+  else:
+    ser_print(cast[ptr uint8]("[THREAD TEST] Created thread PID: "))
+    ser_print_int(test_tid)
+    ser_println(cast[ptr uint8](""))
+    # Yield multiple times to let thread run
+    var test_i: int32 = 0
+    while test_i < 10:
+      thread_yield()
+      test_i = test_i + 1
+    ser_println(cast[ptr uint8]("[THREAD TEST] Thread test complete"))
+  ser_println(cast[ptr uint8](""))
+
+  # === Unix Socket Test (automatic on boot) ===
+  ser_println(cast[ptr uint8]("[SOCKET TEST] Starting Unix socket test..."))
+  unix_init()  # Initialize Unix sockets
+  ser_println(cast[ptr uint8]("[SOCKET TEST] unix_init completed"))
+
+  # Create server thread
+  var server_tid: int32 = thread_create(cast[int32](addr(socket_test_server)), 0)
+  if server_tid < 0:
+    ser_println(cast[ptr uint8]("[SOCKET TEST] ERROR: Failed to create server thread"))
+  else:
+    ser_print(cast[ptr uint8]("[SOCKET TEST] Server thread PID: "))
+    ser_print_int(server_tid)
+    ser_println(cast[ptr uint8](""))
+
+    # Create client thread
+    var client_tid: int32 = thread_create(cast[int32](addr(socket_test_client)), 0)
+    if client_tid < 0:
+      ser_println(cast[ptr uint8]("[SOCKET TEST] ERROR: Failed to create client thread"))
+    else:
+      ser_print(cast[ptr uint8]("[SOCKET TEST] Client thread PID: "))
+      ser_print_int(client_tid)
+      ser_println(cast[ptr uint8](""))
+
+      # Yield to let threads run
+      var sock_test_i: int32 = 0
+      while sock_test_i < 200 and socket_test_server_done == 0:
+        thread_yield()
+        sock_test_i = sock_test_i + 1
+
+      ser_println(cast[ptr uint8]("[SOCKET TEST] Socket test complete"))
+  ser_println(cast[ptr uint8](""))
+
+  # Test ChaCha20 encryption
+  ser_println(cast[ptr uint8]("[CHACHA20 TEST] Starting ChaCha20 test..."))
+
+  # Test key (32 bytes) - using simple pattern for testing
+  var chacha_key: array[32, uint8]
+  var ki: int32 = 0
+  while ki < 32:
+    chacha_key[ki] = cast[uint8](ki)
+    ki = ki + 1
+
+  # Test nonce (12 bytes)
+  var chacha_nonce: array[12, uint8]
+  var ni: int32 = 0
+  while ni < 12:
+    chacha_nonce[ni] = cast[uint8](ni + 32)
+    ni = ni + 1
+
+  # Test plaintext
+  var plaintext: array[64, uint8]
+  var pi: int32 = 0
+  while pi < 64:
+    # A-Z repeating pattern (use % for modulo)
+    var letter: int32 = pi - ((pi / 26) * 26)  # manual modulo
+    plaintext[pi] = cast[uint8](65 + letter)
+    pi = pi + 1
+
+  # Ciphertext buffer
+  var ciphertext: array[64, uint8]
+
+  # Encrypt
+  chacha20_encrypt(addr(plaintext[0]), addr(ciphertext[0]), 64, addr(chacha_key[0]), addr(chacha_nonce[0]), 0)
+
+  # Verify ciphertext is different from plaintext
+  var diff_count: int32 = 0
+  var ci: int32 = 0
+  while ci < 64:
+    if ciphertext[ci] != plaintext[ci]:
+      diff_count = diff_count + 1
+    ci = ci + 1
+
+  if diff_count > 0:
+    ser_print(cast[ptr uint8]("[CHACHA20 TEST] Encryption changed "))
+    ser_print_int(diff_count)
+    ser_println(cast[ptr uint8]("/64 bytes"))
+  else:
+    ser_println(cast[ptr uint8]("[CHACHA20 TEST] ERROR: Encryption didn't change data!"))
+
+  # Decrypt (same operation for stream cipher)
+  var decrypted: array[64, uint8]
+  chacha20_encrypt(addr(ciphertext[0]), addr(decrypted[0]), 64, addr(chacha_key[0]), addr(chacha_nonce[0]), 0)
+
+  # Verify decrypted matches plaintext
+  var match_count: int32 = 0
+  var di: int32 = 0
+  while di < 64:
+    if decrypted[di] == plaintext[di]:
+      match_count = match_count + 1
+    di = di + 1
+
+  if match_count == 64:
+    ser_println(cast[ptr uint8]("[CHACHA20 TEST] Decryption verified - all 64 bytes match!"))
+  else:
+    ser_print(cast[ptr uint8]("[CHACHA20 TEST] ERROR: Only "))
+    ser_print_int(match_count)
+    ser_println(cast[ptr uint8]("/64 bytes match after decryption"))
+
+  ser_println(cast[ptr uint8]("[CHACHA20 TEST] ChaCha20 test complete"))
+  ser_println(cast[ptr uint8](""))
+
   ser_println(cast[ptr uint8]("Starting kernel shell..."))
 
   # Run init system (reads /etc/inittab from disk)
@@ -2649,6 +3398,263 @@ var tcp_recv_buf: array[16384, uint8]             # Receive buffers (1024 per co
 var tcp_recv_len: array[16, int32]                # Bytes in receive buffer
 var tcp_recv_ready: array[16, int32]              # Data ready flags
 
+# ============================================================================
+# Unix Domain Sockets
+# ============================================================================
+const UNIX_MAX_SOCKETS: int32 = 8
+const UNIX_BUF_SIZE: int32 = 1024
+const UNIX_PATH_MAX: int32 = 64
+
+# Unix socket states
+const UNIX_STATE_CLOSED: int32 = 0
+const UNIX_STATE_LISTENING: int32 = 1
+const UNIX_STATE_CONNECTING: int32 = 2
+const UNIX_STATE_CONNECTED: int32 = 3
+
+# Unix socket data
+var unix_state: array[8, int32]                   # Socket states
+var unix_path: array[512, uint8]                  # Paths (64 bytes each)
+var unix_listen_pid: array[8, int32]              # PID of listening socket
+var unix_peer_socket: array[8, int32]             # Connected peer socket (-1 if none)
+var unix_recv_buf: array[8192, uint8]             # Receive buffers (1024 per socket)
+var unix_recv_len: array[8, int32]                # Bytes in receive buffer
+var unix_recv_ready: array[8, int32]              # Data ready flags
+var unix_pending_pid: array[8, int32]             # PID of pending connection
+var unix_pending_socket: array[8, int32]          # Socket of pending connection
+
+# Get path pointer for socket
+proc unix_get_path(socket_id: int32): ptr uint8 =
+  return addr(unix_path[socket_id * UNIX_PATH_MAX])
+
+# Get receive buffer pointer for socket
+proc unix_get_buf(socket_id: int32): ptr uint8 =
+  return addr(unix_recv_buf[socket_id * UNIX_BUF_SIZE])
+
+# Initialize Unix socket system
+proc unix_init() =
+  var i: int32 = 0
+  while i < UNIX_MAX_SOCKETS:
+    unix_state[i] = UNIX_STATE_CLOSED
+    unix_listen_pid[i] = -1
+    unix_peer_socket[i] = -1
+    unix_recv_len[i] = 0
+    unix_recv_ready[i] = 0
+    unix_pending_pid[i] = -1
+    unix_pending_socket[i] = -1
+    i = i + 1
+
+# Find free Unix socket
+proc unix_find_free(): int32 =
+  var i: int32 = 0
+  while i < UNIX_MAX_SOCKETS:
+    if unix_state[i] == UNIX_STATE_CLOSED:
+      return i
+    i = i + 1
+  return -1
+
+# Find listening socket by path
+proc unix_find_listener(path: ptr uint8): int32 =
+  var i: int32 = 0
+  while i < UNIX_MAX_SOCKETS:
+    if unix_state[i] == UNIX_STATE_LISTENING:
+      var sock_path: ptr uint8 = unix_get_path(i)
+      if str_equals(path, sock_path) == 1:
+        return i
+    i = i + 1
+  return -1
+
+# Create listening Unix socket
+# Returns socket ID on success, -1 on failure
+proc unix_listen(path: ptr uint8): int32 =
+  # Check if path already in use
+  if unix_find_listener(path) >= 0:
+    return -1  # Address already in use
+
+  # Find free socket
+  var socket_id: int32 = unix_find_free()
+  if socket_id < 0:
+    return -1  # No free sockets
+
+  # Copy path
+  var sock_path: ptr uint8 = unix_get_path(socket_id)
+  str_copy(sock_path, path, UNIX_PATH_MAX - 1)
+
+  # Set up socket state
+  unix_state[socket_id] = UNIX_STATE_LISTENING
+  unix_listen_pid[socket_id] = get_current_pid()
+  unix_peer_socket[socket_id] = -1
+  unix_recv_len[socket_id] = 0
+  unix_recv_ready[socket_id] = 0
+  unix_pending_pid[socket_id] = -1
+  unix_pending_socket[socket_id] = -1
+
+  return socket_id
+
+# Connect to Unix socket
+# Returns socket ID on success, -1 on failure
+proc unix_connect(path: ptr uint8): int32 =
+  # Find listening socket
+  var listen_id: int32 = unix_find_listener(path)
+  if listen_id < 0:
+    return -1  # No such socket
+
+  # Find free socket for client
+  var client_id: int32 = unix_find_free()
+  if client_id < 0:
+    return -1  # No free sockets
+
+  # Set up client socket
+  unix_state[client_id] = UNIX_STATE_CONNECTING
+  unix_listen_pid[client_id] = get_current_pid()
+  unix_peer_socket[client_id] = -1
+  unix_recv_len[client_id] = 0
+  unix_recv_ready[client_id] = 0
+
+  # Register pending connection on listener
+  unix_pending_pid[listen_id] = get_current_pid()
+  unix_pending_socket[listen_id] = client_id
+
+  return client_id
+
+# Check if listener has pending connection
+proc unix_accept_ready(socket_id: int32): int32 =
+  if socket_id < 0 or socket_id >= UNIX_MAX_SOCKETS:
+    return 0
+  if unix_state[socket_id] != UNIX_STATE_LISTENING:
+    return 0
+  if unix_pending_pid[socket_id] >= 0:
+    return 1
+  return 0
+
+# Accept connection on listening socket
+# Returns new connected socket ID, -1 on failure
+proc unix_accept(listen_id: int32): int32 =
+  if listen_id < 0 or listen_id >= UNIX_MAX_SOCKETS:
+    return -1
+  if unix_state[listen_id] != UNIX_STATE_LISTENING:
+    return -1
+  if unix_pending_pid[listen_id] < 0:
+    return -1  # No pending connection
+
+  # Get client socket that's connecting
+  var client_id: int32 = unix_pending_socket[listen_id]
+
+  # Create server-side socket for this connection
+  var server_id: int32 = unix_find_free()
+  if server_id < 0:
+    return -1  # No free sockets
+
+  # Set up server socket
+  unix_state[server_id] = UNIX_STATE_CONNECTED
+  unix_listen_pid[server_id] = get_current_pid()
+  unix_peer_socket[server_id] = client_id
+  unix_recv_len[server_id] = 0
+  unix_recv_ready[server_id] = 0
+
+  # Complete client connection
+  unix_state[client_id] = UNIX_STATE_CONNECTED
+  unix_peer_socket[client_id] = server_id
+
+  # Clear pending connection on listener
+  unix_pending_pid[listen_id] = -1
+  unix_pending_socket[listen_id] = -1
+
+  return server_id
+
+# Send data on Unix socket
+# Returns bytes sent, -1 on error
+proc unix_send(socket_id: int32, data: ptr uint8, length: int32): int32 =
+  if socket_id < 0 or socket_id >= UNIX_MAX_SOCKETS:
+    return -1
+  if unix_state[socket_id] != UNIX_STATE_CONNECTED:
+    return -1
+
+  var peer_id: int32 = unix_peer_socket[socket_id]
+  if peer_id < 0 or peer_id >= UNIX_MAX_SOCKETS:
+    return -1
+
+  # Check buffer space in peer
+  var available: int32 = UNIX_BUF_SIZE - unix_recv_len[peer_id]
+  if length > available:
+    length = available
+  if length <= 0:
+    return 0  # Buffer full
+
+  # Copy data to peer's receive buffer
+  var peer_buf: ptr uint8 = unix_get_buf(peer_id)
+  var offset: int32 = unix_recv_len[peer_id]
+  var i: int32 = 0
+  while i < length:
+    peer_buf[offset + i] = data[i]
+    i = i + 1
+
+  unix_recv_len[peer_id] = offset + length
+  unix_recv_ready[peer_id] = 1
+
+  return length
+
+# Receive data from Unix socket
+# Returns bytes received, -1 on error
+proc unix_recv(socket_id: int32, buf: ptr uint8, max_len: int32): int32 =
+  if socket_id < 0 or socket_id >= UNIX_MAX_SOCKETS:
+    return -1
+  if unix_state[socket_id] != UNIX_STATE_CONNECTED:
+    return -1
+
+  var available: int32 = unix_recv_len[socket_id]
+  if available <= 0:
+    return 0  # No data
+
+  if max_len > available:
+    max_len = available
+
+  # Copy data from receive buffer
+  var sock_buf: ptr uint8 = unix_get_buf(socket_id)
+  var i: int32 = 0
+  while i < max_len:
+    buf[i] = sock_buf[i]
+    i = i + 1
+
+  # Shift remaining data
+  var remaining: int32 = available - max_len
+  i = 0
+  while i < remaining:
+    sock_buf[i] = sock_buf[max_len + i]
+    i = i + 1
+
+  unix_recv_len[socket_id] = remaining
+  if remaining == 0:
+    unix_recv_ready[socket_id] = 0
+
+  return max_len
+
+# Check if socket has data available
+proc unix_has_data(socket_id: int32): int32 =
+  if socket_id < 0 or socket_id >= UNIX_MAX_SOCKETS:
+    return 0
+  return unix_recv_ready[socket_id]
+
+# Close Unix socket
+proc unix_close(socket_id: int32) =
+  if socket_id < 0 or socket_id >= UNIX_MAX_SOCKETS:
+    return
+
+  # If connected, close peer too
+  if unix_state[socket_id] == UNIX_STATE_CONNECTED:
+    var peer_id: int32 = unix_peer_socket[socket_id]
+    if peer_id >= 0 and peer_id < UNIX_MAX_SOCKETS:
+      unix_state[peer_id] = UNIX_STATE_CLOSED
+      unix_peer_socket[peer_id] = -1
+
+  # Close this socket
+  unix_state[socket_id] = UNIX_STATE_CLOSED
+  unix_listen_pid[socket_id] = -1
+  unix_peer_socket[socket_id] = -1
+  unix_recv_len[socket_id] = 0
+  unix_recv_ready[socket_id] = 0
+  unix_pending_pid[socket_id] = -1
+  unix_pending_socket[socket_id] = -1
+
 # Get environment variable name at index
 proc env_name_ptr(idx: int32): ptr uint8 =
   return addr(env_names[idx * MAX_ENV_NAME])
@@ -2744,7 +3750,7 @@ proc read32(p: ptr uint8): int32 =
   var b1: int32 = cast[int32](p[1])
   var b2: int32 = cast[int32](p[2])
   var b3: int32 = cast[int32](p[3])
-  return b0 + (b1 << 8) + (b2 << 16) + (b3 << 24)
+  return b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
 
 # Write 32-bit value to pointer
 proc write32(p: ptr uint8, val: int32) =
@@ -3034,6 +4040,52 @@ proc path_basename(path: ptr uint8): ptr uint8 =
   if last_slash < 0:
     return path
   return addr(path[last_slash + 1])
+
+# =============================================================================
+# Filesystem Syscalls (link/symlink/readlink/unlink)
+# =============================================================================
+
+# sys_link - Create a hard link
+proc sys_link(target: ptr uint8, linkname: ptr uint8): int32 =
+  if brfs_active_mount < 0:
+    return -1
+  var target_ino: int32 = path_resolve(target)
+  if target_ino <= 0:
+    return -1
+  var parent_ino: int32 = path_parent(linkname)
+  if parent_ino <= 0:
+    return -1
+  var name: ptr uint8 = path_basename(linkname)
+  return brfs_link(brfs_active_mount, parent_ino, name, target_ino)
+
+# sys_unlink - Remove a file or link
+proc sys_unlink(path: ptr uint8): int32 =
+  if brfs_active_mount < 0:
+    return -1
+  var parent_ino: int32 = path_parent(path)
+  if parent_ino <= 0:
+    return -1
+  var name: ptr uint8 = path_basename(path)
+  return brfs_unlink(brfs_active_mount, parent_ino, name)
+
+# sys_symlink - Create a symbolic link
+proc sys_symlink(target: ptr uint8, linkpath: ptr uint8): int32 =
+  if brfs_active_mount < 0:
+    return -1
+  var parent_ino: int32 = path_parent(linkpath)
+  if parent_ino <= 0:
+    return -1
+  var name: ptr uint8 = path_basename(linkpath)
+  return brfs_symlink(brfs_active_mount, parent_ino, name, target)
+
+# sys_readlink - Read the target of a symbolic link
+proc sys_readlink(path: ptr uint8, buf: ptr uint8, bufsize: int32): int32 =
+  if brfs_active_mount < 0:
+    return -1
+  var ino: int32 = path_resolve(path)
+  if ino <= 0:
+    return -1
+  return brfs_readlink(brfs_active_mount, ino, buf, bufsize)
 
 # ============================================================================
 # High-level filesystem operations
@@ -3407,6 +4459,8 @@ proc vfs_proc_filesystems(buf: ptr uint8): int32 =
   pos = buf_append(buf, pos, cast[ptr uint8]("nodev   sysfs"))
   pos = buf_newline(buf, pos)
   pos = buf_append(buf, pos, cast[ptr uint8]("nodev   devfs"))
+  pos = buf_newline(buf, pos)
+  pos = buf_append(buf, pos, cast[ptr uint8]("nodev   tmpfs"))
   pos = buf_newline(buf, pos)
   buf[pos] = cast[uint8](0)
   return pos
@@ -3820,6 +4874,16 @@ proc str_equals(s1: ptr uint8, s2: ptr uint8): int32 =
       return 1
     i = i + 1
   return 0
+
+# String copy with max length
+proc str_copy(dest: ptr uint8, src: ptr uint8, max_len: int32) =
+  var i: int32 = 0
+  while i < max_len:
+    dest[i] = src[i]
+    if src[i] == cast[uint8](0):
+      return
+    i = i + 1
+  dest[max_len - 1] = cast[uint8](0)  # Ensure null-termination
 
 # Print prompt (kprint outputs to both VGA and serial)
 proc shell_prompt() =
@@ -4336,6 +5400,8 @@ proc shell_execute() =
         kprint(cast[ptr uint8]("procfs       "))
       elif fs_type == FS_TYPE_SYSFS:
         kprint(cast[ptr uint8]("sysfs        "))
+      elif fs_type == FS_TYPE_TMPFS:
+        kprint(cast[ptr uint8]("tmpfs        "))
       else:
         kprint(cast[ptr uint8]("unknown      "))
       var m_path: ptr uint8 = vfs_get_mount_path(m_idx)
@@ -4419,13 +5485,13 @@ proc shell_execute() =
             var kill_sig: int32 = SIGTERM
             # Find space after PID
             var kill_idx: int32 = 0
-            while kill_ptr[kill_idx] != 0 and kill_ptr[kill_idx] != 32:
+            while cast[int32](kill_ptr[kill_idx]) != 0 and cast[int32](kill_ptr[kill_idx]) != 32:
               kill_idx = kill_idx + 1
-            if kill_ptr[kill_idx] == 32:
+            if cast[int32](kill_ptr[kill_idx]) == 32:
               # Skip spaces
-              while kill_ptr[kill_idx] == 32:
+              while cast[int32](kill_ptr[kill_idx]) == 32:
                 kill_idx = kill_idx + 1
-              if kill_ptr[kill_idx] != 0:
+              if cast[int32](kill_ptr[kill_idx]) != 0:
                 kill_sig = parse_int(addr(kill_ptr[kill_idx]))
             # Validate
             if kill_pid <= 0:
@@ -6304,6 +7370,34 @@ proc shell_execute() =
     kprintln(cast[ptr uint8]("  Paging: 16MB identity mapped"))
     kprintln(cast[ptr uint8]("  Stack:  0x90000"))
     return
+  if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("ttest")) == 1:
+    kprintln(cast[ptr uint8]("=== Kernel Thread Test ==="))
+    kprint(cast[ptr uint8]("Main PID: "))
+    ser_print_int(get_current_pid())
+    kprint(cast[ptr uint8](", TID: "))
+    ser_print_int(get_thread_id())
+    kprint(cast[ptr uint8](", is_thread: "))
+    ser_print_int(is_thread())
+    kprintln(cast[ptr uint8](""))
+
+    kprintln(cast[ptr uint8]("Creating test thread..."))
+    var tid: int32 = thread_create(cast[int32](addr(test_thread_func)), 42)
+    if tid < 0:
+      kprintln(cast[ptr uint8]("ERROR: Failed to create thread"))
+      return
+    kprint(cast[ptr uint8]("Thread created with PID: "))
+    ser_print_int(tid)
+    kprintln(cast[ptr uint8](""))
+
+    # Yield to let thread run
+    kprintln(cast[ptr uint8]("Yielding to thread..."))
+    var i: int32 = 0
+    while i < 5:
+      thread_yield()
+      i = i + 1
+
+    kprintln(cast[ptr uint8]("=== Thread Test Complete ==="))
+    return
   if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("reboot")) == 1:
     kprintln(cast[ptr uint8]("Rebooting..."))
     # Triple fault to reboot
@@ -6485,7 +7579,7 @@ proc shell_execute() =
             var entry_ino: int32 = 0
             var entry_name: array[32, uint8]
             var entry_type: int32 = 0
-            while 1:
+            while true:
               offset = brfs_readdir(brfs_active_mount, dir_ino, offset, addr(entry_ino), addr(entry_name[0]), addr(entry_type))
               if offset < 0:
                 break
@@ -7319,6 +8413,188 @@ proc pci_find_e1000(): int32 =
       slot = slot + 1
     bus = bus + 1
   return 0
+
+    # tmount [size] - Mount a tmpfs filesystem (default 16MB)
+    if cmd_buffer[0] == cast[uint8](116):  # 't'
+      if cmd_buffer[1] == cast[uint8](109):  # 'm'
+        if cmd_buffer[2] == cast[uint8](111):  # 'o'
+          if cmd_buffer[3] == cast[uint8](117):  # 'u'
+            if cmd_buffer[4] == cast[uint8](110):  # 'n'
+              if cmd_buffer[5] == cast[uint8](116):  # 't'
+                if cmd_buffer[6] == cast[uint8](0) or cmd_buffer[6] == cast[uint8](32):  # ' ' or end
+                  var max_size: int32 = TMPFS_DEFAULT_SIZE
+                  if cmd_buffer[6] == cast[uint8](32):
+                    var size_arg: ptr uint8 = find_arg(addr(cmd_buffer[0]), 1)
+                    if cast[int32](size_arg) != 0:
+                      var size_mb: int32 = parse_int(size_arg)
+                      if size_mb > 0 and size_mb <= 512:
+                        max_size = size_mb * 1048576  # Convert MB to bytes
+                  var mount_id: int32 = tmpfs_mkfs(max_size)
+                  if mount_id >= 0:
+                    tmpfs_active_mount = mount_id
+                    kprint(cast[ptr uint8]("Tmpfs mounted as mount "))
+                    kprint_dec(mount_id)
+                    kprint(cast[ptr uint8](" ("))
+                    kprint_dec(max_size / 1024)
+                    kprintln(cast[ptr uint8]("KB max)"))
+                  else:
+                    kprintln(cast[ptr uint8]("Failed to mount tmpfs"))
+                  return
+
+    # tumount - Unmount the active tmpfs mount
+    if cmd_buffer[0] == cast[uint8](116):  # 't'
+      if cmd_buffer[1] == cast[uint8](117):  # 'u'
+        if cmd_buffer[2] == cast[uint8](109):  # 'm'
+          if cmd_buffer[3] == cast[uint8](111):  # 'o'
+            if cmd_buffer[4] == cast[uint8](117):  # 'u'
+              if cmd_buffer[5] == cast[uint8](110):  # 'n'
+                if cmd_buffer[6] == cast[uint8](116):  # 't'
+                  if cmd_buffer[7] == cast[uint8](0):
+                    if tmpfs_active_mount < 0:
+                      kprintln(cast[ptr uint8]("No tmpfs mounted"))
+                      return
+                    if tmpfs_unmount(tmpfs_active_mount) == 0:
+                      kprintln(cast[ptr uint8]("Tmpfs unmounted successfully"))
+                      tmpfs_active_mount = -1
+                    else:
+                      kprintln(cast[ptr uint8]("Failed to unmount tmpfs"))
+                    return
+
+    # tls - List directory on tmpfs
+    if cmd_buffer[0] == cast[uint8](116):  # 't'
+      if cmd_buffer[1] == cast[uint8](108):  # 'l'
+        if cmd_buffer[2] == cast[uint8](115):  # 's'
+          if cmd_buffer[3] == cast[uint8](0):
+            if tmpfs_active_mount < 0:
+              kprintln(cast[ptr uint8]("No tmpfs mounted (use tmount)"))
+              return
+            var list_buf: array[1024, uint8]
+            var num_entries: int32 = tmpfs_readdir(tmpfs_active_mount, 0, addr(list_buf[0]), 32)
+            if num_entries > 0:
+              kprintln(cast[ptr uint8]("Tmpfs directory listing:"))
+              var i: int32 = 0
+              while i < num_entries:
+                kprint(cast[ptr uint8]("  "))
+                kprintln(addr(list_buf[i * 32]))
+                i = i + 1
+            else:
+              kprintln(cast[ptr uint8]("Empty directory"))
+            return
+
+    # tmkdir <name> - Create directory on tmpfs
+    if cmd_buffer[0] == cast[uint8](116):  # 't'
+      if cmd_buffer[1] == cast[uint8](109):  # 'm'
+        if cmd_buffer[2] == cast[uint8](107):  # 'k'
+          if cmd_buffer[3] == cast[uint8](100):  # 'd'
+            if cmd_buffer[4] == cast[uint8](105):  # 'i'
+              if cmd_buffer[5] == cast[uint8](114):  # 'r'
+                if cmd_buffer[6] == cast[uint8](32):  # ' '
+                  if tmpfs_active_mount < 0:
+                    kprintln(cast[ptr uint8]("No tmpfs mounted"))
+                    return
+                  var name_arg: ptr uint8 = find_arg(addr(cmd_buffer[0]), 1)
+                  if cast[int32](name_arg) == 0:
+                    kprintln(cast[ptr uint8]("Usage: tmkdir <name>"))
+                    return
+                  if tmpfs_create(tmpfs_active_mount, 0, name_arg, 1) >= 0:
+                    kprintln(cast[ptr uint8]("Directory created"))
+                  else:
+                    kprintln(cast[ptr uint8]("Failed to create directory"))
+                  return
+
+    # ttouch <name> - Create file on tmpfs
+    if cmd_buffer[0] == cast[uint8](116):  # 't'
+      if cmd_buffer[1] == cast[uint8](116):  # 't'
+        if cmd_buffer[2] == cast[uint8](111):  # 'o'
+          if cmd_buffer[3] == cast[uint8](117):  # 'u'
+            if cmd_buffer[4] == cast[uint8](99):  # 'c'
+              if cmd_buffer[5] == cast[uint8](104):  # 'h'
+                if cmd_buffer[6] == cast[uint8](32):  # ' '
+                  if tmpfs_active_mount < 0:
+                    kprintln(cast[ptr uint8]("No tmpfs mounted"))
+                    return
+                  var name_arg: ptr uint8 = find_arg(addr(cmd_buffer[0]), 1)
+                  if cast[int32](name_arg) == 0:
+                    kprintln(cast[ptr uint8]("Usage: ttouch <name>"))
+                    return
+                  if tmpfs_create(tmpfs_active_mount, 0, name_arg, 0) >= 0:
+                    kprintln(cast[ptr uint8]("File created"))
+                  else:
+                    kprintln(cast[ptr uint8]("Failed to create file"))
+                  return
+
+    # twrite <file> <content> - Write to file on tmpfs
+    if cmd_buffer[0] == cast[uint8](116):  # 't'
+      if cmd_buffer[1] == cast[uint8](119):  # 'w'
+        if cmd_buffer[2] == cast[uint8](114):  # 'r'
+          if cmd_buffer[3] == cast[uint8](105):  # 'i'
+            if cmd_buffer[4] == cast[uint8](116):  # 't'
+              if cmd_buffer[5] == cast[uint8](101):  # 'e'
+                if cmd_buffer[6] == cast[uint8](32):  # ' '
+                  if tmpfs_active_mount < 0:
+                    kprintln(cast[ptr uint8]("No tmpfs mounted"))
+                    return
+                  var name_arg: ptr uint8 = find_arg(addr(cmd_buffer[0]), 1)
+                  var content_arg: ptr uint8 = find_arg(addr(cmd_buffer[0]), 2)
+                  if cast[int32](name_arg) == 0 or cast[int32](content_arg) == 0:
+                    kprintln(cast[ptr uint8]("Usage: twrite <file> <content>"))
+                    return
+                  var ino: int32 = tmpfs_lookup(tmpfs_active_mount, 0, name_arg)
+                  if ino < 0:
+                    kprintln(cast[ptr uint8]("File not found"))
+                    return
+                  var len: int32 = 0
+                  while content_arg[len] != cast[uint8](0):
+                    len = len + 1
+                  if tmpfs_write(tmpfs_active_mount, ino, content_arg, len) >= 0:
+                    kprintln(cast[ptr uint8]("File written"))
+                  else:
+                    kprintln(cast[ptr uint8]("Failed to write file"))
+                  return
+
+    # tcat <file> - Read file from tmpfs
+    if cmd_buffer[0] == cast[uint8](116):  # 't'
+      if cmd_buffer[1] == cast[uint8](99):  # 'c'
+        if cmd_buffer[2] == cast[uint8](97):  # 'a'
+          if cmd_buffer[3] == cast[uint8](116):  # 't'
+            if cmd_buffer[4] == cast[uint8](32):  # ' '
+              if tmpfs_active_mount < 0:
+                kprintln(cast[ptr uint8]("No tmpfs mounted"))
+                return
+              var name_arg: ptr uint8 = find_arg(addr(cmd_buffer[0]), 1)
+              if cast[int32](name_arg) == 0:
+                kprintln(cast[ptr uint8]("Usage: tcat <file>"))
+                return
+              var ino: int32 = tmpfs_lookup(tmpfs_active_mount, 0, name_arg)
+              if ino < 0:
+                kprintln(cast[ptr uint8]("File not found"))
+                return
+              var read_buf: array[1024, uint8]
+              var bytes_read: int32 = tmpfs_read(tmpfs_active_mount, ino, addr(read_buf[0]), 1023)
+              if bytes_read >= 0:
+                read_buf[bytes_read] = cast[uint8](0)
+                kprintln(addr(read_buf[0]))
+              else:
+                kprintln(cast[ptr uint8]("Failed to read file"))
+              return
+
+    # trm <name> - Remove file/directory from tmpfs
+    if cmd_buffer[0] == cast[uint8](116):  # 't'
+      if cmd_buffer[1] == cast[uint8](114):  # 'r'
+        if cmd_buffer[2] == cast[uint8](109):  # 'm'
+          if cmd_buffer[3] == cast[uint8](32):  # ' '
+            if tmpfs_active_mount < 0:
+              kprintln(cast[ptr uint8]("No tmpfs mounted"))
+              return
+            var name_arg: ptr uint8 = find_arg(addr(cmd_buffer[0]), 1)
+            if cast[int32](name_arg) == 0:
+              kprintln(cast[ptr uint8]("Usage: trm <name>"))
+              return
+            if tmpfs_unlink(tmpfs_active_mount, 0, name_arg) == 0:
+              kprintln(cast[ptr uint8]("Removed"))
+            else:
+              kprintln(cast[ptr uint8]("Failed to remove (does not exist or directory not empty)"))
+            return
 
 # ============================================================================
 # E1000 Driver
@@ -8812,18 +10088,18 @@ proc run_httpd() =
 proc webapp_parse_path(req: ptr uint8, path: ptr uint8, max: int32): int32 =
   var i: int32 = 0
   # Skip method
-  while req[i] != 0 and req[i] != 32:
+  while cast[int32](req[i]) != 0 and cast[int32](req[i]) != 32:
     i = i + 1
-  if req[i] == 0:
+  if cast[int32](req[i]) == 0:
     return 0
   i = i + 1
   # Copy path
   var len: int32 = 0
-  while req[i] != 0 and req[i] != 32 and req[i] != 63 and len < max - 1:
+  while cast[int32](req[i]) != 0 and cast[int32](req[i]) != 32 and cast[int32](req[i]) != 63 and len < max - 1:
     path[len] = req[i]
     len = len + 1
     i = i + 1
-  path[len] = 0
+  path[len] = cast[uint8](0)
   return len
 
 # Send HTTP response helper
@@ -9254,8 +10530,8 @@ proc term_add_line(text: ptr uint8) =
 # Execute terminal command
 proc term_execute_cmd() =
   # Echo command to output using global buffer
-  term_tmp_buf[0] = 62  # '>'
-  term_tmp_buf[1] = 32  # ' '
+  term_tmp_buf[0] = cast[uint8](62)  # '>'
+  term_tmp_buf[1] = cast[uint8](32)  # ' '
   var i: int32 = 0
   while i < term_cmd_len and i < 46:
     term_tmp_buf[i + 2] = term_cmd[i]
@@ -9269,15 +10545,15 @@ proc term_execute_cmd() =
     discard 0
 
   # Check for 'help'
-  if term_cmd[0] == 104 and term_cmd[1] == 101 and term_cmd[2] == 108 and term_cmd[3] == 112:
+  if cast[int32](term_cmd[0]) == 104 and cast[int32](term_cmd[1]) == 101 and cast[int32](term_cmd[2]) == 108 and cast[int32](term_cmd[3]) == 112:
     term_add_line(cast[ptr uint8]("Commands: help clear echo uptime ps"))
 
   # Check for 'clear'
-  if term_cmd[0] == 99 and term_cmd[1] == 108 and term_cmd[2] == 101 and term_cmd[3] == 97 and term_cmd[4] == 114:
+  if cast[int32](term_cmd[0]) == 99 and cast[int32](term_cmd[1]) == 108 and cast[int32](term_cmd[2]) == 101 and cast[int32](term_cmd[3]) == 97 and cast[int32](term_cmd[4]) == 114:
     term_clear()
 
   # Check for 'echo '
-  if term_cmd[0] == 101 and term_cmd[1] == 99 and term_cmd[2] == 104 and term_cmd[3] == 111 and term_cmd[4] == 32:
+  if cast[int32](term_cmd[0]) == 101 and cast[int32](term_cmd[1]) == 99 and cast[int32](term_cmd[2]) == 104 and cast[int32](term_cmd[3]) == 111 and cast[int32](term_cmd[4]) == 32:
     var j: int32 = 5  # Skip 'echo '
     var k: int32 = 0
     while j < term_cmd_len and k < 47:
@@ -9288,18 +10564,18 @@ proc term_execute_cmd() =
     term_add_line(cast[ptr uint8](term_tmp_buf))
 
   # Check for 'uptime'
-  if term_cmd[0] == 117 and term_cmd[1] == 112 and term_cmd[2] == 116 and term_cmd[3] == 105 and term_cmd[4] == 109 and term_cmd[5] == 101:
+  if cast[int32](term_cmd[0]) == 117 and cast[int32](term_cmd[1]) == 112 and cast[int32](term_cmd[2]) == 116 and cast[int32](term_cmd[3]) == 105 and cast[int32](term_cmd[4]) == 109 and cast[int32](term_cmd[5]) == 101:
     var ticks: int32 = get_tick_count()
     var secs: int32 = ticks / 18
-    term_tmp_buf[0] = 85  # U
-    term_tmp_buf[1] = 112  # p
-    term_tmp_buf[2] = 58  # :
-    term_tmp_buf[3] = 32  # space
+    term_tmp_buf[0] = cast[uint8](85)  # U
+    term_tmp_buf[1] = cast[uint8](112)  # p
+    term_tmp_buf[2] = cast[uint8](58)  # :
+    term_tmp_buf[3] = cast[uint8](32)  # space
     # Convert to string
     var num: int32 = secs
     var pos: int32 = 4
     if num == 0:
-      term_tmp_buf[pos] = 48
+      term_tmp_buf[pos] = cast[uint8](48)
       pos = pos + 1
     else:
       # Store digits in reverse order at end of buffer
@@ -9312,13 +10588,13 @@ proc term_execute_cmd() =
         nd = nd - 1
         term_tmp_buf[pos] = term_tmp_buf[60 + nd]
         pos = pos + 1
-    term_tmp_buf[pos] = 115  # s
+    term_tmp_buf[pos] = cast[uint8](115)  # s
     pos = pos + 1
     term_tmp_buf[pos] = 0
     term_add_line(cast[ptr uint8](term_tmp_buf))
 
   # Check for 'ps'
-  if term_cmd[0] == 112 and term_cmd[1] == 115 and term_cmd_len == 2:
+  if cast[int32](term_cmd[0]) == 112 and cast[int32](term_cmd[1]) == 115 and term_cmd_len == 2:
     term_add_line(cast[ptr uint8]("PID  NAME"))
     term_add_line(cast[ptr uint8]("1    kernel"))
     term_add_line(cast[ptr uint8]("2    desktop"))
@@ -9355,7 +10631,7 @@ var fm_use_brfs: int32 = 0     # 1 if using BrainFS, 0 if ramdisk
 # Initialize file manager - prefer BrainFS if mounted
 proc fm_init() =
   fm_current_ino = BRFS_ROOT_INODE  # Root inode
-  fm_path[0] = 47  # '/'
+  fm_path[0] = cast[uint8](47)  # '/'
   fm_path[1] = 0
   if brfs_active_mount >= 0:
     fm_use_brfs = 1
@@ -9467,13 +10743,13 @@ proc draw_files_content(wx: int32, wy: int32, ww: int32, wh: int32) =
               term_tmp_buf[0] = 48 + cast[uint8]((fsize / 100) % 10)
               term_tmp_buf[1] = 48 + cast[uint8]((fsize / 10) % 10)
               term_tmp_buf[2] = 48 + cast[uint8](fsize % 10)
-              term_tmp_buf[3] = 66  # 'B'
+              term_tmp_buf[3] = cast[uint8](66)  # 'B'
               term_tmp_buf[4] = 0
             else:
               var kb: int32 = fsize / 1024
               term_tmp_buf[0] = 48 + cast[uint8]((kb / 10) % 10)
               term_tmp_buf[1] = 48 + cast[uint8](kb % 10)
-              term_tmp_buf[2] = 75  # 'K'
+              term_tmp_buf[2] = cast[uint8](75)  # 'K'
               term_tmp_buf[3] = 0
             vtn_text(fx + fw - 45, list_y + 14, 150, 150, 150, addr(term_tmp_buf[0]))
 
@@ -9535,20 +10811,20 @@ proc parse_mouse_input_with_esc() =
 
   # Check for ]vtn; format
   # Buffer: ]vtn;command;params  (buf[0]=']', buf[4]=';', buf[5]=command start)
-  if i > 6 and buf[0] == 93 and buf[1] == 118:  # ]v
+  if i > 6 and cast[int32](buf[0]) == 93 and cast[int32](buf[1]) == 118:  # ]v
     var event_type: int32 = 0  # 0=unknown, 1=click, 2=move, 3=up
     var parse_start: int32 = 0
 
     # Check for "click" at buf[5..9] = c,l,i,c,k
-    if buf[5] == 99 and buf[6] == 108 and buf[7] == 105:  # c-l-i
+    if cast[int32](buf[5]) == 99 and cast[int32](buf[6]) == 108 and cast[int32](buf[7]) == 105:  # c-l-i
       event_type = 1
       parse_start = 11  # After "]vtn;click;"
     # Check for "move" at buf[5..8] = m,o,v,e
-    if buf[5] == 109 and buf[6] == 111 and buf[7] == 118:  # m-o-v
+    if cast[int32](buf[5]) == 109 and cast[int32](buf[6]) == 111 and cast[int32](buf[7]) == 118:  # m-o-v
       event_type = 2
       parse_start = 10  # After "]vtn;move;"
     # Check for "up" at buf[5..6] = u,p
-    if buf[5] == 117 and buf[6] == 112:  # u-p
+    if cast[int32](buf[5]) == 117 and cast[int32](buf[6]) == 112:  # u-p
       event_type = 3
       parse_start = 8  # After "]vtn;up;"
 
@@ -9582,7 +10858,7 @@ proc parse_mouse_input_with_esc() =
         desktop_needs_redraw = 1
 
     # Check for "keydown" at buf[5..11] = k,e,y,d,o,w,n
-    if buf[5] == 107 and buf[6] == 101 and buf[7] == 121 and buf[8] == 100:  # k-e-y-d
+    if cast[int32](buf[5]) == 107 and cast[int32](buf[6]) == 101 and cast[int32](buf[7]) == 121 and cast[int32](buf[8]) == 100:  # k-e-y-d
       # Parse keycode after "]vtn;keydown;"
       var keycode: int32 = 0
       var j: int32 = 13  # After "]vtn;keydown;"
@@ -9604,7 +10880,7 @@ proc parse_mouse_input_with_esc() =
         key_q_held = 1
 
     # Check for "keyup" at buf[5..9] = k,e,y,u,p
-    if buf[5] == 107 and buf[6] == 101 and buf[7] == 121 and buf[8] == 117:  # k-e-y-u
+    if cast[int32](buf[5]) == 107 and cast[int32](buf[6]) == 101 and cast[int32](buf[7]) == 121 and cast[int32](buf[8]) == 117:  # k-e-y-u
       # Parse keycode after "]vtn;keyup;"
       var keycode: int32 = 0
       var j: int32 = 11  # After "]vtn;keyup;"
@@ -9940,7 +11216,7 @@ proc run_vtn_desktop() =
         if (win_flags[wi] & WIN_VISIBLE) != 0:
           var title: ptr uint8 = win_get_title(wi)
           # Draw Welcome window content
-          if title[0] == 87:  # 'W' for Welcome
+          if cast[int32](title[0]) == 87:  # 'W' for Welcome
             var wx: int32 = win_x[wi] + 20
             var wy: int32 = win_y[wi] + 40
             vtn_text(wx, wy, 200, 200, 200, cast[ptr uint8]("Welcome to BrainhairOS!"))
@@ -9949,16 +11225,16 @@ proc run_vtn_desktop() =
             vtn_text(wx, wy + 100, 150, 150, 150, cast[ptr uint8]("Click X to close"))
             vtn_text(wx, wy + 140, 150, 200, 150, cast[ptr uint8]("Q=quit D=demo P=pong T=term"))
           # Draw Terminal window content
-          if title[0] == 84:  # 'T' for Terminal
+          if cast[int32](title[0]) == 84:  # 'T' for Terminal
             draw_terminal_content(win_x[wi], win_y[wi], win_w[wi], win_h[wi])
             # Mark this as active terminal if focused
             if wi == win_focused:
               term_active_win = wi
           # Draw Files window content
-          if title[0] == 70:  # 'F' for Files
+          if cast[int32](title[0]) == 70:  # 'F' for Files
             draw_files_content(win_x[wi], win_y[wi], win_w[wi], win_h[wi])
           # Draw Calculator window content
-          if title[0] == 67:  # 'C' for Calculator
+          if cast[int32](title[0]) == 67:  # 'C' for Calculator
             var cx: int32 = win_x[wi] + 10
             var cy: int32 = win_y[wi] + 40
             vtn_rect(cx, cy, win_w[wi] - 20, 30, 40, 45, 55, 1)
@@ -9987,7 +11263,7 @@ proc run_vtn_desktop() =
     var term_focused: int32 = 0
     if win_focused >= 0 and win_focused < win_count:
       var focus_title: ptr uint8 = win_get_title(win_focused)
-      if focus_title[0] == 84:  # 'T' for Terminal
+      if cast[int32](focus_title[0]) == 84:  # 'T' for Terminal
         term_focused = 1
 
     # If terminal focused, route keyboard to terminal
@@ -10241,21 +11517,21 @@ proc run_webapp() =
         var matched: int32 = 0
 
         # Route: / (just /)
-        if path[0] == 47 and path[1] == 0:
+        if cast[int32](path[0]) == 47 and cast[int32](path[1]) == 0:
           html(conn, cast[ptr uint8]("<html><head><title>Flask Demo</title></head><body><h1>Welcome to BrainhairOS!</h1><p>This is a Flask-style web framework.</p><ul><li><a href='/about'>About</a></li><li><a href='/api/status'>API Status</a></li></ul></body></html>"))
           matched = 1
 
         # Route: /about
         if matched == 0:
-          if path[0] == 47 and path[1] == 97 and path[2] == 98 and path[3] == 111 and path[4] == 117 and path[5] == 116 and path[6] == 0:
+          if cast[int32](path[0]) == 47 and cast[int32](path[1]) == 97 and cast[int32](path[2]) == 98 and cast[int32](path[3]) == 111 and cast[int32](path[4]) == 117 and cast[int32](path[5]) == 116 and cast[int32](path[6]) == 0:
             html(conn, cast[ptr uint8]("<html><body><h1>About</h1><p>BrainhairOS is a hobby OS with a TCP/IP stack written from scratch.</p><p><a href='/'>Home</a></p></body></html>"))
             matched = 1
 
         # Route: /api/status
         if matched == 0:
-          if path[0] == 47 and path[1] == 97 and path[2] == 112 and path[3] == 105 and path[4] == 47:
+          if cast[int32](path[0]) == 47 and cast[int32](path[1]) == 97 and cast[int32](path[2]) == 112 and cast[int32](path[3]) == 105 and cast[int32](path[4]) == 47:
             # /api/ prefix - check for status
-            if path[5] == 115 and path[6] == 116 and path[7] == 97 and path[8] == 116 and path[9] == 117 and path[10] == 115 and path[11] == 0:
+            if cast[int32](path[5]) == 115 and cast[int32](path[6]) == 116 and cast[int32](path[7]) == 97 and cast[int32](path[8]) == 116 and cast[int32](path[9]) == 117 and cast[int32](path[10]) == 115 and cast[int32](path[11]) == 0:
               json_resp(conn, cast[ptr uint8]("{'status':'ok','os':'BrainhairOS','version':'0.1'}"))
               matched = 1
 

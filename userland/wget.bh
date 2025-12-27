@@ -1,0 +1,427 @@
+# wget.bh - Simple HTTP file downloader for BrainhairOS
+# Usage: wget <url>
+#        wget -O <filename> <url>
+#
+# Examples:
+#   wget http://example.com/
+#   wget http://93.184.216.34/index.html
+#   wget -O output.html http://example.com/page.html
+
+import "lib/syscalls"
+import "lib/net"
+
+# ===========================================================================
+# HTTP Functions (inlined since bhbuild doesn't link lib/http.bh)
+# ===========================================================================
+
+# Parse HTTP status code from response
+proc http_parse_status(response: ptr uint8): int32 =
+  var i: int32 = 0
+  while response[i] != 0 and response[i] != 32:
+    i = i + 1
+  if response[i] == 0:
+    return -1
+  i = i + 1
+  var status: int32 = 0
+  var digits: int32 = 0
+  while digits < 3 and response[i] >= 48 and response[i] <= 57:
+    status = status * 10 + (cast[int32](response[i]) - 48)
+    i = i + 1
+    digits = digits + 1
+  if digits != 3:
+    return -1
+  return status
+
+# Get header value by name
+proc http_get_header(response: ptr uint8, header_name: ptr uint8, value_buf: ptr uint8, max_len: int32): int32 =
+  var i: int32 = 0
+  var name_len: int32 = strlen(header_name)
+  while response[i] != 0 and response[i] != 10:
+    i = i + 1
+  if response[i] == 10:
+    i = i + 1
+  while response[i] != 0:
+    if response[i] == 13 and response[i + 1] == 10:
+      break
+    if response[i] == 10:
+      break
+    var matched: int32 = 1
+    var j: int32 = 0
+    while j < name_len:
+      var c1: int32 = cast[int32](response[i + j])
+      var c2: int32 = cast[int32](header_name[j])
+      if c1 >= 65 and c1 <= 90:
+        c1 = c1 + 32
+      if c2 >= 65 and c2 <= 90:
+        c2 = c2 + 32
+      if c1 != c2:
+        matched = 0
+        break
+      j = j + 1
+    if matched == 1 and response[i + name_len] == 58:
+      i = i + name_len + 1
+      while response[i] == 32 or response[i] == 9:
+        i = i + 1
+      var val_len: int32 = 0
+      while response[i] != 0 and response[i] != 13 and response[i] != 10 and val_len < max_len - 1:
+        value_buf[val_len] = response[i]
+        val_len = val_len + 1
+        i = i + 1
+      value_buf[val_len] = 0
+      return val_len
+    while response[i] != 0 and response[i] != 10:
+      i = i + 1
+    if response[i] == 10:
+      i = i + 1
+  return -1
+
+# Get Content-Length header value
+proc http_get_content_length(response: ptr uint8): int32 =
+  var value: array[32, uint8]
+  var len: int32 = http_get_header(response, cast[ptr uint8]("Content-Length"), addr(value[0]), 32)
+  if len < 0:
+    return -1
+  var result: int32 = 0
+  var i: int32 = 0
+  while value[i] >= 48 and value[i] <= 57:
+    result = result * 10 + (cast[int32](value[i]) - 48)
+    i = i + 1
+  return result
+
+# Get Location header (for redirects)
+proc http_get_location(response: ptr uint8, location_buf: ptr uint8, max_len: int32): int32 =
+  return http_get_header(response, cast[ptr uint8]("Location"), location_buf, max_len)
+
+# Parse URL into components
+proc http_parse_url(url: ptr uint8, host_buf: ptr uint8, host_max: int32, path_buf: ptr uint8, path_max: int32, port: ptr int32): int32 =
+  var i: int32 = 0
+  if url[0] == 104 and url[1] == 116 and url[2] == 116 and url[3] == 112:
+    i = 4
+    if url[4] == 115:
+      i = 5
+      if port != cast[ptr int32](0):
+        port[0] = 443
+    else:
+      if port != cast[ptr int32](0):
+        port[0] = 80
+    if url[i] == 58 and url[i + 1] == 47 and url[i + 2] == 47:
+      i = i + 3
+  var host_len: int32 = 0
+  while url[i] != 0 and url[i] != 47 and url[i] != 58 and host_len < host_max - 1:
+    host_buf[host_len] = url[i]
+    host_len = host_len + 1
+    i = i + 1
+  host_buf[host_len] = 0
+  if host_len == 0:
+    return -1
+  if url[i] == 58:
+    i = i + 1
+    var parsed_port: int32 = 0
+    while url[i] >= 48 and url[i] <= 57:
+      parsed_port = parsed_port * 10 + (cast[int32](url[i]) - 48)
+      i = i + 1
+    if parsed_port > 0 and port != cast[ptr int32](0):
+      port[0] = parsed_port
+  var path_len: int32 = 0
+  if url[i] == 47:
+    while url[i] != 0 and path_len < path_max - 1:
+      path_buf[path_len] = url[i]
+      path_len = path_len + 1
+      i = i + 1
+  else:
+    path_buf[0] = 47
+    path_len = 1
+  path_buf[path_len] = 0
+  return 0
+
+# Buffer sizes
+const MAX_URL_LEN: int32 = 512
+const MAX_HOST_LEN: int32 = 256
+const MAX_PATH_LEN: int32 = 256
+const RECV_BUF_SIZE: int32 = 8192
+
+# Parse command line arguments
+# Returns: 0 on success, -1 on error
+proc parse_args(argc: int32, argv: ptr ptr uint8, url_out: ptr uint8, filename_out: ptr uint8): int32 =
+  if argc < 2:
+    return -1
+
+  var url_idx: int32 = 1
+  var has_output: int32 = 0
+
+  # Check for -O flag
+  if argc >= 4:
+    var arg1: ptr uint8 = argv[1]
+    if arg1[0] == 45 and arg1[1] == 79 and arg1[2] == 0:  # "-O"
+      # Copy filename
+      var fn: ptr uint8 = argv[2]
+      var i: int32 = 0
+      while fn[i] != 0 and i < 255:
+        filename_out[i] = fn[i]
+        i = i + 1
+      filename_out[i] = 0
+      has_output = 1
+      url_idx = 3
+
+  if url_idx >= argc:
+    return -1
+
+  # Copy URL
+  var url: ptr uint8 = argv[url_idx]
+  var i: int32 = 0
+  while url[i] != 0 and i < MAX_URL_LEN - 1:
+    url_out[i] = url[i]
+    i = i + 1
+  url_out[i] = 0
+
+  # If no output filename specified, extract from URL
+  if has_output == 0:
+    # Find last '/' in URL
+    var last_slash: int32 = -1
+    i = 0
+    while url[i] != 0:
+      if url[i] == 47:  # '/'
+        last_slash = i
+      i = i + 1
+
+    if last_slash >= 0 and url[last_slash + 1] != 0:
+      # Copy filename after last slash
+      i = 0
+      var j: int32 = last_slash + 1
+      while url[j] != 0 and url[j] != 63 and i < 255:  # Stop at '?'
+        filename_out[i] = url[j]
+        i = i + 1
+        j = j + 1
+      filename_out[i] = 0
+    else:
+      # Default filename
+      var def: ptr uint8 = cast[ptr uint8]("index.html")
+      i = 0
+      while def[i] != 0:
+        filename_out[i] = def[i]
+        i = i + 1
+      filename_out[i] = 0
+
+  return 0
+
+# Check if string looks like an IP address
+proc is_ip_address(host: ptr uint8): int32 =
+  var i: int32 = 0
+  var dots: int32 = 0
+  var has_alpha: int32 = 0
+
+  while host[i] != 0:
+    if host[i] == 46:  # '.'
+      dots = dots + 1
+    elif host[i] >= 97 and host[i] <= 122:  # a-z
+      has_alpha = 1
+    elif host[i] >= 65 and host[i] <= 90:  # A-Z
+      has_alpha = 1
+    i = i + 1
+
+  if dots == 3 and has_alpha == 0:
+    return 1
+  return 0
+
+# Parse IP address from string
+proc parse_ip(str: ptr uint8, ip: ptr uint8): int32 =
+  var i: int32 = 0
+  var octet: int32 = 0
+  var value: int32 = 0
+
+  while str[i] != 0 and octet < 4:
+    if str[i] >= 48 and str[i] <= 57:
+      value = value * 10 + (cast[int32](str[i]) - 48)
+    elif str[i] == 46 or str[i] == 0:
+      ip[octet] = cast[uint8](value)
+      octet = octet + 1
+      value = 0
+    else:
+      return -1
+    i = i + 1
+
+  if octet == 3:
+    ip[octet] = cast[uint8](value)
+    return 0
+
+  return -1
+
+proc main(argc: int32, argv: ptr ptr uint8): int32 =
+  var url: array[512, uint8]
+  var filename: array[256, uint8]
+
+  if parse_args(argc, argv, addr(url[0]), addr(filename[0])) < 0:
+    println(cast[ptr uint8]("Usage: wget [-O filename] <url>"))
+    println(cast[ptr uint8](""))
+    println(cast[ptr uint8]("Examples:"))
+    println(cast[ptr uint8]("  wget http://example.com/"))
+    println(cast[ptr uint8]("  wget -O page.html http://example.com/"))
+    return 1
+
+  # Parse URL
+  var host: array[256, uint8]
+  var path: array[256, uint8]
+  var port: int32 = 80
+
+  if http_parse_url(addr(url[0]), addr(host[0]), 256, addr(path[0]), 256, addr(port)) < 0:
+    println(cast[ptr uint8]("Error: Invalid URL"))
+    return 1
+
+  print(cast[ptr uint8]("--"))
+  print(cast[ptr uint8](" "))
+  println(addr(url[0]))
+
+  # Resolve hostname to IP
+  var ip: array[4, uint8]
+
+  if is_ip_address(addr(host[0])) == 1:
+    # Direct IP address
+    parse_ip(addr(host[0]), addr(ip[0]))
+    print(cast[ptr uint8]("Connecting to "))
+    print(addr(host[0]))
+    print(cast[ptr uint8](":"))
+    print_int(port)
+    print(cast[ptr uint8]("... "))
+  else:
+    # Hostname not supported without DNS
+    println(cast[ptr uint8]("Error: Hostname resolution not supported"))
+    println(cast[ptr uint8]("Please use IP address directly, e.g.: wget http://93.184.216.34/"))
+    return 1
+
+  # Connect
+  var sock: int32 = net_connect(addr(ip[0]), port)
+  if sock < 0:
+    println(cast[ptr uint8]("failed."))
+    println(cast[ptr uint8]("Error: Connection failed"))
+    return 1
+
+  if net_wait_connected(sock, 10000) == 0:
+    println(cast[ptr uint8]("failed."))
+    println(cast[ptr uint8]("Error: Connection timeout"))
+    net_close(sock)
+    return 1
+
+  println(cast[ptr uint8]("connected."))
+
+  # Send HTTP request
+  print(cast[ptr uint8]("HTTP request sent, awaiting response... "))
+
+  discard net_send_str(sock, cast[ptr uint8]("GET "))
+  discard net_send_str(sock, addr(path[0]))
+  discard net_send_str(sock, cast[ptr uint8](" HTTP/1.0\r\n"))
+  discard net_send_str(sock, cast[ptr uint8]("Host: "))
+  discard net_send_str(sock, addr(host[0]))
+  discard net_send_str(sock, cast[ptr uint8]("\r\n"))
+  discard net_send_str(sock, cast[ptr uint8]("User-Agent: wget/BrainhairOS\r\n"))
+  discard net_send_str(sock, cast[ptr uint8]("Accept: */*\r\n"))
+  discard net_send_str(sock, cast[ptr uint8]("Connection: close\r\n"))
+  discard net_send_str(sock, cast[ptr uint8]("\r\n"))
+
+  # Receive response headers
+  var buf: array[8192, uint8]
+  var total_read: int32 = 0
+  var headers_end: int32 = -1
+
+  # Read until we have headers
+  while headers_end < 0 and total_read < 8000:
+    var n: int32 = net_recv_blocking(sock, addr(buf[total_read]), 8000 - total_read, 5000)
+    if n <= 0:
+      break
+    total_read = total_read + n
+
+    # Look for end of headers
+    var i: int32 = 0
+    while i < total_read - 3:
+      if buf[i] == 13 and buf[i + 1] == 10 and buf[i + 2] == 13 and buf[i + 3] == 10:
+        headers_end = i + 4
+        break
+      i = i + 1
+
+  if headers_end < 0:
+    println(cast[ptr uint8]("failed."))
+    println(cast[ptr uint8]("Error: Invalid response"))
+    net_close(sock)
+    return 1
+
+  buf[headers_end] = 0  # Null terminate headers for parsing
+
+  # Parse status code
+  var status: int32 = http_parse_status(addr(buf[0]))
+  print_int(status)
+  print(cast[ptr uint8](" "))
+
+  if status == 200:
+    println(cast[ptr uint8]("OK"))
+  elif status == 301 or status == 302:
+    println(cast[ptr uint8]("Redirect"))
+    # Get location header
+    var location: array[512, uint8]
+    if http_get_location(addr(buf[0]), addr(location[0]), 512) > 0:
+      print(cast[ptr uint8]("Location: "))
+      println(addr(location[0]))
+      println(cast[ptr uint8]("Note: Redirect handling not implemented. Use the new URL."))
+    net_close(sock)
+    return 1
+  elif status == 404:
+    println(cast[ptr uint8]("Not Found"))
+    net_close(sock)
+    return 1
+  else:
+    println(cast[ptr uint8](""))
+
+  # Get content length
+  var content_length: int32 = http_get_content_length(addr(buf[0]))
+  if content_length > 0:
+    print(cast[ptr uint8]("Length: "))
+    print_int(content_length)
+    println(cast[ptr uint8](" bytes"))
+  else:
+    println(cast[ptr uint8]("Length: unspecified"))
+
+  print(cast[ptr uint8]("Saving to: '"))
+  print(addr(filename[0]))
+  println(cast[ptr uint8]("'"))
+  println(cast[ptr uint8](""))
+
+  # Open output file
+  var fd: int32 = open(addr(filename[0]), O_WRONLY or O_CREAT or O_TRUNC)
+  if fd < 0:
+    println(cast[ptr uint8]("Error: Cannot create output file"))
+    net_close(sock)
+    return 1
+
+  # Write any body data we already read
+  var body_start: int32 = headers_end
+  var initial_body_len: int32 = total_read - body_start
+  var bytes_written: int32 = 0
+
+  if initial_body_len > 0:
+    discard write(fd, addr(buf[body_start]), initial_body_len)
+    bytes_written = initial_body_len
+
+  # Continue reading body
+  while 1:
+    var n: int32 = net_recv_blocking(sock, addr(buf[0]), 8192, 5000)
+    if n <= 0:
+      break
+    discard write(fd, addr(buf[0]), n)
+    bytes_written = bytes_written + n
+
+    # Progress indicator
+    if ((bytes_written / 1024) % 10) == 0:
+      print(cast[ptr uint8]("\rReceived: "))
+      print_int(bytes_written)
+      print(cast[ptr uint8](" bytes"))
+
+  println(cast[ptr uint8](""))
+
+  close(fd)
+  net_close(sock)
+
+  print(cast[ptr uint8]("'"))
+  print(addr(filename[0]))
+  print(cast[ptr uint8]("' saved ["))
+  print_int(bytes_written)
+  println(cast[ptr uint8]("]"))
+
+  return 0

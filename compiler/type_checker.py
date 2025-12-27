@@ -1402,12 +1402,18 @@ class TypeChecker:
         """
         Check if two types are compatible for assignment/comparison.
 
-        This is a simplified version - could be extended with:
-        - Implicit conversions
-        - Subtyping
-        - Generic type matching
+        Supports implicit integer conversions (C-like behavior):
+        - Any integer type can be assigned to any other integer type
+        - Signedness and size differences are allowed (may truncate)
         """
-        return expected == actual
+        if expected == actual:
+            return True
+
+        # Allow implicit conversions between integer types
+        if is_integer_type(expected) and is_integer_type(actual):
+            return True
+
+        return False
 
     def _get_span(self, node: ASTNode) -> Optional[Span]:
         """Get source span from AST node if available."""

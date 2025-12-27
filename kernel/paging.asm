@@ -38,7 +38,7 @@ section .data
 ; Track next free page frame (physical address)
 global next_free_frame
 next_free_frame:
-    dd 0x00100000   ; Start allocating at 1MB (after kernel)
+    dd 0x00200000   ; Start allocating at 2MB (after kernel at 1MB + ~640KB BSS)
 
 ; End of usable memory (detected at boot or hardcoded)
 global memory_end
@@ -115,10 +115,10 @@ init_paging:
     mov [edi + 12], eax
 
     ; Calculate free frame count
-    ; Usable memory starts at 1MB, assume 16MB total
-    ; Free frames = (16MB - 1MB) / 4KB = 3840 frames
+    ; Usable memory starts at 2MB (after kernel), assume 16MB total
+    ; Free frames = (16MB - 2MB) / 4KB = 3584 frames
     mov eax, [memory_end]
-    sub eax, 0x00100000     ; Subtract 1MB (kernel space)
+    sub eax, 0x00200000     ; Subtract 2MB (kernel at 1MB + BSS)
     shr eax, 12             ; Divide by 4096
     mov [free_frame_count], eax
 

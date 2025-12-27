@@ -254,15 +254,29 @@ protected_mode_start:
     mov gs, ax
     mov ss, ax
 
-    ; Set stack after BSS (BSS ends around 0xB2400, stack at 0xBF000)
-    ; Note: This is in the VGA area but we use VGA differently
-    mov esp, 0xBF000
+    ; Temporary stack for copy operation
+    mov esp, 0x9F000
 
-    ; Write "PP" to top-left corner to show we made it to protected mode
+    ; Write "PP" to show we made it to protected mode
     mov dword [0xB8000], 0x0F500F50  ; 'PP' in white on black
 
-    ; Jump to kernel entry point at 0x10000
-    jmp 0x08:0x10000
+    ; Copy kernel from 0x10000 to 0x100000 (1MB)
+    ; Kernel size is approximately 450KB, copy 512KB to be safe
+    mov esi, 0x10000        ; Source: conventional memory
+    mov edi, 0x100000       ; Destination: 1MB mark
+    mov ecx, 131072         ; 512KB / 4 bytes = 131072 dwords
+    cld
+    rep movsd
+
+    ; Write "CC" to show copy complete
+    mov dword [0xB8004], 0x0F430F43  ; 'CC' in white on black
+
+    ; Set up stack above BSS (kernel at 1MB, BSS ends around 1MB + 0xB4550 = 0x1A5000)
+    ; Stack at 2MB should be safe
+    mov esp, 0x200000
+
+    ; Jump to kernel entry point at 0x100000 (1MB)
+    jmp 0x08:0x100000
 
 ; Pad to 8KB
 times 8192-($-$$) db 0

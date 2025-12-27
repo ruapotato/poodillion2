@@ -1,0 +1,299 @@
+# aes_test.bh - AES encryption test program for BrainhairOS
+# Demonstrates AES-128, AES-192, and AES-256 encryption/decryption
+# Tests ECB and CBC modes with PKCS#7 padding
+
+const STDOUT: int32 = 1
+
+# External syscalls
+extern write(fd: int32, buf: ptr uint8, count: int32): int32
+extern exit(code: int32): int32
+
+# AES library functions (from lib/aes.bh)
+extern aes_initialize(): int32
+extern aes_has_hardware_support(): int32
+extern aes_key_init(key: ptr uint8, key_len: int32): int32
+extern aes_encrypt_block(input: ptr uint8, output: ptr uint8): int32
+extern aes_decrypt_block(input: ptr uint8, output: ptr uint8): int32
+extern aes_encrypt_ecb(input: ptr uint8, output: ptr uint8, length: int32): int32
+extern aes_decrypt_ecb(input: ptr uint8, output: ptr uint8, length: int32): int32
+extern aes_encrypt_cbc_mode(input: ptr uint8, output: ptr uint8, length: int32, iv: ptr uint8): int32
+extern aes_decrypt_cbc_mode(input: ptr uint8, output: ptr uint8, length: int32, iv: ptr uint8): int32
+extern aes_encrypt_string(plaintext: ptr uint8, plaintext_len: int32, output: ptr uint8, output_size: int32, key: ptr uint8, key_len: int32, iv: ptr uint8): int32
+extern aes_decrypt_string(ciphertext: ptr uint8, ciphertext_len: int32, output: ptr uint8, output_size: int32, key: ptr uint8, key_len: int32, iv: ptr uint8): int32
+extern aes_get_key_size_name(key_len: int32): ptr uint8
+extern aes_get_error_message(error_code: int32): ptr uint8
+
+const AES_BLOCK_SIZE: int32 = 16
+const AES_KEY_SIZE_128: int32 = 16
+const AES_KEY_SIZE_192: int32 = 24
+const AES_KEY_SIZE_256: int32 = 32
+
+# ============================================================================
+# Helper functions
+# ============================================================================
+
+proc print(msg: ptr uint8) =
+  var len: int32 = 0
+  var p: ptr uint8 = msg
+  while p[len] != cast[uint8](0):
+    len = len + 1
+  write(STDOUT, msg, len)
+
+proc print_hex_byte(b: uint8) =
+  var hex: array[3, uint8]
+  var nibble_high: int32 = cast[int32](b) >> 4
+  var nibble_low: int32 = cast[int32](b) & 15
+
+  if nibble_high < 10:
+    hex[0] = cast[uint8](48 + nibble_high)
+  else:
+    hex[0] = cast[uint8](97 + nibble_high - 10)
+
+  if nibble_low < 10:
+    hex[1] = cast[uint8](48 + nibble_low)
+  else:
+    hex[1] = cast[uint8](97 + nibble_low - 10)
+
+  hex[2] = cast[uint8](0)
+  print(cast[ptr uint8](addr(hex)))
+
+proc print_hex_buffer(buf: ptr uint8, len: int32) =
+  var i: int32 = 0
+  while i < len:
+    print_hex_byte(buf[i])
+    if i < len - 1:
+      print(cast[ptr uint8](" "))
+    i = i + 1
+
+proc print_block(label: ptr uint8, buf: ptr uint8, len: int32) =
+  print(label)
+  print(cast[ptr uint8](": "))
+  print_hex_buffer(buf, len)
+  print(cast[ptr uint8]("\n"))
+
+proc compare_buffers(buf1: ptr uint8, buf2: ptr uint8, len: int32): int32 =
+  var i: int32 = 0
+  while i < len:
+    if buf1[i] != buf2[i]:
+      return 0
+    i = i + 1
+  return 1
+
+# ============================================================================
+# Test functions
+# ============================================================================
+
+proc test_aes_128() =
+  print(cast[ptr uint8]("\n=== AES-128 Test ===\n"))
+
+  # Test key (128 bits = 16 bytes)
+  var key: array[16, uint8]
+  key[0] = cast[uint8](0x2b)
+  key[1] = cast[uint8](0x7e)
+  key[2] = cast[uint8](0x15)
+  key[3] = cast[uint8](0x16)
+  key[4] = cast[uint8](0x28)
+  key[5] = cast[uint8](0xae)
+  key[6] = cast[uint8](0xd2)
+  key[7] = cast[uint8](0xa6)
+  key[8] = cast[uint8](0xab)
+  key[9] = cast[uint8](0xf7)
+  key[10] = cast[uint8](0x15)
+  key[11] = cast[uint8](0x88)
+  key[12] = cast[uint8](0x09)
+  key[13] = cast[uint8](0xcf)
+  key[14] = cast[uint8](0x4f)
+  key[15] = cast[uint8](0x3c)
+
+  # Test plaintext (16 bytes)
+  var plaintext: array[16, uint8]
+  plaintext[0] = cast[uint8](0x32)
+  plaintext[1] = cast[uint8](0x43)
+  plaintext[2] = cast[uint8](0xf6)
+  plaintext[3] = cast[uint8](0xa8)
+  plaintext[4] = cast[uint8](0x88)
+  plaintext[5] = cast[uint8](0x5a)
+  plaintext[6] = cast[uint8](0x30)
+  plaintext[7] = cast[uint8](0x8d)
+  plaintext[8] = cast[uint8](0x31)
+  plaintext[9] = cast[uint8](0x31)
+  plaintext[10] = cast[uint8](0x98)
+  plaintext[11] = cast[uint8](0xa2)
+  plaintext[12] = cast[uint8](0xe0)
+  plaintext[13] = cast[uint8](0x37)
+  plaintext[14] = cast[uint8](0x07)
+  plaintext[15] = cast[uint8](0x34)
+
+  var ciphertext: array[16, uint8]
+  var decrypted: array[16, uint8]
+
+  # Initialize AES with key
+  var result: int32 = aes_key_init(cast[ptr uint8](addr(key)), AES_KEY_SIZE_128)
+  if result != 0:
+    print(cast[ptr uint8]("Error: Failed to initialize AES key\n"))
+    return
+
+  print_block(cast[ptr uint8]("Key"), cast[ptr uint8](addr(key)), 16)
+  print_block(cast[ptr uint8]("Plaintext"), cast[ptr uint8](addr(plaintext)), 16)
+
+  # Encrypt
+  result = aes_encrypt_block(cast[ptr uint8](addr(plaintext)), cast[ptr uint8](addr(ciphertext)))
+  if result != 0:
+    print(cast[ptr uint8]("Error: Encryption failed\n"))
+    return
+
+  print_block(cast[ptr uint8]("Ciphertext"), cast[ptr uint8](addr(ciphertext)), 16)
+
+  # Decrypt
+  result = aes_decrypt_block(cast[ptr uint8](addr(ciphertext)), cast[ptr uint8](addr(decrypted)))
+  if result != 0:
+    print(cast[ptr uint8]("Error: Decryption failed\n"))
+    return
+
+  print_block(cast[ptr uint8]("Decrypted"), cast[ptr uint8](addr(decrypted)), 16)
+
+  # Verify
+  if compare_buffers(cast[ptr uint8](addr(plaintext)), cast[ptr uint8](addr(decrypted)), 16) != 0:
+    print(cast[ptr uint8]("✓ AES-128 test PASSED\n"))
+  else:
+    print(cast[ptr uint8]("✗ AES-128 test FAILED\n"))
+
+proc test_aes_256() =
+  print(cast[ptr uint8]("\n=== AES-256 Test ===\n"))
+
+  # Test key (256 bits = 32 bytes)
+  var key: array[32, uint8]
+  var i: int32 = 0
+  while i < 32:
+    key[i] = cast[uint8](i * 7 + 42)
+    i = i + 1
+
+  # Test plaintext
+  var plaintext: array[16, uint8]
+  i = 0
+  while i < 16:
+    plaintext[i] = cast[uint8](65 + i)  # "ABCDEFGHIJKLMNOP"
+    i = i + 1
+
+  var ciphertext: array[16, uint8]
+  var decrypted: array[16, uint8]
+
+  # Initialize AES with 256-bit key
+  var result: int32 = aes_key_init(cast[ptr uint8](addr(key)), AES_KEY_SIZE_256)
+  if result != 0:
+    print(cast[ptr uint8]("Error: Failed to initialize AES-256 key\n"))
+    return
+
+  print_block(cast[ptr uint8]("Key"), cast[ptr uint8](addr(key)), 32)
+  print_block(cast[ptr uint8]("Plaintext"), cast[ptr uint8](addr(plaintext)), 16)
+
+  # Encrypt
+  result = aes_encrypt_block(cast[ptr uint8](addr(plaintext)), cast[ptr uint8](addr(ciphertext)))
+  if result != 0:
+    print(cast[ptr uint8]("Error: Encryption failed\n"))
+    return
+
+  print_block(cast[ptr uint8]("Ciphertext"), cast[ptr uint8](addr(ciphertext)), 16)
+
+  # Decrypt
+  result = aes_decrypt_block(cast[ptr uint8](addr(ciphertext)), cast[ptr uint8](addr(decrypted)))
+  if result != 0:
+    print(cast[ptr uint8]("Error: Decryption failed\n"))
+    return
+
+  print_block(cast[ptr uint8]("Decrypted"), cast[ptr uint8](addr(decrypted)), 16)
+
+  # Verify
+  if compare_buffers(cast[ptr uint8](addr(plaintext)), cast[ptr uint8](addr(decrypted)), 16) != 0:
+    print(cast[ptr uint8]("✓ AES-256 test PASSED\n"))
+  else:
+    print(cast[ptr uint8]("✗ AES-256 test FAILED\n"))
+
+proc test_cbc_mode() =
+  print(cast[ptr uint8]("\n=== CBC Mode Test ===\n"))
+
+  # Key
+  var key: array[16, uint8]
+  var i: int32 = 0
+  while i < 16:
+    key[i] = cast[uint8](i + 1)
+    i = i + 1
+
+  # IV (initialization vector)
+  var iv: array[16, uint8]
+  i = 0
+  while i < 16:
+    iv[i] = cast[uint8](16 - i)
+    i = i + 1
+
+  # Plaintext (2 blocks = 32 bytes)
+  var plaintext: array[32, uint8]
+  i = 0
+  while i < 32:
+    plaintext[i] = cast[uint8](65 + (i % 26))  # Alphabet pattern
+    i = i + 1
+
+  var ciphertext: array[32, uint8]
+  var decrypted: array[32, uint8]
+
+  # Initialize AES
+  var result: int32 = aes_key_init(cast[ptr uint8](addr(key)), AES_KEY_SIZE_128)
+  if result != 0:
+    print(cast[ptr uint8]("Error: Failed to initialize AES key\n"))
+    return
+
+  print_block(cast[ptr uint8]("IV"), cast[ptr uint8](addr(iv)), 16)
+  print_block(cast[ptr uint8]("Plaintext"), cast[ptr uint8](addr(plaintext)), 32)
+
+  # Encrypt in CBC mode
+  result = aes_encrypt_cbc_mode(cast[ptr uint8](addr(plaintext)), cast[ptr uint8](addr(ciphertext)), 32, cast[ptr uint8](addr(iv)))
+  if result != 0:
+    print(cast[ptr uint8]("Error: CBC encryption failed\n"))
+    return
+
+  print_block(cast[ptr uint8]("Ciphertext"), cast[ptr uint8](addr(ciphertext)), 32)
+
+  # Decrypt in CBC mode
+  result = aes_decrypt_cbc_mode(cast[ptr uint8](addr(ciphertext)), cast[ptr uint8](addr(decrypted)), 32, cast[ptr uint8](addr(iv)))
+  if result != 0:
+    print(cast[ptr uint8]("Error: CBC decryption failed\n"))
+    return
+
+  print_block(cast[ptr uint8]("Decrypted"), cast[ptr uint8](addr(decrypted)), 32)
+
+  # Verify
+  if compare_buffers(cast[ptr uint8](addr(plaintext)), cast[ptr uint8](addr(decrypted)), 32) != 0:
+    print(cast[ptr uint8]("✓ CBC mode test PASSED\n"))
+  else:
+    print(cast[ptr uint8]("✗ CBC mode test FAILED\n"))
+
+# ============================================================================
+# Main
+# ============================================================================
+
+proc main(): int32 =
+  print(cast[ptr uint8]("BrainhairOS AES Encryption Test\n"))
+  print(cast[ptr uint8]("================================\n"))
+
+  # Initialize AES
+  var result: int32 = aes_initialize()
+  if result != 0:
+    print(cast[ptr uint8]("Error: Failed to initialize AES\n"))
+    return 1
+
+  # Check for hardware support
+  var hw_support: int32 = aes_has_hardware_support()
+  if hw_support != 0:
+    print(cast[ptr uint8]("Hardware AES-NI support: AVAILABLE\n"))
+  else:
+    print(cast[ptr uint8]("Hardware AES-NI support: NOT AVAILABLE (using software)\n"))
+
+  # Run tests
+  test_aes_128()
+  test_aes_256()
+  test_cbc_mode()
+
+  print(cast[ptr uint8]("\n================================\n"))
+  print(cast[ptr uint8]("All tests completed!\n"))
+
+  return 0

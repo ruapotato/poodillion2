@@ -518,6 +518,120 @@ isr_syscall:
     cmp eax, 75         ; SYS_SETGID
     je .syscall_setgid
 
+    cmp eax, 9          ; SYS_LINK
+    je .syscall_link
+
+    cmp eax, 10         ; SYS_UNLINK
+    je .syscall_unlink
+
+    ; Filesystem syscalls (88-89)
+    cmp eax, 88         ; SYS_SYMLINK
+    je .syscall_symlink
+
+    cmp eax, 89         ; SYS_READLINK
+    je .syscall_readlink
+
+    cmp eax, 999        ; SYS_UPTIME
+    je .syscall_uptime
+
+    ; RTC syscalls (80-82)
+    cmp eax, 80         ; SYS_RTC_GET_TIME
+    je .syscall_rtc_get_time
+
+    cmp eax, 81         ; SYS_RTC_TO_UNIX
+    je .syscall_rtc_to_unix
+
+    cmp eax, 82         ; SYS_FLOCK
+    je .syscall_flock
+
+    ; Thread syscalls (200-204)
+    cmp eax, 200        ; SYS_THREAD_CREATE
+    je .syscall_thread_create
+
+    cmp eax, 201        ; SYS_THREAD_EXIT
+    je .syscall_thread_exit
+
+    cmp eax, 202        ; SYS_THREAD_YIELD
+    je .syscall_thread_yield
+
+    cmp eax, 203        ; SYS_GET_THREAD_ID
+    je .syscall_get_thread_id
+
+    cmp eax, 204        ; SYS_IS_THREAD
+    je .syscall_is_thread
+
+    cmp eax, 205        ; SYS_THREAD_JOIN
+    je .syscall_thread_join
+
+    cmp eax, 206        ; SYS_THREAD_DETACH
+    je .syscall_thread_detach
+
+    ; Unix domain socket syscalls (210-216)
+    cmp eax, 210        ; SYS_UNIX_LISTEN
+    je .syscall_unix_listen
+
+    cmp eax, 211        ; SYS_UNIX_CONNECT
+    je .syscall_unix_connect
+
+    cmp eax, 212        ; SYS_UNIX_ACCEPT
+    je .syscall_unix_accept
+
+    cmp eax, 213        ; SYS_UNIX_SEND
+    je .syscall_unix_send
+
+    cmp eax, 214        ; SYS_UNIX_RECV
+    je .syscall_unix_recv
+
+    cmp eax, 215        ; SYS_UNIX_CLOSE
+    je .syscall_unix_close
+
+    cmp eax, 216        ; SYS_UNIX_HAS_DATA
+    je .syscall_unix_has_data
+
+    ; TLS syscalls (220-221)
+    cmp eax, 220        ; SYS_SET_TLS
+    je .syscall_set_tls
+
+    cmp eax, 221        ; SYS_GET_TLS
+    je .syscall_get_tls
+
+    ; X25519 syscalls (240-241)
+    cmp eax, 240        ; SYS_X25519_KEYGEN
+    je .syscall_x25519_keygen
+
+    cmp eax, 241        ; SYS_X25519_SHARED
+    je .syscall_x25519_shared
+
+    ; Futex syscalls (250-252)
+    cmp eax, 250        ; SYS_FUTEX_WAIT
+    je .syscall_futex_wait
+
+    cmp eax, 251        ; SYS_FUTEX_WAKE
+    je .syscall_futex_wake
+
+    cmp eax, 252        ; SYS_FUTEX_REQUEUE
+    je .syscall_futex_requeue
+
+    ; SHA-512 syscalls (260-262)
+    cmp eax, 260        ; SYS_SHA512_INIT
+    je .syscall_sha512_init
+
+    cmp eax, 261        ; SYS_SHA512_UPDATE
+    je .syscall_sha512_update
+
+    cmp eax, 262        ; SYS_SHA512_FINAL
+    je .syscall_sha512_final
+
+    ; Ed25519 syscalls (270-273)
+    cmp eax, 270        ; SYS_ED25519_KEYGEN
+    je .syscall_ed25519_keygen
+
+    cmp eax, 271        ; SYS_ED25519_SIGN
+    je .syscall_ed25519_sign
+
+    cmp eax, 272        ; SYS_ED25519_VERIFY
+    je .syscall_ed25519_verify
+
     ; Unknown syscall - return -1
     mov eax, -1
     jmp .syscall_done
@@ -935,6 +1049,471 @@ isr_syscall:
     mov eax, [esp + 20]     ; EBX (gid)
     push eax
     call sys_setgid
+    add esp, 4
+    jmp .syscall_done
+
+.syscall_link:
+    ; link(target, linkname) -> 0 or -1
+    ; EBX = target path, ECX = linkname path
+    extern sys_link
+    mov eax, [esp + 16]     ; ECX (linkname)
+    push eax
+    mov eax, [esp + 24]     ; EBX (target)
+    push eax
+    call sys_link
+    add esp, 8
+    jmp .syscall_done
+
+.syscall_unlink:
+    ; unlink(path) -> 0 or -1
+    ; EBX = path
+    extern sys_unlink
+    mov eax, [esp + 20]     ; EBX (path)
+    push eax
+    call sys_unlink
+    add esp, 4
+    jmp .syscall_done
+
+.syscall_symlink:
+    ; symlink(target, linkpath) -> 0 or -1
+    ; EBX = target path, ECX = linkpath
+    extern sys_symlink
+    mov eax, [esp + 16]     ; ECX (linkpath)
+    push eax
+    mov eax, [esp + 24]     ; EBX (target)
+    push eax
+    call sys_symlink
+    add esp, 8
+    jmp .syscall_done
+
+.syscall_readlink:
+    ; readlink(path, buf, bufsize) -> bytes or -1
+    ; EBX = path, ECX = buf, EDX = bufsize
+    extern sys_readlink
+    mov eax, [esp + 12]     ; EDX (bufsize)
+    push eax
+    mov eax, [esp + 20]     ; ECX (buf)
+    push eax
+    mov eax, [esp + 28]     ; EBX (path)
+    push eax
+    call sys_readlink
+    add esp, 12
+    jmp .syscall_done
+
+.syscall_uptime:
+    ; uptime(uptime_ptr) -> 0
+    ; EBX = pointer to uptime struct (int32 seconds, int32 milliseconds)
+    ; Returns uptime in seconds and milliseconds
+    extern get_tick_count
+    call get_tick_count
+    ; EAX now has tick count
+    ; Convert to seconds: ticks / 18 (PIT timer runs at ~18.2 Hz)
+    ; First, calculate seconds
+    push edx
+    xor edx, edx
+    mov ecx, 18
+    div ecx                 ; EAX = seconds, EDX = remainder ticks
+
+    ; Store seconds
+    mov ebx, [esp + 24]     ; Get uptime_ptr from stack (+4 for pushed edx)
+    test ebx, ebx
+    jz .uptime_null_ptr
+    mov [ebx], eax          ; Store seconds
+
+    ; Calculate milliseconds from remainder
+    ; milliseconds = (remainder * 1000) / 18
+    mov eax, edx            ; remainder ticks
+    mov ecx, 1000
+    mul ecx                 ; EDX:EAX = remainder * 1000
+    mov ecx, 18
+    div ecx                 ; EAX = milliseconds
+    mov [ebx + 4], eax      ; Store milliseconds
+
+.uptime_null_ptr:
+    pop edx
+    xor eax, eax            ; Return 0
+    jmp .syscall_done
+
+; ============= RTC syscalls =============
+
+.syscall_rtc_get_time:
+    ; rtc_get_time(time_ptr) -> 0 or -1
+    ; EBX = pointer to time structure (6 bytes)
+    extern rtc_get_time
+    mov eax, [esp + 20]     ; EBX (time_ptr)
+    push eax
+    call rtc_get_time
+    add esp, 4
+    jmp .syscall_done
+
+.syscall_rtc_to_unix:
+    ; rtc_to_unix_timestamp() -> timestamp
+    ; Returns Unix timestamp from RTC
+    extern rtc_to_unix_timestamp
+    call rtc_to_unix_timestamp
+    jmp .syscall_done
+
+.syscall_flock:
+    ; flock(fd, operation) -> 0 or -1
+    ; EBX = fd, ECX = operation (LOCK_SH, LOCK_EX, LOCK_UN, LOCK_NB)
+    extern sys_flock
+    mov eax, [esp + 16]     ; ECX (operation)
+    push eax
+    mov eax, [esp + 24]     ; EBX (fd)
+    push eax
+    call sys_flock
+    add esp, 8
+    jmp .syscall_done
+
+; ============================================================================
+; Thread Syscall Handlers (200-204)
+; ============================================================================
+
+.syscall_thread_create:
+    ; thread_create(entry, arg) -> thread PID or -1
+    ; EBX = entry point, ECX = user argument
+    extern thread_create
+    mov eax, [esp + 16]     ; ECX (user argument)
+    push eax
+    mov eax, [esp + 24]     ; EBX (entry point)
+    push eax
+    call thread_create
+    add esp, 8
+    jmp .syscall_done
+
+.syscall_thread_exit:
+    ; thread_exit(code) - exit current thread
+    ; EBX = exit code
+    extern thread_exit
+    mov eax, [esp + 20]     ; EBX (exit code)
+    push eax
+    call thread_exit
+    ; thread_exit doesn't return for threads
+    add esp, 4
+    jmp .syscall_done
+
+.syscall_thread_yield:
+    ; thread_yield() - yield to another thread/process
+    extern thread_yield
+    call thread_yield
+    xor eax, eax
+    jmp .syscall_done
+
+.syscall_get_thread_id:
+    ; get_thread_id() -> thread ID (0 for main process)
+    extern get_thread_id
+    call get_thread_id
+    jmp .syscall_done
+
+.syscall_is_thread:
+    ; is_thread() -> 1 if thread, 0 if main process
+    extern is_thread
+    call is_thread
+    jmp .syscall_done
+
+.syscall_thread_join:
+    ; thread_join(tid, status_ptr) -> 0 on success, -1 on error
+    ; EBX = thread PID, ECX = status pointer
+    extern thread_join
+    mov eax, [esp + 16]     ; ECX (status pointer)
+    push eax
+    mov eax, [esp + 24]     ; EBX (thread PID)
+    push eax
+    call thread_join
+    add esp, 8
+    jmp .syscall_done
+
+.syscall_thread_detach:
+    ; thread_detach(tid) -> 0 on success, -1 on error
+    ; EBX = thread PID
+    extern thread_detach
+    mov eax, [esp + 20]     ; EBX (thread PID)
+    push eax
+    call thread_detach
+    add esp, 4
+    jmp .syscall_done
+
+; ============================================================================
+; Thread-Local Storage Syscall Handlers (220-221)
+; ============================================================================
+
+.syscall_set_tls:
+    ; set_tls(base) -> 0 on success
+    ; EBX = TLS base address
+    extern set_tls_base
+    mov eax, [esp + 20]     ; EBX (base address)
+    push eax
+    call set_tls_base
+    add esp, 4
+    jmp .syscall_done
+
+.syscall_get_tls:
+    ; get_tls() -> TLS base address
+    extern get_tls_base
+    call get_tls_base
+    jmp .syscall_done
+
+; ============================================================================
+; X25519 Key Exchange Syscall Handlers (240-241)
+; ============================================================================
+
+.syscall_x25519_keygen:
+    ; x25519_keygen(public_key, private_key) -> 0 on success
+    ; EBX = public key output pointer (32 bytes)
+    ; ECX = private key input pointer (32 bytes)
+    extern x25519_keygen
+    mov eax, [esp + 20]     ; EBX (public key)
+    mov ebx, [esp + 16]     ; ECX (private key)
+    push ebx
+    push eax
+    call x25519_keygen
+    add esp, 8
+    xor eax, eax            ; Return 0 on success
+    jmp .syscall_done
+
+.syscall_x25519_shared:
+    ; x25519_shared(shared, our_private, their_public) -> 0 on success
+    ; EBX = shared secret output pointer (32 bytes)
+    ; ECX = our private key pointer (32 bytes)
+    ; EDX = their public key pointer (32 bytes)
+    extern x25519_shared
+    mov eax, [esp + 20]     ; EBX (shared output)
+    mov ebx, [esp + 16]     ; ECX (our private)
+    mov ecx, [esp + 12]     ; EDX (their public)
+    push ecx
+    push ebx
+    push eax
+    call x25519_shared
+    add esp, 12
+    xor eax, eax            ; Return 0 on success
+    jmp .syscall_done
+
+; ============================================================================
+; Futex Syscall Handlers (250-252)
+; ============================================================================
+
+.syscall_futex_wait:
+    ; futex_wait(addr, expected, timeout) -> 0 on success, -1 on value change
+    ; EBX = address to wait on
+    ; ECX = expected value
+    ; EDX = timeout (0 = infinite)
+    extern futex_wait
+    mov eax, [esp + 20]     ; EBX (address)
+    mov ebx, [esp + 16]     ; ECX (expected)
+    mov ecx, [esp + 12]     ; EDX (timeout)
+    push ecx
+    push ebx
+    push eax
+    call futex_wait
+    add esp, 12
+    jmp .syscall_done
+
+.syscall_futex_wake:
+    ; futex_wake(addr, count) -> number woken
+    ; EBX = address to wake on
+    ; ECX = max number to wake (0 = all)
+    extern futex_wake
+    mov eax, [esp + 20]     ; EBX (address)
+    mov ebx, [esp + 16]     ; ECX (count)
+    push ebx
+    push eax
+    call futex_wake
+    add esp, 8
+    jmp .syscall_done
+
+.syscall_futex_requeue:
+    ; futex_requeue(src_addr, dst_addr, wake_count, requeue_count) -> total processed
+    ; EBX = source address
+    ; ECX = destination address
+    ; EDX = max to wake
+    ; ESI = max to requeue
+    extern futex_requeue
+    mov eax, [esp + 20]     ; EBX (src)
+    mov ebx, [esp + 16]     ; ECX (dst)
+    mov ecx, [esp + 12]     ; EDX (wake count)
+    mov edx, [esp + 8]      ; ESI (requeue count)
+    push edx
+    push ecx
+    push ebx
+    push eax
+    call futex_requeue
+    add esp, 16
+    jmp .syscall_done
+
+; ============================================================================
+; SHA-512 Syscall Handlers (260-262)
+; ============================================================================
+
+.syscall_sha512_init:
+    ; sha512_init() -> 0
+    extern sha512_init
+    call sha512_init
+    xor eax, eax
+    jmp .syscall_done
+
+.syscall_sha512_update:
+    ; sha512_update(data, length) -> 0
+    ; EBX = data pointer
+    ; ECX = length
+    extern sha512_update
+    mov eax, [esp + 20]     ; EBX (data)
+    mov ebx, [esp + 16]     ; ECX (length)
+    push ebx
+    push eax
+    call sha512_update
+    add esp, 8
+    xor eax, eax
+    jmp .syscall_done
+
+.syscall_sha512_final:
+    ; sha512_final(output) -> 0
+    ; EBX = 64-byte output buffer
+    extern sha512_final
+    mov eax, [esp + 20]     ; EBX (output)
+    push eax
+    call sha512_final
+    add esp, 4
+    xor eax, eax
+    jmp .syscall_done
+
+; ============================================================================
+; Ed25519 Syscall Handlers (270-273)
+; ============================================================================
+
+.syscall_ed25519_keygen:
+    ; ed25519_keygen(seed, pubkey, privkey) -> 0 on success
+    ; EBX = 32-byte seed
+    ; ECX = 32-byte output public key
+    ; EDX = 64-byte output private key
+    extern ed25519_keygen
+    mov eax, [esp + 20]     ; EBX (seed)
+    mov ebx, [esp + 16]     ; ECX (pubkey)
+    mov ecx, [esp + 12]     ; EDX (privkey)
+    push ecx
+    push ebx
+    push eax
+    call ed25519_keygen
+    add esp, 12
+    jmp .syscall_done
+
+.syscall_ed25519_sign:
+    ; ed25519_sign(msg, msg_len, privkey, sig) -> 0 on success
+    ; EBX = message pointer
+    ; ECX = message length
+    ; EDX = 64-byte private key
+    ; ESI = 64-byte output signature
+    extern ed25519_sign
+    mov eax, [esp + 20]     ; EBX (msg)
+    mov ebx, [esp + 16]     ; ECX (msg_len)
+    mov ecx, [esp + 12]     ; EDX (privkey)
+    mov edx, [esp + 8]      ; ESI (sig output)
+    push edx
+    push ecx
+    push ebx
+    push eax
+    call ed25519_sign
+    add esp, 16
+    jmp .syscall_done
+
+.syscall_ed25519_verify:
+    ; ed25519_verify(msg, msg_len, pubkey, sig) -> 0 if valid, -1 if invalid
+    ; EBX = message pointer
+    ; ECX = message length
+    ; EDX = 32-byte public key
+    ; ESI = 64-byte signature
+    extern ed25519_verify
+    mov eax, [esp + 20]     ; EBX (msg)
+    mov ebx, [esp + 16]     ; ECX (msg_len)
+    mov ecx, [esp + 12]     ; EDX (pubkey)
+    mov edx, [esp + 8]      ; ESI (sig)
+    push edx
+    push ecx
+    push ebx
+    push eax
+    call ed25519_verify
+    add esp, 16
+    jmp .syscall_done
+
+; ============================================================================
+; Unix Domain Socket Syscall Handlers (210-216)
+; ============================================================================
+
+.syscall_unix_listen:
+    ; unix_listen(path) -> socket_id or -1
+    ; EBX = path pointer
+    extern unix_listen
+    mov eax, [esp + 20]     ; EBX (path)
+    push eax
+    call unix_listen
+    add esp, 4
+    jmp .syscall_done
+
+.syscall_unix_connect:
+    ; unix_connect(path) -> socket_id or -1
+    ; EBX = path pointer
+    extern unix_connect
+    mov eax, [esp + 20]     ; EBX (path)
+    push eax
+    call unix_connect
+    add esp, 4
+    jmp .syscall_done
+
+.syscall_unix_accept:
+    ; unix_accept(listen_id) -> socket_id or -1
+    ; EBX = listening socket ID
+    extern unix_accept
+    mov eax, [esp + 20]     ; EBX (listen_id)
+    push eax
+    call unix_accept
+    add esp, 4
+    jmp .syscall_done
+
+.syscall_unix_send:
+    ; unix_send(socket_id, data, length) -> bytes sent or -1
+    ; EBX = socket_id, ECX = data pointer, EDX = length
+    extern unix_send
+    mov eax, [esp + 12]     ; EDX (length)
+    push eax
+    mov eax, [esp + 20]     ; ECX (data)
+    push eax
+    mov eax, [esp + 28]     ; EBX (socket_id)
+    push eax
+    call unix_send
+    add esp, 12
+    jmp .syscall_done
+
+.syscall_unix_recv:
+    ; unix_recv(socket_id, buf, max_len) -> bytes received or -1
+    ; EBX = socket_id, ECX = buf pointer, EDX = max_len
+    extern unix_recv
+    mov eax, [esp + 12]     ; EDX (max_len)
+    push eax
+    mov eax, [esp + 20]     ; ECX (buf)
+    push eax
+    mov eax, [esp + 28]     ; EBX (socket_id)
+    push eax
+    call unix_recv
+    add esp, 12
+    jmp .syscall_done
+
+.syscall_unix_close:
+    ; unix_close(socket_id)
+    ; EBX = socket_id
+    extern unix_close
+    mov eax, [esp + 20]     ; EBX (socket_id)
+    push eax
+    call unix_close
+    add esp, 4
+    xor eax, eax            ; Return 0 for success
+    jmp .syscall_done
+
+.syscall_unix_has_data:
+    ; unix_has_data(socket_id) -> 1 if data, 0 if not
+    ; EBX = socket_id
+    extern unix_has_data
+    mov eax, [esp + 20]     ; EBX (socket_id)
+    push eax
+    call unix_has_data
     add esp, 4
     jmp .syscall_done
 

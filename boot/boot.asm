@@ -10,9 +10,17 @@ extern _bss_start
 extern _bss_end
 
 _start:
-    ; Set up stack AFTER BSS section (BSS ends ~0xB2400)
-    ; Using 0xBF000 which is in VGA area but kernel uses VGA differently
-    mov esp, 0xBF000
+    ; Explicitly set up segment registers (don't rely on bootloader)
+    mov ax, 0x10            ; Data segment selector
+    mov ds, ax
+    mov es, ax              ; ES is used by rep stosd
+    mov fs, ax
+    mov gs, ax
+    mov ss, ax
+
+    ; Set up stack AFTER BSS section (kernel at 1MB, BSS ends around 0x1A5000)
+    ; Stack at 2MB should be safe
+    mov esp, 0x200000
 
     ; Zero the BSS section
     cld                     ; Clear direction flag (forward)

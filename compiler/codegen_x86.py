@@ -1495,6 +1495,11 @@ class X86CodeGen:
             self.local_vars[param.name] = param_offset
             param_offset += 4
 
+        # Initialize default return value for integer-returning functions
+        # This ensures functions return 0 if no explicit return is executed
+        if proc.return_type and proc.return_type.name in ('i8', 'i16', 'i32', 'i64', 'u8', 'u16', 'u32', 'u64', 'int32', 'int16', 'int8', 'uint32', 'uint16', 'uint8'):
+            self.emit("xor eax, eax")
+
         # Generate body (this will add local variables with negative offsets)
         for stmt in proc.body:
             self.gen_statement(stmt)
@@ -1577,6 +1582,10 @@ class X86CodeGen:
             self.type_table[param.name] = param.param_type
             self.local_vars[param.name] = param_offset
             param_offset += 4
+
+        # Initialize default return value for integer-returning methods
+        if method.return_type and method.return_type.name in ('i8', 'i16', 'i32', 'i64', 'u8', 'u16', 'u32', 'u64', 'int32', 'int16', 'int8', 'uint32', 'uint16', 'uint8'):
+            self.emit("xor eax, eax")
 
         # Generate body
         for stmt in method.body:
@@ -1744,6 +1753,37 @@ class X86CodeGen:
             asm.append("global tcp_close")
             asm.append("global tcp_state")
             asm.append("global net_poll")
+            asm.append("global tcp_has_data")
+            # Filesystem syscalls
+            asm.append("global sys_link")
+            asm.append("global sys_unlink")
+            asm.append("global sys_symlink")
+            asm.append("global sys_readlink")
+            asm.append("global sys_flock")
+            # Unix domain socket functions
+            asm.append("global unix_listen")
+            asm.append("global unix_connect")
+            asm.append("global unix_accept")
+            asm.append("global unix_send")
+            asm.append("global unix_recv")
+            asm.append("global unix_close")
+            asm.append("global unix_has_data")
+            # RTC functions
+            asm.append("global rtc_get_time")
+            asm.append("global rtc_to_unix_timestamp")
+            # VTNext graphics commands
+            asm.append("global vtn_draw_text_cmd")
+            asm.append("global vtn_draw_rect_cmd")
+            asm.append("global vtn_draw_line_cmd")
+            asm.append("global vtn_draw_circle_cmd")
+            asm.append("global vtn_clear_cmd")
+            asm.append("global vtn_draw_rrect_cmd")
+            asm.append("global vtn_input_cmd")
+            asm.append("global vtn_cursor_cmd")
+            asm.append("global vtn_viewport_cmd")
+            asm.append("global vtn_query_cmd")
+            asm.append("global vtn_draw_ellipse_cmd")
+            asm.append("global vtn_draw_poly_cmd")
             asm.append("")
 
         asm.extend(self.output)

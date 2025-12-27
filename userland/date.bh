@@ -1,170 +1,21 @@
-# date - Display or set date and time
-# Uses SYS_time (13) to get Unix epoch seconds
+# date - Display current date and time
+# Reads time from RTC (Real-Time Clock)
 
 import "lib/syscalls"
-
-# Print integer with leading zero padding to 2 digits
-proc print_int_pad2(n: int32) =
-  if n < 10:
-    print("0")
-  print_int(n)
-
-# Check if year is leap year
-proc is_leap_year(year: int32): int32 =
-  if (year % 4) != 0:
-    return 0
-  if (year % 100) != 0:
-    return 1
-  if (year % 400) != 0:
-    return 0
-  return 1
-
-# Get days in month
-proc days_in_month(month: int32, year: int32): int32 =
-  if month == 1:
-    return 31
-  if month == 2:
-    var leap: int32 = is_leap_year(year)
-    if leap == 1:
-      return 29
-    else:
-      return 28
-  if month == 3:
-    return 31
-  if month == 4:
-    return 30
-  if month == 5:
-    return 31
-  if month == 6:
-    return 30
-  if month == 7:
-    return 31
-  if month == 8:
-    return 31
-  if month == 9:
-    return 30
-  if month == 10:
-    return 31
-  if month == 11:
-    return 30
-  if month == 12:
-    return 31
-  return 30
-
-# Get month name (3 letter abbreviation)
-proc get_month_name(month: int32): ptr uint8 =
-  if month == 1:
-    return "Jan"
-  if month == 2:
-    return "Feb"
-  if month == 3:
-    return "Mar"
-  if month == 4:
-    return "Apr"
-  if month == 5:
-    return "May"
-  if month == 6:
-    return "Jun"
-  if month == 7:
-    return "Jul"
-  if month == 8:
-    return "Aug"
-  if month == 9:
-    return "Sep"
-  if month == 10:
-    return "Oct"
-  if month == 11:
-    return "Nov"
-  if month == 12:
-    return "Dec"
-  return "???"
-
-# Get day of week name (3 letter abbreviation)
-proc get_day_name(day: int32): ptr uint8 =
-  if day == 0:
-    return "Thu"
-  if day == 1:
-    return "Fri"
-  if day == 2:
-    return "Sat"
-  if day == 3:
-    return "Sun"
-  if day == 4:
-    return "Mon"
-  if day == 5:
-    return "Tue"
-  if day == 6:
-    return "Wed"
-  return "???"
+import "lib/time"
 
 proc main(): int32 =
-  # Get current time (Unix epoch seconds)
-  var epoch: int32 = syscall1(SYS_time, 0)
+  var time: TimeStruct
 
-  if epoch < 0:
-    perror("date: cannot get time")
+  # Get current time from RTC
+  var result: int32 = get_time(addr(time))
+
+  if result < 0:
+    perror("date: cannot read time from RTC")
     return 1
 
-  # Calculate date/time from epoch
-  # Unix epoch starts at Jan 1, 1970 00:00:00 UTC (Thursday)
-
-  var seconds: int32 = epoch % 60
-  var minutes: int32 = (epoch / 60) % 60
-  var hours: int32 = (epoch / 3600) % 24
-  var total_days: int32 = epoch / 86400
-
-  # Calculate day of week (epoch starts on Thursday = 0)
-  var day_of_week: int32 = (total_days + 4) % 7
-
-  # Calculate year, month, day
-  var year: int32 = 1970
-  var days_left: int32 = total_days
-
-  # Skip complete years
-  var days_in_year: int32 = 365
-  while days_left >= days_in_year:
-    days_left = days_left - days_in_year
-    year = year + 1
-    var leap: int32 = is_leap_year(year)
-    if leap == 1:
-      days_in_year = 366
-    else:
-      days_in_year = 365
-
-  # Calculate month and day
-  var month: int32 = 1
-  var dim: int32 = days_in_month(month, year)
-  while days_left >= dim:
-    days_left = days_left - dim
-    month = month + 1
-    dim = days_in_month(month, year)
-
-  var day: int32 = days_left + 1
-
-  # Print day name
-  print(get_day_name(day_of_week))
-  print(" ")
-
-  # Print month name
-  print(get_month_name(month))
-  print(" ")
-
-  # Print day
-  if day < 10:
-    print(" ")
-  print_int(day)
-  print(" ")
-
-  # Print time HH:MM:SS
-  print_int_pad2(hours)
-  print(":")
-  print_int_pad2(minutes)
-  print(":")
-  print_int_pad2(seconds)
-  print(" ")
-
-  # Print year
-  print_int(year)
+  # Print in Unix date format (default)
+  print_time_unix(addr(time))
   newline()
 
   return 0

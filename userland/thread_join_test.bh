@@ -1,0 +1,122 @@
+# thread_join_test.bh - Simple test for thread_join functionality
+# Tests basic thread joining using low-level syscall API
+
+import "lib/syscalls"
+
+# Simple worker thread that returns doubled argument
+proc worker_thread(arg: int32): int32 =
+  var my_tid: int32 = thread_self()
+
+  print(cast[ptr uint8]("  [Thread "))
+  print_int(my_tid)
+  print(cast[ptr uint8]("] Started with arg="))
+  print_int(arg)
+  newline()
+
+  # Do some work
+  var i: int32 = 0
+  while i < 3:
+    print(cast[ptr uint8]("  [Thread "))
+    print_int(my_tid)
+    print(cast[ptr uint8]("] Working iteration "))
+    print_int(i)
+    newline()
+    thread_yield()
+    i = i + 1
+
+  var result: int32 = arg * 2
+  print(cast[ptr uint8]("  [Thread "))
+  print_int(my_tid)
+  print(cast[ptr uint8]("] Exiting with result="))
+  print_int(result)
+  newline()
+
+  return result
+
+proc main() =
+  print(cast[ptr uint8]("\n=== BrainhairOS Thread Join Test ===\n\n"))
+
+  # Test 1: Basic thread join
+  print(cast[ptr uint8]("[Main] Creating thread...\n"))
+  var tid: int32 = thread_create(cast[int32](addr(worker_thread)), 42)
+
+  if tid < 0:
+    print(cast[ptr uint8]("[Main] ERROR: Failed to create thread\n"))
+    exit(1)
+
+  print(cast[ptr uint8]("[Main] Thread created with TID="))
+  print_int(tid)
+  newline()
+
+  # Give thread some time to run
+  var i: int32 = 0
+  while i < 2:
+    print(cast[ptr uint8]("[Main] Main thread iteration "))
+    print_int(i)
+    newline()
+    thread_yield()
+    i = i + 1
+
+  # Join the thread
+  print(cast[ptr uint8]("[Main] Waiting for thread to finish...\n"))
+  var status: int32 = 0
+  var join_result: int32 = thread_join(tid, addr(status))
+
+  if join_result < 0:
+    print(cast[ptr uint8]("[Main] ERROR: Failed to join thread\n"))
+    exit(1)
+
+  print(cast[ptr uint8]("[Main] Thread joined successfully!\n"))
+  print(cast[ptr uint8]("[Main] Thread exit status: "))
+  print_int(status)
+  newline()
+
+  # Test 2: Multiple threads
+  print(cast[ptr uint8]("\n[Main] Creating 3 threads...\n"))
+  var tid1: int32 = thread_create(cast[int32](addr(worker_thread)), 10)
+  var tid2: int32 = thread_create(cast[int32](addr(worker_thread)), 20)
+  var tid3: int32 = thread_create(cast[int32](addr(worker_thread)), 30)
+
+  print(cast[ptr uint8]("[Main] Created threads: "))
+  print_int(tid1)
+  print(cast[ptr uint8](", "))
+  print_int(tid2)
+  print(cast[ptr uint8](", "))
+  print_int(tid3)
+  newline()
+
+  # Join all threads
+  var status1: int32 = 0
+  var status2: int32 = 0
+  var status3: int32 = 0
+
+  print(cast[ptr uint8]("[Main] Joining threads...\n"))
+  discard thread_join(tid1, addr(status1))
+  discard thread_join(tid2, addr(status2))
+  discard thread_join(tid3, addr(status3))
+
+  print(cast[ptr uint8]("[Main] All threads joined!\n"))
+  print(cast[ptr uint8]("[Main] Results: "))
+  print_int(status1)
+  print(cast[ptr uint8](", "))
+  print_int(status2)
+  print(cast[ptr uint8](", "))
+  print_int(status3)
+  newline()
+
+  # Test 3: Detached thread
+  print(cast[ptr uint8]("\n[Main] Creating detached thread...\n"))
+  var detached_tid: int32 = thread_create(cast[int32](addr(worker_thread)), 99)
+  discard thread_detach(detached_tid)
+  print(cast[ptr uint8]("[Main] Thread "))
+  print_int(detached_tid)
+  print(cast[ptr uint8](" detached (will auto-cleanup)\n"))
+
+  # Give detached thread time to run
+  i = 0
+  while i < 5:
+    thread_yield()
+    i = i + 1
+
+  print(cast[ptr uint8]("\n=== All tests completed successfully! ===\n\n"))
+  exit(0)

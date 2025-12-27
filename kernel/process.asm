@@ -42,8 +42,23 @@ PCB_UID       equ 84   ; User ID (0 = root)
 PCB_GID       equ 88   ; Group ID (0 = root/wheel)
 PCB_EUID      equ 92   ; Effective User ID
 PCB_EGID      equ 96   ; Effective Group ID
+; Thread support
+PCB_IS_THREAD equ 100  ; int32: 1 if thread, 0 if process
+PCB_MAIN_PROC equ 104  ; int32: Main process PID (for threads)
+PCB_THREAD_ID equ 108  ; int32: Thread ID within process (0 for main)
+PCB_NEXT_TID  equ 112  ; int32: Next TID to assign (main process only)
+PCB_PGRP      equ 116  ; int32: Process group ID
+PCB_SID       equ 120  ; int32: Session ID
+PCB_CTTY      equ 124  ; int32: Controlling TTY (-1 = none)
+; Thread-local storage
+PCB_TLS_BASE  equ 128  ; int32: TLS base pointer (user-space TLS area)
+; Thread join support
+PCB_THREAD_EXIT_STATUS equ 132  ; int32: Exit status when thread exits
+PCB_THREAD_JOINED      equ 136  ; int32: 1 if thread has been joined, 0 otherwise
+PCB_THREAD_JOINER      equ 140  ; int32: PID of thread waiting to join (0 = none)
+PCB_THREAD_DETACHED    equ 144  ; int32: 1 if detached, 0 if joinable
 
-PCB_SIZE      equ 128  ; Total size of PCB (with padding)
+PCB_SIZE      equ 148  ; Total size of PCB
 
 ; Maximum number of processes
 MAX_PROCS     equ 16
@@ -91,6 +106,9 @@ extern elf_validate
 extern elf_get_entry
 extern elf_load
 
+; External paging symbols
+extern page_directory
+
 ; ============================================================================
 ; init_scheduler - Initialize the scheduler
 ; ============================================================================
@@ -118,6 +136,13 @@ init_scheduler:
     mov dword [edi + PCB_STATE], PROC_RUNNING
     mov dword [edi + PCB_PARENT], 0
     mov dword [edi + PCB_PRIORITY], 0
+    ; Set kernel's page directory for thread inheritance
+    mov eax, page_directory
+    mov [edi + PCB_PAGE_DIR], eax
+    ; Initialize thread fields
+    mov dword [edi + PCB_IS_THREAD], 0
+    mov dword [edi + PCB_THREAD_ID], 0
+    mov dword [edi + PCB_NEXT_TID], 1  ; First thread will get TID 1
     ; Kernel uses its own stack, no need to set stack pointers
 
     pop edi
@@ -635,11 +660,15 @@ context_switch:
     mov [edi + PCB_EDX], edx
     mov [edi + PCB_ESI], esi
     mov [edi + PCB_EBP], ebp
-    mov [edi + PCB_ESP], esp
 
     ; Save return address as EIP
     mov eax, [esp]
     mov [edi + PCB_EIP], eax
+
+    ; Save ESP+4 (skip return addr, so ESP points to arg after restore+ret)
+    mov eax, esp
+    add eax, 4
+    mov [edi + PCB_ESP], eax
 
     ; Save EFLAGS
     pushfd
@@ -1028,4 +1057,551 @@ get_process_state:
 
 .invalid:
     mov eax, -1
+    ret
+
+; ============================================================================
+; KERNEL THREADING SUPPORT
+; ============================================================================
+
+; ============================================================================
+; thread_create - Create a new kernel thread
+; Input:
+;   [esp+4] = entry point (function pointer)
+;   [esp+8] = user argument (passed to entry in EAX)
+; Returns: EAX = thread PID on success, -1 on failure
+; ============================================================================
+global thread_create
+thread_create:
+    push ebx
+    push ecx
+    push edx
+    push esi
+    push edi
+
+    ; Get current process (to become main process if not already a thread)
+    mov eax, [current_pid]
+    call get_pcb
+    test eax, eax
+    jz .fail
+    mov esi, eax                ; ESI = current PCB
+
+    ; If current is a thread, get the main process
+    mov eax, [esi + PCB_IS_THREAD]
+    test eax, eax
+    jz .use_current_as_main
+    ; Current is a thread, get main process PCB
+    mov eax, [esi + PCB_MAIN_PROC]
+    call get_pcb
+    test eax, eax
+    jz .fail
+    mov esi, eax                ; ESI = main process PCB
+.use_current_as_main:
+
+    ; Find a free PCB slot
+    xor ecx, ecx                ; ECX = slot index
+    mov edi, process_table      ; EDI = process table
+.find_slot:
+    cmp ecx, MAX_PROCS
+    jge .fail
+    cmp dword [edi + PCB_STATE], PROC_UNUSED
+    je .found_slot
+    add edi, PCB_SIZE
+    inc ecx
+    jmp .find_slot
+
+.found_slot:
+    ; EDI = free PCB slot, ECX = slot index
+
+    ; Allocate new PID
+    mov eax, [next_pid]
+    mov [edi + PCB_PID], eax
+    inc dword [next_pid]
+
+    ; Set as thread
+    mov dword [edi + PCB_IS_THREAD], 1
+
+    ; Set main process PID
+    mov eax, [esi + PCB_PID]
+    mov [edi + PCB_MAIN_PROC], eax
+
+    ; Allocate thread ID from main process
+    mov eax, [esi + PCB_NEXT_TID]
+    mov [edi + PCB_THREAD_ID], eax
+    inc dword [esi + PCB_NEXT_TID]
+
+    ; Set state to READY
+    mov dword [edi + PCB_STATE], PROC_READY
+
+    ; Copy parent PID from main process
+    mov eax, [esi + PCB_PARENT]
+    mov [edi + PCB_PARENT], eax
+
+    ; Copy user/group IDs from main process
+    mov eax, [esi + PCB_UID]
+    mov [edi + PCB_UID], eax
+    mov eax, [esi + PCB_GID]
+    mov [edi + PCB_GID], eax
+    mov eax, [esi + PCB_EUID]
+    mov [edi + PCB_EUID], eax
+    mov eax, [esi + PCB_EGID]
+    mov [edi + PCB_EGID], eax
+
+    ; Copy process group and session from main
+    mov eax, [esi + PCB_PGRP]
+    mov [edi + PCB_PGRP], eax
+    mov eax, [esi + PCB_SID]
+    mov [edi + PCB_SID], eax
+    mov eax, [esi + PCB_CTTY]
+    mov [edi + PCB_CTTY], eax
+
+    ; CRITICAL: Share page directory with main process
+    mov eax, [esi + PCB_PAGE_DIR]
+    mov [edi + PCB_PAGE_DIR], eax
+
+    ; Set up kernel stack for this thread
+    ; Stack is at kernel_stacks + slot_index * 4096 + 4096 (top)
+    mov eax, ecx
+    shl eax, 12                 ; * 4096
+    add eax, kernel_stacks
+    add eax, 4096               ; Top of stack
+    mov [edi + PCB_STACK_TOP], eax
+
+    ; Set up initial stack frame for thread
+    ; Stack layout for new thread (stack grows down):
+    ;   [esp+0] = thread_exit_trampoline (return address for when entry func returns)
+    ;   [esp+4] = user argument (first param to entry function)
+    ; Memory layout (higher addresses first):
+    ;   stack_top - 4: user argument
+    ;   stack_top - 8: thread_exit_trampoline  <- ESP points here
+    mov ebx, eax                ; EBX = stack top
+    sub ebx, 4
+    mov eax, [esp + 28]         ; User argument (esp+8 + 5*4 pushes)
+    mov [ebx], eax              ; [stack_top-4] = argument
+    sub ebx, 4
+    mov dword [ebx], thread_exit_trampoline  ; [stack_top-8] = return addr
+
+    ; Thread starts with stack pointing to return address
+    mov [edi + PCB_ESP], ebx
+
+    ; Set entry point
+    mov eax, [esp + 24]         ; Entry point (esp+4 + 5*4 pushes)
+    mov [edi + PCB_EIP], eax
+
+    ; Initialize other registers to 0
+    xor eax, eax
+    mov [edi + PCB_EAX], eax
+    mov [edi + PCB_EBX], eax
+    mov [edi + PCB_ECX], eax
+    mov [edi + PCB_EDX], eax
+    mov [edi + PCB_ESI], eax
+    mov [edi + PCB_EDI], eax
+    mov [edi + PCB_EBP], eax
+    mov dword [edi + PCB_EFLAGS], 0x202 ; IF=1, reserved=1
+
+    ; Initialize other fields
+    mov dword [edi + PCB_PRIORITY], 0
+    mov dword [edi + PCB_WAITING], 0
+    mov dword [edi + PCB_MSG_BUF], 0
+    mov dword [edi + PCB_EXIT_CODE], 0
+    mov dword [edi + PCB_WAIT_PID], 0
+    mov dword [edi + PCB_USER_ESP], 0
+
+    ; Initialize thread join fields
+    mov dword [edi + PCB_THREAD_EXIT_STATUS], 0
+    mov dword [edi + PCB_THREAD_JOINED], 0
+    mov dword [edi + PCB_THREAD_JOINER], 0
+    mov dword [edi + PCB_THREAD_DETACHED], 0
+
+    ; Increment ready count
+    inc dword [ready_count]
+
+    ; Return thread PID
+    mov eax, [edi + PCB_PID]
+    jmp .done
+
+.fail:
+    mov eax, -1
+
+.done:
+    pop edi
+    pop esi
+    pop edx
+    pop ecx
+    pop ebx
+    ret
+
+; ============================================================================
+; thread_exit_trampoline - Called when thread function returns
+; Automatically calls thread_exit with return value
+; ============================================================================
+thread_exit_trampoline:
+    ; EAX contains return value from thread function
+    push eax
+    call thread_exit
+    ; thread_exit never returns
+
+; ============================================================================
+; thread_exit - Exit current thread
+; Input: [esp+4] = exit code
+; Note: If called from main process, calls exit_process instead
+; ============================================================================
+global thread_exit
+thread_exit:
+    ; Get current PCB
+    mov eax, [current_pid]
+    call get_pcb
+    test eax, eax
+    jz .schedule_next           ; Shouldn't happen
+
+    ; Check if this is a thread
+    cmp dword [eax + PCB_IS_THREAD], 1
+    jne .exit_process           ; Not a thread, exit whole process
+
+    mov edi, eax                ; EDI = thread PCB
+
+    ; Save exit status
+    mov ebx, [esp + 4]          ; Exit code
+    mov [edi + PCB_THREAD_EXIT_STATUS], ebx
+
+    ; Check if thread is detached
+    cmp dword [edi + PCB_THREAD_DETACHED], 1
+    je .cleanup_detached
+
+    ; Check if someone is waiting to join
+    mov esi, [edi + PCB_THREAD_JOINER]
+    test esi, esi
+    jz .become_zombie
+
+    ; Wake up the joiner - set its state to READY
+    mov eax, esi
+    call get_pcb
+    test eax, eax
+    jz .become_zombie
+    mov dword [eax + PCB_STATE], PROC_READY
+    jmp .cleanup_thread
+
+.become_zombie:
+    ; No joiner yet - become zombie so join can get exit status
+    mov dword [edi + PCB_STATE], PROC_ZOMBIE
+    dec dword [ready_count]
+    jmp .schedule_next
+
+.cleanup_detached:
+    ; Detached thread - clean up immediately
+.cleanup_thread:
+    ; Mark thread as unused
+    mov dword [edi + PCB_STATE], PROC_UNUSED
+    mov dword [edi + PCB_IS_THREAD], 0
+    mov dword [edi + PCB_MAIN_PROC], 0
+    mov dword [edi + PCB_THREAD_ID], 0
+
+    ; Decrement ready count
+    dec dword [ready_count]
+
+.schedule_next:
+    ; Schedule next process/thread
+    call schedule
+    mov [current_pid], eax
+    call get_pcb
+    test eax, eax
+    jz .halt                    ; No processes left
+
+    ; Switch to next process
+    jmp switch_to_process
+
+.exit_process:
+    ; Not a thread, delegate to process exit
+    mov eax, [esp + 4]          ; Exit code
+    push eax
+    call exit_process
+    ; exit_process doesn't return
+    add esp, 4
+
+.halt:
+    cli
+    hlt
+    jmp .halt
+
+; ============================================================================
+; thread_yield - Yield CPU to another thread/process
+; ============================================================================
+global thread_yield
+thread_yield:
+    ; Save current context and switch
+    call yield
+    ret
+
+; ============================================================================
+; get_thread_id - Get current thread ID
+; Returns: EAX = thread ID (0 for main process)
+; ============================================================================
+global get_thread_id
+get_thread_id:
+    mov eax, [current_pid]
+    call get_pcb
+    test eax, eax
+    jz .not_thread
+    mov eax, [eax + PCB_THREAD_ID]
+    ret
+.not_thread:
+    xor eax, eax
+    ret
+
+; ============================================================================
+; is_thread - Check if current execution context is a thread
+; Returns: EAX = 1 if thread, 0 if main process
+; ============================================================================
+global is_thread
+is_thread:
+    mov eax, [current_pid]
+    call get_pcb
+    test eax, eax
+    jz .not_thread
+    mov eax, [eax + PCB_IS_THREAD]
+    ret
+.not_thread:
+    xor eax, eax
+    ret
+
+; ============================================================================
+; set_tls_base - Set TLS base pointer for current thread
+; Args: [esp+4] = base address
+; Returns: EAX = 0 on success
+; ============================================================================
+global set_tls_base
+set_tls_base:
+    push ebx
+    mov eax, [current_pid]
+    call get_pcb
+    test eax, eax
+    jz .set_tls_fail
+    mov ebx, [esp + 8]          ; Get base address argument
+    mov [eax + PCB_TLS_BASE], ebx
+    xor eax, eax                ; Return 0 = success
+    pop ebx
+    ret
+.set_tls_fail:
+    mov eax, -1
+    pop ebx
+    ret
+
+; ============================================================================
+; get_tls_base - Get TLS base pointer for current thread
+; Returns: EAX = TLS base address (0 if not set)
+; ============================================================================
+global get_tls_base
+get_tls_base:
+    mov eax, [current_pid]
+    call get_pcb
+    test eax, eax
+    jz .get_tls_none
+    mov eax, [eax + PCB_TLS_BASE]
+    ret
+.get_tls_none:
+    xor eax, eax
+    ret
+
+; ============================================================================
+; get_main_process - Get main process PID for current thread
+; Returns: EAX = main process PID (or current PID if not a thread)
+; ============================================================================
+global get_main_process
+get_main_process:
+    mov eax, [current_pid]
+    call get_pcb
+    test eax, eax
+    jz .return_current
+    cmp dword [eax + PCB_IS_THREAD], 1
+    jne .return_current
+    mov eax, [eax + PCB_MAIN_PROC]
+    ret
+.return_current:
+    mov eax, [current_pid]
+    ret
+
+; ============================================================================
+; thread_join - Wait for a thread to exit and get its exit status
+; Input:
+;   [esp+4] = thread PID to wait for
+;   [esp+8] = pointer to store exit status (or 0 if not needed)
+; Returns: EAX = 0 on success, -1 on error
+; ============================================================================
+global thread_join
+thread_join:
+    push ebx
+    push ecx
+    push edx
+    push esi
+    push edi
+
+    ; Get target thread PID
+    mov esi, [esp + 24]         ; Thread PID (esp+4 + 5*4 pushes)
+    mov edi, [esp + 28]         ; Status pointer (esp+8 + 5*4 pushes)
+
+    ; Get target thread PCB
+    mov eax, esi
+    call get_pcb
+    test eax, eax
+    jz .error                   ; Invalid PID
+    mov ebx, eax                ; EBX = target thread PCB
+
+    ; Verify it's a thread
+    cmp dword [ebx + PCB_IS_THREAD], 1
+    jne .error
+
+    ; Check if already joined
+    cmp dword [ebx + PCB_THREAD_JOINED], 1
+    je .error                   ; Already joined
+
+    ; Check if detached
+    cmp dword [ebx + PCB_THREAD_DETACHED], 1
+    je .error                   ; Can't join detached thread
+
+    ; Check thread state
+    mov ecx, [ebx + PCB_STATE]
+    cmp ecx, PROC_ZOMBIE
+    je .already_exited          ; Thread already finished
+
+    cmp ecx, PROC_UNUSED
+    je .error                   ; Thread doesn't exist
+
+    ; Thread is still running - block and wait
+    ; Set ourselves as the joiner
+    mov eax, [current_pid]
+    mov [ebx + PCB_THREAD_JOINER], eax
+
+    ; Block current thread
+    mov eax, [current_pid]
+    call get_pcb
+    test eax, eax
+    jz .error
+    mov dword [eax + PCB_STATE], PROC_BLOCKED
+
+    ; Decrement ready count
+    dec dword [ready_count]
+
+    ; Switch to another thread/process
+    call schedule
+    mov [current_pid], eax
+    call get_pcb
+    test eax, eax
+    jz .error
+
+    ; When we wake up, the thread has exited
+    ; Re-get the target thread PCB
+    mov eax, esi
+    call get_pcb
+    test eax, eax
+    jz .error
+    mov ebx, eax
+
+.already_exited:
+    ; Get exit status
+    mov ecx, [ebx + PCB_THREAD_EXIT_STATUS]
+
+    ; Store exit status if pointer provided
+    test edi, edi
+    jz .no_status
+    mov [edi], ecx
+
+.no_status:
+    ; Mark as joined
+    mov dword [ebx + PCB_THREAD_JOINED], 1
+
+    ; Clean up the thread PCB
+    mov dword [ebx + PCB_STATE], PROC_UNUSED
+    mov dword [ebx + PCB_IS_THREAD], 0
+    mov dword [ebx + PCB_MAIN_PROC], 0
+    mov dword [ebx + PCB_THREAD_ID], 0
+
+    ; Success
+    xor eax, eax
+    jmp .done
+
+.error:
+    mov eax, -1
+
+.done:
+    pop edi
+    pop esi
+    pop edx
+    pop ecx
+    pop ebx
+    ret
+
+; ============================================================================
+; thread_detach - Mark a thread as detached (auto-cleanup on exit)
+; Input: [esp+4] = thread PID to detach
+; Returns: EAX = 0 on success, -1 on error
+; ============================================================================
+global thread_detach
+thread_detach:
+    push ebx
+    push esi
+
+    ; Get target thread PID
+    mov esi, [esp + 12]         ; Thread PID (esp+4 + 2*4 pushes)
+
+    ; Get target thread PCB
+    mov eax, esi
+    call get_pcb
+    test eax, eax
+    jz .error                   ; Invalid PID
+    mov ebx, eax                ; EBX = target thread PCB
+
+    ; Verify it's a thread
+    cmp dword [ebx + PCB_IS_THREAD], 1
+    jne .error
+
+    ; Check if already joined
+    cmp dword [ebx + PCB_THREAD_JOINED], 1
+    je .error                   ; Can't detach after join
+
+    ; Mark as detached
+    mov dword [ebx + PCB_THREAD_DETACHED], 1
+
+    ; Success
+    xor eax, eax
+    jmp .done
+
+.error:
+    mov eax, -1
+
+.done:
+    pop esi
+    pop ebx
+    ret
+
+; ============================================================================
+; switch_to_process - Switch to process with PCB in EAX
+; This is a low-level helper used by thread_exit
+; ============================================================================
+switch_to_process:
+    mov edi, eax                ; EDI = target PCB
+
+    ; Mark as running
+    mov dword [edi + PCB_STATE], PROC_RUNNING
+
+    ; Load page directory
+    mov eax, [edi + PCB_PAGE_DIR]
+    mov cr3, eax
+
+    ; Restore all registers
+    mov eax, [edi + PCB_EAX]
+    mov ebx, [edi + PCB_EBX]
+    mov ecx, [edi + PCB_ECX]
+    mov edx, [edi + PCB_EDX]
+    mov esi, [edi + PCB_ESI]
+    mov ebp, [edi + PCB_EBP]
+    mov esp, [edi + PCB_ESP]
+
+    ; Push EIP and EFLAGS for iret-style return
+    push dword [edi + PCB_EFLAGS]
+    popfd
+
+    ; Load EDI last (we were using it)
+    push dword [edi + PCB_EIP]
+    mov edi, [edi + PCB_EDI]
+
+    ; Jump to process
     ret

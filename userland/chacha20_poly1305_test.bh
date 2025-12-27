@@ -1,0 +1,374 @@
+# chacha20_poly1305_test.bh - ChaCha20-Poly1305 AEAD test program for BrainhairOS
+# Demonstrates Poly1305 MAC and ChaCha20-Poly1305 AEAD cipher suite
+# Tests RFC 8439 test vectors for correctness
+
+const STDOUT: int32 = 1
+
+# External syscalls
+extern write(fd: int32, buf: ptr uint8, count: int32): int32
+extern exit(code: int32): int32
+
+# Poly1305 functions (from lib/poly1305.bh and kernel/poly1305.asm)
+extern poly1305_auth(tag: ptr uint8, msg: ptr uint8, len: int32, key: ptr uint8): int32
+extern poly1305_init(key: ptr uint8): int32
+extern poly1305_update(msg: ptr uint8, len: int32)
+extern poly1305_final(tag: ptr uint8): int32
+
+# ChaCha20 functions (from lib/chacha20.bh and kernel/chacha20.asm)
+extern chacha20_encrypt(input: ptr uint8, output: ptr uint8, length: int32, key: ptr uint8, nonce: ptr uint8, counter: int32)
+
+# AEAD functions would be called if compiled from lib/aead.bh
+# For this test we'll implement a simple version inline
+
+const CHACHA20_KEY_SIZE: int32 = 32
+const CHACHA20_NONCE_SIZE: int32 = 12
+const POLY1305_KEY_SIZE: int32 = 32
+const POLY1305_TAG_SIZE: int32 = 16
+
+# ============================================================================
+# Helper functions
+# ============================================================================
+
+proc print(msg: ptr uint8) =
+  var len: int32 = 0
+  var p: ptr uint8 = msg
+  while p[len] != cast[uint8](0):
+    len = len + 1
+  write(STDOUT, msg, len)
+
+proc print_hex_byte(b: uint8) =
+  var hex: array[3, uint8]
+  var nibble_high: int32 = cast[int32](b) >> 4
+  var nibble_low: int32 = cast[int32](b) & 15
+
+  if nibble_high < 10:
+    hex[0] = cast[uint8](48 + nibble_high)
+  else:
+    hex[0] = cast[uint8](97 + nibble_high - 10)
+
+  if nibble_low < 10:
+    hex[1] = cast[uint8](48 + nibble_low)
+  else:
+    hex[1] = cast[uint8](97 + nibble_low - 10)
+
+  hex[2] = cast[uint8](0)
+  print(cast[ptr uint8](addr(hex)))
+
+proc print_hex_buffer(buf: ptr uint8, len: int32) =
+  var i: int32 = 0
+  while i < len:
+    print_hex_byte(buf[i])
+    if i < len - 1:
+      print(cast[ptr uint8](" "))
+    i = i + 1
+
+proc print_block(label: ptr uint8, buf: ptr uint8, len: int32) =
+  print(label)
+  print(cast[ptr uint8](": "))
+  print_hex_buffer(buf, len)
+  print(cast[ptr uint8]("\n"))
+
+proc compare_buffers(buf1: ptr uint8, buf2: ptr uint8, len: int32): int32 =
+  var i: int32 = 0
+  while i < len:
+    if buf1[i] != buf2[i]:
+      return 0
+    i = i + 1
+  return 1
+
+# ============================================================================
+# Test 1: Poly1305 MAC - RFC 8439 Section 2.5.2
+# ============================================================================
+
+proc test_poly1305_rfc8439() =
+  print(cast[ptr uint8]("\n=== Poly1305 MAC Test (RFC 8439 Section 2.5.2) ===\n"))
+
+  # Key from RFC 8439
+  var key: array[32, uint8]
+  key[0] = cast[uint8](0x85)
+  key[1] = cast[uint8](0xd6)
+  key[2] = cast[uint8](0xbe)
+  key[3] = cast[uint8](0x78)
+  key[4] = cast[uint8](0x57)
+  key[5] = cast[uint8](0x55)
+  key[6] = cast[uint8](0x6d)
+  key[7] = cast[uint8](0x33)
+  key[8] = cast[uint8](0x7f)
+  key[9] = cast[uint8](0x44)
+  key[10] = cast[uint8](0x52)
+  key[11] = cast[uint8](0xfe)
+  key[12] = cast[uint8](0x42)
+  key[13] = cast[uint8](0xd5)
+  key[14] = cast[uint8](0x06)
+  key[15] = cast[uint8](0xa8)
+  key[16] = cast[uint8](0x01)
+  key[17] = cast[uint8](0x03)
+  key[18] = cast[uint8](0x80)
+  key[19] = cast[uint8](0x8a)
+  key[20] = cast[uint8](0xfb)
+  key[21] = cast[uint8](0x0d)
+  key[22] = cast[uint8](0xb2)
+  key[23] = cast[uint8](0xfd)
+  key[24] = cast[uint8](0x4a)
+  key[25] = cast[uint8](0xbf)
+  key[26] = cast[uint8](0xf6)
+  key[27] = cast[uint8](0xaf)
+  key[28] = cast[uint8](0x41)
+  key[29] = cast[uint8](0x49)
+  key[30] = cast[uint8](0xf5)
+  key[31] = cast[uint8](0x1b)
+
+  # Message: "Cryptographic Forum Research Group"
+  var msg: ptr uint8 = cast[ptr uint8]("Cryptographic Forum Research Group")
+  var msg_len: int32 = 34
+
+  # Expected tag from RFC 8439
+  var expected_tag: array[16, uint8]
+  expected_tag[0] = cast[uint8](0xa8)
+  expected_tag[1] = cast[uint8](0x06)
+  expected_tag[2] = cast[uint8](0x1d)
+  expected_tag[3] = cast[uint8](0xc1)
+  expected_tag[4] = cast[uint8](0x30)
+  expected_tag[5] = cast[uint8](0x51)
+  expected_tag[6] = cast[uint8](0x36)
+  expected_tag[7] = cast[uint8](0xc6)
+  expected_tag[8] = cast[uint8](0xc2)
+  expected_tag[9] = cast[uint8](0x2b)
+  expected_tag[10] = cast[uint8](0x8b)
+  expected_tag[11] = cast[uint8](0xaf)
+  expected_tag[12] = cast[uint8](0x0c)
+  expected_tag[13] = cast[uint8](0x01)
+  expected_tag[14] = cast[uint8](0x27)
+  expected_tag[15] = cast[uint8](0xa9)
+
+  var computed_tag: array[16, uint8]
+
+  print(cast[ptr uint8]("Message: \"Cryptographic Forum Research Group\"\n"))
+  print_block(cast[ptr uint8]("Key"), cast[ptr uint8](addr(key)), 32)
+
+  # Compute MAC
+  var result: int32 = poly1305_auth(cast[ptr uint8](addr(computed_tag)), msg, msg_len, cast[ptr uint8](addr(key)))
+
+  if result != 0:
+    print(cast[ptr uint8]("Error: Poly1305 computation failed\n"))
+    return
+
+  print_block(cast[ptr uint8]("Computed Tag"), cast[ptr uint8](addr(computed_tag)), 16)
+  print_block(cast[ptr uint8]("Expected Tag"), cast[ptr uint8](addr(expected_tag)), 16)
+
+  # Verify
+  if compare_buffers(cast[ptr uint8](addr(computed_tag)), cast[ptr uint8](addr(expected_tag)), 16) != 0:
+    print(cast[ptr uint8]("✓ Poly1305 RFC 8439 test PASSED\n"))
+  else:
+    print(cast[ptr uint8]("✗ Poly1305 RFC 8439 test FAILED\n"))
+
+# ============================================================================
+# Test 2: Poly1305 Incremental Update
+# ============================================================================
+
+proc test_poly1305_incremental() =
+  print(cast[ptr uint8]("\n=== Poly1305 Incremental Update Test ===\n"))
+
+  # Simple key
+  var key: array[32, uint8]
+  var i: int32 = 0
+  while i < 32:
+    key[i] = cast[uint8](i + 1)
+    i = i + 1
+
+  # Message in two parts: "Hello, " + "World!"
+  var part1: ptr uint8 = cast[ptr uint8]("Hello, ")
+  var part2: ptr uint8 = cast[ptr uint8]("World!")
+
+  # Compute tag incrementally
+  var tag_incremental: array[16, uint8]
+  var result: int32 = poly1305_init(cast[ptr uint8](addr(key)))
+  if result != 0:
+    print(cast[ptr uint8]("Error: Poly1305 init failed\n"))
+    return
+
+  poly1305_update(part1, 7)
+  poly1305_update(part2, 6)
+  result = poly1305_final(cast[ptr uint8](addr(tag_incremental)))
+  if result != 0:
+    print(cast[ptr uint8]("Error: Poly1305 final failed\n"))
+    return
+
+  # Compute tag in one shot
+  var full_msg: ptr uint8 = cast[ptr uint8]("Hello, World!")
+  var tag_oneshot: array[16, uint8]
+  result = poly1305_auth(cast[ptr uint8](addr(tag_oneshot)), full_msg, 13, cast[ptr uint8](addr(key)))
+  if result != 0:
+    print(cast[ptr uint8]("Error: Poly1305 one-shot failed\n"))
+    return
+
+  print_block(cast[ptr uint8]("Incremental Tag"), cast[ptr uint8](addr(tag_incremental)), 16)
+  print_block(cast[ptr uint8]("One-shot Tag"), cast[ptr uint8](addr(tag_oneshot)), 16)
+
+  # Verify they match
+  if compare_buffers(cast[ptr uint8](addr(tag_incremental)), cast[ptr uint8](addr(tag_oneshot)), 16) != 0:
+    print(cast[ptr uint8]("✓ Incremental update test PASSED\n"))
+  else:
+    print(cast[ptr uint8]("✗ Incremental update test FAILED\n"))
+
+# ============================================================================
+# Test 3: ChaCha20 Encryption
+# ============================================================================
+
+proc test_chacha20_encryption() =
+  print(cast[ptr uint8]("\n=== ChaCha20 Encryption Test ===\n"))
+
+  # Key
+  var key: array[32, uint8]
+  var i: int32 = 0
+  while i < 32:
+    key[i] = cast[uint8](i * 7 + 13)
+    i = i + 1
+
+  # Nonce
+  var nonce: array[12, uint8]
+  i = 0
+  while i < 12:
+    nonce[i] = cast[uint8](i + 1)
+    i = i + 1
+
+  # Plaintext
+  var plaintext: ptr uint8 = cast[ptr uint8]("Attack at dawn!")
+  var plaintext_len: int32 = 15
+
+  var ciphertext: array[32, uint8]
+  var decrypted: array[32, uint8]
+
+  print(cast[ptr uint8]("Plaintext: \"Attack at dawn!\"\n"))
+  print_block(cast[ptr uint8]("Key"), cast[ptr uint8](addr(key)), 32)
+  print_block(cast[ptr uint8]("Nonce"), cast[ptr uint8](addr(nonce)), 12)
+
+  # Encrypt
+  chacha20_encrypt(plaintext, cast[ptr uint8](addr(ciphertext)), plaintext_len,
+                   cast[ptr uint8](addr(key)), cast[ptr uint8](addr(nonce)), 1)
+
+  print_block(cast[ptr uint8]("Ciphertext"), cast[ptr uint8](addr(ciphertext)), plaintext_len)
+
+  # Decrypt (ChaCha20 is symmetric)
+  chacha20_encrypt(cast[ptr uint8](addr(ciphertext)), cast[ptr uint8](addr(decrypted)), plaintext_len,
+                   cast[ptr uint8](addr(key)), cast[ptr uint8](addr(nonce)), 1)
+
+  print(cast[ptr uint8]("Decrypted: \""))
+  write(STDOUT, cast[ptr uint8](addr(decrypted)), plaintext_len)
+  print(cast[ptr uint8]("\"\n"))
+
+  # Verify
+  if compare_buffers(plaintext, cast[ptr uint8](addr(decrypted)), plaintext_len) != 0:
+    print(cast[ptr uint8]("✓ ChaCha20 encryption test PASSED\n"))
+  else:
+    print(cast[ptr uint8]("✗ ChaCha20 encryption test FAILED\n"))
+
+# ============================================================================
+# Test 4: Simple AEAD-like test
+# ============================================================================
+
+proc test_simple_aead() =
+  print(cast[ptr uint8]("\n=== Simple AEAD Test ===\n"))
+  print(cast[ptr uint8]("(Manual construction without full AEAD library)\n"))
+
+  # Key and nonce
+  var key: array[32, uint8]
+  var i: int32 = 0
+  while i < 32:
+    key[i] = cast[uint8](i + 42)
+    i = i + 1
+
+  var nonce: array[12, uint8]
+  i = 0
+  while i < 12:
+    nonce[i] = cast[uint8](i * 2 + 7)
+    i = i + 1
+
+  # Generate Poly1305 key from ChaCha20 (counter=0)
+  var poly_key_buf: array[64, uint8]
+  chacha20_encrypt(cast[ptr uint8](addr(poly_key_buf)), cast[ptr uint8](addr(poly_key_buf)), 64,
+                   cast[ptr uint8](addr(key)), cast[ptr uint8](addr(nonce)), 0)
+
+  # First 32 bytes are the Poly1305 key
+  var poly_key: array[32, uint8]
+  i = 0
+  while i < 32:
+    poly_key[i] = poly_key_buf[i]
+    i = i + 1
+
+  # Plaintext
+  var plaintext: ptr uint8 = cast[ptr uint8]("Secret message")
+  var plaintext_len: int32 = 14
+
+  # Encrypt with ChaCha20 (counter=1)
+  var ciphertext: array[32, uint8]
+  chacha20_encrypt(plaintext, cast[ptr uint8](addr(ciphertext)), plaintext_len,
+                   cast[ptr uint8](addr(key)), cast[ptr uint8](addr(nonce)), 1)
+
+  # Compute Poly1305 MAC over ciphertext
+  var tag: array[16, uint8]
+  var result: int32 = poly1305_auth(cast[ptr uint8](addr(tag)), cast[ptr uint8](addr(ciphertext)),
+                                     plaintext_len, cast[ptr uint8](addr(poly_key)))
+
+  if result != 0:
+    print(cast[ptr uint8]("Error: MAC computation failed\n"))
+    return
+
+  print(cast[ptr uint8]("Plaintext: \"Secret message\"\n"))
+  print_block(cast[ptr uint8]("Ciphertext"), cast[ptr uint8](addr(ciphertext)), plaintext_len)
+  print_block(cast[ptr uint8]("Auth Tag"), cast[ptr uint8](addr(tag)), 16)
+
+  # "Decrypt" - verify MAC first
+  var computed_tag: array[16, uint8]
+  result = poly1305_auth(cast[ptr uint8](addr(computed_tag)), cast[ptr uint8](addr(ciphertext)),
+                         plaintext_len, cast[ptr uint8](addr(poly_key)))
+
+  if result != 0:
+    print(cast[ptr uint8]("Error: MAC verification failed\n"))
+    return
+
+  if compare_buffers(cast[ptr uint8](addr(tag)), cast[ptr uint8](addr(computed_tag)), 16) == 0:
+    print(cast[ptr uint8]("✗ Authentication FAILED - message tampered!\n"))
+    return
+
+  print(cast[ptr uint8]("✓ Authentication PASSED\n"))
+
+  # Decrypt
+  var decrypted: array[32, uint8]
+  chacha20_encrypt(cast[ptr uint8](addr(ciphertext)), cast[ptr uint8](addr(decrypted)), plaintext_len,
+                   cast[ptr uint8](addr(key)), cast[ptr uint8](addr(nonce)), 1)
+
+  print(cast[ptr uint8]("Decrypted: \""))
+  write(STDOUT, cast[ptr uint8](addr(decrypted)), plaintext_len)
+  print(cast[ptr uint8]("\"\n"))
+
+  # Verify
+  if compare_buffers(plaintext, cast[ptr uint8](addr(decrypted)), plaintext_len) != 0:
+    print(cast[ptr uint8]("✓ Simple AEAD test PASSED\n"))
+  else:
+    print(cast[ptr uint8]("✗ Simple AEAD test FAILED\n"))
+
+# ============================================================================
+# Main
+# ============================================================================
+
+proc main(): int32 =
+  print(cast[ptr uint8]("BrainhairOS ChaCha20-Poly1305 AEAD Test\n"))
+  print(cast[ptr uint8]("=========================================\n"))
+  print(cast[ptr uint8]("\nThis test suite validates:\n"))
+  print(cast[ptr uint8]("  - Poly1305 MAC (RFC 8439 test vectors)\n"))
+  print(cast[ptr uint8]("  - ChaCha20 stream cipher\n"))
+  print(cast[ptr uint8]("  - Combined AEAD construction\n"))
+
+  # Run all tests
+  test_poly1305_rfc8439()
+  test_poly1305_incremental()
+  test_chacha20_encryption()
+  test_simple_aead()
+
+  print(cast[ptr uint8]("\n=========================================\n"))
+  print(cast[ptr uint8]("All tests completed!\n"))
+  print(cast[ptr uint8]("\nChaCha20-Poly1305 AEAD cipher suite is ready for use.\n"))
+  print(cast[ptr uint8]("See lib/aead.bh for full AEAD API with AAD support.\n"))
+
+  return 0

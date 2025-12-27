@@ -88,8 +88,20 @@ VFS_OBJ = $(BUILD_DIR)/vfs.o
 SIGNAL_OBJ = $(BUILD_DIR)/signal.o
 DEVFS_OBJ = $(BUILD_DIR)/devfs.o
 TTY_OBJ = $(BUILD_DIR)/tty.o
+VTNEXT_OBJ = $(BUILD_DIR)/vtnext.o
+RNG_OBJ = $(BUILD_DIR)/rng.o
+RTC_OBJ = $(BUILD_DIR)/rtc.o
+SHA256_OBJ = $(BUILD_DIR)/sha256.o
+AES_OBJ = $(BUILD_DIR)/aes.o
+SYNC_OBJ = $(BUILD_DIR)/sync.o
+CHACHA20_OBJ = $(BUILD_DIR)/chacha20.o
+POLY1305_OBJ = $(BUILD_DIR)/poly1305.o
+X25519_OBJ = $(BUILD_DIR)/x25519.o
+FUTEX_OBJ = $(BUILD_DIR)/futex.o
+SHA512_OBJ = $(BUILD_DIR)/sha512.o
+ED25519_OBJ = $(BUILD_DIR)/ed25519.o
 USERLAND_BINS_OBJ = $(BUILD_DIR)/userland_bins.o
-KERNEL_ASM_OBJS = $(SERIAL_OBJ) $(IDT_OBJ) $(ISR_OBJ) $(PAGING_OBJ) $(PROCESS_OBJ) $(IPC_OBJ) $(KEYBOARD_OBJ) $(ELF_OBJ) $(NET_OBJ) $(ATA_OBJ) $(PIPE_OBJ) $(VFS_OBJ) $(SIGNAL_OBJ) $(DEVFS_OBJ) $(TTY_OBJ) $(USERLAND_BINS_OBJ)
+KERNEL_ASM_OBJS = $(SERIAL_OBJ) $(IDT_OBJ) $(ISR_OBJ) $(PAGING_OBJ) $(PROCESS_OBJ) $(IPC_OBJ) $(KEYBOARD_OBJ) $(ELF_OBJ) $(NET_OBJ) $(ATA_OBJ) $(PIPE_OBJ) $(VFS_OBJ) $(SIGNAL_OBJ) $(DEVFS_OBJ) $(TTY_OBJ) $(VTNEXT_OBJ) $(RNG_OBJ) $(RTC_OBJ) $(SHA256_OBJ) $(AES_OBJ) $(SYNC_OBJ) $(CHACHA20_OBJ) $(POLY1305_OBJ) $(X25519_OBJ) $(FUTEX_OBJ) $(SHA512_OBJ) $(ED25519_OBJ) $(USERLAND_BINS_OBJ)
 
 $(SERIAL_OBJ): kernel/serial.asm | $(BUILD_DIR)
 	@echo "Assembling serial driver..."
@@ -151,9 +163,67 @@ $(TTY_OBJ): kernel/tty.asm | $(BUILD_DIR)
 	@echo "Assembling TTY subsystem..."
 	$(AS) $(ASFLAGS_32) kernel/tty.asm -o $(TTY_OBJ)
 
+$(VTNEXT_OBJ): kernel/vtnext.asm | $(BUILD_DIR)
+	@echo "Assembling VTNext graphics..."
+	$(AS) $(ASFLAGS_32) kernel/vtnext.asm -o $(VTNEXT_OBJ)
+
+$(RNG_OBJ): kernel/rng.asm | $(BUILD_DIR)
+	@echo "Assembling RNG subsystem..."
+	$(AS) $(ASFLAGS_32) kernel/rng.asm -o $(RNG_OBJ)
+
+$(SHA256_OBJ): kernel/sha256.asm | $(BUILD_DIR)
+	@echo "Assembling SHA-256 hash..."
+	$(AS) $(ASFLAGS_32) kernel/sha256.asm -o $(SHA256_OBJ)
+
+$(RTC_OBJ): kernel/rtc.asm | $(BUILD_DIR)
+	@echo "Assembling RTC driver..."
+	$(AS) $(ASFLAGS_32) kernel/rtc.asm -o $(RTC_OBJ)
+
+$(AES_OBJ): kernel/aes.asm | $(BUILD_DIR)
+	@echo "Assembling AES encryption..."
+	$(AS) $(ASFLAGS_32) kernel/aes.asm -o $(AES_OBJ)
+
+$(SYNC_OBJ): kernel/sync.asm | $(BUILD_DIR)
+	@echo "Assembling synchronization primitives..."
+	$(AS) $(ASFLAGS_32) kernel/sync.asm -o $(SYNC_OBJ)
+
+$(CHACHA20_OBJ): kernel/chacha20.asm | $(BUILD_DIR)
+	@echo "Assembling ChaCha20 cipher..."
+	$(AS) $(ASFLAGS_32) kernel/chacha20.asm -o $(CHACHA20_OBJ)
+
+$(POLY1305_OBJ): kernel/poly1305.asm | $(BUILD_DIR)
+	@echo "Assembling Poly1305 MAC..."
+	$(AS) $(ASFLAGS_32) kernel/poly1305.asm -o $(POLY1305_OBJ)
+
+$(X25519_OBJ): kernel/x25519.asm | $(BUILD_DIR)
+	@echo "Assembling X25519 key exchange..."
+	$(AS) $(ASFLAGS_32) kernel/x25519.asm -o $(X25519_OBJ)
+
+$(FUTEX_OBJ): kernel/futex.asm | $(BUILD_DIR)
+	@echo "Assembling futex subsystem..."
+	$(AS) $(ASFLAGS_32) kernel/futex.asm -o $(FUTEX_OBJ)
+
+$(SHA512_OBJ): kernel/sha512.asm | $(BUILD_DIR)
+	@echo "Assembling SHA-512 hash..."
+	$(AS) $(ASFLAGS_32) kernel/sha512.asm -o $(SHA512_OBJ)
+
+$(ED25519_OBJ): kernel/ed25519.asm | $(BUILD_DIR)
+	@echo "Assembling Ed25519 signatures..."
+	$(AS) $(ASFLAGS_32) kernel/ed25519.asm -o $(ED25519_OBJ)
+
 # Build webapp binary first, then embed it (before USERLAND_DIR is defined)
 $(BIN_DIR)/webapp: userland/webapp.bh lib/syscalls.o | $(BIN_DIR)
 	@./bin/bhbuild userland/webapp.bh $(BIN_DIR)/webapp
+
+# Build pthread_test binary
+$(BIN_DIR)/pthread_test: userland/pthread_test.bh lib/pthread.bh lib/syscalls.o | $(BIN_DIR)
+	@echo "Building pthread_test..."
+	@./bin/bhbuild userland/pthread_test.bh $(BIN_DIR)/pthread_test
+
+# Build thread_join_test binary (simpler test using low-level API)
+$(BIN_DIR)/thread_join_test: userland/thread_join_test.bh lib/syscalls.o | $(BIN_DIR)
+	@echo "Building thread_join_test..."
+	@./bin/bhbuild userland/thread_join_test.bh $(BIN_DIR)/thread_join_test
 
 $(USERLAND_BINS_OBJ): kernel/userland_bins.asm $(BIN_DIR)/webapp | $(BUILD_DIR)
 	@echo "Embedding userland binaries..."
@@ -227,11 +297,16 @@ brainhair: $(STAGE1_BIN) $(STAGE2_BIN) kernel-brainhair
 
 # ========== MICROKERNEL TARGETS ==========
 
+# Validation script for checking binary memory layout
+VALIDATE_SCRIPT = tools/validate_binary.sh
+
 # Build and run the BrainhairOS microkernel
 .PHONY: microkernel
-microkernel: $(STAGE1_BIN) $(STAGE2_BIN) $(BRAINHAIR_KERNEL_OBJ) $(BOOT_OBJ) $(IDT_OBJ) $(ISR_OBJ) $(PAGING_OBJ) $(PROCESS_OBJ) $(SERIAL_OBJ) $(IPC_OBJ) $(KEYBOARD_OBJ) $(ELF_OBJ) $(NET_OBJ) $(ATA_OBJ) $(PIPE_OBJ) $(VFS_OBJ) $(SIGNAL_OBJ) $(DEVFS_OBJ) $(TTY_OBJ)
+microkernel: $(STAGE1_BIN) $(STAGE2_BIN) $(BRAINHAIR_KERNEL_OBJ) $(BOOT_OBJ) $(IDT_OBJ) $(ISR_OBJ) $(PAGING_OBJ) $(PROCESS_OBJ) $(SERIAL_OBJ) $(IPC_OBJ) $(KEYBOARD_OBJ) $(ELF_OBJ) $(NET_OBJ) $(ATA_OBJ) $(PIPE_OBJ) $(VFS_OBJ) $(SIGNAL_OBJ) $(DEVFS_OBJ) $(TTY_OBJ) $(VTNEXT_OBJ) $(RNG_OBJ) $(RTC_OBJ) $(SHA256_OBJ) $(AES_OBJ) $(SYNC_OBJ) $(CHACHA20_OBJ) $(POLY1305_OBJ) $(X25519_OBJ) $(FUTEX_OBJ) $(SHA512_OBJ) $(ED25519_OBJ) $(USERLAND_BINS_OBJ)
 	@echo "Building BrainhairOS Microkernel..."
-	$(LD) $(LDFLAGS) -o $(BUILD_DIR)/kernel.elf $(BOOT_OBJ) $(SERIAL_OBJ) $(IDT_OBJ) $(ISR_OBJ) $(PAGING_OBJ) $(PROCESS_OBJ) $(IPC_OBJ) $(KEYBOARD_OBJ) $(ELF_OBJ) $(NET_OBJ) $(ATA_OBJ) $(PIPE_OBJ) $(VFS_OBJ) $(SIGNAL_OBJ) $(DEVFS_OBJ) $(TTY_OBJ) $(BRAINHAIR_KERNEL_OBJ)
+	$(LD) $(LDFLAGS) -o $(BUILD_DIR)/kernel.elf $(BOOT_OBJ) $(SERIAL_OBJ) $(IDT_OBJ) $(ISR_OBJ) $(PAGING_OBJ) $(PROCESS_OBJ) $(IPC_OBJ) $(KEYBOARD_OBJ) $(ELF_OBJ) $(NET_OBJ) $(ATA_OBJ) $(PIPE_OBJ) $(VFS_OBJ) $(SIGNAL_OBJ) $(DEVFS_OBJ) $(TTY_OBJ) $(VTNEXT_OBJ) $(RNG_OBJ) $(RTC_OBJ) $(SHA256_OBJ) $(AES_OBJ) $(SYNC_OBJ) $(CHACHA20_OBJ) $(POLY1305_OBJ) $(X25519_OBJ) $(FUTEX_OBJ) $(SHA512_OBJ) $(ED25519_OBJ) $(USERLAND_BINS_OBJ) $(BRAINHAIR_KERNEL_OBJ)
+	@echo "Validating kernel memory layout..."
+	@$(VALIDATE_SCRIPT) $(BUILD_DIR)/kernel.elf
 	objcopy -O binary $(BUILD_DIR)/kernel.elf $(KERNEL_BIN)
 	@echo "  Kernel size: $$(stat -c%s $(KERNEL_BIN)) bytes"
 	dd if=/dev/zero of=$(DISK_IMG) bs=512 count=20480 2>/dev/null
@@ -600,7 +675,7 @@ ARCHIVE_UTILS = $(BIN_DIR)/tar $(BIN_DIR)/cpio $(BIN_DIR)/ar
 MATH_UTILS = $(BIN_DIR)/factor $(BIN_DIR)/bc $(BIN_DIR)/sum $(BIN_DIR)/cksum $(BIN_DIR)/shuf
 
 # Shell
-SHELL_UTILS = $(BIN_DIR)/psh
+SHELL_UTILS = $(BIN_DIR)/bsh
 
 # Terminal and I/O utilities
 
@@ -907,7 +982,7 @@ help:
 # Distribution Targets
 # =============================================================================
 
-.PHONY: distro rootfs initramfs test-qemu
+.PHONY: distro rootfs initramfs test-qemu pthread-test
 
 # Create root filesystem
 rootfs:
@@ -935,6 +1010,11 @@ test-qemu-gui: initramfs
 		-kernel /boot/vmlinuz-$$(uname -r) \
 		-initrd distro/brainhair-full.cpio.gz \
 		-append 'console=tty0 rdinit=/init'
+
+# Build pthread test programs
+pthread-test: $(BIN_DIR)/thread_join_test
+	@echo "thread_join_test built successfully!"
+	@echo "Run it with: ./bin/thread_join_test"
 
 # Full distro build
 distro: userland rootfs initramfs
