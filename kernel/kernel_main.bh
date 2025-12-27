@@ -8840,24 +8840,23 @@ proc parse_mouse_input_with_esc() =
       timeout = timeout + 1
 
   # Check for ]vtn; format
+  # Buffer: ]vtn;command;params  (buf[0]=']', buf[4]=';', buf[5]=command start)
   if i > 6 and buf[0] == 93 and buf[1] == 118:  # ]v
-    # Determine event type: click, move, or up
-    # click has 'k' at position 6, move has 'e' at position 5, up has 'p' at position 4
     var event_type: int32 = 0  # 0=unknown, 1=click, 2=move, 3=up
     var parse_start: int32 = 0
 
-    # Check for "click" (buf[4]='c', buf[5]='l', buf[6]='i', buf[7]='c', buf[8]='k')
-    if buf[4] == 99 and buf[5] == 108 and buf[6] == 105:  # c-l-i
+    # Check for "click" at buf[5..9] = c,l,i,c,k
+    if buf[5] == 99 and buf[6] == 108 and buf[7] == 105:  # c-l-i
       event_type = 1
-      parse_start = 10  # After "click;"
-    # Check for "move" (buf[4]='m', buf[5]='o', buf[6]='v', buf[7]='e')
-    if buf[4] == 109 and buf[5] == 111 and buf[6] == 118:  # m-o-v
+      parse_start = 11  # After "]vtn;click;"
+    # Check for "move" at buf[5..8] = m,o,v,e
+    if buf[5] == 109 and buf[6] == 111 and buf[7] == 118:  # m-o-v
       event_type = 2
-      parse_start = 9  # After "move;"
-    # Check for "up" (buf[4]='u', buf[5]='p')
-    if buf[4] == 117 and buf[5] == 112:  # u-p
+      parse_start = 10  # After "]vtn;move;"
+    # Check for "up" at buf[5..6] = u,p
+    if buf[5] == 117 and buf[6] == 112:  # u-p
       event_type = 3
-      parse_start = 7  # After "up;"
+      parse_start = 8  # After "]vtn;up;"
 
     if event_type > 0:
       # Parse x;y coordinates
@@ -8888,11 +8887,11 @@ proc parse_mouse_input_with_esc() =
         handle_mouse_up(x, y, 1)
         desktop_needs_redraw = 1
 
-    # Check for "keydown" (buf[4]='k', buf[5]='e', buf[6]='y', buf[7]='d')
-    if buf[4] == 107 and buf[5] == 101 and buf[6] == 121 and buf[7] == 100:  # k-e-y-d
-      # Parse keycode after "keydown;"
+    # Check for "keydown" at buf[5..11] = k,e,y,d,o,w,n
+    if buf[5] == 107 and buf[6] == 101 and buf[7] == 121 and buf[8] == 100:  # k-e-y-d
+      # Parse keycode after "]vtn;keydown;"
       var keycode: int32 = 0
-      var j: int32 = 12  # After "keydown;"
+      var j: int32 = 13  # After "]vtn;keydown;"
       while j < i:
         var c: int32 = cast[int32](buf[j])
         if c >= 48 and c <= 57:
@@ -8910,11 +8909,11 @@ proc parse_mouse_input_with_esc() =
       if keycode == 113:  # 'q'
         key_q_held = 1
 
-    # Check for "keyup" (buf[4]='k', buf[5]='e', buf[6]='y', buf[7]='u')
-    if buf[4] == 107 and buf[5] == 101 and buf[6] == 121 and buf[7] == 117:  # k-e-y-u
-      # Parse keycode after "keyup;"
+    # Check for "keyup" at buf[5..9] = k,e,y,u,p
+    if buf[5] == 107 and buf[6] == 101 and buf[7] == 121 and buf[8] == 117:  # k-e-y-u
+      # Parse keycode after "]vtn;keyup;"
       var keycode: int32 = 0
-      var j: int32 = 10  # After "keyup;"
+      var j: int32 = 11  # After "]vtn;keyup;"
       while j < i:
         var c: int32 = cast[int32](buf[j])
         if c >= 48 and c <= 57:

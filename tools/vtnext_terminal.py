@@ -374,7 +374,9 @@ class VTNextTerminal:
                     if event.key == pygame.K_q and (event.mod & pygame.KMOD_CTRL):
                         self.running = False
                     else:
-                        # Track held keys and send key down event
+                        # Send raw key for compatibility with old code paths
+                        self.send_key(event)
+                        # Also send keydown event for smooth control tracking
                         self.keys_held.add(event.key)
                         self.send_key_down(event)
                 elif event.type == pygame.KEYUP:
