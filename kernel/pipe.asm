@@ -19,8 +19,8 @@ FD_ENTRY_SIZE   equ 8
 ; Maximum FDs per process
 MAX_FDS         equ 16
 
-; Maximum number of pipes
-MAX_PIPES       equ 32
+; Maximum number of pipes (reduced from 32 to 8 to save BSS space)
+MAX_PIPES       equ 8
 
 ; Pipe buffer size (1KB)
 PIPE_BUF_SIZE   equ 1024
@@ -67,18 +67,18 @@ section .text
 ; init_pipes - Initialize pipe subsystem
 ; ============================================================================
 global init_pipes
+
 init_pipes:
-    push eax
     push ecx
     push edi
 
-    ; Clear all FD tables
+    ; Clear fd_table (2KB)
     mov edi, fd_table
     mov ecx, (FD_ENTRY_SIZE * MAX_FDS * 16) / 4
     xor eax, eax
     rep stosd
 
-    ; Clear all pipe structures
+    ; Clear pipe_table
     mov edi, pipe_table
     mov ecx, (PIPE_STRUCT_SIZE * MAX_PIPES) / 4
     xor eax, eax
@@ -86,7 +86,7 @@ init_pipes:
 
     pop edi
     pop ecx
-    pop eax
+    xor eax, eax            ; Return 0 (success)
     ret
 
 ; ============================================================================

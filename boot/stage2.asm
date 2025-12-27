@@ -27,10 +27,38 @@ stage2_start:
     int 0x13
     jc disk_error
 
-    ; Part 3: Load another 40KB (80 sectors) to handle large kernels with embedded binaries
+    ; Part 3: Load another 64KB (127 sectors) to handle large kernels
     mov ah, 0x42            ; Extended read
     mov dl, [boot_drive]
     mov si, dap3            ; Disk Address Packet 3
+    int 0x13
+    jc disk_error
+
+    ; Part 4: Load another 64KB (127 sectors)
+    mov ah, 0x42            ; Extended read
+    mov dl, [boot_drive]
+    mov si, dap4            ; Disk Address Packet 4
+    int 0x13
+    jc disk_error
+
+    ; Part 5: Load another 64KB (127 sectors) for embedded VTNext apps
+    mov ah, 0x42            ; Extended read
+    mov dl, [boot_drive]
+    mov si, dap5            ; Disk Address Packet 5
+    int 0x13
+    jc disk_error
+
+    ; Part 6: Load another 64KB (127 sectors) - total ~380KB capacity
+    mov ah, 0x42            ; Extended read
+    mov dl, [boot_drive]
+    mov si, dap6            ; Disk Address Packet 6
+    int 0x13
+    jc disk_error
+
+    ; Part 7: Load final 64KB (127 sectors) - total ~444KB capacity
+    mov ah, 0x42            ; Extended read
+    mov dl, [boot_drive]
+    mov si, dap7            ; Disk Address Packet 7
     int 0x13
     jc disk_error
 
@@ -139,10 +167,49 @@ align 4
 dap3:
     db 16           ; Size of DAP (16 bytes)
     db 0            ; Reserved
-    dw 127          ; Number of sectors to read (127 * 512 = 64KB, total ~190KB)
+    dw 127          ; Number of sectors to read (127 * 512 = 64KB)
     dw 0x0000       ; Offset (0)
     dw 0x2EE0       ; Segment (0x1FE0 + 120*512/16 = 0x2EE0, address 0x2EE00)
     dd 265          ; LBA low 32 bits (sector 18 + 127 + 120 = 265)
+    dd 0            ; LBA high 32 bits
+
+align 4
+dap4:
+    db 16           ; Size of DAP (16 bytes)
+    db 0            ; Reserved
+    dw 127          ; Number of sectors to read (127 * 512 = 64KB)
+    dw 0x0000       ; Offset (0)
+    dw 0x3EC0       ; Segment (address 0x3EC00)
+    dd 392          ; LBA low 32 bits (sector 265 + 127 = 392)
+    dd 0            ; LBA high 32 bits
+
+align 4
+dap5:
+    db 16           ; Size of DAP (16 bytes)
+    db 0            ; Reserved
+    dw 127          ; Number of sectors to read (127 * 512 = 64KB)
+    dw 0x0000       ; Offset (0)
+    dw 0x4EA0       ; Segment (address 0x4EA00)
+    dd 519          ; LBA low 32 bits (sector 392 + 127 = 519)
+    dd 0            ; LBA high 32 bits
+
+align 4
+dap6:
+    db 16           ; Size of DAP (16 bytes)
+    db 0            ; Reserved
+    dw 127          ; Number of sectors to read (127 * 512 = 64KB, total ~380KB)
+    dw 0x0000       ; Offset (0)
+    dw 0x5E80       ; Segment (address 0x5E800)
+    dd 646          ; LBA low 32 bits (sector 519 + 127 = 646)
+    dd 0            ; LBA high 32 bits
+
+dap7:
+    db 16           ; Size of DAP (16 bytes)
+    db 0            ; Reserved
+    dw 127          ; Number of sectors to read (127 * 512 = 64KB, total ~444KB)
+    dw 0x0000       ; Offset (0)
+    dw 0x6E60       ; Segment (address 0x6E600)
+    dd 773          ; LBA low 32 bits (sector 646 + 127 = 773)
     dd 0            ; LBA high 32 bits
 
 msg_kernel_loaded: db 'Kernel loaded from disk', 13, 10, 0
@@ -187,8 +254,9 @@ protected_mode_start:
     mov gs, ax
     mov ss, ax
 
-    ; Set stack (at 640KB, just before VGA memory)
-    mov esp, 0x90000
+    ; Set stack after BSS (BSS ends around 0xB2400, stack at 0xBF000)
+    ; Note: This is in the VGA area but we use VGA differently
+    mov esp, 0xBF000
 
     ; Write "PP" to top-left corner to show we made it to protected mode
     mov dword [0xB8000], 0x0F500F50  ; 'PP' in white on black

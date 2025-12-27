@@ -325,11 +325,9 @@ proc vga_println(s: ptr uint8) =
 # Print string to serial (character by character)
 proc ser_print(s: ptr uint8) =
   var i: int32 = 0
-  var c: int32 = cast[int32](s[i])
-  while c != 0:
-    serial_putchar(c)
+  while cast[int32](s[i]) != 0:
+    serial_putchar(cast[int32](s[i]))
     i = i + 1
-    c = cast[int32](s[i])
 
 # Print string with newline to serial
 proc ser_println(s: ptr uint8) =
@@ -1991,6 +1989,213 @@ proc brfs_write_file(mount_id: int32, ino: int32, offset: int32, buf: ptr uint8,
 # Global active mount for shell commands
 var brfs_active_mount: int32 = -1
 
+# Try to auto-mount or auto-format BrainFS partitions
+# Returns: mount_id or -1 if failed
+# IMPORTANT: Never format device 0 (boot disk) - it contains the bootloader!
+proc brfs_auto_mount(): int32 =
+  ser_println(cast[ptr uint8]("[BRFS] Auto-detecting filesystems..."))
+
+  # First pass: try to mount existing BrainFS on secondary devices/partitions
+  var i: int32 = 1  # Start from 1 to skip boot disk
+  while i < blkdev_count:
+    var dev_type: int32 = blkdev_get_type(i)
+
+    # Only consider partitions (type 5) or full disks (type 1)
+    if dev_type == 5 or dev_type == 1:
+      var sectors: int32 = blkdev_get_sectors(i)
+      # Need at least 64KB for a useful filesystem
+      if sectors >= 128:
+        ser_print(cast[ptr uint8]("[BRFS] Trying "))
+        ser_print(blkdev_get_name(i))
+        ser_println(cast[ptr uint8]("..."))
+
+        var mount_id: int32 = brfs_mount(i)
+        if mount_id >= 0:
+          ser_print(cast[ptr uint8]("[BRFS] Mounted "))
+          ser_print(blkdev_get_name(i))
+          ser_println(cast[ptr uint8](" as root filesystem"))
+          return mount_id
+    i = i + 1
+
+  # Second pass: no BrainFS found, try to format a suitable partition (not boot disk)
+  ser_println(cast[ptr uint8]("[BRFS] No existing filesystem found"))
+  ser_println(cast[ptr uint8]("[BRFS] Looking for partition to format..."))
+
+  i = 1  # Skip device 0 (boot disk with bootloader)
+  while i < blkdev_count:
+    var dev_type: int32 = blkdev_get_type(i)
+
+    # Prefer partitions over raw disks
+    if dev_type == 5:
+      var sectors: int32 = blkdev_get_sectors(i)
+      # Need at least 1MB for a useful filesystem
+      if sectors >= 2048:
+        ser_print(cast[ptr uint8]("[BRFS] Formatting "))
+        ser_print(blkdev_get_name(i))
+        ser_println(cast[ptr uint8]("..."))
+
+        if brfs_mkfs(i) == 0:
+          var mount_id: int32 = brfs_mount(i)
+          if mount_id >= 0:
+            ser_print(cast[ptr uint8]("[BRFS] Created and mounted new filesystem on "))
+            ser_print(blkdev_get_name(i))
+            ser_println(cast[ptr uint8](""))
+            return mount_id
+    i = i + 1
+
+  # Third pass: no partitions, try secondary raw disks (never device 0!)
+  i = 1  # Start from 1 to protect boot disk
+  while i < blkdev_count:
+    var dev_type: int32 = blkdev_get_type(i)
+
+    if dev_type == 1:
+      var sectors: int32 = blkdev_get_sectors(i)
+      if sectors >= 2048:
+        ser_print(cast[ptr uint8]("[BRFS] Formatting secondary disk "))
+        ser_print(blkdev_get_name(i))
+        ser_println(cast[ptr uint8]("..."))
+
+        if brfs_mkfs(i) == 0:
+          var mount_id: int32 = brfs_mount(i)
+          if mount_id >= 0:
+            ser_print(cast[ptr uint8]("[BRFS] Created filesystem on secondary disk "))
+            ser_print(blkdev_get_name(i))
+            ser_println(cast[ptr uint8](""))
+            return mount_id
+    i = i + 1
+
+  ser_println(cast[ptr uint8]("[BRFS] No secondary disk found for filesystem"))
+  ser_println(cast[ptr uint8]("[BRFS] Add a second disk with: qemu ... -hdb data.img"))
+  return -1
+
+# =============================================================================
+# Init System - Reads startup configuration from disk
+# =============================================================================
+
+# Init configuration
+const INIT_MODE_DESKTOP: int32 = 1
+const INIT_MODE_SHELL: int32 = 2
+const INIT_MODE_MULTI: int32 = 3  # Multi-user (shell after desktop exit)
+
+var init_mode: int32 = INIT_MODE_DESKTOP  # Default to desktop
+
+# Check if a file exists on BrainFS
+proc brfs_file_exists(name: ptr uint8): int32 =
+  if brfs_active_mount < 0:
+    return 0
+  var ino: int32 = brfs_lookup(brfs_active_mount, BRFS_ROOT_INODE, name)
+  if ino > 0:
+    return 1
+  return 0
+
+# Read init configuration from /etc/inittab on BrainFS
+# Format: "default:mode" where mode is "desktop", "shell", or "multi"
+proc init_read_config(): int32 =
+  if brfs_active_mount < 0:
+    ser_println(cast[ptr uint8]("[INIT] No filesystem, using default"))
+    return INIT_MODE_DESKTOP
+
+  # First check for /etc directory
+  var etc_ino: int32 = brfs_lookup(brfs_active_mount, BRFS_ROOT_INODE, cast[ptr uint8]("etc"))
+  if etc_ino <= 0:
+    # Create /etc directory
+    ser_println(cast[ptr uint8]("[INIT] Creating /etc..."))
+    etc_ino = brfs_mkdir(brfs_active_mount, BRFS_ROOT_INODE, cast[ptr uint8]("etc"))
+    if etc_ino <= 0:
+      ser_println(cast[ptr uint8]("[INIT] Failed to create /etc"))
+      return INIT_MODE_DESKTOP
+
+  # Look for inittab
+  var inittab_ino: int32 = brfs_lookup(brfs_active_mount, etc_ino, cast[ptr uint8]("inittab"))
+  if inittab_ino <= 0:
+    # No inittab - create default one
+    ser_println(cast[ptr uint8]("[INIT] Creating default /etc/inittab..."))
+    inittab_ino = brfs_create(brfs_active_mount, etc_ino, cast[ptr uint8]("inittab"))
+    if inittab_ino > 0:
+      # Write default config
+      var default_config: ptr uint8 = cast[ptr uint8]("# BrainhairOS Init Configuration\n# Modes: desktop, shell, multi\ndefault:desktop\n")
+      var config_len: int32 = 70
+      discard brfs_write_file(brfs_active_mount, inittab_ino, 0, default_config, config_len)
+    return INIT_MODE_DESKTOP
+
+  # Read inittab
+  var config_buf: array[128, uint8]
+  var bytes: int32 = brfs_read_file(brfs_active_mount, inittab_ino, 0, addr(config_buf[0]), 127)
+  if bytes <= 0:
+    return INIT_MODE_DESKTOP
+
+  config_buf[bytes] = cast[uint8](0)
+  ser_print(cast[ptr uint8]("[INIT] Read /etc/inittab: "))
+  ser_print_int(bytes)
+  ser_println(cast[ptr uint8](" bytes"))
+
+  # Parse config - look for "default:mode"
+  var i: int32 = 0
+  while i < bytes - 8:
+    # Check for "default:"
+    if config_buf[i] == cast[uint8](100):       # 'd'
+      if config_buf[i+1] == cast[uint8](101):   # 'e'
+        if config_buf[i+2] == cast[uint8](102): # 'f'
+          if config_buf[i+3] == cast[uint8](97): # 'a'
+            if config_buf[i+4] == cast[uint8](117): # 'u'
+              if config_buf[i+5] == cast[uint8](108): # 'l'
+                if config_buf[i+6] == cast[uint8](116): # 't'
+                  if config_buf[i+7] == cast[uint8](58):  # ':'
+                    # Found "default:", check mode
+                    var mode_start: int32 = i + 8
+                    if config_buf[mode_start] == cast[uint8](115):  # 's' for shell
+                      ser_println(cast[ptr uint8]("[INIT] Mode: shell"))
+                      return INIT_MODE_SHELL
+                    if config_buf[mode_start] == cast[uint8](109):  # 'm' for multi
+                      ser_println(cast[ptr uint8]("[INIT] Mode: multi"))
+                      return INIT_MODE_MULTI
+                    ser_println(cast[ptr uint8]("[INIT] Mode: desktop"))
+                    return INIT_MODE_DESKTOP
+    i = i + 1
+
+  return INIT_MODE_DESKTOP
+
+# Run the init system
+proc init_run() =
+  ser_println(cast[ptr uint8]("[INIT] BrainhairOS Init System"))
+
+  # Read configuration from disk
+  init_mode = init_read_config()
+
+  # Create some default files on first boot
+  if brfs_active_mount >= 0:
+    # Check if this is first boot (no /home directory)
+    var home_ino: int32 = brfs_lookup(brfs_active_mount, BRFS_ROOT_INODE, cast[ptr uint8]("home"))
+    if home_ino <= 0:
+      ser_println(cast[ptr uint8]("[INIT] First boot - creating directories..."))
+      discard brfs_mkdir(brfs_active_mount, BRFS_ROOT_INODE, cast[ptr uint8]("home"))
+      discard brfs_mkdir(brfs_active_mount, BRFS_ROOT_INODE, cast[ptr uint8]("tmp"))
+      discard brfs_mkdir(brfs_active_mount, BRFS_ROOT_INODE, cast[ptr uint8]("var"))
+      discard brfs_mkdir(brfs_active_mount, BRFS_ROOT_INODE, cast[ptr uint8]("bin"))
+
+      # Create a welcome file
+      var welcome_ino: int32 = brfs_create(brfs_active_mount, BRFS_ROOT_INODE, cast[ptr uint8]("README"))
+      if welcome_ino > 0:
+        var welcome_text: ptr uint8 = cast[ptr uint8]("Welcome to BrainhairOS!\n\nThis filesystem is persistent.\nEdit /etc/inittab to change boot mode.\n")
+        discard brfs_write_file(brfs_active_mount, welcome_ino, 0, welcome_text, 95)
+
+      ser_println(cast[ptr uint8]("[INIT] Created /home, /tmp, /var, /bin, /README"))
+
+  # Execute based on mode
+  if init_mode == INIT_MODE_SHELL:
+    ser_println(cast[ptr uint8]("[INIT] Starting shell..."))
+    shell_main()
+  elif init_mode == INIT_MODE_MULTI:
+    ser_println(cast[ptr uint8]("[INIT] Starting desktop (shell on exit)..."))
+    run_vtn_desktop()
+    ser_println(cast[ptr uint8]("[INIT] Desktop exited, starting shell..."))
+    shell_main()
+  else:
+    ser_println(cast[ptr uint8]("[INIT] Starting desktop..."))
+    run_vtn_desktop()
+    ser_println(cast[ptr uint8]("[INIT] Desktop exited"))
+    shell_main()
+
 # =============================================================================
 # Main Entry Point
 # =============================================================================
@@ -2074,10 +2279,14 @@ proc main() =
   else:
     print_skip(cast[ptr uint8]("No partitions"))
 
-  # Initialize BrainFS
+  # Initialize BrainFS and try to mount a persistent filesystem
   print_pending(cast[ptr uint8]("Initializing BrainFS"))
   brfs_init()
-  print_ok(cast[ptr uint8]("BrainFS ready"))
+  brfs_active_mount = brfs_auto_mount()
+  if brfs_active_mount >= 0:
+    print_ok(cast[ptr uint8]("BrainFS mounted"))
+  else:
+    print_skip(cast[ptr uint8]("BrainFS: no disk filesystem"))
 
   # Initialize scheduler
   print_pending(cast[ptr uint8]("Initializing scheduler"))
@@ -2162,23 +2371,9 @@ proc main() =
   ser_println(cast[ptr uint8](""))
   ser_println(cast[ptr uint8]("Starting kernel shell..."))
 
-  # Auto-start HTTP server for testing (set to 1 to enable)
-  var auto_httpd: int32 = 0  # Disabled
-  if auto_httpd == 1:
-    run_httpd()  # Basic HTTP server on port 80
-
-  # Auto-start userland webapp for testing (set to 1 to enable)
-  var auto_uweb: int32 = 0  # DISABLED - network not working
-  if auto_uweb == 1:
-    run_userland_webapp()
-
-  # Auto-start VTNext Desktop (set to 1 to enable)
-  var auto_desktop: int32 = 1  # ENABLED by default
-  if auto_desktop == 1:
-    run_vtn_desktop()
-
-  # Run simple shell
-  shell_main()
+  # Run init system (reads /etc/inittab from disk)
+  init_run()
+  # init_run() never returns - it runs the appropriate startup mode
 
 # ============================================================================
 # Test Process (runs as a separate process)
@@ -3941,7 +4136,7 @@ proc shell_execute() =
     kprintln(cast[ptr uint8]("  Net:    ping, ifconfig, arp, dns, ntp, httpd, uweb"))
     kprintln(cast[ptr uint8]("  Fun:    banner, hello, spin, guess, countdown"))
     kprintln(cast[ptr uint8]("  Debug:  peek, poke, dump, fill, run, calc"))
-    kprintln(cast[ptr uint8]("  Disk:   mkfs, dmount, dumount, dls, dcat, dwrite, dmkdir, dinfo"))
+    kprintln(cast[ptr uint8]("  Disk:   lsblk, mkfs, mount, lsmnt, dls, dcat, dwrite, dmkdir, dtouch, dinfo"))
     kprintln(cast[ptr uint8]("  User:   id, whoami, groups"))
     kprintln(cast[ptr uint8](""))
     kprintln(cast[ptr uint8]("Shell features:"))
@@ -5935,6 +6130,173 @@ proc shell_execute() =
       i = i + 1
     if found == 0:
       kprintln(cast[ptr uint8]("  (none)"))
+    return
+  # dls [path] - list directory on active BrainFS mount
+  if cmd_buffer[0] == cast[uint8](100):  # 'd'
+    if cmd_buffer[1] == cast[uint8](108):  # 'l'
+      if cmd_buffer[2] == cast[uint8](115):  # 's'
+        if cmd_buffer[3] == cast[uint8](0) or cmd_buffer[3] == cast[uint8](32):  # end or space
+          if brfs_active_mount < 0:
+            kprintln(cast[ptr uint8]("No filesystem mounted"))
+            return
+          var dir_ino: int32 = BRFS_ROOT_INODE
+          # Parse optional path argument
+          if cmd_buffer[3] == cast[uint8](32):
+            var path: ptr uint8 = find_arg(addr(cmd_buffer[0]), 1)
+            if cast[int32](path) != 0:
+              dir_ino = brfs_lookup(brfs_active_mount, BRFS_ROOT_INODE, path)
+              if dir_ino < 0:
+                kprint(cast[ptr uint8]("Directory not found: "))
+                kprintln(path)
+                return
+          # List directory
+          var offset: int32 = 0
+          var entry_ino: int32 = 0
+          var entry_type: int32 = 0
+          var entry_name: array[32, uint8]
+          while offset >= 0:
+            offset = brfs_readdir(brfs_active_mount, dir_ino, offset, addr(entry_ino), addr(entry_name[0]), addr(entry_type))
+            if offset < 0:
+              break
+            if entry_type == 2:
+              vga_set_color(VGA_LIGHT_CYAN, VGA_BLACK)
+              kprint(addr(entry_name[0]))
+              kprintln(cast[ptr uint8]("/"))
+            else:
+              vga_set_color(VGA_WHITE, VGA_BLACK)
+              kprintln(addr(entry_name[0]))
+          vga_set_color(VGA_WHITE, VGA_BLACK)
+          return
+  # dcat <file> - read file from active BrainFS mount
+  if cmd_buffer[0] == cast[uint8](100):  # 'd'
+    if cmd_buffer[1] == cast[uint8](99):  # 'c'
+      if cmd_buffer[2] == cast[uint8](97):  # 'a'
+        if cmd_buffer[3] == cast[uint8](116):  # 't'
+          if cmd_buffer[4] == cast[uint8](32):  # ' '
+            if brfs_active_mount < 0:
+              kprintln(cast[ptr uint8]("No filesystem mounted"))
+              return
+            var file_name: ptr uint8 = find_arg(addr(cmd_buffer[0]), 1)
+            if cast[int32](file_name) == 0:
+              kprintln(cast[ptr uint8]("Usage: dcat <file>"))
+              return
+            var file_ino: int32 = brfs_lookup(brfs_active_mount, BRFS_ROOT_INODE, file_name)
+            if file_ino < 0:
+              kprint(cast[ptr uint8]("File not found: "))
+              kprintln(file_name)
+              return
+            var read_buf: array[256, uint8]
+            var bytes: int32 = brfs_read_file(brfs_active_mount, file_ino, 0, addr(read_buf[0]), 255)
+            if bytes > 0:
+              read_buf[bytes] = cast[uint8](0)
+              kprint(addr(read_buf[0]))
+              if read_buf[bytes - 1] != cast[uint8](10):
+                kprintln(cast[ptr uint8](""))
+            else:
+              kprintln(cast[ptr uint8]("(empty file)"))
+            return
+  # dmkdir <name> - create directory on active BrainFS mount
+  if cmd_buffer[0] == cast[uint8](100):  # 'd'
+    if cmd_buffer[1] == cast[uint8](109):  # 'm'
+      if cmd_buffer[2] == cast[uint8](107):  # 'k'
+        if cmd_buffer[3] == cast[uint8](100):  # 'd'
+          if cmd_buffer[4] == cast[uint8](105):  # 'i'
+            if cmd_buffer[5] == cast[uint8](114):  # 'r'
+              if cmd_buffer[6] == cast[uint8](32):  # ' '
+                if brfs_active_mount < 0:
+                  kprintln(cast[ptr uint8]("No filesystem mounted"))
+                  return
+                var dir_name: ptr uint8 = find_arg(addr(cmd_buffer[0]), 1)
+                if cast[int32](dir_name) == 0:
+                  kprintln(cast[ptr uint8]("Usage: dmkdir <name>"))
+                  return
+                var new_ino: int32 = brfs_mkdir(brfs_active_mount, BRFS_ROOT_INODE, dir_name)
+                if new_ino > 0:
+                  kprint(cast[ptr uint8]("Created directory: "))
+                  kprintln(dir_name)
+                else:
+                  kprint(cast[ptr uint8]("Failed to create directory: "))
+                  kprintln(dir_name)
+                return
+  # dtouch <name> - create file on active BrainFS mount
+  if cmd_buffer[0] == cast[uint8](100):  # 'd'
+    if cmd_buffer[1] == cast[uint8](116):  # 't'
+      if cmd_buffer[2] == cast[uint8](111):  # 'o'
+        if cmd_buffer[3] == cast[uint8](117):  # 'u'
+          if cmd_buffer[4] == cast[uint8](99):  # 'c'
+            if cmd_buffer[5] == cast[uint8](104):  # 'h'
+              if cmd_buffer[6] == cast[uint8](32):  # ' '
+                if brfs_active_mount < 0:
+                  kprintln(cast[ptr uint8]("No filesystem mounted"))
+                  return
+                var file_name: ptr uint8 = find_arg(addr(cmd_buffer[0]), 1)
+                if cast[int32](file_name) == 0:
+                  kprintln(cast[ptr uint8]("Usage: dtouch <name>"))
+                  return
+                var new_ino: int32 = brfs_create(brfs_active_mount, BRFS_ROOT_INODE, file_name)
+                if new_ino > 0:
+                  kprint(cast[ptr uint8]("Created file: "))
+                  kprintln(file_name)
+                else:
+                  kprint(cast[ptr uint8]("Failed to create file: "))
+                  kprintln(file_name)
+                return
+  # dwrite <file> <content> - write to file on active BrainFS mount
+  if cmd_buffer[0] == cast[uint8](100):  # 'd'
+    if cmd_buffer[1] == cast[uint8](119):  # 'w'
+      if cmd_buffer[2] == cast[uint8](114):  # 'r'
+        if cmd_buffer[3] == cast[uint8](105):  # 'i'
+          if cmd_buffer[4] == cast[uint8](116):  # 't'
+            if cmd_buffer[5] == cast[uint8](101):  # 'e'
+              if cmd_buffer[6] == cast[uint8](32):  # ' '
+                if brfs_active_mount < 0:
+                  kprintln(cast[ptr uint8]("No filesystem mounted"))
+                  return
+                var file_name: ptr uint8 = find_arg(addr(cmd_buffer[0]), 1)
+                if cast[int32](file_name) == 0:
+                  kprintln(cast[ptr uint8]("Usage: dwrite <file> <content>"))
+                  return
+                var content: ptr uint8 = find_arg(addr(cmd_buffer[0]), 2)
+                if cast[int32](content) == 0:
+                  kprintln(cast[ptr uint8]("Usage: dwrite <file> <content>"))
+                  return
+                var file_ino: int32 = brfs_lookup(brfs_active_mount, BRFS_ROOT_INODE, file_name)
+                if file_ino < 0:
+                  # Create the file first
+                  file_ino = brfs_create(brfs_active_mount, BRFS_ROOT_INODE, file_name)
+                  if file_ino < 0:
+                    kprintln(cast[ptr uint8]("Failed to create file"))
+                    return
+                var content_len: int32 = fs_strlen(content)
+                var bytes: int32 = brfs_write_file(brfs_active_mount, file_ino, 0, content, content_len)
+                if bytes > 0:
+                  kprint(cast[ptr uint8]("Wrote "))
+                  kprint_dec(bytes)
+                  kprintln(cast[ptr uint8](" bytes"))
+                else:
+                  kprintln(cast[ptr uint8]("Write failed"))
+                return
+  # dinfo - show info about active BrainFS mount
+  if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("dinfo")) == 1:
+    if brfs_active_mount < 0:
+      kprintln(cast[ptr uint8]("No filesystem mounted"))
+      return
+    var m: int32 = brfs_active_mount
+    kprintln(cast[ptr uint8]("Mounted filesystem info:"))
+    kprint(cast[ptr uint8]("  Device: "))
+    kprintln(addr(blkdev_names[brfs_mount_dev[m] * 16]))
+    kprint(cast[ptr uint8]("  Total blocks: "))
+    kprint_dec(brfs_mount_total_blocks[m])
+    kprintln(cast[ptr uint8](""))
+    kprint(cast[ptr uint8]("  Free blocks: "))
+    kprint_dec(brfs_mount_free_blocks[m])
+    kprintln(cast[ptr uint8](""))
+    kprint(cast[ptr uint8]("  Total inodes: "))
+    kprint_dec(brfs_mount_total_inodes[m])
+    kprintln(cast[ptr uint8](""))
+    kprint(cast[ptr uint8]("  Free inodes: "))
+    kprint_dec(brfs_mount_free_inodes[m])
+    kprintln(cast[ptr uint8](""))
     return
   if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("mem")) == 1:
     kprintln(cast[ptr uint8]("Memory Map:"))
@@ -8565,83 +8927,84 @@ proc run_userland_webapp() =
 # A simple graphical desktop with taskbar, clock, and app launcher
 
 var desktop_running: int32 = 0
+var apps_menu_open: int32 = 0  # Is Apps menu popup visible?
 
 proc vtn_send(cmd: ptr uint8) =
-  # Send VTNext escape sequence
+  # Send VTNext escape sequence: ESC ] vtn ; cmd BEL
   serial_putchar(27)   # ESC
   serial_putchar(93)   # ]
-  serial_print(cast[ptr uint8]("vtn;"))
-  serial_print(cmd)
+  ser_print(cast[ptr uint8]("vtn;"))
+  ser_print(cmd)
   serial_putchar(7)    # BEL
 
 proc vtn_clear(r: int32, g: int32, b: int32) =
   serial_putchar(27)
   serial_putchar(93)
-  serial_print(cast[ptr uint8]("vtn;clear;"))
-  serial_print_dec(r)
+  ser_print(cast[ptr uint8]("vtn;clear;"))
+  ser_print_int(r)
   serial_putchar(59)  # ;
-  serial_print_dec(g)
+  ser_print_int(g)
   serial_putchar(59)
-  serial_print_dec(b)
+  ser_print_int(b)
   serial_putchar(59)
-  serial_print(cast[ptr uint8]("255"))
+  ser_print(cast[ptr uint8]("255"))
   serial_putchar(7)
 
 proc vtn_rect(x: int32, y: int32, w: int32, h: int32, r: int32, g: int32, b: int32, filled: int32) =
   serial_putchar(27)
   serial_putchar(93)
-  serial_print(cast[ptr uint8]("vtn;rect;"))
-  serial_print_dec(x)
+  ser_print(cast[ptr uint8]("vtn;rect;"))
+  ser_print_int(x)
   serial_putchar(59)
-  serial_print_dec(y)
-  serial_print(cast[ptr uint8](";1;"))
-  serial_print_dec(w)
+  ser_print_int(y)
+  ser_print(cast[ptr uint8](";1;"))
+  ser_print_int(w)
   serial_putchar(59)
-  serial_print_dec(h)
-  serial_print(cast[ptr uint8](";0;"))
-  serial_print_dec(r)
+  ser_print_int(h)
+  ser_print(cast[ptr uint8](";0;"))
+  ser_print_int(r)
   serial_putchar(59)
-  serial_print_dec(g)
+  ser_print_int(g)
   serial_putchar(59)
-  serial_print_dec(b)
-  serial_print(cast[ptr uint8](";255;"))
-  serial_print_dec(filled)
+  ser_print_int(b)
+  ser_print(cast[ptr uint8](";255;"))
+  ser_print_int(filled)
   serial_putchar(7)
 
 proc vtn_circle(x: int32, y: int32, radius: int32, r: int32, g: int32, b: int32) =
   serial_putchar(27)
   serial_putchar(93)
-  serial_print(cast[ptr uint8]("vtn;circle;"))
-  serial_print_dec(x)
+  ser_print(cast[ptr uint8]("vtn;circle;"))
+  ser_print_int(x)
   serial_putchar(59)
-  serial_print_dec(y)
-  serial_print(cast[ptr uint8](";1;"))
-  serial_print_dec(radius)
+  ser_print_int(y)
+  ser_print(cast[ptr uint8](";1;"))
+  ser_print_int(radius)
   serial_putchar(59)
-  serial_print_dec(r)
+  ser_print_int(r)
   serial_putchar(59)
-  serial_print_dec(g)
+  ser_print_int(g)
   serial_putchar(59)
-  serial_print_dec(b)
-  serial_print(cast[ptr uint8](";255;1"))
+  ser_print_int(b)
+  ser_print(cast[ptr uint8](";255;1"))
   serial_putchar(7)
 
 proc vtn_text(x: int32, y: int32, r: int32, g: int32, b: int32, text: ptr uint8) =
   serial_putchar(27)
   serial_putchar(93)
-  serial_print(cast[ptr uint8]("vtn;text;"))
-  serial_print_dec(x)
+  ser_print(cast[ptr uint8]("vtn;text;"))
+  ser_print_int(x)
   serial_putchar(59)
-  serial_print_dec(y)
-  serial_print(cast[ptr uint8](";1;0;1.0;"))
-  serial_print_dec(r)
+  ser_print_int(y)
+  ser_print(cast[ptr uint8](";1;0;1.0;"))
+  ser_print_int(r)
   serial_putchar(59)
-  serial_print_dec(g)
+  ser_print_int(g)
   serial_putchar(59)
-  serial_print_dec(b)
-  serial_print(cast[ptr uint8](";255;"))
+  ser_print_int(b)
+  ser_print(cast[ptr uint8](";255;"))
   serial_putchar(34)  # "
-  serial_print(text)
+  ser_print(text)
   serial_putchar(34)  # "
   serial_putchar(7)
 
@@ -8662,6 +9025,34 @@ proc desktop_draw_taskbar() =
 
   vtn_rect(240, 724, 70, 40, 50, 55, 65, 1)
   vtn_text(250, 744, 200, 200, 200, cast[ptr uint8]("Pong"))
+
+# Draw Apps menu popup (if open)
+proc desktop_draw_apps_menu() =
+  if apps_menu_open == 0:
+    return
+
+  # Menu background (above Apps button)
+  vtn_rect(4, 520, 140, 196, 50, 55, 65, 1)
+  vtn_rect(6, 522, 136, 192, 35, 40, 50, 1)
+
+  # Menu items
+  vtn_rect(10, 528, 128, 28, 60, 65, 80, 1)
+  vtn_text(18, 544, 255, 255, 255, cast[ptr uint8]("Terminal"))
+
+  vtn_rect(10, 560, 128, 28, 60, 65, 80, 1)
+  vtn_text(18, 576, 255, 255, 255, cast[ptr uint8]("Files"))
+
+  vtn_rect(10, 592, 128, 28, 60, 65, 80, 1)
+  vtn_text(18, 608, 255, 255, 255, cast[ptr uint8]("Demo"))
+
+  vtn_rect(10, 624, 128, 28, 60, 65, 80, 1)
+  vtn_text(18, 640, 255, 255, 255, cast[ptr uint8]("Pong"))
+
+  vtn_rect(10, 656, 128, 28, 60, 65, 80, 1)
+  vtn_text(18, 672, 255, 255, 255, cast[ptr uint8]("Calculator"))
+
+  vtn_rect(10, 688, 128, 28, 60, 65, 80, 1)
+  vtn_text(18, 704, 255, 255, 255, cast[ptr uint8]("Quit"))
 
 proc desktop_draw_icons() =
   # Desktop icons (top-left area)
@@ -8821,6 +9212,309 @@ var key_s_held: int32 = 0
 var key_up_held: int32 = 0
 var key_down_held: int32 = 0
 var key_q_held: int32 = 0
+
+# ============== Terminal State ==============
+# Terminal output buffer - 12 lines of 48 chars each
+var term_lines: array[576, uint8]  # 12 * 48 = 576
+var term_line_count: int32 = 0      # Number of output lines
+var term_cmd: array[50, uint8]      # Current command input
+var term_cmd_len: int32 = 0         # Length of current command
+var term_scroll: int32 = 0          # Scroll position
+var term_active_win: int32 = -1     # Which window is the active terminal
+var term_tmp_buf: array[64, uint8]  # Temp buffer for building strings
+
+# Clear terminal output buffer
+proc term_clear() =
+  var i: int32 = 0
+  while i < 576:
+    term_lines[i] = 0
+    i = i + 1
+  term_line_count = 0
+  term_scroll = 0
+
+# Add a line to terminal output
+proc term_add_line(text: ptr uint8) =
+  # Shift lines up if buffer is full
+  if term_line_count >= 12:
+    var i: int32 = 0
+    while i < 528:  # 11 * 48
+      term_lines[i] = term_lines[i + 48]
+      i = i + 1
+    term_line_count = 11
+
+  # Copy new line to buffer
+  var dst: int32 = term_line_count * 48
+  var j: int32 = 0
+  while j < 47 and text[j] != 0:
+    term_lines[dst + j] = text[j]
+    j = j + 1
+  term_lines[dst + j] = 0
+  term_line_count = term_line_count + 1
+
+# Execute terminal command
+proc term_execute_cmd() =
+  # Echo command to output using global buffer
+  term_tmp_buf[0] = 62  # '>'
+  term_tmp_buf[1] = 32  # ' '
+  var i: int32 = 0
+  while i < term_cmd_len and i < 46:
+    term_tmp_buf[i + 2] = term_cmd[i]
+    i = i + 1
+  term_tmp_buf[i + 2] = 0
+  term_add_line(cast[ptr uint8](term_tmp_buf))
+
+  # Parse and execute command
+  if term_cmd_len == 0:
+    # Empty command
+    discard 0
+
+  # Check for 'help'
+  if term_cmd[0] == 104 and term_cmd[1] == 101 and term_cmd[2] == 108 and term_cmd[3] == 112:
+    term_add_line(cast[ptr uint8]("Commands: help clear echo uptime ps"))
+
+  # Check for 'clear'
+  if term_cmd[0] == 99 and term_cmd[1] == 108 and term_cmd[2] == 101 and term_cmd[3] == 97 and term_cmd[4] == 114:
+    term_clear()
+
+  # Check for 'echo '
+  if term_cmd[0] == 101 and term_cmd[1] == 99 and term_cmd[2] == 104 and term_cmd[3] == 111 and term_cmd[4] == 32:
+    var j: int32 = 5  # Skip 'echo '
+    var k: int32 = 0
+    while j < term_cmd_len and k < 47:
+      term_tmp_buf[k] = term_cmd[j]
+      j = j + 1
+      k = k + 1
+    term_tmp_buf[k] = 0
+    term_add_line(cast[ptr uint8](term_tmp_buf))
+
+  # Check for 'uptime'
+  if term_cmd[0] == 117 and term_cmd[1] == 112 and term_cmd[2] == 116 and term_cmd[3] == 105 and term_cmd[4] == 109 and term_cmd[5] == 101:
+    var ticks: int32 = get_tick_count()
+    var secs: int32 = ticks / 18
+    term_tmp_buf[0] = 85  # U
+    term_tmp_buf[1] = 112  # p
+    term_tmp_buf[2] = 58  # :
+    term_tmp_buf[3] = 32  # space
+    # Convert to string
+    var num: int32 = secs
+    var pos: int32 = 4
+    if num == 0:
+      term_tmp_buf[pos] = 48
+      pos = pos + 1
+    else:
+      # Store digits in reverse order at end of buffer
+      var nd: int32 = 0
+      while num > 0:
+        term_tmp_buf[60 + nd] = cast[uint8](48 + (num % 10))
+        num = num / 10
+        nd = nd + 1
+      while nd > 0:
+        nd = nd - 1
+        term_tmp_buf[pos] = term_tmp_buf[60 + nd]
+        pos = pos + 1
+    term_tmp_buf[pos] = 115  # s
+    pos = pos + 1
+    term_tmp_buf[pos] = 0
+    term_add_line(cast[ptr uint8](term_tmp_buf))
+
+  # Check for 'ps'
+  if term_cmd[0] == 112 and term_cmd[1] == 115 and term_cmd_len == 2:
+    term_add_line(cast[ptr uint8]("PID  NAME"))
+    term_add_line(cast[ptr uint8]("1    kernel"))
+    term_add_line(cast[ptr uint8]("2    desktop"))
+
+  # Clear command buffer
+  term_cmd_len = 0
+  i = 0
+  while i < 50:
+    term_cmd[i] = 0
+    i = i + 1
+
+# Handle terminal keyboard input
+proc term_handle_key(ch: int32) =
+  if ch == 13 or ch == 10:  # Enter
+    term_execute_cmd()
+    desktop_needs_redraw = 1
+  if ch == 8 or ch == 127:  # Backspace
+    if term_cmd_len > 0:
+      term_cmd_len = term_cmd_len - 1
+      term_cmd[term_cmd_len] = 0
+      desktop_needs_redraw = 1
+  # Printable characters (32-126)
+  if ch >= 32 and ch <= 126:
+    if term_cmd_len < 45:
+      term_cmd[term_cmd_len] = cast[uint8](ch)
+      term_cmd_len = term_cmd_len + 1
+      desktop_needs_redraw = 1
+
+# ============== File Manager State ==============
+var fm_current_ino: int32 = 1  # Current directory inode (1 = root)
+var fm_path: array[64, uint8]  # Current path string
+var fm_use_brfs: int32 = 0     # 1 if using BrainFS, 0 if ramdisk
+
+# Initialize file manager - prefer BrainFS if mounted
+proc fm_init() =
+  fm_current_ino = BRFS_ROOT_INODE  # Root inode
+  fm_path[0] = 47  # '/'
+  fm_path[1] = 0
+  if brfs_active_mount >= 0:
+    fm_use_brfs = 1
+  else:
+    fm_use_brfs = 0
+
+# Draw file manager content - uses BrainFS if available, otherwise ramdisk
+proc draw_files_content(wx: int32, wy: int32, ww: int32, wh: int32) =
+  var fx: int32 = wx + 8
+  var fy: int32 = wy + 32
+  var fw: int32 = ww - 16
+  var fh: int32 = wh - 40
+
+  # Background
+  vtn_rect(fx, fy, fw, fh, 30, 32, 38, 1)
+
+  # Path bar
+  vtn_rect(fx, fy, fw, 24, 45, 48, 55, 1)
+  vtn_text(fx + 5, fy + 14, 200, 200, 200, cast[ptr uint8]("Path:"))
+  vtn_text(fx + 50, fy + 14, 150, 200, 255, addr(fm_path[0]))
+
+  # Source indicator (disk or ramdisk)
+  if fm_use_brfs == 1:
+    vtn_text(fx + fw - 80, fy + 14, 100, 200, 100, cast[ptr uint8]("[Disk]"))
+  else:
+    vtn_text(fx + fw - 80, fy + 14, 200, 200, 100, cast[ptr uint8]("[RAM]"))
+
+  # Parent button
+  vtn_rect(fx + 2, fy + 2, 35, 20, 60, 80, 100, 1)
+  vtn_text(fx + 7, fy + 12, 255, 255, 255, cast[ptr uint8](".."))
+
+  # List directory entries
+  var list_y: int32 = fy + 30
+  var row: int32 = 0
+
+  if fm_use_brfs == 1 and brfs_active_mount >= 0:
+    # Use BrainFS (persistent disk filesystem)
+    var offset: int32 = 0
+    var entry_ino: int32 = 0
+    var entry_type: int32 = 0
+    var entry_name: array[32, uint8]
+
+    while offset >= 0 and row < 12:
+      offset = brfs_readdir(brfs_active_mount, fm_current_ino, offset, addr(entry_ino), addr(entry_name[0]), addr(entry_type))
+      if offset < 0:
+        break
+
+      # Row background
+      if row % 2 == 0:
+        vtn_rect(fx + 2, list_y, fw - 4, 22, 38, 42, 50, 1)
+      else:
+        vtn_rect(fx + 2, list_y, fw - 4, 22, 42, 46, 55, 1)
+
+      # Icon/type indicator
+      if entry_type == 2:  # Directory
+        vtn_rect(fx + 6, list_y + 3, 16, 16, 180, 150, 80, 1)
+        vtn_text(fx + 8, list_y + 12, 255, 255, 255, cast[ptr uint8]("D"))
+      else:
+        vtn_rect(fx + 6, list_y + 3, 16, 16, 100, 130, 180, 1)
+        vtn_text(fx + 8, list_y + 12, 255, 255, 255, cast[ptr uint8]("F"))
+
+      vtn_text(fx + 28, list_y + 14, 220, 220, 220, addr(entry_name[0]))
+
+      list_y = list_y + 24
+      row = row + 1
+
+    if row == 0:
+      vtn_text(fx + 10, fy + 50, 150, 150, 150, cast[ptr uint8]("(empty directory)"))
+
+  else:
+    # Use in-memory ramdisk filesystem
+    var blk: int32 = inode_get_block(fm_current_ino, 0)
+    if blk != 0:
+      var dp: ptr uint8 = fs_block_ptr(blk)
+      var off: int32 = 0
+      while off < BLOCK_SIZE and row < 12:
+        var ent_ino: int32 = read32(addr(dp[off]))
+        if ent_ino != 0:
+          var ent_type: int32 = cast[int32](dp[off + 7])
+          var ent_name_len: int32 = cast[int32](dp[off + 6])
+
+          # Row background
+          if row % 2 == 0:
+            vtn_rect(fx + 2, list_y, fw - 4, 22, 38, 42, 50, 1)
+          else:
+            vtn_rect(fx + 2, list_y, fw - 4, 22, 42, 46, 55, 1)
+
+          # Icon/type indicator
+          if ent_type == FT_DIR:
+            vtn_rect(fx + 6, list_y + 3, 16, 16, 180, 150, 80, 1)
+            vtn_text(fx + 8, list_y + 12, 255, 255, 255, cast[ptr uint8]("D"))
+          else:
+            vtn_rect(fx + 6, list_y + 3, 16, 16, 100, 130, 180, 1)
+            vtn_text(fx + 8, list_y + 12, 255, 255, 255, cast[ptr uint8]("F"))
+
+          # Copy filename to temp buffer and display
+          var ni: int32 = 0
+          while ni < ent_name_len and ni < 30:
+            term_tmp_buf[ni] = dp[off + 8 + ni]
+            ni = ni + 1
+          term_tmp_buf[ni] = 0
+          vtn_text(fx + 28, list_y + 14, 220, 220, 220, addr(term_tmp_buf[0]))
+
+          # Size for files
+          if ent_type == FT_FILE:
+            var fsize: int32 = inode_get_size(ent_ino)
+            # Format size
+            if fsize < 1024:
+              term_tmp_buf[0] = 48 + cast[uint8]((fsize / 100) % 10)
+              term_tmp_buf[1] = 48 + cast[uint8]((fsize / 10) % 10)
+              term_tmp_buf[2] = 48 + cast[uint8](fsize % 10)
+              term_tmp_buf[3] = 66  # 'B'
+              term_tmp_buf[4] = 0
+            else:
+              var kb: int32 = fsize / 1024
+              term_tmp_buf[0] = 48 + cast[uint8]((kb / 10) % 10)
+              term_tmp_buf[1] = 48 + cast[uint8](kb % 10)
+              term_tmp_buf[2] = 75  # 'K'
+              term_tmp_buf[3] = 0
+            vtn_text(fx + fw - 45, list_y + 14, 150, 150, 150, addr(term_tmp_buf[0]))
+
+          list_y = list_y + 24
+          row = row + 1
+        off = off + DIRENT_SIZE
+    else:
+      vtn_text(fx + 10, fy + 50, 150, 150, 150, cast[ptr uint8]("(empty directory)"))
+
+# ============== End File Manager ==============
+
+# Draw terminal content in window
+proc draw_terminal_content(wx: int32, wy: int32, ww: int32, wh: int32) =
+  # Terminal area inside window
+  var tx: int32 = wx + 8
+  var ty: int32 = wy + 32
+  var tw: int32 = ww - 16
+  var th: int32 = wh - 40
+
+  # Black background for terminal area
+  vtn_rect(tx, ty, tw, th, 15, 15, 20, 1)
+
+  # Draw output lines
+  var line: int32 = 0
+  var y_pos: int32 = ty + 5
+  while line < term_line_count and line < 10:
+    var line_start: int32 = line * 48
+    vtn_text(tx + 5, y_pos, 100, 255, 100, addr(term_lines[line_start]))
+    y_pos = y_pos + 18
+    line = line + 1
+
+  # Draw input prompt
+  var prompt_y: int32 = ty + th - 22
+  vtn_text(tx + 5, prompt_y, 100, 255, 100, cast[ptr uint8]("$ "))
+  # Draw current command
+  vtn_text(tx + 25, prompt_y, 200, 255, 200, addr(term_cmd[0]))
+  # Draw cursor
+  var cursor_x: int32 = tx + 25 + (term_cmd_len * 8)
+  vtn_rect(cursor_x, prompt_y - 2, 8, 16, 100, 255, 100, 1)
+
+# ============== End Terminal ==============
 
 # Parse VTN input after ESC has been received
 proc parse_mouse_input_with_esc() =
@@ -9056,7 +9750,7 @@ proc win_init() =
 
 # Simple kernel-mode pong game
 proc run_vtn_pong_kernel() =
-  serial_print(cast[ptr uint8]("Starting Pong... press Q to quit\n"))
+  ser_println(cast[ptr uint8]("Starting Pong... press Q to quit"))
   vtn_send(cast[ptr uint8]("input;raw"))
   vtn_send(cast[ptr uint8]("cursor;hide"))
 
@@ -9069,8 +9763,8 @@ proc run_vtn_pong_kernel() =
 
   var ball_x: int32 = 512
   var ball_y: int32 = 384
-  var ball_dx: int32 = 3  # Slower ball
-  var ball_dy: int32 = 2
+  var ball_dx: int32 = 2  # Slow ball for playability
+  var ball_dy: int32 = 1
   var player_y: int32 = 334   # Player paddle (right)
   var ai_y: int32 = 334       # AI paddle (left)
   var player_score: int32 = 0
@@ -9120,9 +9814,9 @@ proc run_vtn_pong_kernel() =
     var ai_center: int32 = ai_y + 50
     if ball_x < 512:  # Only track when ball is on AI's side
       if ball_y < ai_center - 10:
-        ai_y = ai_y - 3
+        ai_y = ai_y - 2
       if ball_y > ai_center + 10:
-        ai_y = ai_y + 3
+        ai_y = ai_y + 2
     # Keep AI paddle in bounds
     if ai_y < 0:
       ai_y = 0
@@ -9146,12 +9840,12 @@ proc run_vtn_pong_kernel() =
       player_score = player_score + 1
       ball_x = 512
       ball_y = 384
-      ball_dx = 3
+      ball_dx = 2
     if ball_x > 1014:
       ai_score = ai_score + 1
       ball_x = 512
       ball_y = 384
-      ball_dx = 0 - 3
+      ball_dx = 0 - 2
 
     # Check for input (parse VTN sequences for keydown/keyup)
     var ch: int32 = serial_getchar()
@@ -9164,11 +9858,11 @@ proc run_vtn_pong_kernel() =
 
     # Move paddle based on held keys (smooth movement)
     if key_w_held == 1 or key_up_held == 1:
-      player_y = player_y - 8
+      player_y = player_y - 4
       if player_y < 0:
         player_y = 0
     if key_s_held == 1 or key_down_held == 1:
-      player_y = player_y + 8
+      player_y = player_y + 4
       if player_y > 668:
         player_y = 668
 
@@ -9194,7 +9888,7 @@ proc draw_welcome_content() =
   vtn_text(x, y + 140, 150, 200, 150, cast[ptr uint8]("Keys: Q=quit D=demo P=pong T=term"))
 
 proc run_vtn_desktop() =
-  serial_print(cast[ptr uint8]("Starting VTNext Desktop...\n"))
+  ser_println(cast[ptr uint8]("Starting VTNext Desktop..."))
 
   # Wait 3 seconds for terminal to connect
   # Timer runs at ~18 ticks per second
@@ -9256,14 +9950,27 @@ proc run_vtn_desktop() =
             vtn_text(wx, wy + 140, 150, 200, 150, cast[ptr uint8]("Q=quit D=demo P=pong T=term"))
           # Draw Terminal window content
           if title[0] == 84:  # 'T' for Terminal
-            var tx: int32 = win_x[wi] + 10
-            var ty: int32 = win_y[wi] + 40
-            vtn_rect(tx, ty, win_w[wi] - 20, win_h[wi] - 50, 20, 20, 30, 1)
-            vtn_text(tx + 5, ty + 5, 100, 255, 100, cast[ptr uint8]("bhos> _"))
+            draw_terminal_content(win_x[wi], win_y[wi], win_w[wi], win_h[wi])
+            # Mark this as active terminal if focused
+            if wi == win_focused:
+              term_active_win = wi
+          # Draw Files window content
+          if title[0] == 70:  # 'F' for Files
+            draw_files_content(win_x[wi], win_y[wi], win_w[wi], win_h[wi])
+          # Draw Calculator window content
+          if title[0] == 67:  # 'C' for Calculator
+            var cx: int32 = win_x[wi] + 10
+            var cy: int32 = win_y[wi] + 40
+            vtn_rect(cx, cy, win_w[wi] - 20, 30, 40, 45, 55, 1)
+            vtn_text(cx + 10, cy + 18, 200, 200, 200, cast[ptr uint8]("0"))
+            vtn_text(cx + 10, cy + 50, 150, 150, 150, cast[ptr uint8]("(Coming soon)"))
         wi = wi + 1
 
       # Draw taskbar (always on top)
       desktop_draw_taskbar()
+
+      # Draw Apps menu popup (if open)
+      desktop_draw_apps_menu()
 
       # Flip buffers to display the frame
       vtn_send(cast[ptr uint8]("present"))
@@ -9275,46 +9982,111 @@ proc run_vtn_desktop() =
     if input_ch == 27:
       # ESC - VTN sequence
       parse_mouse_input_with_esc()
-    if input_ch == 113 or input_ch == 81:
-      # q/Q - quit
-      desktop_running = 0
-    if input_ch == 100 or input_ch == 68:
-      # d/D - demo
-      run_vtn_demo_kernel()
-      vtn_send(cast[ptr uint8]("input;raw"))
-      vtn_send(cast[ptr uint8]("cursor;hide"))
-      needs_redraw = 1
-    if input_ch == 112 or input_ch == 80:
-      # p/P - pong
-      run_vtn_pong_kernel()
-      vtn_send(cast[ptr uint8]("input;raw"))
-      vtn_send(cast[ptr uint8]("cursor;hide"))
-      needs_redraw = 1
-    if input_ch == 116 or input_ch == 84:
-      # t/T - terminal window
-      if win_count < 4:
-        discard win_create(100, 100, 400, 300, cast[ptr uint8]("Terminal"), WIN_CLOSABLE)
+
+    # Check if a terminal window is focused
+    var term_focused: int32 = 0
+    if win_focused >= 0 and win_focused < win_count:
+      var focus_title: ptr uint8 = win_get_title(win_focused)
+      if focus_title[0] == 84:  # 'T' for Terminal
+        term_focused = 1
+
+    # If terminal focused, route keyboard to terminal
+    if term_focused == 1 and input_ch > 0 and input_ch != 27:
+      term_handle_key(input_ch)
+
+    # Desktop shortcuts only when terminal not focused
+    if term_focused == 0:
+      if input_ch == 113 or input_ch == 81:
+        # q/Q - quit
+        desktop_running = 0
+      if input_ch == 100 or input_ch == 68:
+        # d/D - demo
+        run_vtn_demo_kernel()
+        vtn_send(cast[ptr uint8]("input;raw"))
+        vtn_send(cast[ptr uint8]("cursor;hide"))
         needs_redraw = 1
+      if input_ch == 112 or input_ch == 80:
+        # p/P - pong
+        run_vtn_pong_kernel()
+        vtn_send(cast[ptr uint8]("input;raw"))
+        vtn_send(cast[ptr uint8]("cursor;hide"))
+        needs_redraw = 1
+      if input_ch == 116 or input_ch == 84:
+        # t/T - terminal window
+        if win_count < 4:
+          discard win_create(100, 100, 400, 300, cast[ptr uint8]("Terminal"), WIN_CLOSABLE)
+          needs_redraw = 1
 
     # Handle taskbar clicks
     if mouse_clicked == 1:
       mouse_clicked = 0
       needs_redraw = 1  # Redraw after click
 
+      # Handle Apps menu clicks first (if menu is open)
+      if apps_menu_open == 1:
+        var menu_handled: int32 = 0
+        # Terminal menu item
+        if click_in_rect(mouse_click_x, mouse_click_y, 10, 528, 128, 28) == 1:
+          if win_count < 4:
+            discard win_create(100, 100, 400, 300, cast[ptr uint8]("Terminal"), WIN_CLOSABLE)
+          apps_menu_open = 0
+          menu_handled = 1
+        # Files menu item
+        if click_in_rect(mouse_click_x, mouse_click_y, 10, 560, 128, 28) == 1:
+          if win_count < 4:
+            fm_init()  # Reset file manager state
+            discard win_create(120, 120, 500, 400, cast[ptr uint8]("Files"), WIN_CLOSABLE)
+          apps_menu_open = 0
+          menu_handled = 1
+        # Demo menu item
+        if click_in_rect(mouse_click_x, mouse_click_y, 10, 592, 128, 28) == 1:
+          apps_menu_open = 0
+          run_vtn_demo_kernel()
+          vtn_send(cast[ptr uint8]("input;raw"))
+          vtn_send(cast[ptr uint8]("cursor;hide"))
+          menu_handled = 1
+        # Pong menu item
+        if click_in_rect(mouse_click_x, mouse_click_y, 10, 624, 128, 28) == 1:
+          apps_menu_open = 0
+          run_vtn_pong_kernel()
+          vtn_send(cast[ptr uint8]("input;raw"))
+          vtn_send(cast[ptr uint8]("cursor;hide"))
+          menu_handled = 1
+        # Calculator menu item
+        if click_in_rect(mouse_click_x, mouse_click_y, 10, 656, 128, 28) == 1:
+          if win_count < 4:
+            discard win_create(150, 150, 250, 300, cast[ptr uint8]("Calculator"), WIN_CLOSABLE)
+          apps_menu_open = 0
+          menu_handled = 1
+        # Quit menu item
+        if click_in_rect(mouse_click_x, mouse_click_y, 10, 688, 128, 28) == 1:
+          apps_menu_open = 0
+          desktop_running = 0
+          menu_handled = 1
+        # Click outside menu closes it
+        if menu_handled == 0:
+          apps_menu_open = 0
+
+      # Apps button toggles menu
       if click_in_rect(mouse_click_x, mouse_click_y, 4, 724, 80, 40) == 1:
-        # Apps button - just redraw for now
-        discard 0
+        if apps_menu_open == 0:
+          apps_menu_open = 1
+        else:
+          apps_menu_open = 0
       if click_in_rect(mouse_click_x, mouse_click_y, 90, 724, 70, 40) == 1:
         # Term button - open terminal window
         if win_count < 4:
           discard win_create(120 + win_count * 30, 120 + win_count * 30, 400, 300, cast[ptr uint8]("Terminal"), WIN_CLOSABLE)
+        apps_menu_open = 0
         needs_redraw = 1
       if click_in_rect(mouse_click_x, mouse_click_y, 165, 724, 70, 40) == 1:
+        apps_menu_open = 0
         run_vtn_demo_kernel()
         vtn_send(cast[ptr uint8]("input;raw"))
         vtn_send(cast[ptr uint8]("cursor;hide"))
         needs_redraw = 1
       if click_in_rect(mouse_click_x, mouse_click_y, 240, 724, 70, 40) == 1:
+        apps_menu_open = 0
         run_vtn_pong_kernel()
         vtn_send(cast[ptr uint8]("input;raw"))
         vtn_send(cast[ptr uint8]("cursor;hide"))
@@ -9322,11 +10094,11 @@ proc run_vtn_desktop() =
 
   vtn_send(cast[ptr uint8]("cursor;show"))
   vtn_send(cast[ptr uint8]("input;cooked"))
-  serial_print(cast[ptr uint8]("Desktop exited\n"))
+  ser_println(cast[ptr uint8]("Desktop exited"))
 
 # Kernel-mode VTNext demo (uses serial input directly)
 proc run_vtn_demo_kernel() =
-  serial_print(cast[ptr uint8]("Starting VTNext Demo... press Q to quit\n"))
+  ser_println(cast[ptr uint8]("Starting VTNext Demo... press Q to quit"))
 
   # Enable raw input and hide cursor
   vtn_send(cast[ptr uint8]("input;raw"))
@@ -9346,21 +10118,21 @@ proc run_vtn_demo_kernel() =
   vtn_rect(330, 200, 120, 80, 200, 200, 255, 0)
 
   # Circles (orange, lime, cyan)
-  serial_print(cast[ptr uint8]("\x1b]vtn;circle;550;140;1;40;255;150;50;255;1\x07"))
-  serial_print(cast[ptr uint8]("\x1b]vtn;circle;650;140;1;40;150;255;50;255;1\x07"))
-  serial_print(cast[ptr uint8]("\x1b]vtn;circle;750;140;1;40;50;150;255;255;1\x07"))
+  vtn_circle(550, 140, 40, 255, 150, 50)
+  vtn_circle(650, 140, 40, 150, 255, 50)
+  vtn_circle(750, 140, 40, 50, 150, 255)
 
-  # Lines (triangle)
-  serial_print(cast[ptr uint8]("\x1b]vtn;line;50;320;450;320;1;2;255;255;255;255\x07"))
-  serial_print(cast[ptr uint8]("\x1b]vtn;line;50;320;250;450;1;2;255;200;100;255\x07"))
-  serial_print(cast[ptr uint8]("\x1b]vtn;line;450;320;250;450;1;2;100;200;255;255\x07"))
+  # Lines (triangle) - use raw escape sequences for now
+  ser_print(cast[ptr uint8]("\x1b]vtn;line;50;320;450;320;1;2;255;255;255;255\x07"))
+  ser_print(cast[ptr uint8]("\x1b]vtn;line;50;320;250;450;1;2;255;200;100;255\x07"))
+  ser_print(cast[ptr uint8]("\x1b]vtn;line;450;320;250;450;1;2;100;200;255;255\x07"))
 
   # Yellow circle
-  serial_print(cast[ptr uint8]("\x1b]vtn;circle;500;350;1;25;255;255;0;255;1\x07"))
+  vtn_circle(500, 350, 25, 255, 255, 0)
 
-  # Rounded rectangles
-  serial_print(cast[ptr uint8]("\x1b]vtn;rrect;550;400;1;180;100;15;100;150;200;220;1\x07"))
-  serial_print(cast[ptr uint8]("\x1b]vtn;rrect;750;400;1;180;100;15;200;100;150;220;1\x07"))
+  # Rounded rectangles - use raw escape sequences for now
+  ser_print(cast[ptr uint8]("\x1b]vtn;rrect;550;400;1;180;100;15;100;150;200;220;1\x07"))
+  ser_print(cast[ptr uint8]("\x1b]vtn;rrect;750;400;1;180;100;15;200;100;150;220;1\x07"))
 
   # Title
   vtn_text(50, 50, 255, 255, 255, cast[ptr uint8]("VTNext Demo - Press Q to quit"))
@@ -9378,7 +10150,7 @@ proc run_vtn_demo_kernel() =
   # Restore cursor and clear
   vtn_send(cast[ptr uint8]("cursor;show"))
   vtn_send(cast[ptr uint8]("input;cooked"))
-  serial_print(cast[ptr uint8]("Demo exited\n"))
+  ser_println(cast[ptr uint8]("Demo exited"))
 
 # Generic VTNext app runner
 proc run_vtn_app(elf_ptr: int32, elf_size: int32, name: ptr uint8) =
