@@ -112,25 +112,28 @@ serial_available:
     ret
 
 ; ============================================================================
-; Read a character from serial port (blocking)
-; Returns: EAX = character read
+; Read a character from serial port (non-blocking)
+; Returns: EAX = character read, or -1 if no data available
 ; ============================================================================
 global serial_getchar
 serial_getchar:
     push edx
 
-.wait:
-    ; Wait for data to be available
+    ; Check if data is available
     mov dx, 0x3FD           ; Line status register
     in al, dx
     test al, 0x01           ; Check Data Ready bit
-    jz .wait
+    jz .no_data
 
     ; Read character
     mov dx, 0x3F8           ; Data register
     in al, dx
     and eax, 0xFF           ; Clear upper bits
+    pop edx
+    ret
 
+.no_data:
+    mov eax, -1             ; Return -1 if no data
     pop edx
     ret
 

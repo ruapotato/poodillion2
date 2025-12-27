@@ -1,6 +1,9 @@
 # BrainhairOS Microkernel
 # Main kernel entry point - called by boot.asm _start
 
+# Import VTNext graphics renderer
+import "vtnext"
+
 # External assembly functions - Serial
 extern serial_init()
 extern serial_putchar(c: int32)
@@ -132,6 +135,16 @@ extern keyboard_init()
 extern keyboard_read_char(): int32
 extern keyboard_available(): int32
 
+# External assembly functions - VTNext graphics
+extern vtn_init()
+extern vtn_set_fb_info(fb_base: int32, width: int32, height: int32, bpp: int32)
+
+# Multiboot framebuffer info (from boot/multiboot.asm)
+extern multiboot_fb_addr(): int32
+extern multiboot_fb_width(): int32
+extern multiboot_fb_height(): int32
+extern multiboot_fb_bpp(): int32
+
 # External assembly functions - Port I/O
 extern port_outb(port: int32, value: int32)
 extern port_outw(port: int32, value: int32)
@@ -168,7 +181,18 @@ extern ata_get_identify_buffer(): ptr uint8
 # Embedded userland binaries (accessor functions)
 extern get_webapp_bin(): int32
 extern get_webapp_bin_size(): int32
+extern get_vtn_demo_bin(): int32
+extern get_vtn_demo_bin_size(): int32
+extern get_vtn_pong_bin(): int32
+extern get_vtn_pong_bin_size(): int32
+extern get_vtn_edit_bin(): int32
+extern get_vtn_edit_bin_size(): int32
+extern get_vtn_shell_bin(): int32
+extern get_vtn_shell_bin_size(): int32
+extern get_2048_bin(): int32
+extern get_2048_bin_size(): int32
 extern call_entry(entry: int32)
+extern call_entry_with_stack(entry: int32, stack_ptr: int32)
 extern net_memset(dest: int32, val: int32, len: int32)
 extern wait_tick()  # Wait for next interrupt (allows timer to fire)
 
@@ -378,6 +402,29 @@ proc kprint_dec(num: int32) =
     var c: int32 = cast[int32](buf[i])
     vga_putchar(c)
     serial_putchar(c)
+
+# Print a decimal number to serial only (for VTNext protocol)
+proc serial_print_dec(num: int32) =
+  if num == 0:
+    serial_putchar(48)
+    return
+
+  var buf: array[12, uint8]
+  var i: int32 = 0
+  var n: int32 = num
+
+  if n < 0:
+    serial_putchar(45)
+    n = 0 - n
+
+  while n > 0:
+    buf[i] = cast[uint8](48 + (n - ((n / 10) * 10)))
+    n = n / 10
+    i = i + 1
+
+  while i > 0:
+    i = i - 1
+    serial_putchar(cast[int32](buf[i]))
 
 # Print a hex byte (2 digits)
 proc kprint_hex_byte(num: int32) =
@@ -1970,6 +2017,39 @@ proc main() =
   init_paging()
   print_ok(cast[ptr uint8]("Paging enabled (16MB identity mapped)"))
 
+  # Initialize VTNext graphics using multiboot framebuffer info
+  print_pending(cast[ptr uint8]("Initializing VTNext graphics"))
+  vtn_init()
+
+  # Get framebuffer info from multiboot (set by GRUB)
+  var fb_addr: int32 = multiboot_fb_addr()
+  var fb_width: int32 = multiboot_fb_width()
+  var fb_height: int32 = multiboot_fb_height()
+  var fb_bpp: int32 = multiboot_fb_bpp()
+
+  # If no framebuffer from multiboot, use QEMU defaults
+  if fb_addr == 0:
+    fb_addr = 0xE0000000
+    fb_width = 1024
+    fb_height = 768
+    fb_bpp = 32
+
+  # Calculate framebuffer size and map it
+  var fb_size: int32 = fb_width * fb_height * (fb_bpp / 8)
+  var page_addr: int32 = fb_addr
+  var PTE_KERNEL: int32 = 0x03  # Present + R/W
+
+  # Map framebuffer pages (align to page boundary)
+  var fb_end: int32 = fb_addr + fb_size
+  while page_addr < fb_end:
+    discard map_page(page_addr, page_addr, PTE_KERNEL)
+    page_addr = page_addr + 4096
+  flush_tlb()
+
+  # Configure VTNext with framebuffer info
+  vtn_set_fb_info(fb_addr, fb_width, fb_height, fb_bpp)
+  print_ok(cast[ptr uint8]("VTNext graphics ready"))
+
   # Initialize ATA disk driver
   print_pending(cast[ptr uint8]("Initializing ATA"))
   var ata_drives: int32 = ata_init()
@@ -2091,6 +2171,11 @@ proc main() =
   var auto_uweb: int32 = 0  # DISABLED - network not working
   if auto_uweb == 1:
     run_userland_webapp()
+
+  # Auto-start VTNext Desktop (set to 1 to enable)
+  var auto_desktop: int32 = 1  # ENABLED by default
+  if auto_desktop == 1:
+    run_vtn_desktop()
 
   # Run simple shell
   shell_main()
@@ -2952,13 +3037,12 @@ proc fs_init() =
   while i < limit:
     fs_data[i] = cast[uint8](0)
     i = i + 1
-  # For the last part, avoid using 32768 directly - use 32767 + 1
   limit = 32767
   while i < limit:
     fs_data[i] = cast[uint8](0)
     i = i + 1
-  # Clear the last byte
   fs_data[32767] = cast[uint8](0)
+
   # Set up superblock (block 0)
   var sb: ptr uint8 = fs_block_ptr(0)
   write32(addr(sb[0]), 0xBF5F5342)  # Magic "BSFS"
@@ -2987,59 +3071,17 @@ proc fs_init() =
   dir_add_entry(1, cast[ptr uint8]("."), 1, 1, FT_DIR)
   dir_add_entry(1, cast[ptr uint8](".."), 2, 1, FT_DIR)
 
-  # Create standard directories
+  # Create essential directories (limited to avoid stack overflow)
   fs_mkdir(cast[ptr uint8]("/bin"))
   fs_mkdir(cast[ptr uint8]("/etc"))
   fs_mkdir(cast[ptr uint8]("/home"))
   fs_mkdir(cast[ptr uint8]("/tmp"))
-  fs_mkdir(cast[ptr uint8]("/proc"))
-  fs_mkdir(cast[ptr uint8]("/sys"))
   fs_mkdir(cast[ptr uint8]("/dev"))
+  fs_mkdir(cast[ptr uint8]("/proc"))
 
-  # Create /proc entries (virtual, content generated dynamically)
-  fs_create_file(cast[ptr uint8]("/proc/version"), cast[ptr uint8](""), 0)
-  fs_create_file(cast[ptr uint8]("/proc/uptime"), cast[ptr uint8](""), 0)
-  fs_create_file(cast[ptr uint8]("/proc/meminfo"), cast[ptr uint8](""), 0)
-  fs_create_file(cast[ptr uint8]("/proc/cpuinfo"), cast[ptr uint8](""), 0)
-  fs_create_file(cast[ptr uint8]("/proc/filesystems"), cast[ptr uint8](""), 0)
-  fs_create_file(cast[ptr uint8]("/proc/mounts"), cast[ptr uint8](""), 0)
-  fs_create_file(cast[ptr uint8]("/proc/cmdline"), cast[ptr uint8](""), 0)
-
-  # Create /sys hierarchy
-  fs_mkdir(cast[ptr uint8]("/sys/kernel"))
-  fs_create_file(cast[ptr uint8]("/sys/kernel/hostname"), cast[ptr uint8](""), 0)
-  fs_create_file(cast[ptr uint8]("/sys/kernel/version"), cast[ptr uint8](""), 0)
-  fs_create_file(cast[ptr uint8]("/sys/kernel/ostype"), cast[ptr uint8](""), 0)
-
-  # Create /dev entries
-  fs_create_file(cast[ptr uint8]("/dev/null"), cast[ptr uint8](""), 0)
-  fs_create_file(cast[ptr uint8]("/dev/zero"), cast[ptr uint8](""), 0)
-  fs_create_file(cast[ptr uint8]("/dev/random"), cast[ptr uint8](""), 0)
-  fs_create_file(cast[ptr uint8]("/dev/console"), cast[ptr uint8](""), 0)
-  fs_create_file(cast[ptr uint8]("/dev/tty"), cast[ptr uint8](""), 0)
-
-  # Create /bin entries (command info)
-  fs_create_file(cast[ptr uint8]("/bin/ls"), cast[ptr uint8]("List directory contents"), 23)
-  fs_create_file(cast[ptr uint8]("/bin/cat"), cast[ptr uint8]("Concatenate and display files"), 29)
-  fs_create_file(cast[ptr uint8]("/bin/cd"), cast[ptr uint8]("Change directory"), 16)
-  fs_create_file(cast[ptr uint8]("/bin/pwd"), cast[ptr uint8]("Print working directory"), 23)
-  fs_create_file(cast[ptr uint8]("/bin/mkdir"), cast[ptr uint8]("Create directory"), 16)
-  fs_create_file(cast[ptr uint8]("/bin/rm"), cast[ptr uint8]("Remove file"), 11)
-  fs_create_file(cast[ptr uint8]("/bin/cp"), cast[ptr uint8]("Copy file"), 9)
-  fs_create_file(cast[ptr uint8]("/bin/mv"), cast[ptr uint8]("Move/rename file"), 16)
-  fs_create_file(cast[ptr uint8]("/bin/touch"), cast[ptr uint8]("Create empty file"), 17)
-  fs_create_file(cast[ptr uint8]("/bin/echo"), cast[ptr uint8]("Display text"), 12)
-  fs_create_file(cast[ptr uint8]("/bin/ps"), cast[ptr uint8]("List processes"), 14)
-  fs_create_file(cast[ptr uint8]("/bin/df"), cast[ptr uint8]("Disk free space"), 15)
-  fs_create_file(cast[ptr uint8]("/bin/help"), cast[ptr uint8]("Show available commands"), 23)
-
-  # Create some initial files
+  # Create a few essential files
   fs_create_file(cast[ptr uint8]("/etc/hostname"), cast[ptr uint8]("brainhair"), 9)
   fs_create_file(cast[ptr uint8]("/etc/motd"), cast[ptr uint8]("Welcome to BrainhairOS!"), 23)
-  fs_create_file(cast[ptr uint8]("/etc/passwd"), cast[ptr uint8]("root:x:0:0:root:/root:/bin/bsh"), 30)
-  fs_create_file(cast[ptr uint8]("/etc/group"), cast[ptr uint8]("root:x:0:"), 9)
-  fs_create_file(cast[ptr uint8]("/etc/fstab"), cast[ptr uint8]("none / brainhairfs rw 0 0"), 25)
-  fs_create_file(cast[ptr uint8]("/home/readme.txt"), cast[ptr uint8]("Your home directory."), 20)
 
   cwd_inode = 1  # Start in root
 
@@ -4644,6 +4686,25 @@ proc shell_execute() =
   # uweb - userland webapp (ELF binary)
   if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("uweb")) == 1:
     run_userland_webapp()
+    return
+  # VTNext applications
+  if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("desktop")) == 1:
+    run_vtn_desktop()
+    return
+  if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("vtn_demo")) == 1:
+    run_vtn_demo_kernel()
+    return
+  if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("pong")) == 1:
+    run_vtn_app(get_vtn_pong_bin(), get_vtn_pong_bin_size(), cast[ptr uint8]("VTNext Pong"))
+    return
+  if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("edit")) == 1:
+    run_vtn_app(get_vtn_edit_bin(), get_vtn_edit_bin_size(), cast[ptr uint8]("VTNext Editor"))
+    return
+  if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("vtn_shell")) == 1:
+    run_vtn_app(get_vtn_shell_bin(), get_vtn_shell_bin_size(), cast[ptr uint8]("VTNext Shell"))
+    return
+  if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("2048")) == 1:
+    run_vtn_app(get_2048_bin(), get_2048_bin_size(), cast[ptr uint8]("2048 Game"))
     return
   if str_equals(addr(cmd_buffer[0]), cast[ptr uint8]("rand")) == 1:
     # Generate pseudo-random number using tick count and LCG
@@ -8499,6 +8560,717 @@ proc run_userland_webapp() =
   var rh_ptr: ptr int32 = cast[ptr int32](0x0804C560)  # Approximate address of route_handlers
   vga_print_hex(rh_ptr[0])
   kprintln(cast[ptr uint8](""))
+
+# VTNext Desktop Environment
+# A simple graphical desktop with taskbar, clock, and app launcher
+
+var desktop_running: int32 = 0
+
+proc vtn_send(cmd: ptr uint8) =
+  # Send VTNext escape sequence
+  serial_putchar(27)   # ESC
+  serial_putchar(93)   # ]
+  serial_print(cast[ptr uint8]("vtn;"))
+  serial_print(cmd)
+  serial_putchar(7)    # BEL
+
+proc vtn_clear(r: int32, g: int32, b: int32) =
+  serial_putchar(27)
+  serial_putchar(93)
+  serial_print(cast[ptr uint8]("vtn;clear;"))
+  serial_print_dec(r)
+  serial_putchar(59)  # ;
+  serial_print_dec(g)
+  serial_putchar(59)
+  serial_print_dec(b)
+  serial_putchar(59)
+  serial_print(cast[ptr uint8]("255"))
+  serial_putchar(7)
+
+proc vtn_rect(x: int32, y: int32, w: int32, h: int32, r: int32, g: int32, b: int32, filled: int32) =
+  serial_putchar(27)
+  serial_putchar(93)
+  serial_print(cast[ptr uint8]("vtn;rect;"))
+  serial_print_dec(x)
+  serial_putchar(59)
+  serial_print_dec(y)
+  serial_print(cast[ptr uint8](";1;"))
+  serial_print_dec(w)
+  serial_putchar(59)
+  serial_print_dec(h)
+  serial_print(cast[ptr uint8](";0;"))
+  serial_print_dec(r)
+  serial_putchar(59)
+  serial_print_dec(g)
+  serial_putchar(59)
+  serial_print_dec(b)
+  serial_print(cast[ptr uint8](";255;"))
+  serial_print_dec(filled)
+  serial_putchar(7)
+
+proc vtn_circle(x: int32, y: int32, radius: int32, r: int32, g: int32, b: int32) =
+  serial_putchar(27)
+  serial_putchar(93)
+  serial_print(cast[ptr uint8]("vtn;circle;"))
+  serial_print_dec(x)
+  serial_putchar(59)
+  serial_print_dec(y)
+  serial_print(cast[ptr uint8](";1;"))
+  serial_print_dec(radius)
+  serial_putchar(59)
+  serial_print_dec(r)
+  serial_putchar(59)
+  serial_print_dec(g)
+  serial_putchar(59)
+  serial_print_dec(b)
+  serial_print(cast[ptr uint8](";255;1"))
+  serial_putchar(7)
+
+proc vtn_text(x: int32, y: int32, r: int32, g: int32, b: int32, text: ptr uint8) =
+  serial_putchar(27)
+  serial_putchar(93)
+  serial_print(cast[ptr uint8]("vtn;text;"))
+  serial_print_dec(x)
+  serial_putchar(59)
+  serial_print_dec(y)
+  serial_print(cast[ptr uint8](";1;0;1.0;"))
+  serial_print_dec(r)
+  serial_putchar(59)
+  serial_print_dec(g)
+  serial_putchar(59)
+  serial_print_dec(b)
+  serial_print(cast[ptr uint8](";255;"))
+  serial_putchar(34)  # "
+  serial_print(text)
+  serial_putchar(34)  # "
+  serial_putchar(7)
+
+proc desktop_draw_taskbar() =
+  # Taskbar background (bottom of screen)
+  vtn_rect(0, 720, 1024, 48, 40, 44, 52, 1)
+
+  # Start button
+  vtn_rect(4, 724, 80, 40, 60, 120, 200, 1)
+  vtn_text(24, 744, 255, 255, 255, cast[ptr uint8]("Apps"))
+
+  # App buttons
+  vtn_rect(90, 724, 70, 40, 50, 55, 65, 1)
+  vtn_text(100, 744, 200, 200, 200, cast[ptr uint8]("Term"))
+
+  vtn_rect(165, 724, 70, 40, 50, 55, 65, 1)
+  vtn_text(175, 744, 200, 200, 200, cast[ptr uint8]("Demo"))
+
+  vtn_rect(240, 724, 70, 40, 50, 55, 65, 1)
+  vtn_text(250, 744, 200, 200, 200, cast[ptr uint8]("Pong"))
+
+proc desktop_draw_icons() =
+  # Desktop icons (top-left area)
+  # Terminal icon
+  vtn_rect(30, 30, 64, 64, 50, 50, 50, 1)
+  vtn_rect(35, 35, 54, 44, 20, 20, 30, 1)
+  vtn_text(35, 110, 255, 255, 255, cast[ptr uint8]("Terminal"))
+
+  # Files icon
+  vtn_rect(130, 30, 64, 64, 200, 180, 100, 1)
+  vtn_rect(135, 25, 50, 10, 180, 160, 80, 1)
+  vtn_text(140, 110, 255, 255, 255, cast[ptr uint8]("Files"))
+
+  # Settings icon
+  vtn_circle(192, 192, 30, 100, 100, 120)
+  vtn_text(155, 235, 255, 255, 255, cast[ptr uint8]("Settings"))
+
+proc desktop_draw_clock() =
+  # Clock area (top-right)
+  vtn_rect(900, 4, 120, 24, 30, 34, 42, 1)
+  # Just show static time for now
+  vtn_text(910, 16, 200, 200, 200, cast[ptr uint8]("12:00 PM"))
+
+proc desktop_draw_window(x: int32, y: int32, w: int32, h: int32, title: ptr uint8) =
+  # Window background
+  vtn_rect(x, y, w, h, 45, 50, 60, 1)
+  # Title bar
+  vtn_rect(x, y, w, 28, 60, 70, 90, 1)
+  vtn_text(x + 10, y + 14, 255, 255, 255, title)
+  # Close button
+  vtn_rect(x + w - 26, y + 4, 20, 20, 200, 60, 60, 1)
+  vtn_text(x + w - 22, y + 14, 255, 255, 255, cast[ptr uint8]("X"))
+
+# Mouse state
+var mouse_x: int32 = 512
+var mouse_y: int32 = 384
+var mouse_buttons: int32 = 0  # Bit flags: 1=left, 2=middle, 4=right
+var mouse_click_x: int32 = 0
+var mouse_click_y: int32 = 0
+var mouse_clicked: int32 = 0
+
+# Window manager state
+const MAX_WINDOWS: int32 = 16
+const WIN_VISIBLE: int32 = 1
+const WIN_FOCUSED: int32 = 2
+const WIN_CLOSABLE: int32 = 16
+const TITLEBAR_HEIGHT: int32 = 28
+
+var win_x: array[16, int32]
+var win_y: array[16, int32]
+var win_w: array[16, int32]
+var win_h: array[16, int32]
+var win_flags: array[16, int32]
+var win_count: int32 = 0
+var win_focused: int32 = -1
+var win_dragging: int32 = -1
+var drag_offset_x: int32 = 0
+var drag_offset_y: int32 = 0
+
+# Window title pointers (stored separately due to type limitations)
+var win_title_0: ptr uint8 = cast[ptr uint8](0)
+var win_title_1: ptr uint8 = cast[ptr uint8](0)
+var win_title_2: ptr uint8 = cast[ptr uint8](0)
+var win_title_3: ptr uint8 = cast[ptr uint8](0)
+
+# Parse numbers from buffer at position, returns value and updates pos
+proc parse_num_at(buf: ptr uint8, pos: ptr int32, max_pos: int32): int32 =
+  var num: int32 = 0
+  var p: int32 = pos[0]
+  while p < max_pos:
+    var c: int32 = cast[int32](buf[p])
+    if c >= 48 and c <= 57:
+      num = num * 10 + (c - 48)
+      p = p + 1
+    elif c == 59 or c == 7:  # semicolon or BEL
+      p = p + 1
+      break
+    else:
+      p = p + 1
+      break
+  pos[0] = p
+  return num
+
+# Handle mouse down event
+proc handle_mouse_down(x: int32, y: int32, button: int32) =
+  mouse_x = x
+  mouse_y = y
+  if button == 1:
+    mouse_buttons = mouse_buttons | 1
+
+  # Check if clicking on a window titlebar to start drag
+  var i: int32 = win_count - 1  # Check from front to back
+  while i >= 0:
+    if (win_flags[i] & WIN_VISIBLE) != 0:
+      # Check titlebar hit
+      if x >= win_x[i] and x < win_x[i] + win_w[i]:
+        if y >= win_y[i] and y < win_y[i] + TITLEBAR_HEIGHT:
+          # Check close button first
+          if x >= win_x[i] + win_w[i] - 26 and x < win_x[i] + win_w[i] - 6:
+            if y >= win_y[i] + 4 and y < win_y[i] + 24:
+              # Close button clicked - destroy window
+              win_flags[i] = 0
+              win_count = win_count - 1
+              return
+          # Start dragging
+          win_dragging = i
+          drag_offset_x = x - win_x[i]
+          drag_offset_y = y - win_y[i]
+          win_focused = i
+          return
+      # Check window body hit
+      if x >= win_x[i] and x < win_x[i] + win_w[i]:
+        if y >= win_y[i] and y < win_y[i] + win_h[i]:
+          win_focused = i
+          return
+    i = i - 1
+
+  # No window hit - set click for taskbar handling
+  mouse_click_x = x
+  mouse_click_y = y
+  mouse_clicked = 1
+
+# Handle mouse up event
+proc handle_mouse_up(x: int32, y: int32, button: int32) =
+  mouse_x = x
+  mouse_y = y
+  if button == 1:
+    mouse_buttons = mouse_buttons & 0xFFFFFFFE
+    win_dragging = -1
+
+# Handle mouse move event
+proc handle_mouse_move(x: int32, y: int32) =
+  mouse_x = x
+  mouse_y = y
+
+  # If dragging a window, move it
+  if win_dragging >= 0 and win_dragging < win_count:
+    win_x[win_dragging] = x - drag_offset_x
+    win_y[win_dragging] = y - drag_offset_y
+    # Clamp to screen bounds
+    if win_x[win_dragging] < 0:
+      win_x[win_dragging] = 0
+    if win_y[win_dragging] < 0:
+      win_y[win_dragging] = 0
+    if win_x[win_dragging] > 1024 - 100:
+      win_x[win_dragging] = 1024 - 100
+    if win_y[win_dragging] > 768 - 50:
+      win_y[win_dragging] = 768 - 50
+
+# Parse mouse/keyboard input from serial
+# Parse VTN input after ESC has been received
+proc parse_mouse_input_with_esc() =
+  var buf: array[32, uint8]
+  var i: int32 = 0
+  var timeout: int32 = 0
+  var ch: int32 = 0
+  while i < 28 and timeout < 50000:
+    ch = serial_getchar()
+    if ch != -1:
+      buf[i] = cast[uint8](ch)
+      i = i + 1
+      timeout = 0  # Reset timeout when data received
+      if ch == 7:  # BEL - end of sequence
+        break
+    else:
+      timeout = timeout + 1
+
+
+  # Check for ]vtn;click; format
+  if i > 10 and buf[0] == 93 and buf[1] == 118:  # ]v
+    var x: int32 = 0
+    var y: int32 = 0
+    var state: int32 = 0  # 0=before k, 1=reading x, 2=reading y
+    var found_k: int32 = 0
+    var j: int32 = 0
+    while j < i:
+      var c: int32 = cast[int32](buf[j])
+      if found_k == 0:
+        # Looking for 'k' in "click"
+        if c == 107:
+          found_k = 1
+      else:
+        # After 'k', parse ;x;y;button
+        if c >= 48 and c <= 57:  # digit
+          if state == 1:
+            x = x * 10 + (c - 48)
+          if state == 2:
+            y = y * 10 + (c - 48)
+        if c == 59:  # semicolon
+          state = state + 1
+          if state > 2:
+            j = i  # exit loop
+      j = j + 1
+
+    if x > 0 or y > 0:
+      handle_mouse_down(x, y, 1)
+
+proc parse_mouse_input() =
+  var ch: int32 = serial_getchar()
+  if ch == -1:
+    return
+
+  # Check for ESC (start of VTN input)
+  if ch == 27:
+    parse_mouse_input_with_esc()
+  elif ch == 113 or ch == 81:  # q/Q
+    desktop_running = 0
+  elif ch == 100 or ch == 68:  # d/D
+    run_vtn_demo_kernel()
+    vtn_send(cast[ptr uint8]("input;raw"))
+    vtn_send(cast[ptr uint8]("cursor;hide"))
+  elif ch == 112 or ch == 80:  # p/P
+    run_vtn_pong_kernel()
+    vtn_send(cast[ptr uint8]("input;raw"))
+    vtn_send(cast[ptr uint8]("cursor;hide"))
+  elif ch == 116 or ch == 84:  # t/T - launch terminal
+    if win_count < 4:
+      discard win_create(100, 100, 300, 200, cast[ptr uint8]("Terminal"), WIN_CLOSABLE)
+
+# Check if click is within a rectangle
+proc click_in_rect(cx: int32, cy: int32, x: int32, y: int32, w: int32, h: int32): int32 =
+  if cx >= x and cx < x + w and cy >= y and cy < y + h:
+    return 1
+  return 0
+
+# ============== Window Manager ==============
+
+# Get window title by index
+proc win_get_title(idx: int32): ptr uint8 =
+  if idx == 0:
+    return win_title_0
+  if idx == 1:
+    return win_title_1
+  if idx == 2:
+    return win_title_2
+  if idx == 3:
+    return win_title_3
+  return cast[ptr uint8](0)
+
+# Set window title by index
+proc win_set_title(idx: int32, title: ptr uint8) =
+  if idx == 0:
+    win_title_0 = title
+  if idx == 1:
+    win_title_1 = title
+  if idx == 2:
+    win_title_2 = title
+  if idx == 3:
+    win_title_3 = title
+
+# Create a new window, returns window index or -1
+proc win_create(x: int32, y: int32, w: int32, h: int32, title: ptr uint8, flags: int32): int32 =
+  if win_count >= MAX_WINDOWS:
+    return -1
+  var idx: int32 = win_count
+  win_x[idx] = x
+  win_y[idx] = y
+  win_w[idx] = w
+  win_h[idx] = h
+  win_flags[idx] = flags | WIN_VISIBLE
+  win_set_title(idx, title)
+  win_count = win_count + 1
+  win_focused = idx
+  return idx
+
+# Draw a single window
+proc win_draw(idx: int32) =
+  if idx < 0 or idx >= win_count:
+    return
+  if (win_flags[idx] & WIN_VISIBLE) == 0:
+    return
+
+  var x: int32 = win_x[idx]
+  var y: int32 = win_y[idx]
+  var w: int32 = win_w[idx]
+  var h: int32 = win_h[idx]
+  var title: ptr uint8 = win_get_title(idx)
+
+  # Window body (dark)
+  vtn_rect(x, y, w, h, 45, 50, 60, 1)
+
+  # Title bar (lighter if focused)
+  if idx == win_focused:
+    vtn_rect(x, y, w, TITLEBAR_HEIGHT, 70, 100, 150, 1)
+  else:
+    vtn_rect(x, y, w, TITLEBAR_HEIGHT, 50, 60, 75, 1)
+
+  # Title text
+  if title != cast[ptr uint8](0):
+    vtn_text(x + 10, y + 14, 255, 255, 255, title)
+
+  # Close button (if closable)
+  if (win_flags[idx] & WIN_CLOSABLE) != 0:
+    vtn_rect(x + w - 26, y + 4, 20, 20, 200, 60, 60, 1)
+    vtn_text(x + w - 22, y + 14, 255, 255, 255, cast[ptr uint8]("X"))
+
+# Draw all windows (back to front)
+proc win_draw_all() =
+  var i: int32 = 0
+  while i < win_count:
+    win_draw(i)
+    i = i + 1
+
+# Initialize window manager
+proc win_init() =
+  # Explicitly zero all window arrays
+  var i: int32 = 0
+  while i < 16:
+    win_x[i] = 0
+    win_y[i] = 0
+    win_w[i] = 0
+    win_h[i] = 0
+    win_flags[i] = 0
+    i = i + 1
+  win_count = 0
+  win_focused = -1
+  win_dragging = -1
+
+# ============== End Window Manager ==============
+
+# Simple kernel-mode pong game
+proc run_vtn_pong_kernel() =
+  serial_print(cast[ptr uint8]("Starting Pong... press Q to quit\n"))
+  vtn_send(cast[ptr uint8]("input;raw"))
+  vtn_send(cast[ptr uint8]("cursor;hide"))
+
+  var ball_x: int32 = 512
+  var ball_y: int32 = 384
+  var ball_dx: int32 = 5
+  var ball_dy: int32 = 3
+  var paddle_y: int32 = 334
+  var score: int32 = 0
+  var running: int32 = 1
+
+  while running != 0:
+    # Clear
+    vtn_clear(0, 20, 40)
+
+    # Draw paddle (right side)
+    vtn_rect(950, paddle_y, 20, 100, 200, 200, 200, 1)
+
+    # Draw ball
+    vtn_circle(ball_x, ball_y, 15, 255, 255, 100)
+
+    # Draw score
+    vtn_text(50, 30, 255, 255, 255, cast[ptr uint8]("Pong - W/S to move, Q to quit"))
+
+    # Present frame
+    vtn_send(cast[ptr uint8]("present"))
+
+    # Move ball
+    ball_x = ball_x + ball_dx
+    ball_y = ball_y + ball_dy
+
+    # Bounce off walls
+    if ball_y < 20 or ball_y > 748:
+      ball_dy = 0 - ball_dy
+    if ball_x < 20:
+      ball_dx = 0 - ball_dx
+
+    # Check paddle collision
+    if ball_x > 940 and ball_x < 980:
+      if ball_y > paddle_y and ball_y < paddle_y + 100:
+        ball_dx = 0 - ball_dx
+        score = score + 1
+
+    # Ball out of bounds - reset
+    if ball_x > 1000:
+      ball_x = 512
+      ball_y = 384
+
+    # Check for input
+    var ch: int32 = serial_getchar()
+    if ch == 113 or ch == 81:  # q/Q
+      running = 0
+    if ch == 119 or ch == 87 or ch == 27:  # w/W or up arrow (ESC[A)
+      if ch == 27:
+        discard serial_getchar()  # [
+        discard serial_getchar()  # A
+      paddle_y = paddle_y - 30
+      if paddle_y < 0:
+        paddle_y = 0
+    if ch == 115 or ch == 83:  # s/S or down
+      paddle_y = paddle_y + 30
+      if paddle_y > 668:
+        paddle_y = 668
+
+    # Frame rate limiter (~15-20 fps)
+    var delay: int32 = 0
+    while delay < 100000:
+      delay = delay + 1
+
+  vtn_send(cast[ptr uint8]("cursor;show"))
+  vtn_send(cast[ptr uint8]("input;cooked"))
+
+# Draw welcome window content
+proc draw_welcome_content() =
+  if win_count == 0:
+    return
+  # Draw in first window (Welcome)
+  var x: int32 = win_x[0] + 20
+  var y: int32 = win_y[0] + 50
+  vtn_text(x, y, 200, 200, 200, cast[ptr uint8]("Welcome to BrainhairOS!"))
+  vtn_text(x, y + 30, 180, 180, 180, cast[ptr uint8]("VTNext Desktop Environment"))
+  vtn_text(x, y + 70, 150, 150, 150, cast[ptr uint8]("Drag windows by titlebar"))
+  vtn_text(x, y + 100, 150, 150, 150, cast[ptr uint8]("Click X to close"))
+  vtn_text(x, y + 140, 150, 200, 150, cast[ptr uint8]("Keys: Q=quit D=demo P=pong T=term"))
+
+proc run_vtn_desktop() =
+  serial_print(cast[ptr uint8]("Starting VTNext Desktop...\n"))
+
+  # Wait 3 seconds for terminal to connect
+  # Timer runs at ~18 ticks per second
+  var start_tick: int32 = get_tick_count()
+  while (get_tick_count() - start_tick) < 54:  # ~3 seconds
+    discard 0
+
+  vtn_send(cast[ptr uint8]("input;raw"))
+  vtn_send(cast[ptr uint8]("cursor;hide"))
+
+  # Initialize window manager
+  win_init()
+
+  # Create welcome window
+  discard win_create(300, 150, 420, 280, cast[ptr uint8]("Welcome"), WIN_CLOSABLE)
+
+  desktop_running = 1
+  mouse_clicked = 0
+  mouse_x = 512
+  mouse_y = 384
+
+  # Draw initial desktop (once)
+  var needs_redraw: int32 = 1
+
+  while desktop_running != 0:
+    # Only redraw when needed
+    if needs_redraw == 1:
+      needs_redraw = 0
+
+      # Draw background
+      vtn_clear(25, 35, 55)
+
+      # Draw desktop elements
+      desktop_draw_icons()
+      desktop_draw_clock()
+
+      # Draw test window
+      vtn_rect(300, 150, 420, 280, 45, 50, 60, 1)  # Window body
+      vtn_rect(300, 150, 420, 28, 70, 100, 150, 1)  # Titlebar
+      vtn_rect(694, 154, 20, 20, 200, 60, 60, 1)   # Close button
+      vtn_text(700, 164, 255, 255, 255, cast[ptr uint8]("X"))
+      vtn_text(310, 164, 255, 255, 255, cast[ptr uint8]("Welcome"))
+
+      # Welcome content
+      vtn_text(320, 200, 200, 200, 200, cast[ptr uint8]("Welcome to BrainhairOS!"))
+      vtn_text(320, 230, 180, 180, 180, cast[ptr uint8]("VTNext Desktop Environment"))
+      vtn_text(320, 270, 150, 150, 150, cast[ptr uint8]("Click taskbar buttons below"))
+      vtn_text(320, 300, 150, 200, 150, cast[ptr uint8]("Q=quit D=demo P=pong"))
+
+      # Draw taskbar (always on top)
+      desktop_draw_taskbar()
+
+      # Flip buffers to display the frame
+      vtn_send(cast[ptr uint8]("present"))
+
+    # Process input events
+    var input_ch: int32 = serial_getchar()
+
+    # Handle input using separate ifs (workaround for elif bug)
+    if input_ch == 27:
+      # ESC - VTN sequence
+      parse_mouse_input_with_esc()
+    if input_ch == 113 or input_ch == 81:
+      # q/Q - quit
+      desktop_running = 0
+    if input_ch == 100 or input_ch == 68:
+      # d/D - demo
+      run_vtn_demo_kernel()
+      vtn_send(cast[ptr uint8]("input;raw"))
+      vtn_send(cast[ptr uint8]("cursor;hide"))
+      needs_redraw = 1
+    if input_ch == 112 or input_ch == 80:
+      # p/P - pong
+      run_vtn_pong_kernel()
+      vtn_send(cast[ptr uint8]("input;raw"))
+      vtn_send(cast[ptr uint8]("cursor;hide"))
+      needs_redraw = 1
+
+    # Handle taskbar clicks
+    if mouse_clicked == 1:
+      mouse_clicked = 0
+      needs_redraw = 1  # Redraw after click
+
+      if click_in_rect(mouse_click_x, mouse_click_y, 4, 724, 80, 40) == 1:
+        # Apps button - just redraw for now
+        discard 0
+      if click_in_rect(mouse_click_x, mouse_click_y, 165, 724, 70, 40) == 1:
+        run_vtn_demo_kernel()
+        vtn_send(cast[ptr uint8]("input;raw"))
+        vtn_send(cast[ptr uint8]("cursor;hide"))
+        needs_redraw = 1
+      if click_in_rect(mouse_click_x, mouse_click_y, 240, 724, 70, 40) == 1:
+        run_vtn_pong_kernel()
+        vtn_send(cast[ptr uint8]("input;raw"))
+        vtn_send(cast[ptr uint8]("cursor;hide"))
+        needs_redraw = 1
+
+  vtn_send(cast[ptr uint8]("cursor;show"))
+  vtn_send(cast[ptr uint8]("input;cooked"))
+  serial_print(cast[ptr uint8]("Desktop exited\n"))
+
+# Kernel-mode VTNext demo (uses serial input directly)
+proc run_vtn_demo_kernel() =
+  serial_print(cast[ptr uint8]("Starting VTNext Demo... press Q to quit\n"))
+
+  # Enable raw input and hide cursor
+  vtn_send(cast[ptr uint8]("input;raw"))
+  vtn_send(cast[ptr uint8]("cursor;hide"))
+
+  # Draw demo scene ONCE
+  vtn_clear(30, 40, 60)
+
+  # Filled rectangles (red, green, blue)
+  vtn_rect(50, 100, 120, 80, 255, 100, 100, 1)
+  vtn_rect(190, 100, 120, 80, 100, 255, 100, 1)
+  vtn_rect(330, 100, 120, 80, 100, 100, 255, 1)
+
+  # Outlined rectangles
+  vtn_rect(50, 200, 120, 80, 255, 200, 200, 0)
+  vtn_rect(190, 200, 120, 80, 200, 255, 200, 0)
+  vtn_rect(330, 200, 120, 80, 200, 200, 255, 0)
+
+  # Circles (orange, lime, cyan)
+  serial_print(cast[ptr uint8]("\x1b]vtn;circle;550;140;1;40;255;150;50;255;1\x07"))
+  serial_print(cast[ptr uint8]("\x1b]vtn;circle;650;140;1;40;150;255;50;255;1\x07"))
+  serial_print(cast[ptr uint8]("\x1b]vtn;circle;750;140;1;40;50;150;255;255;1\x07"))
+
+  # Lines (triangle)
+  serial_print(cast[ptr uint8]("\x1b]vtn;line;50;320;450;320;1;2;255;255;255;255\x07"))
+  serial_print(cast[ptr uint8]("\x1b]vtn;line;50;320;250;450;1;2;255;200;100;255\x07"))
+  serial_print(cast[ptr uint8]("\x1b]vtn;line;450;320;250;450;1;2;100;200;255;255\x07"))
+
+  # Yellow circle
+  serial_print(cast[ptr uint8]("\x1b]vtn;circle;500;350;1;25;255;255;0;255;1\x07"))
+
+  # Rounded rectangles
+  serial_print(cast[ptr uint8]("\x1b]vtn;rrect;550;400;1;180;100;15;100;150;200;220;1\x07"))
+  serial_print(cast[ptr uint8]("\x1b]vtn;rrect;750;400;1;180;100;15;200;100;150;220;1\x07"))
+
+  # Title
+  vtn_text(50, 50, 255, 255, 255, cast[ptr uint8]("VTNext Demo - Press Q to quit"))
+
+  # Present the frame
+  vtn_send(cast[ptr uint8]("present"))
+
+  # Wait for Q to quit (event-driven, no redraw)
+  var running: int32 = 1
+  while running != 0:
+    var ch: int32 = serial_getchar()
+    if ch == 113 or ch == 81:  # 'q' or 'Q'
+      running = 0
+
+  # Restore cursor and clear
+  vtn_send(cast[ptr uint8]("cursor;show"))
+  vtn_send(cast[ptr uint8]("input;cooked"))
+  serial_print(cast[ptr uint8]("Demo exited\n"))
+
+# Generic VTNext app runner
+proc run_vtn_app(elf_ptr: int32, elf_size: int32, name: ptr uint8) =
+  kprint(cast[ptr uint8]("Starting "))
+  kprint(name)
+  kprintln(cast[ptr uint8]("..."))
+
+  # Validate ELF
+  var valid: int32 = elf_validate(elf_ptr)
+  if valid == 0:
+    kprintln(cast[ptr uint8]("Error: invalid ELF binary"))
+    return
+
+  # Map the userland code/data space (0x08048000 - 0x08100000 = 736KB)
+  # This covers code, data, BSS, and heap growth
+  var vpage: int32 = 0x08048000
+  var ppage: int32 = 0x00200000
+  while vpage < 0x08100000:
+    discard map_page(vpage, ppage, 7)  # Present+Writable+User
+    vpage = vpage + 4096
+    ppage = ppage + 4096
+
+  # Map a dedicated userland stack (64KB at 0x0BFF0000-0x0C000000)
+  # Stack grows downward, so ESP starts at 0x0C000000
+  vpage = 0x0BFF0000
+  ppage = 0x00300000  # Use physical memory at 3MB mark
+  while vpage < 0x0C000000:
+    discard map_page(vpage, ppage, 7)  # Present+Writable+User
+    vpage = vpage + 4096
+    ppage = ppage + 4096
+
+  # Load ELF into memory
+  var entry: int32 = elf_load(elf_ptr, 0)
+  if entry == 0:
+    kprintln(cast[ptr uint8]("Error: failed to load ELF"))
+    return
+
+  # Call entry point with dedicated userland stack
+  # Stack pointer at top of stack area (grows downward)
+  var user_stack: int32 = 0x0BFFFFF0  # Leave some room at top
+  call_entry_with_stack(entry, user_stack)
+
+  kprintln(cast[ptr uint8](" * App exited"))
 
 # Flask-style webapp with routing (kernel mode)
 proc run_webapp() =
