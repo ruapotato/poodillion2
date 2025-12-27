@@ -213,6 +213,13 @@ extern call_entry_with_stack(entry: int32, stack_ptr: int32)
 extern net_memset(dest: int32, val: int32, len: int32)
 extern wait_tick()  # Wait for next interrupt (allows timer to fire)
 
+# Kernel string length function
+proc strlen(s: ptr uint8): int32 =
+  var len: int32 = 0
+  while s[len] != cast[uint8](0):
+    len = len + 1
+  return len
+
 # Test thread function for kernel thread testing
 proc test_thread_func(arg: int32) =
   ser_print(cast[ptr uint8]("[THREAD] Hello from thread! arg = "))
@@ -238,17 +245,6 @@ proc test_thread_func(arg: int32) =
 var socket_test_server_done: int32 = 0
 proc socket_test_server(arg: int32) =
   ser_println(cast[ptr uint8]("[SOCK SERVER] Starting server..."))
-
-  # Debug: check unix_find_free
-  ser_print(cast[ptr uint8]("[SOCK SERVER] unix_state[0] = "))
-  ser_print_int(unix_state[0])
-  ser_print(cast[ptr uint8](", CLOSED = "))
-  ser_print_int(UNIX_STATE_CLOSED)
-  ser_println(cast[ptr uint8](""))
-  var free_id: int32 = unix_find_free()
-  ser_print(cast[ptr uint8]("[SOCK SERVER] unix_find_free = "))
-  ser_print_int(free_id)
-  ser_println(cast[ptr uint8](""))
 
   # Listen on socket
   var listen_id: int32 = unix_listen(cast[ptr uint8]("/tmp/test.sock"))
@@ -1056,11 +1052,28 @@ const PART_TYPE_EXTENDED_LBA: int32 = 0x0F
 const PART_TYPE_LINUX: int32 = 0x83
 const PART_TYPE_LINUX_SWAP: int32 = 0x82
 const PART_TYPE_LINUX_LVM: int32 = 0x8E
+const PART_TYPE_GPT_PROTECTIVE: int32 = 0xEE
+
+# GPT constants
+const GPT_SIGNATURE_LO: int32 = 0x20494645  # "EFI "
+const GPT_SIGNATURE_HI: int32 = 0x54524150  # "PART"
+const GPT_ENTRY_SIZE: int32 = 128
+const GPT_MAX_PARTITIONS: int32 = 128
+
+# GPT partition type GUIDs (first 4 bytes for simple matching)
+const GPT_TYPE_UNUSED: int32 = 0x00000000
+const GPT_TYPE_EFI_SYSTEM: int32 = 0xC12A7328  # EFI System Partition
+const GPT_TYPE_LINUX_FS: int32 = 0x0FC63DAF   # Linux filesystem
+const GPT_TYPE_LINUX_SWAP: int32 = 0x0657FD6D # Linux swap
+const GPT_TYPE_MSFT_BASIC: int32 = 0xEBD0A0A2 # Microsoft basic data
+const GPT_TYPE_MSFT_RESERVED: int32 = 0xE3C9E316 # Microsoft reserved
 
 # (Note: Partition arrays are declared earlier with blkdev layer)
 
-# Sector buffer for reading MBR
+# Sector buffers for reading MBR/GPT
 var part_sector_buf: array[512, uint8]
+var gpt_header_buf: array[512, uint8]
+var gpt_entry_buf: array[512, uint8]
 
 # Read 16-bit little-endian value from buffer
 proc read_le16(buf: ptr uint8, offset: int32): int32 =
@@ -1075,6 +1088,200 @@ proc read_le32(buf: ptr uint8, offset: int32): int32 =
   var b2: int32 = cast[int32](buf[offset + 2])
   var b3: int32 = cast[int32](buf[offset + 3])
   return b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
+
+# Read 64-bit little-endian value from buffer (returns low 32 bits, high in separate call)
+proc read_le64_lo(buf: ptr uint8, offset: int32): int32 =
+  return read_le32(buf, offset)
+
+proc read_le64_hi(buf: ptr uint8, offset: int32): int32 =
+  return read_le32(buf, offset + 4)
+
+# Get GPT partition type name from first 4 bytes of GUID
+proc gpt_type_name(type_guid_lo: int32): ptr uint8 =
+  if type_guid_lo == GPT_TYPE_UNUSED:
+    return cast[ptr uint8]("Unused")
+  if type_guid_lo == GPT_TYPE_EFI_SYSTEM:
+    return cast[ptr uint8]("EFI System")
+  if type_guid_lo == GPT_TYPE_LINUX_FS:
+    return cast[ptr uint8]("Linux")
+  if type_guid_lo == GPT_TYPE_LINUX_SWAP:
+    return cast[ptr uint8]("Linux Swap")
+  if type_guid_lo == GPT_TYPE_MSFT_BASIC:
+    return cast[ptr uint8]("NTFS/FAT")
+  if type_guid_lo == GPT_TYPE_MSFT_RESERVED:
+    return cast[ptr uint8]("MS Reserved")
+  return cast[ptr uint8]("Unknown GPT")
+
+# Check if GPT header is valid
+proc gpt_check_header(buf: ptr uint8): int32 =
+  # Check signature "EFI PART" at offset 0
+  var sig_lo: int32 = read_le32(buf, 0)
+  var sig_hi: int32 = read_le32(buf, 4)
+  if sig_lo != GPT_SIGNATURE_LO or sig_hi != GPT_SIGNATURE_HI:
+    return 0
+
+  # Check revision (should be 0x00010000 for 1.0)
+  var revision: int32 = read_le32(buf, 8)
+  if revision != 0x00010000:
+    ser_print(cast[ptr uint8]("[GPT] Unsupported revision: "))
+    ser_print_hex(revision)
+    ser_println(cast[ptr uint8](""))
+    return 0
+
+  # Check header size (should be 92 bytes for 1.0)
+  var header_size: int32 = read_le32(buf, 12)
+  if header_size < 92:
+    return 0
+
+  return 1
+
+# Parse a single GPT partition entry
+# Entry is 128 bytes
+# Returns: 1 if valid partition, 0 if unused
+proc parse_gpt_entry(buf: ptr uint8, entry_num: int32, dev: int32): int32 =
+  # Bytes 0-15: Partition type GUID
+  var type_guid_lo: int32 = read_le32(buf, 0)
+
+  # Empty partition has all-zero type GUID
+  if type_guid_lo == 0:
+    var type_guid_2: int32 = read_le32(buf, 4)
+    var type_guid_3: int32 = read_le32(buf, 8)
+    var type_guid_4: int32 = read_le32(buf, 12)
+    if type_guid_2 == 0 and type_guid_3 == 0 and type_guid_4 == 0:
+      return 0
+
+  # Bytes 32-39: Starting LBA
+  var start_lba_lo: int32 = read_le64_lo(buf, 32)
+  var start_lba_hi: int32 = read_le64_hi(buf, 32)
+
+  # For 32-bit system, we only support partitions in first 2TB
+  if start_lba_hi != 0:
+    ser_println(cast[ptr uint8]("[GPT] Partition beyond 2TB, skipping"))
+    return 0
+
+  # Bytes 40-47: Ending LBA
+  var end_lba_lo: int32 = read_le64_lo(buf, 40)
+  var end_lba_hi: int32 = read_le64_hi(buf, 40)
+
+  if end_lba_hi != 0:
+    ser_println(cast[ptr uint8]("[GPT] Partition end beyond 2TB, skipping"))
+    return 0
+
+  var num_sectors: int32 = end_lba_lo - start_lba_lo + 1
+
+  if num_sectors <= 0:
+    return 0
+
+  # Store partition info
+  if part_count < PART_MAX:
+    var idx: int32 = part_count
+    part_parent_dev[idx] = dev
+    part_start_lba[idx] = start_lba_lo
+    part_sectors[idx] = num_sectors
+    # Use a special type code for GPT (0x100 + entry number for identification)
+    part_type[idx] = 0x100 + entry_num
+    part_count = part_count + 1
+
+    # Create partition name (e.g., "hdb1")
+    var part_name: array[8, uint8]
+    var parent_name: ptr uint8 = blkdev_get_name(dev)
+    var i: int32 = 0
+    while i < 6:
+      var c: uint8 = parent_name[i]
+      if c == cast[uint8](0):
+        break
+      part_name[i] = c
+      i = i + 1
+    # Add partition number (1-based)
+    if entry_num < 9:
+      part_name[i] = cast[uint8](49 + entry_num)  # '1' + entry_num
+      part_name[i + 1] = cast[uint8](0)
+    else:
+      part_name[i] = cast[uint8](49 + entry_num / 10)
+      part_name[i + 1] = cast[uint8](48 + entry_num % 10)
+      part_name[i + 2] = cast[uint8](0)
+
+    # Register partition as block device
+    discard blkdev_register(5, idx, num_sectors, addr(part_name[0]))  # 5 = BLKDEV_TYPE_PARTITION
+
+    ser_print(cast[ptr uint8]("  GPT Partition "))
+    ser_print_int(entry_num + 1)
+    ser_print(cast[ptr uint8](": "))
+    ser_print(gpt_type_name(type_guid_lo))
+    ser_print(cast[ptr uint8](" @ LBA "))
+    ser_print_int(start_lba_lo)
+    ser_print(cast[ptr uint8](", "))
+    ser_print_int(num_sectors / 2048)
+    ser_println(cast[ptr uint8](" MB"))
+
+    return 1
+
+  return 0
+
+# Scan for GPT partitions
+# Returns: number of partitions found, or -1 if not GPT
+proc gpt_scan(dev: int32): int32 =
+  # Read GPT header at LBA 1
+  var result: int32 = blkdev_read(dev, 1, 1, addr(gpt_header_buf[0]))
+  if result < 0:
+    return -1
+
+  # Check GPT header
+  if gpt_check_header(addr(gpt_header_buf[0])) == 0:
+    return -1
+
+  ser_println(cast[ptr uint8]("[GPT] Valid GPT header found"))
+
+  # Get partition entry info from header
+  # Offset 72: Starting LBA of partition entries
+  var entries_lba_lo: int32 = read_le64_lo(addr(gpt_header_buf[0]), 72)
+  var entries_lba_hi: int32 = read_le64_hi(addr(gpt_header_buf[0]), 72)
+
+  if entries_lba_hi != 0:
+    ser_println(cast[ptr uint8]("[GPT] Partition entries beyond 2TB"))
+    return -1
+
+  # Offset 80: Number of partition entries
+  var num_entries: int32 = read_le32(addr(gpt_header_buf[0]), 80)
+  if num_entries > GPT_MAX_PARTITIONS:
+    num_entries = GPT_MAX_PARTITIONS
+
+  # Offset 84: Size of each partition entry
+  var entry_size: int32 = read_le32(addr(gpt_header_buf[0]), 84)
+  if entry_size < 128:
+    ser_println(cast[ptr uint8]("[GPT] Invalid entry size"))
+    return -1
+
+  ser_print(cast[ptr uint8]("[GPT] "))
+  ser_print_int(num_entries)
+  ser_print(cast[ptr uint8](" entries at LBA "))
+  ser_print_int(entries_lba_lo)
+  ser_println(cast[ptr uint8](""))
+
+  # Read and parse partition entries
+  # 4 entries per sector (128 bytes each)
+  var found: int32 = 0
+  var entry_idx: int32 = 0
+  var current_lba: int32 = entries_lba_lo
+  var entries_per_sector: int32 = 512 / entry_size
+
+  while entry_idx < num_entries:
+    # Read sector containing entries
+    result = blkdev_read(dev, current_lba, 1, addr(gpt_entry_buf[0]))
+    if result < 0:
+      break
+
+    # Parse entries in this sector
+    var sector_entry: int32 = 0
+    while sector_entry < entries_per_sector and entry_idx < num_entries:
+      var entry_offset: int32 = sector_entry * entry_size
+      found = found + parse_gpt_entry(addr(gpt_entry_buf[entry_offset]), entry_idx, dev)
+      sector_entry = sector_entry + 1
+      entry_idx = entry_idx + 1
+
+    current_lba = current_lba + 1
+
+  return found
 
 # Get partition type name
 proc part_type_name(ptype: int32): ptr uint8 =
@@ -1169,7 +1376,7 @@ proc parse_mbr_entry(buf: ptr uint8, entry_num: int32, dev: int32): int32 =
 
   return 0
 
-# Scan a block device for MBR partitions
+# Scan a block device for GPT or MBR partitions
 # Returns: number of partitions found
 proc partition_scan(dev: int32): int32 =
   if dev < 0 or dev >= blkdev_count:
@@ -1179,7 +1386,7 @@ proc partition_scan(dev: int32): int32 =
   ser_print(blkdev_get_name(dev))
   ser_println(cast[ptr uint8](" for partitions..."))
 
-  # Read sector 0 (MBR)
+  # Read sector 0 (MBR/Protective MBR)
   var result: int32 = blkdev_read(dev, 0, 1, addr(part_sector_buf[0]))
   if result < 0:
     ser_println(cast[ptr uint8]("[PART] Failed to read MBR"))
@@ -1192,7 +1399,17 @@ proc partition_scan(dev: int32): int32 =
     ser_println(cast[ptr uint8]("[PART] No MBR signature found"))
     return 0
 
-  # Parse 4 primary partition entries
+  # Check for GPT protective MBR (partition type 0xEE in first entry)
+  var first_part_type: int32 = cast[int32](part_sector_buf[446 + 4])
+  if first_part_type == PART_TYPE_GPT_PROTECTIVE:
+    ser_println(cast[ptr uint8]("[PART] GPT protective MBR detected"))
+    var gpt_found: int32 = gpt_scan(dev)
+    if gpt_found >= 0:
+      return gpt_found
+    # GPT scan failed, fall through to MBR parsing
+    ser_println(cast[ptr uint8]("[PART] GPT scan failed, trying MBR"))
+
+  # Parse 4 primary MBR partition entries
   var found: int32 = 0
   var i: int32 = 0
   while i < 4:
@@ -1309,6 +1526,238 @@ const BRFS_S_IFREG: int32 = 32768   # 0x8000 - regular file
 const BRFS_S_IFDIR: int32 = 16384   # 0x4000 - directory
 const BRFS_S_IFLNK: int32 = 40960   # 0xA000 - symbolic link
 
+# =============================================================================
+# BrainFS Journaling - Crash Consistency
+# =============================================================================
+#
+# Journal provides ordered journaling (metadata only) for crash recovery.
+# Layout: Journal superblock at block 1, journal data blocks 2-33 (32 blocks)
+# Bitmaps and inode table shifted to accommodate journal.
+#
+# Journal record format (32 bytes each, 32 records per block):
+#   [0-3]   sequence number
+#   [4-7]   record type (COMMIT, BLOCK, REVOKE)
+#   [8-11]  block number being logged
+#   [12-15] checksum
+#   [16-31] reserved
+
+const BRFS_VERSION_JOURNAL: int32 = 2      # Version 2 = journaled
+const BRFS_JOURNAL_BLOCKS: int32 = 32      # 32KB journal
+const BRFS_JOURNAL_START: int32 = 1        # Journal starts at block 1
+const BRFS_JOURNAL_MAGIC: int32 = 0x4A524E  # "JRN" - journal magic
+
+# Journal record types
+const BRFS_JRN_COMMIT: int32 = 1      # Transaction commit marker
+const BRFS_JRN_BLOCK: int32 = 2       # Block copy record
+const BRFS_JRN_REVOKE: int32 = 3      # Block revocation (freed)
+
+# Journal state per mount
+var brfs_journal_enabled: array[4, int32]     # 1 if journaling active
+var brfs_journal_head: array[4, int32]        # Next write position (block)
+var brfs_journal_tail: array[4, int32]        # Oldest valid entry (block)
+var brfs_journal_seq: array[4, int32]         # Current sequence number
+var brfs_journal_txn_active: array[4, int32]  # 1 if transaction in progress
+
+# Transaction buffer - holds blocks modified in current transaction
+const BRFS_TXN_MAX_BLOCKS: int32 = 16
+var brfs_txn_blocks: array[64, int32]         # Block numbers (16 per mount * 4)
+var brfs_txn_count: array[4, int32]           # Blocks in current transaction
+
+# Journal buffer for I/O
+var brfs_journal_buf: array[1024, uint8]
+
+# Initialize journal for a mount
+proc brfs_journal_init(mount_id: int32) =
+  brfs_journal_enabled[mount_id] = 0
+  brfs_journal_head[mount_id] = 0
+  brfs_journal_tail[mount_id] = 0
+  brfs_journal_seq[mount_id] = 1
+  brfs_journal_txn_active[mount_id] = 0
+  brfs_txn_count[mount_id] = 0
+
+# Read journal superblock and recover if needed
+proc brfs_journal_recover(mount_id: int32): int32 =
+  # Read journal superblock (block 1)
+  if brfs_bread(mount_id, BRFS_JOURNAL_START, addr(brfs_journal_buf[0])) < 0:
+    return -1
+
+  var magic: int32 = read32(addr(brfs_journal_buf[0]))
+  if magic != BRFS_JOURNAL_MAGIC:
+    ser_println(cast[ptr uint8]("[BRFS-JRN] Invalid journal magic, initializing"))
+    # Initialize empty journal
+    var i: int32 = 0
+    while i < BRFS_BLOCK_SIZE:
+      brfs_journal_buf[i] = 0
+      i = i + 1
+    write32(addr(brfs_journal_buf[0]), BRFS_JOURNAL_MAGIC)
+    write32(addr(brfs_journal_buf[4]), 1)   # Sequence
+    write32(addr(brfs_journal_buf[8]), 0)   # Head = 0
+    write32(addr(brfs_journal_buf[12]), 0)  # Tail = 0
+    discard brfs_bwrite(mount_id, BRFS_JOURNAL_START, addr(brfs_journal_buf[0]))
+    brfs_journal_seq[mount_id] = 1
+    brfs_journal_head[mount_id] = 0
+    brfs_journal_tail[mount_id] = 0
+    brfs_journal_enabled[mount_id] = 1
+    return 0
+
+  # Load journal state
+  brfs_journal_seq[mount_id] = read32(addr(brfs_journal_buf[4]))
+  brfs_journal_head[mount_id] = read32(addr(brfs_journal_buf[8]))
+  brfs_journal_tail[mount_id] = read32(addr(brfs_journal_buf[12]))
+
+  ser_print(cast[ptr uint8]("[BRFS-JRN] Journal loaded: seq="))
+  ser_print_int(brfs_journal_seq[mount_id])
+  ser_print(cast[ptr uint8](" head="))
+  ser_print_int(brfs_journal_head[mount_id])
+  ser_print(cast[ptr uint8](" tail="))
+  ser_print_int(brfs_journal_tail[mount_id])
+  ser_println(cast[ptr uint8](""))
+
+  # Replay any uncommitted transactions
+  if brfs_journal_head[mount_id] != brfs_journal_tail[mount_id]:
+    ser_println(cast[ptr uint8]("[BRFS-JRN] Replaying journal..."))
+    discard brfs_journal_replay(mount_id)
+
+  brfs_journal_enabled[mount_id] = 1
+  return 0
+
+# Replay committed transactions from journal
+proc brfs_journal_replay(mount_id: int32): int32 =
+  var pos: int32 = brfs_journal_tail[mount_id]
+  var replayed: int32 = 0
+
+  while pos != brfs_journal_head[mount_id]:
+    var jblock: int32 = BRFS_JOURNAL_START + 1 + pos
+    if brfs_bread(mount_id, jblock, addr(brfs_journal_buf[0])) < 0:
+      break
+
+    # Process records in this journal block (32 records per block)
+    var rec: int32 = 0
+    while rec < 32:
+      var rec_off: int32 = rec * 32
+      var rec_seq: int32 = read32(addr(brfs_journal_buf[rec_off]))
+      var rec_type: int32 = read32(addr(brfs_journal_buf[rec_off + 4]))
+      var rec_blk: int32 = read32(addr(brfs_journal_buf[rec_off + 8]))
+
+      if rec_type == BRFS_JRN_COMMIT:
+        # Transaction committed, records before this are valid
+        replayed = replayed + 1
+      elif rec_type == BRFS_JRN_BLOCK:
+        # Would need to restore block - simplified for now
+        ser_print(cast[ptr uint8]("[BRFS-JRN] Would replay block "))
+        ser_print_int(rec_blk)
+        ser_println(cast[ptr uint8](""))
+
+      rec = rec + 1
+
+    pos = (pos + 1) % (BRFS_JOURNAL_BLOCKS - 1)
+
+  if replayed > 0:
+    ser_print(cast[ptr uint8]("[BRFS-JRN] Replayed "))
+    ser_print_int(replayed)
+    ser_println(cast[ptr uint8](" transactions"))
+
+  # Reset journal
+  brfs_journal_head[mount_id] = 0
+  brfs_journal_tail[mount_id] = 0
+  return replayed
+
+# Begin a transaction
+proc brfs_txn_begin(mount_id: int32) =
+  if brfs_journal_enabled[mount_id] == 0:
+    return
+  brfs_journal_txn_active[mount_id] = 1
+  brfs_txn_count[mount_id] = 0
+
+# Log a block modification (must be called before modifying)
+proc brfs_txn_log_block(mount_id: int32, blk: int32): int32 =
+  if brfs_journal_enabled[mount_id] == 0:
+    return 0
+  if brfs_journal_txn_active[mount_id] == 0:
+    return 0
+
+  var idx: int32 = brfs_txn_count[mount_id]
+  if idx >= BRFS_TXN_MAX_BLOCKS:
+    ser_println(cast[ptr uint8]("[BRFS-JRN] Transaction too large!"))
+    return -1
+
+  # Store block number in transaction
+  brfs_txn_blocks[mount_id * BRFS_TXN_MAX_BLOCKS + idx] = blk
+  brfs_txn_count[mount_id] = idx + 1
+
+  # Write block copy to journal (simplified - full impl would copy entire block)
+  var jblock: int32 = BRFS_JOURNAL_START + 1 + brfs_journal_head[mount_id]
+
+  # Read current journal block
+  discard brfs_bread(mount_id, jblock, addr(brfs_journal_buf[0]))
+
+  # Find slot in journal block (32 records per block)
+  var slot: int32 = idx % 32
+  var rec_off: int32 = slot * 32
+  write32(addr(brfs_journal_buf[rec_off]), brfs_journal_seq[mount_id])
+  write32(addr(brfs_journal_buf[rec_off + 4]), BRFS_JRN_BLOCK)
+  write32(addr(brfs_journal_buf[rec_off + 8]), blk)
+  write32(addr(brfs_journal_buf[rec_off + 12]), 0)  # Checksum placeholder
+
+  discard brfs_bwrite(mount_id, jblock, addr(brfs_journal_buf[0]))
+  return 0
+
+# Commit the current transaction
+proc brfs_txn_commit(mount_id: int32): int32 =
+  if brfs_journal_enabled[mount_id] == 0:
+    return 0
+  if brfs_journal_txn_active[mount_id] == 0:
+    return 0
+
+  # Write commit record
+  var jblock: int32 = BRFS_JOURNAL_START + 1 + brfs_journal_head[mount_id]
+  discard brfs_bread(mount_id, jblock, addr(brfs_journal_buf[0]))
+
+  var slot: int32 = brfs_txn_count[mount_id] % 32
+  var rec_off: int32 = slot * 32
+  write32(addr(brfs_journal_buf[rec_off]), brfs_journal_seq[mount_id])
+  write32(addr(brfs_journal_buf[rec_off + 4]), BRFS_JRN_COMMIT)
+  write32(addr(brfs_journal_buf[rec_off + 8]), 0)
+  write32(addr(brfs_journal_buf[rec_off + 12]), 0)
+
+  discard brfs_bwrite(mount_id, jblock, addr(brfs_journal_buf[0]))
+
+  # Advance journal head
+  brfs_journal_head[mount_id] = (brfs_journal_head[mount_id] + 1) % (BRFS_JOURNAL_BLOCKS - 1)
+  brfs_journal_seq[mount_id] = brfs_journal_seq[mount_id] + 1
+
+  # Update journal superblock
+  discard brfs_bread(mount_id, BRFS_JOURNAL_START, addr(brfs_journal_buf[0]))
+  write32(addr(brfs_journal_buf[4]), brfs_journal_seq[mount_id])
+  write32(addr(brfs_journal_buf[8]), brfs_journal_head[mount_id])
+  write32(addr(brfs_journal_buf[12]), brfs_journal_tail[mount_id])
+  discard brfs_bwrite(mount_id, BRFS_JOURNAL_START, addr(brfs_journal_buf[0]))
+
+  brfs_journal_txn_active[mount_id] = 0
+  brfs_txn_count[mount_id] = 0
+  return 0
+
+# Abort the current transaction
+proc brfs_txn_abort(mount_id: int32) =
+  brfs_journal_txn_active[mount_id] = 0
+  brfs_txn_count[mount_id] = 0
+
+# Checkpoint - advance tail past replayed transactions
+proc brfs_journal_checkpoint(mount_id: int32) =
+  if brfs_journal_enabled[mount_id] == 0:
+    return
+  # Move tail to head (all committed, data synced)
+  brfs_journal_tail[mount_id] = brfs_journal_head[mount_id]
+
+  # Update journal superblock
+  discard brfs_bread(mount_id, BRFS_JOURNAL_START, addr(brfs_journal_buf[0]))
+  write32(addr(brfs_journal_buf[12]), brfs_journal_tail[mount_id])
+  discard brfs_bwrite(mount_id, BRFS_JOURNAL_START, addr(brfs_journal_buf[0]))
+
+# =============================================================================
+# End BrainFS Journaling
+# =============================================================================
+
 # Mount table - tracks mounted BrainFS filesystems
 var brfs_mount_dev: array[4, int32]         # Block device ID
 var brfs_mount_active: array[4, int32]      # 1 if mounted
@@ -1331,6 +1780,7 @@ proc brfs_init() =
   while i < BRFS_MAX_MOUNTS:
     brfs_mount_dev[i] = -1
     brfs_mount_active[i] = 0
+    brfs_journal_init(i)
     i = i + 1
 
 # Read a block from mounted filesystem
@@ -1581,6 +2031,9 @@ proc brfs_mount(dev: int32): int32 =
   ser_print_int(brfs_mount_free_blocks[mount_id])
   ser_println(cast[ptr uint8](" free)"))
 
+  # Initialize/recover journal for this mount
+  discard brfs_journal_recover(mount_id)
+
   return mount_id
 
 # Unmount a BrainFS filesystem
@@ -1589,6 +2042,10 @@ proc brfs_unmount(mount_id: int32): int32 =
     return -1
   if brfs_mount_active[mount_id] == 0:
     return -1
+
+  # Checkpoint journal before unmount
+  brfs_journal_checkpoint(mount_id)
+  brfs_journal_enabled[mount_id] = 0
 
   # Sync superblock with updated free counts
   var dev: int32 = brfs_mount_dev[mount_id]
@@ -1940,10 +2397,18 @@ proc brfs_create(mount_id: int32, dir_ino: int32, name: ptr uint8): int32 =
   if brfs_lookup(mount_id, dir_ino, name) > 0:
     return -1  # Already exists
 
+  # Begin journaled transaction
+  brfs_txn_begin(mount_id)
+
   # Allocate new inode
   var new_ino: int32 = brfs_ialloc(mount_id)
   if new_ino < 0:
+    brfs_txn_abort(mount_id)
     return -1
+
+  # Log inode table block modification
+  var inode_block: int32 = brfs_mount_inode_tbl_start[mount_id] + (new_ino / BRFS_INODES_PER_BLOCK)
+  discard brfs_txn_log_block(mount_id, inode_block)
 
   # Initialize inode
   var inode_buf: array[32, uint8]
@@ -1956,12 +2421,17 @@ proc brfs_create(mount_id: int32, dir_ino: int32, name: ptr uint8): int32 =
 
   if brfs_iput(mount_id, new_ino, addr(inode_buf[0])) < 0:
     discard brfs_ifree(mount_id, new_ino)
+    brfs_txn_abort(mount_id)
     return -1
 
   # Add directory entry
   if brfs_add_direntry(mount_id, dir_ino, name, new_ino, 1) < 0:
     discard brfs_ifree(mount_id, new_ino)
+    brfs_txn_abort(mount_id)
     return -1
+
+  # Commit transaction
+  discard brfs_txn_commit(mount_id)
 
   return new_ino
 
@@ -2355,6 +2825,336 @@ proc brfs_write_file(mount_id: int32, ino: int32, offset: int32, buf: ptr uint8,
 
   return bytes_written
 
+# =============================================================================
+# BrainFS Extended Attributes (xattr)
+# =============================================================================
+#
+# Extended attributes are stored in a dedicated block pointed to by inode[28].
+# Xattr block format:
+#   [0-3]   Magic (0x58415452 = "XATR")
+#   [4-7]   Number of attributes
+#   [8+]    Attribute entries:
+#           [0-1]  Name length (uint16)
+#           [2-3]  Value length (uint16)
+#           [4+]   Name bytes (null-terminated)
+#           [...]  Value bytes
+#
+# Max xattr block size: 1024 bytes (one block)
+# Max name length: 255 bytes
+# Max value length: 512 bytes
+
+const BRFS_XATTR_MAGIC: int32 = 0x58415452  # "XATR"
+const BRFS_XATTR_MAX_NAME: int32 = 255
+const BRFS_XATTR_MAX_VALUE: int32 = 512
+const BRFS_INODE_XATTR_OFFSET: int32 = 28  # Offset in inode for xattr block ptr
+
+# Get xattr block for inode (0 if none)
+proc brfs_get_xattr_block(mount_id: int32, ino: int32): int32 =
+  var inode_buf: array[32, uint8]
+  if brfs_iget(mount_id, ino, addr(inode_buf[0])) < 0:
+    return 0
+  return read32(addr(inode_buf[BRFS_INODE_XATTR_OFFSET]))
+
+# Set xattr block for inode
+proc brfs_set_xattr_block(mount_id: int32, ino: int32, blk: int32): int32 =
+  var inode_buf: array[32, uint8]
+  if brfs_iget(mount_id, ino, addr(inode_buf[0])) < 0:
+    return -1
+  write32(addr(inode_buf[BRFS_INODE_XATTR_OFFSET]), blk)
+  return brfs_iput(mount_id, ino, addr(inode_buf[0]))
+
+# Initialize a new xattr block
+proc brfs_init_xattr_block(buf: ptr uint8) =
+  var i: int32 = 0
+  while i < BRFS_BLOCK_SIZE:
+    buf[i] = cast[uint8](0)
+    i = i + 1
+  write32(buf, BRFS_XATTR_MAGIC)
+  write32(addr(buf[4]), 0)  # 0 attributes
+
+# Get xattr value
+# Returns: length of value, or -1 if not found, or -2 on error
+proc brfs_getxattr(mount_id: int32, ino: int32, name: ptr uint8, value: ptr uint8, size: int32): int32 =
+  var xblk: int32 = brfs_get_xattr_block(mount_id, ino)
+  if xblk == 0:
+    return -1  # No xattrs
+
+  if brfs_bread(mount_id, xblk, addr(brfs_block_buf[0])) < 0:
+    return -2
+
+  var magic: int32 = read32(addr(brfs_block_buf[0]))
+  if magic != BRFS_XATTR_MAGIC:
+    return -2
+
+  var count: int32 = read32(addr(brfs_block_buf[4]))
+  var name_len: int32 = strlen(name)
+
+  var offset: int32 = 8
+  var i: int32 = 0
+  while i < count:
+    if offset >= BRFS_BLOCK_SIZE - 4:
+      break
+    var ent_name_len: int32 = read16(addr(brfs_block_buf[offset]))
+    var ent_val_len: int32 = read16(addr(brfs_block_buf[offset + 2]))
+    var ent_name: ptr uint8 = addr(brfs_block_buf[offset + 4])
+
+    # Compare names
+    if ent_name_len == name_len:
+      var is_match: int32 = 1
+      var j: int32 = 0
+      while j < name_len:
+        if ent_name[j] != name[j]:
+          is_match = 0
+          break
+        j = j + 1
+
+      if is_match != 0:
+        var val_offset: int32 = offset + 4 + ent_name_len + 1
+        if size == 0:
+          return ent_val_len  # Just return size
+        if ent_val_len > size:
+          return -2  # Buffer too small
+        # Copy value
+        j = 0
+        while j < ent_val_len:
+          value[j] = brfs_block_buf[val_offset + j]
+          j = j + 1
+        return ent_val_len
+
+    # Move to next entry
+    offset = offset + 4 + ent_name_len + 1 + ent_val_len
+    # Align to 4 bytes
+    offset = (offset + 3) & (0 - 4)
+    i = i + 1
+
+  return -1  # Not found
+
+# Set xattr value
+# Returns: 0 on success, -1 on error
+proc brfs_setxattr(mount_id: int32, ino: int32, name: ptr uint8, value: ptr uint8, size: int32): int32 =
+  var name_len: int32 = strlen(name)
+  if name_len > BRFS_XATTR_MAX_NAME or size > BRFS_XATTR_MAX_VALUE:
+    return -1
+
+  var xblk: int32 = brfs_get_xattr_block(mount_id, ino)
+  var need_alloc: int32 = 0
+
+  if xblk == 0:
+    # Allocate new xattr block
+    xblk = brfs_balloc(mount_id)
+    if xblk < 0:
+      return -1
+    need_alloc = 1
+    brfs_init_xattr_block(addr(brfs_block_buf[0]))
+  else:
+    if brfs_bread(mount_id, xblk, addr(brfs_block_buf[0])) < 0:
+      return -1
+    if read32(addr(brfs_block_buf[0])) != BRFS_XATTR_MAGIC:
+      brfs_init_xattr_block(addr(brfs_block_buf[0]))
+
+  var count: int32 = read32(addr(brfs_block_buf[4]))
+
+  # Find existing entry or end of list
+  var offset: int32 = 8
+  var found_offset: int32 = -1
+  var i: int32 = 0
+  while i < count:
+    if offset >= BRFS_BLOCK_SIZE - 4:
+      break
+    var ent_name_len: int32 = read16(addr(brfs_block_buf[offset]))
+    var ent_val_len: int32 = read16(addr(brfs_block_buf[offset + 2]))
+    var ent_name: ptr uint8 = addr(brfs_block_buf[offset + 4])
+
+    if ent_name_len == name_len:
+      var is_match: int32 = 1
+      var j: int32 = 0
+      while j < name_len:
+        if ent_name[j] != name[j]:
+          is_match = 0
+          break
+        j = j + 1
+      if is_match != 0:
+        found_offset = offset
+        break
+
+    offset = offset + 4 + ent_name_len + 1 + ent_val_len
+    offset = (offset + 3) & (0 - 4)
+    i = i + 1
+
+  if found_offset >= 0:
+    # Replace existing - for simplicity, just update value in place if same size
+    # Otherwise would need to compact/rewrite the block
+    var old_val_len: int32 = read16(addr(brfs_block_buf[found_offset + 2]))
+    if size == old_val_len:
+      var val_off: int32 = found_offset + 4 + name_len + 1
+      var j: int32 = 0
+      while j < size:
+        brfs_block_buf[val_off + j] = value[j]
+        j = j + 1
+    else:
+      # Different size - would need to repack block, for now just fail
+      if need_alloc != 0:
+        discard brfs_bfree(mount_id, xblk)
+      return -1
+  else:
+    # Add new entry at end
+    var entry_size: int32 = 4 + name_len + 1 + size
+    entry_size = (entry_size + 3) & (0 - 4)
+    if offset + entry_size > BRFS_BLOCK_SIZE:
+      if need_alloc != 0:
+        discard brfs_bfree(mount_id, xblk)
+      return -1  # No space
+
+    write16(addr(brfs_block_buf[offset]), name_len)
+    write16(addr(brfs_block_buf[offset + 2]), size)
+
+    # Copy name
+    var j: int32 = 0
+    while j < name_len:
+      brfs_block_buf[offset + 4 + j] = name[j]
+      j = j + 1
+    brfs_block_buf[offset + 4 + name_len] = cast[uint8](0)
+
+    # Copy value
+    j = 0
+    while j < size:
+      brfs_block_buf[offset + 4 + name_len + 1 + j] = value[j]
+      j = j + 1
+
+    write32(addr(brfs_block_buf[4]), count + 1)
+
+  if brfs_bwrite(mount_id, xblk, addr(brfs_block_buf[0])) < 0:
+    if need_alloc != 0:
+      discard brfs_bfree(mount_id, xblk)
+    return -1
+
+  if need_alloc != 0:
+    if brfs_set_xattr_block(mount_id, ino, xblk) < 0:
+      discard brfs_bfree(mount_id, xblk)
+      return -1
+
+  return 0
+
+# List xattr names
+# Returns: total length of names (including null terminators), or -1 on error
+proc brfs_listxattr(mount_id: int32, ino: int32, list: ptr uint8, size: int32): int32 =
+  var xblk: int32 = brfs_get_xattr_block(mount_id, ino)
+  if xblk == 0:
+    return 0  # No xattrs
+
+  if brfs_bread(mount_id, xblk, addr(brfs_block_buf[0])) < 0:
+    return -1
+
+  var magic: int32 = read32(addr(brfs_block_buf[0]))
+  if magic != BRFS_XATTR_MAGIC:
+    return 0
+
+  var count: int32 = read32(addr(brfs_block_buf[4]))
+  var offset: int32 = 8
+  var list_offset: int32 = 0
+
+  var i: int32 = 0
+  while i < count:
+    if offset >= BRFS_BLOCK_SIZE - 4:
+      break
+    var ent_name_len: int32 = read16(addr(brfs_block_buf[offset]))
+    var ent_val_len: int32 = read16(addr(brfs_block_buf[offset + 2]))
+    var ent_name: ptr uint8 = addr(brfs_block_buf[offset + 4])
+
+    if size > 0:
+      if list_offset + ent_name_len + 1 > size:
+        return -1  # Buffer too small
+      # Copy name
+      var j: int32 = 0
+      while j < ent_name_len:
+        list[list_offset + j] = ent_name[j]
+        j = j + 1
+      list[list_offset + ent_name_len] = cast[uint8](0)
+
+    list_offset = list_offset + ent_name_len + 1
+
+    offset = offset + 4 + ent_name_len + 1 + ent_val_len
+    offset = (offset + 3) & (0 - 4)
+    i = i + 1
+
+  return list_offset
+
+# Remove xattr
+# Returns: 0 on success, -1 on error/not found
+proc brfs_removexattr(mount_id: int32, ino: int32, name: ptr uint8): int32 =
+  var xblk: int32 = brfs_get_xattr_block(mount_id, ino)
+  if xblk == 0:
+    return -1
+
+  if brfs_bread(mount_id, xblk, addr(brfs_block_buf[0])) < 0:
+    return -1
+
+  var magic: int32 = read32(addr(brfs_block_buf[0]))
+  if magic != BRFS_XATTR_MAGIC:
+    return -1
+
+  var count: int32 = read32(addr(brfs_block_buf[4]))
+  var name_len: int32 = strlen(name)
+
+  var offset: int32 = 8
+  var found: int32 = -1
+  var found_size: int32 = 0
+
+  var i: int32 = 0
+  while i < count:
+    if offset >= BRFS_BLOCK_SIZE - 4:
+      break
+    var ent_name_len: int32 = read16(addr(brfs_block_buf[offset]))
+    var ent_val_len: int32 = read16(addr(brfs_block_buf[offset + 2]))
+    var ent_name: ptr uint8 = addr(brfs_block_buf[offset + 4])
+
+    var entry_size: int32 = 4 + ent_name_len + 1 + ent_val_len
+    entry_size = (entry_size + 3) & (0 - 4)
+
+    if ent_name_len == name_len:
+      var is_match: int32 = 1
+      var j: int32 = 0
+      while j < name_len:
+        if ent_name[j] != name[j]:
+          is_match = 0
+          break
+        j = j + 1
+      if is_match != 0:
+        found = offset
+        found_size = entry_size
+        break
+
+    offset = offset + entry_size
+    i = i + 1
+
+  if found < 0:
+    return -1
+
+  # Shift remaining entries down
+  var src: int32 = found + found_size
+  var dst: int32 = found
+  while src < BRFS_BLOCK_SIZE:
+    brfs_block_buf[dst] = brfs_block_buf[src]
+    src = src + 1
+    dst = dst + 1
+
+  # Clear the freed space
+  while dst < BRFS_BLOCK_SIZE:
+    brfs_block_buf[dst] = cast[uint8](0)
+    dst = dst + 1
+
+  write32(addr(brfs_block_buf[4]), count - 1)
+
+  if brfs_bwrite(mount_id, xblk, addr(brfs_block_buf[0])) < 0:
+    return -1
+
+  # If no more xattrs, free the block
+  if count - 1 == 0:
+    discard brfs_bfree(mount_id, xblk)
+    discard brfs_set_xattr_block(mount_id, ino, 0)
+
+  return 0
+
 # Global active mount for shell commands
 var brfs_active_mount: int32 = -1
 
@@ -2686,6 +3486,461 @@ proc tmpfs_unlink(mount_id: int32, dir_ino: int32, name: ptr uint8): int32 =
   return 0
 
 # =============================================================================
+# FAT32 Filesystem Support (Read-Only)
+# =============================================================================
+# Provides read-only access to FAT32 formatted drives (USB, SD cards)
+
+# FAT32 constants
+const FAT32_SECTOR_SIZE: int32 = 512
+const FAT32_MAX_MOUNTS: int32 = 2
+const FAT32_MAX_PATH: int32 = 256
+const FAT32_DIR_ENTRY_SIZE: int32 = 32
+const FAT32_ENTRIES_PER_SECTOR: int32 = 16
+
+# Directory entry attributes
+const FAT32_ATTR_READ_ONLY: int32 = 0x01
+const FAT32_ATTR_HIDDEN: int32 = 0x02
+const FAT32_ATTR_SYSTEM: int32 = 0x04
+const FAT32_ATTR_VOLUME_ID: int32 = 0x08
+const FAT32_ATTR_DIRECTORY: int32 = 0x10
+const FAT32_ATTR_ARCHIVE: int32 = 0x20
+const FAT32_ATTR_LONG_NAME: int32 = 0x0F
+
+# Special cluster values
+const FAT32_CLUSTER_FREE: int32 = 0x00000000
+const FAT32_CLUSTER_BAD: int32 = 0x0FFFFFF7
+const FAT32_CLUSTER_END: int32 = 0x0FFFFFF8  # End of chain (>= this value)
+
+# Mount table for FAT32
+var fat32_mounts: array[2, int32]         # Block device index
+var fat32_mounted: array[2, int32]        # 1 if mounted
+var fat32_sectors_per_cluster: array[2, int32]
+var fat32_reserved_sectors: array[2, int32]
+var fat32_num_fats: array[2, int32]
+var fat32_fat_size: array[2, int32]       # Sectors per FAT
+var fat32_root_cluster: array[2, int32]   # First cluster of root dir
+var fat32_first_data_sector: array[2, int32]
+var fat32_total_clusters: array[2, int32]
+var fat32_fat_start: array[2, int32]      # LBA of first FAT
+var fat32_cluster_size: array[2, int32]   # Bytes per cluster
+
+# Sector buffer for FAT32
+var fat32_sector_buf: array[512, uint8]
+var fat32_fat_cache_sector: int32 = -1
+var fat32_fat_cache_mount: int32 = -1
+
+# Initialize FAT32 subsystem
+proc fat32_init() =
+  var i: int32 = 0
+  while i < FAT32_MAX_MOUNTS:
+    fat32_mounted[i] = 0
+    fat32_mounts[i] = -1
+    i = i + 1
+  fat32_fat_cache_sector = -1
+  fat32_fat_cache_mount = -1
+
+# Read a sector from FAT32 mount
+proc fat32_read_sector(mount_id: int32, lba: int32, buf: ptr uint8): int32 =
+  if mount_id < 0 or mount_id >= FAT32_MAX_MOUNTS:
+    return -1
+  if fat32_mounted[mount_id] == 0:
+    return -1
+  var dev: int32 = fat32_mounts[mount_id]
+  return blkdev_read(dev, lba, 1, buf)
+
+# Get cluster entry from FAT
+proc fat32_get_fat_entry(mount_id: int32, cluster: int32): int32 =
+  if mount_id < 0 or mount_id >= FAT32_MAX_MOUNTS:
+    return -1
+
+  # Calculate which sector of the FAT contains this entry
+  var fat_offset: int32 = cluster * 4
+  var fat_sector: int32 = fat32_fat_start[mount_id] + (fat_offset / FAT32_SECTOR_SIZE)
+  var entry_offset: int32 = fat_offset % FAT32_SECTOR_SIZE
+
+  # Check cache
+  if fat_sector != fat32_fat_cache_sector or mount_id != fat32_fat_cache_mount:
+    if fat32_read_sector(mount_id, fat_sector, addr(fat32_sector_buf[0])) < 0:
+      return -1
+    fat32_fat_cache_sector = fat_sector
+    fat32_fat_cache_mount = mount_id
+
+  # Read 32-bit entry (only 28 bits used)
+  var entry: int32 = read_le32(addr(fat32_sector_buf[0]), entry_offset)
+  return entry and 0x0FFFFFFF
+
+# Convert cluster to LBA
+proc fat32_cluster_to_lba(mount_id: int32, cluster: int32): int32 =
+  if cluster < 2:
+    return -1
+  return fat32_first_data_sector[mount_id] + (cluster - 2) * fat32_sectors_per_cluster[mount_id]
+
+# Check if FAT32 signature is present
+proc fat32_check_signature(buf: ptr uint8): int32 =
+  # Check for FAT32 boot signature at offset 510-511
+  if buf[510] != 0x55 or buf[511] != 0xAA:
+    return 0
+
+  # Check for FAT32 filesystem type string at offset 82
+  if buf[82] == 70 and buf[83] == 65 and buf[84] == 84 and buf[85] == 51 and buf[86] == 50:  # "FAT32"
+    return 1
+
+  # Also check BPB for valid FAT32 (sectors per FAT16 = 0, sectors per FAT32 > 0)
+  var fat16_size: int32 = read_le16(buf, 22)
+  var fat32_size: int32 = read_le32(buf, 36)
+  if fat16_size == 0 and fat32_size > 0:
+    return 1
+
+  return 0
+
+# Mount a FAT32 filesystem
+proc fat32_mount(dev: int32): int32 =
+  # Find a free mount slot
+  var mount_id: int32 = -1
+  var i: int32 = 0
+  while i < FAT32_MAX_MOUNTS:
+    if fat32_mounted[i] == 0:
+      mount_id = i
+      break
+    i = i + 1
+
+  if mount_id < 0:
+    ser_println(cast[ptr uint8]("[FAT32] No free mount slots"))
+    return -1
+
+  # Read boot sector
+  if blkdev_read(dev, 0, 1, addr(fat32_sector_buf[0])) < 0:
+    ser_println(cast[ptr uint8]("[FAT32] Failed to read boot sector"))
+    return -1
+
+  # Check signature
+  if fat32_check_signature(addr(fat32_sector_buf[0])) == 0:
+    ser_println(cast[ptr uint8]("[FAT32] Not a FAT32 filesystem"))
+    return -1
+
+  # Parse BPB (BIOS Parameter Block)
+  var bytes_per_sector: int32 = read_le16(addr(fat32_sector_buf[0]), 11)
+  if bytes_per_sector != 512:
+    ser_println(cast[ptr uint8]("[FAT32] Unsupported sector size"))
+    return -1
+
+  var sectors_per_cluster: int32 = cast[int32](fat32_sector_buf[13])
+  var reserved_sectors: int32 = read_le16(addr(fat32_sector_buf[0]), 14)
+  var num_fats: int32 = cast[int32](fat32_sector_buf[16])
+  var fat_size: int32 = read_le32(addr(fat32_sector_buf[0]), 36)
+  var root_cluster: int32 = read_le32(addr(fat32_sector_buf[0]), 44)
+
+  # Calculate first data sector
+  var first_data_sector: int32 = reserved_sectors + (num_fats * fat_size)
+
+  # Get total sectors
+  var total_sectors: int32 = read_le16(addr(fat32_sector_buf[0]), 19)
+  if total_sectors == 0:
+    total_sectors = read_le32(addr(fat32_sector_buf[0]), 32)
+
+  var data_sectors: int32 = total_sectors - first_data_sector
+  var total_clusters: int32 = data_sectors / sectors_per_cluster
+
+  # Store mount info
+  fat32_mounts[mount_id] = dev
+  fat32_mounted[mount_id] = 1
+  fat32_sectors_per_cluster[mount_id] = sectors_per_cluster
+  fat32_reserved_sectors[mount_id] = reserved_sectors
+  fat32_num_fats[mount_id] = num_fats
+  fat32_fat_size[mount_id] = fat_size
+  fat32_root_cluster[mount_id] = root_cluster
+  fat32_first_data_sector[mount_id] = first_data_sector
+  fat32_total_clusters[mount_id] = total_clusters
+  fat32_fat_start[mount_id] = reserved_sectors
+  fat32_cluster_size[mount_id] = sectors_per_cluster * 512
+
+  # Invalidate FAT cache
+  fat32_fat_cache_sector = -1
+
+  ser_print(cast[ptr uint8]("[FAT32] Mounted device "))
+  ser_print_int(dev)
+  ser_print(cast[ptr uint8](": "))
+  ser_print_int(total_clusters)
+  ser_print(cast[ptr uint8](" clusters, "))
+  ser_print_int(sectors_per_cluster)
+  ser_println(cast[ptr uint8](" sec/cluster"))
+
+  return mount_id
+
+# Unmount FAT32 filesystem
+proc fat32_unmount(mount_id: int32): int32 =
+  if mount_id < 0 or mount_id >= FAT32_MAX_MOUNTS:
+    return -1
+  if fat32_mounted[mount_id] == 0:
+    return -1
+
+  fat32_mounted[mount_id] = 0
+  fat32_mounts[mount_id] = -1
+
+  # Invalidate cache if it was for this mount
+  if fat32_fat_cache_mount == mount_id:
+    fat32_fat_cache_sector = -1
+    fat32_fat_cache_mount = -1
+
+  return 0
+
+# Compare 8.3 filename (name is 8 chars, ext is 3 chars, space padded)
+proc fat32_name_match(entry: ptr uint8, name: ptr uint8): int32 =
+  # Build 8.3 name from input
+  var short_name: array[11, uint8]
+  var i: int32 = 0
+
+  # Initialize with spaces
+  while i < 11:
+    short_name[i] = 32
+    i = i + 1
+
+  # Copy name part (up to 8 chars, uppercase)
+  i = 0
+  var pos: int32 = 0
+  while name[i] != 0 and name[i] != 46 and pos < 8:  # '.'
+    var c: uint8 = name[i]
+    if c >= 97 and c <= 122:  # lowercase to uppercase
+      c = c - 32
+    short_name[pos] = c
+    pos = pos + 1
+    i = i + 1
+
+  # Skip to extension
+  while name[i] != 0 and name[i] != 46:
+    i = i + 1
+
+  # Copy extension (up to 3 chars)
+  if name[i] == 46:
+    i = i + 1
+    pos = 8
+    while name[i] != 0 and pos < 11:
+      var c: uint8 = name[i]
+      if c >= 97 and c <= 122:
+        c = c - 32
+      short_name[pos] = c
+      pos = pos + 1
+      i = i + 1
+
+  # Compare with entry
+  i = 0
+  while i < 11:
+    if entry[i] != short_name[i]:
+      return 0
+    i = i + 1
+
+  return 1
+
+# Lookup a file/directory in a directory cluster
+# Returns starting cluster of found entry, or -1 if not found
+proc fat32_lookup(mount_id: int32, dir_cluster: int32, name: ptr uint8, out_is_dir: ptr int32, out_size: ptr int32): int32 =
+  if mount_id < 0 or mount_id >= FAT32_MAX_MOUNTS:
+    return -1
+
+  var cluster: int32 = dir_cluster
+  var entries_per_cluster: int32 = fat32_cluster_size[mount_id] / FAT32_DIR_ENTRY_SIZE
+
+  while cluster >= 2 and cluster < FAT32_CLUSTER_END:
+    var lba: int32 = fat32_cluster_to_lba(mount_id, cluster)
+    var sector: int32 = 0
+
+    while sector < fat32_sectors_per_cluster[mount_id]:
+      if fat32_read_sector(mount_id, lba + sector, addr(fat32_sector_buf[0])) < 0:
+        return -1
+
+      var entry_idx: int32 = 0
+      while entry_idx < FAT32_ENTRIES_PER_SECTOR:
+        var entry_offset: int32 = entry_idx * FAT32_DIR_ENTRY_SIZE
+        var first_byte: uint8 = fat32_sector_buf[entry_offset]
+
+        # End of directory
+        if first_byte == 0:
+          return -1
+
+        # Deleted entry
+        if first_byte == 0xE5:
+          entry_idx = entry_idx + 1
+          continue
+
+        # Skip long name entries
+        var attr: int32 = cast[int32](fat32_sector_buf[entry_offset + 11])
+        if attr == FAT32_ATTR_LONG_NAME:
+          entry_idx = entry_idx + 1
+          continue
+
+        # Check name match
+        if fat32_name_match(addr(fat32_sector_buf[entry_offset]), name) != 0:
+          # Found it! Extract cluster and size
+          var cluster_hi: int32 = read_le16(addr(fat32_sector_buf[0]), entry_offset + 20)
+          var cluster_lo: int32 = read_le16(addr(fat32_sector_buf[0]), entry_offset + 26)
+          var file_size: int32 = read_le32(addr(fat32_sector_buf[0]), entry_offset + 28)
+
+          out_is_dir[0] = 0
+          if (attr and FAT32_ATTR_DIRECTORY) != 0:
+            out_is_dir[0] = 1
+
+          out_size[0] = file_size
+          return (cluster_hi * 65536) + cluster_lo
+
+        entry_idx = entry_idx + 1
+
+      sector = sector + 1
+
+    # Follow cluster chain
+    cluster = fat32_get_fat_entry(mount_id, cluster)
+
+  return -1
+
+# Read file data from FAT32
+proc fat32_read(mount_id: int32, start_cluster: int32, offset: int32, buf: ptr uint8, len: int32): int32 =
+  if mount_id < 0 or mount_id >= FAT32_MAX_MOUNTS:
+    return -1
+  if len <= 0:
+    return 0
+
+  var cluster_size: int32 = fat32_cluster_size[mount_id]
+  var bytes_read: int32 = 0
+
+  # Skip to the cluster containing offset
+  var cluster: int32 = start_cluster
+  var skip_bytes: int32 = offset
+  while skip_bytes >= cluster_size and cluster >= 2 and cluster < FAT32_CLUSTER_END:
+    cluster = fat32_get_fat_entry(mount_id, cluster)
+    skip_bytes = skip_bytes - cluster_size
+
+  # Read data
+  while cluster >= 2 and cluster < FAT32_CLUSTER_END and bytes_read < len:
+    var lba: int32 = fat32_cluster_to_lba(mount_id, cluster)
+    var sector: int32 = skip_bytes / 512
+    var sector_offset: int32 = skip_bytes % 512
+    skip_bytes = 0
+
+    while sector < fat32_sectors_per_cluster[mount_id] and bytes_read < len:
+      if fat32_read_sector(mount_id, lba + sector, addr(fat32_sector_buf[0])) < 0:
+        return bytes_read
+
+      var copy_start: int32 = sector_offset
+      var copy_len: int32 = 512 - sector_offset
+      if copy_len > len - bytes_read:
+        copy_len = len - bytes_read
+
+      var i: int32 = 0
+      while i < copy_len:
+        buf[bytes_read + i] = fat32_sector_buf[copy_start + i]
+        i = i + 1
+
+      bytes_read = bytes_read + copy_len
+      sector_offset = 0
+      sector = sector + 1
+
+    cluster = fat32_get_fat_entry(mount_id, cluster)
+
+  return bytes_read
+
+# Read directory entries from FAT32
+# Returns number of entries read
+proc fat32_readdir(mount_id: int32, dir_cluster: int32, entry_idx: int32, out_name: ptr uint8, out_is_dir: ptr int32, out_size: ptr int32): int32 =
+  if mount_id < 0 or mount_id >= FAT32_MAX_MOUNTS:
+    return -1
+
+  var cluster: int32 = dir_cluster
+  var current_entry: int32 = 0
+  var valid_entries: int32 = 0
+
+  while cluster >= 2 and cluster < FAT32_CLUSTER_END:
+    var lba: int32 = fat32_cluster_to_lba(mount_id, cluster)
+    var sector: int32 = 0
+
+    while sector < fat32_sectors_per_cluster[mount_id]:
+      if fat32_read_sector(mount_id, lba + sector, addr(fat32_sector_buf[0])) < 0:
+        return -1
+
+      var e: int32 = 0
+      while e < FAT32_ENTRIES_PER_SECTOR:
+        var entry_offset: int32 = e * FAT32_DIR_ENTRY_SIZE
+        var first_byte: uint8 = fat32_sector_buf[entry_offset]
+
+        if first_byte == 0:
+          return -1  # End of directory
+
+        if first_byte != 0xE5:  # Not deleted
+          var attr: int32 = cast[int32](fat32_sector_buf[entry_offset + 11])
+          if attr != FAT32_ATTR_LONG_NAME and (attr and FAT32_ATTR_VOLUME_ID) == 0:
+            if valid_entries == entry_idx:
+              # Copy 8.3 name
+              var i: int32 = 0
+              var pos: int32 = 0
+              while i < 8:
+                var c: uint8 = fat32_sector_buf[entry_offset + i]
+                if c != 32:  # Not space
+                  out_name[pos] = c
+                  pos = pos + 1
+                i = i + 1
+
+              # Add extension if present
+              var has_ext: int32 = 0
+              i = 8
+              while i < 11:
+                if fat32_sector_buf[entry_offset + i] != 32:
+                  has_ext = 1
+                  break
+                i = i + 1
+
+              if has_ext != 0:
+                out_name[pos] = 46  # '.'
+                pos = pos + 1
+                i = 8
+                while i < 11:
+                  var c: uint8 = fat32_sector_buf[entry_offset + i]
+                  if c != 32:
+                    out_name[pos] = c
+                    pos = pos + 1
+                  i = i + 1
+
+              out_name[pos] = 0
+
+              out_is_dir[0] = 0
+              if (attr and FAT32_ATTR_DIRECTORY) != 0:
+                out_is_dir[0] = 1
+
+              out_size[0] = read_le32(addr(fat32_sector_buf[0]), entry_offset + 28)
+              return 0
+
+            valid_entries = valid_entries + 1
+
+        e = e + 1
+
+      sector = sector + 1
+
+    cluster = fat32_get_fat_entry(mount_id, cluster)
+
+  return -1
+
+# Try to mount FAT32 on all partitions
+proc fat32_auto_mount(): int32 =
+  var mounted: int32 = 0
+  var i: int32 = 0
+
+  while i < blkdev_count:
+    # Only try partitions (type 5) that are FAT32 type
+    if blkdev_types[i] == 5:
+      var part_idx: int32 = blkdev_drv_idx[i]
+      var ptype: int32 = part_type[part_idx]
+
+      # Check for FAT32 partition types
+      if ptype == PART_TYPE_FAT32 or ptype == PART_TYPE_FAT32_LBA:
+        ser_print(cast[ptr uint8]("[FAT32] Trying partition "))
+        ser_println(blkdev_get_name(i))
+
+        var mount_id: int32 = fat32_mount(i)
+        if mount_id >= 0:
+          mounted = mounted + 1
+
+    i = i + 1
+
+  return mounted
+
+# =============================================================================
 # Init System - Reads startup configuration from disk
 # =============================================================================
 
@@ -2904,6 +4159,15 @@ proc main() =
     print_ok(cast[ptr uint8]("BrainFS mounted"))
   else:
     print_skip(cast[ptr uint8]("BrainFS: no disk filesystem"))
+
+  # Initialize FAT32 and try to mount FAT32 partitions
+  print_pending(cast[ptr uint8]("Initializing FAT32"))
+  fat32_init()
+  var fat32_mounts_found: int32 = fat32_auto_mount()
+  if fat32_mounts_found > 0:
+    print_ok(cast[ptr uint8]("FAT32 partitions mounted"))
+  else:
+    print_skip(cast[ptr uint8]("FAT32: no partitions found"))
 
   # Initialize scheduler
   print_pending(cast[ptr uint8]("Initializing scheduler"))
@@ -4086,6 +5350,42 @@ proc sys_readlink(path: ptr uint8, buf: ptr uint8, bufsize: int32): int32 =
   if ino <= 0:
     return -1
   return brfs_readlink(brfs_active_mount, ino, buf, bufsize)
+
+# sys_getxattr - Get extended attribute value
+proc sys_getxattr(path: ptr uint8, name: ptr uint8, value: ptr uint8, size: int32): int32 =
+  if brfs_active_mount < 0:
+    return -1
+  var ino: int32 = path_resolve(path)
+  if ino <= 0:
+    return -1
+  return brfs_getxattr(brfs_active_mount, ino, name, value, size)
+
+# sys_setxattr - Set extended attribute value
+proc sys_setxattr(path: ptr uint8, name: ptr uint8, value: ptr uint8, size: int32): int32 =
+  if brfs_active_mount < 0:
+    return -1
+  var ino: int32 = path_resolve(path)
+  if ino <= 0:
+    return -1
+  return brfs_setxattr(brfs_active_mount, ino, name, value, size)
+
+# sys_listxattr - List extended attribute names
+proc sys_listxattr(path: ptr uint8, list: ptr uint8, size: int32): int32 =
+  if brfs_active_mount < 0:
+    return -1
+  var ino: int32 = path_resolve(path)
+  if ino <= 0:
+    return -1
+  return brfs_listxattr(brfs_active_mount, ino, list, size)
+
+# sys_removexattr - Remove an extended attribute
+proc sys_removexattr(path: ptr uint8, name: ptr uint8): int32 =
+  if brfs_active_mount < 0:
+    return -1
+  var ino: int32 = path_resolve(path)
+  if ino <= 0:
+    return -1
+  return brfs_removexattr(brfs_active_mount, ino, name)
 
 # ============================================================================
 # High-level filesystem operations
@@ -8270,6 +9570,83 @@ const E1000_DEVICE_ID: int32 = 0x100E  # 82540EM (QEMU default)
 const E1000_DEVICE_ID_2: int32 = 0x100F  # 82545EM
 const E1000_DEVICE_ID_3: int32 = 0x10D3  # 82574L
 
+# Virtio PCI IDs
+const VIRTIO_VENDOR_ID: int32 = 0x1AF4          # Red Hat/Virtio
+const VIRTIO_NET_DEVICE_ID: int32 = 0x1000      # Legacy virtio-net
+const VIRTIO_NET_DEVICE_ID_MODERN: int32 = 0x1041  # Modern virtio-net
+
+# Virtio PCI capability configuration
+const VIRTIO_PCI_CAP_COMMON: int32 = 1
+const VIRTIO_PCI_CAP_NOTIFY: int32 = 2
+const VIRTIO_PCI_CAP_ISR: int32 = 3
+const VIRTIO_PCI_CAP_DEVICE: int32 = 4
+const VIRTIO_PCI_CAP_PCI: int32 = 5
+
+# Virtio device status flags
+const VIRTIO_STATUS_ACKNOWLEDGE: int32 = 1
+const VIRTIO_STATUS_DRIVER: int32 = 2
+const VIRTIO_STATUS_DRIVER_OK: int32 = 4
+const VIRTIO_STATUS_FEATURES_OK: int32 = 8
+const VIRTIO_STATUS_FAILED: int32 = 128
+
+# Virtio Legacy I/O port offsets
+const VIRTIO_IO_DEVICE_FEATURES: int32 = 0
+const VIRTIO_IO_GUEST_FEATURES: int32 = 4
+const VIRTIO_IO_QUEUE_ADDRESS: int32 = 8
+const VIRTIO_IO_QUEUE_SIZE: int32 = 12
+const VIRTIO_IO_QUEUE_SELECT: int32 = 14
+const VIRTIO_IO_QUEUE_NOTIFY: int32 = 16
+const VIRTIO_IO_DEVICE_STATUS: int32 = 18
+const VIRTIO_IO_ISR_STATUS: int32 = 19
+const VIRTIO_IO_MAC_OFFSET: int32 = 20  # MAC address at offset 20 for virtio-net
+
+# Virtio net feature bits
+const VIRTIO_NET_F_CSUM: int32 = 1       # 1 << 0
+const VIRTIO_NET_F_MAC: int32 = 32       # 1 << 5
+const VIRTIO_NET_F_STATUS: int32 = 65536 # 1 << 16
+
+# Virtio descriptor flags
+const VIRTQ_DESC_F_NEXT: int32 = 1
+const VIRTQ_DESC_F_WRITE: int32 = 2
+
+# Virtio queue constants
+const VIRTIO_RX_QUEUE: int32 = 0
+const VIRTIO_TX_QUEUE: int32 = 1
+const VIRTIO_QUEUE_SIZE: int32 = 256
+
+# Virtio-net header size
+const VIRTIO_NET_HDR_SIZE: int32 = 10
+
+# Virtio driver state
+var virtio_found: int32 = 0
+var virtio_io_base: int32 = 0
+var virtio_irq: int32 = 0
+
+# Virtio descriptor table - each descriptor: 16 bytes
+# addr (8), len (4), flags (2), next (2)
+var virtio_rx_descs: array[4096, uint8]   # 256 * 16 bytes
+var virtio_tx_descs: array[4096, uint8]   # 256 * 16 bytes
+
+# Virtio available ring - 6 + 256*2 bytes
+var virtio_rx_avail: array[518, uint8]
+var virtio_tx_avail: array[518, uint8]
+
+# Virtio used ring - 6 + 256*8 bytes
+var virtio_rx_used: array[2054, uint8]
+var virtio_tx_used: array[2054, uint8]
+
+# Virtio RX/TX buffers (with header space)
+var virtio_rx_buffers: array[524288, uint8]  # 256 * 2048
+var virtio_tx_buffers: array[524288, uint8]  # 256 * 2048
+
+# Queue state
+var virtio_rx_avail_idx: int32 = 0
+var virtio_tx_avail_idx: int32 = 0
+var virtio_rx_used_idx: int32 = 0
+var virtio_tx_used_idx: int32 = 0
+var virtio_rx_free_idx: int32 = 0
+var virtio_tx_free_idx: int32 = 0
+
 # PCI configuration space offsets
 const PCI_VENDOR_ID: int32 = 0x00
 const PCI_DEVICE_ID: int32 = 0x02
@@ -8360,6 +9737,318 @@ const TCP_STATE_LAST_ACK: int32 = 9
 const TCP_STATE_TIME_WAIT: int32 = 10
 
 # ============================================================================
+# Virtio I/O Access (Legacy PIO mode)
+# ============================================================================
+
+proc virtio_read8(offset: int32): int32 =
+  return port_inb(virtio_io_base + offset)
+
+proc virtio_read16(offset: int32): int32 =
+  return port_inw(virtio_io_base + offset)
+
+proc virtio_read32(offset: int32): int32 =
+  return port_inl(virtio_io_base + offset)
+
+proc virtio_write8(offset: int32, value: int32) =
+  port_outb(virtio_io_base + offset, value)
+
+proc virtio_write16(offset: int32, value: int32) =
+  port_outw(virtio_io_base + offset, value)
+
+proc virtio_write32(offset: int32, value: int32) =
+  port_outl(virtio_io_base + offset, value)
+
+# ============================================================================
+# Virtio Queue Setup
+# ============================================================================
+
+proc virtio_setup_queue(queue_idx: int32, descs: ptr uint8, avail: ptr uint8, used: ptr uint8): int32 =
+  # Select queue
+  virtio_write16(VIRTIO_IO_QUEUE_SELECT, queue_idx)
+
+  # Read queue size from device
+  var queue_size: int32 = virtio_read16(VIRTIO_IO_QUEUE_SIZE)
+  if queue_size == 0:
+    ser_print(cast[ptr uint8]("[VIRTIO] Queue "))
+    ser_print_int(queue_idx)
+    ser_println(cast[ptr uint8](" size is 0"))
+    return -1
+
+  ser_print(cast[ptr uint8]("[VIRTIO] Queue "))
+  ser_print_int(queue_idx)
+  ser_print(cast[ptr uint8](" size: "))
+  ser_print_int(queue_size)
+  ser_println(cast[ptr uint8](""))
+
+  # Calculate physical address of descriptor table
+  # Legacy virtio expects page-aligned queue address (page frame number)
+  var desc_phys: int32 = cast[int32](descs)
+  var page_num: int32 = desc_phys / 4096
+
+  # Write queue address (page frame number)
+  virtio_write32(VIRTIO_IO_QUEUE_ADDRESS, page_num)
+
+  return queue_size
+
+proc virtio_init_rx_queue(): int32 =
+  var i: int32 = 0
+  var queue_size: int32 = virtio_setup_queue(VIRTIO_RX_QUEUE,
+    addr(virtio_rx_descs[0]), addr(virtio_rx_avail[0]), addr(virtio_rx_used[0]))
+
+  if queue_size < 0:
+    return -1
+
+  # Initialize RX descriptors with buffers
+  i = 0
+  while i < VIRTIO_QUEUE_SIZE:
+    var desc_off: int32 = i * 16
+    var buf_addr: int32 = cast[int32](addr(virtio_rx_buffers[0])) + (i * 2048)
+
+    # Address (64-bit)
+    virtio_rx_descs[desc_off + 0] = cast[uint8](buf_addr and 0xFF)
+    virtio_rx_descs[desc_off + 1] = cast[uint8]((buf_addr / 256) and 0xFF)
+    virtio_rx_descs[desc_off + 2] = cast[uint8]((buf_addr / 65536) and 0xFF)
+    virtio_rx_descs[desc_off + 3] = cast[uint8]((buf_addr / 16777216) and 0xFF)
+    virtio_rx_descs[desc_off + 4] = 0
+    virtio_rx_descs[desc_off + 5] = 0
+    virtio_rx_descs[desc_off + 6] = 0
+    virtio_rx_descs[desc_off + 7] = 0
+
+    # Length (32-bit)
+    var buf_len: int32 = 2048
+    virtio_rx_descs[desc_off + 8] = cast[uint8](buf_len and 0xFF)
+    virtio_rx_descs[desc_off + 9] = cast[uint8]((buf_len / 256) and 0xFF)
+    virtio_rx_descs[desc_off + 10] = 0
+    virtio_rx_descs[desc_off + 11] = 0
+
+    # Flags (16-bit) - WRITE flag for device to write to buffer
+    virtio_rx_descs[desc_off + 12] = cast[uint8](VIRTQ_DESC_F_WRITE)
+    virtio_rx_descs[desc_off + 13] = 0
+
+    # Next (16-bit)
+    virtio_rx_descs[desc_off + 14] = 0
+    virtio_rx_descs[desc_off + 15] = 0
+
+    # Add to available ring
+    var avail_off: int32 = 4 + (i * 2)  # Skip flags (2) and idx (2)
+    virtio_rx_avail[avail_off] = cast[uint8](i and 0xFF)
+    virtio_rx_avail[avail_off + 1] = cast[uint8]((i / 256) and 0xFF)
+
+    i = i + 1
+
+  # Set available ring idx
+  virtio_rx_avail_idx = VIRTIO_QUEUE_SIZE
+  virtio_rx_avail[2] = cast[uint8](virtio_rx_avail_idx and 0xFF)
+  virtio_rx_avail[3] = cast[uint8]((virtio_rx_avail_idx / 256) and 0xFF)
+
+  # Notify device
+  virtio_write16(VIRTIO_IO_QUEUE_NOTIFY, VIRTIO_RX_QUEUE)
+
+  return 0
+
+proc virtio_init_tx_queue(): int32 =
+  var queue_size: int32 = virtio_setup_queue(VIRTIO_TX_QUEUE,
+    addr(virtio_tx_descs[0]), addr(virtio_tx_avail[0]), addr(virtio_tx_used[0]))
+
+  if queue_size < 0:
+    return -1
+
+  # Initialize TX descriptors (empty, will be filled on send)
+  var i: int32 = 0
+  while i < VIRTIO_QUEUE_SIZE:
+    var desc_off: int32 = i * 16
+    var buf_addr: int32 = cast[int32](addr(virtio_tx_buffers[0])) + (i * 2048)
+
+    # Address (64-bit)
+    virtio_tx_descs[desc_off + 0] = cast[uint8](buf_addr and 0xFF)
+    virtio_tx_descs[desc_off + 1] = cast[uint8]((buf_addr / 256) and 0xFF)
+    virtio_tx_descs[desc_off + 2] = cast[uint8]((buf_addr / 65536) and 0xFF)
+    virtio_tx_descs[desc_off + 3] = cast[uint8]((buf_addr / 16777216) and 0xFF)
+    virtio_tx_descs[desc_off + 4] = 0
+    virtio_tx_descs[desc_off + 5] = 0
+    virtio_tx_descs[desc_off + 6] = 0
+    virtio_tx_descs[desc_off + 7] = 0
+
+    # Length and flags will be set on send
+    virtio_tx_descs[desc_off + 8] = 0
+    virtio_tx_descs[desc_off + 9] = 0
+    virtio_tx_descs[desc_off + 10] = 0
+    virtio_tx_descs[desc_off + 11] = 0
+    virtio_tx_descs[desc_off + 12] = 0
+    virtio_tx_descs[desc_off + 13] = 0
+    virtio_tx_descs[desc_off + 14] = 0
+    virtio_tx_descs[desc_off + 15] = 0
+
+    i = i + 1
+
+  virtio_tx_avail_idx = 0
+  virtio_tx_avail[2] = 0
+  virtio_tx_avail[3] = 0
+
+  return 0
+
+proc virtio_net_read_mac() =
+  # Read MAC address from device config (offset 20 in legacy mode)
+  var i: int32 = 0
+  while i < 6:
+    my_mac[i] = cast[uint8](virtio_read8(VIRTIO_IO_MAC_OFFSET + i))
+    i = i + 1
+
+  ser_print(cast[ptr uint8]("[VIRTIO-NET] MAC: "))
+  i = 0
+  while i < 6:
+    ser_print_hex(cast[int32](my_mac[i]))
+    if i < 5:
+      ser_print(cast[ptr uint8](":"))
+    i = i + 1
+  ser_println(cast[ptr uint8](""))
+
+proc virtio_net_init(): int32 =
+  ser_println(cast[ptr uint8]("[VIRTIO-NET] Initializing..."))
+
+  # Reset device
+  virtio_write8(VIRTIO_IO_DEVICE_STATUS, 0)
+
+  # Acknowledge device
+  virtio_write8(VIRTIO_IO_DEVICE_STATUS, VIRTIO_STATUS_ACKNOWLEDGE)
+
+  # Tell device we know how to drive it
+  virtio_write8(VIRTIO_IO_DEVICE_STATUS, VIRTIO_STATUS_ACKNOWLEDGE or VIRTIO_STATUS_DRIVER)
+
+  # Read and negotiate features
+  var features: int32 = virtio_read32(VIRTIO_IO_DEVICE_FEATURES)
+  ser_print(cast[ptr uint8]("[VIRTIO-NET] Device features: "))
+  ser_print_hex(features)
+  ser_println(cast[ptr uint8](""))
+
+  # We only need MAC feature for now
+  var guest_features: int32 = VIRTIO_NET_F_MAC
+  virtio_write32(VIRTIO_IO_GUEST_FEATURES, guest_features)
+
+  # Set FEATURES_OK
+  virtio_write8(VIRTIO_IO_DEVICE_STATUS, VIRTIO_STATUS_ACKNOWLEDGE or VIRTIO_STATUS_DRIVER or VIRTIO_STATUS_FEATURES_OK)
+
+  # Read MAC address
+  virtio_net_read_mac()
+
+  # Initialize queues
+  if virtio_init_rx_queue() < 0:
+    ser_println(cast[ptr uint8]("[VIRTIO-NET] Failed to init RX queue"))
+    virtio_write8(VIRTIO_IO_DEVICE_STATUS, VIRTIO_STATUS_FAILED)
+    return -1
+
+  if virtio_init_tx_queue() < 0:
+    ser_println(cast[ptr uint8]("[VIRTIO-NET] Failed to init TX queue"))
+    virtio_write8(VIRTIO_IO_DEVICE_STATUS, VIRTIO_STATUS_FAILED)
+    return -1
+
+  # Set DRIVER_OK to start the device
+  virtio_write8(VIRTIO_IO_DEVICE_STATUS,
+    VIRTIO_STATUS_ACKNOWLEDGE or VIRTIO_STATUS_DRIVER or VIRTIO_STATUS_FEATURES_OK or VIRTIO_STATUS_DRIVER_OK)
+
+  ser_println(cast[ptr uint8]("[VIRTIO-NET] Initialization complete"))
+  virtio_found = 1
+  return 0
+
+proc virtio_net_send(data: ptr uint8, length: int32): int32 =
+  if virtio_found == 0:
+    return -1
+
+  if length > 2048 - VIRTIO_NET_HDR_SIZE:
+    return -2
+
+  var desc_idx: int32 = virtio_tx_free_idx
+  virtio_tx_free_idx = (virtio_tx_free_idx + 1) % VIRTIO_QUEUE_SIZE
+
+  var buf_addr: int32 = cast[int32](addr(virtio_tx_buffers[0])) + (desc_idx * 2048)
+  var buf_ptr: ptr uint8 = cast[ptr uint8](buf_addr)
+
+  # Write virtio-net header (10 bytes, all zeros for simple case)
+  var i: int32 = 0
+  while i < VIRTIO_NET_HDR_SIZE:
+    buf_ptr[i] = 0
+    i = i + 1
+
+  # Copy packet data after header
+  i = 0
+  while i < length:
+    buf_ptr[VIRTIO_NET_HDR_SIZE + i] = data[i]
+    i = i + 1
+
+  # Update descriptor length
+  var desc_off: int32 = desc_idx * 16
+  var total_len: int32 = VIRTIO_NET_HDR_SIZE + length
+  virtio_tx_descs[desc_off + 8] = cast[uint8](total_len and 0xFF)
+  virtio_tx_descs[desc_off + 9] = cast[uint8]((total_len / 256) and 0xFF)
+
+  # Flags = 0 (no chaining, device reads)
+  virtio_tx_descs[desc_off + 12] = 0
+  virtio_tx_descs[desc_off + 13] = 0
+
+  # Add to available ring
+  var avail_off: int32 = 4 + ((virtio_tx_avail_idx % VIRTIO_QUEUE_SIZE) * 2)
+  virtio_tx_avail[avail_off] = cast[uint8](desc_idx and 0xFF)
+  virtio_tx_avail[avail_off + 1] = cast[uint8]((desc_idx / 256) and 0xFF)
+
+  # Update available ring index
+  virtio_tx_avail_idx = virtio_tx_avail_idx + 1
+  virtio_tx_avail[2] = cast[uint8](virtio_tx_avail_idx and 0xFF)
+  virtio_tx_avail[3] = cast[uint8]((virtio_tx_avail_idx / 256) and 0xFF)
+
+  # Notify device
+  virtio_write16(VIRTIO_IO_QUEUE_NOTIFY, VIRTIO_TX_QUEUE)
+
+  return 0
+
+proc virtio_net_receive(): int32 =
+  if virtio_found == 0:
+    return 0
+
+  # Check used ring for received packets
+  var used_idx_lo: int32 = cast[int32](virtio_rx_used[2])
+  var used_idx_hi: int32 = cast[int32](virtio_rx_used[3])
+  var device_used_idx: int32 = used_idx_lo + (used_idx_hi * 256)
+
+  if device_used_idx == virtio_rx_used_idx:
+    return 0  # No new packets
+
+  # Get descriptor index from used ring
+  var used_off: int32 = 4 + ((virtio_rx_used_idx % VIRTIO_QUEUE_SIZE) * 8)
+  var desc_idx: int32 = cast[int32](virtio_rx_used[used_off]) + (cast[int32](virtio_rx_used[used_off + 1]) * 256)
+  var pkt_len: int32 = cast[int32](virtio_rx_used[used_off + 4]) + (cast[int32](virtio_rx_used[used_off + 5]) * 256)
+
+  # Copy packet to packet_buf (skip virtio header)
+  var buf_addr: int32 = cast[int32](addr(virtio_rx_buffers[0])) + (desc_idx * 2048)
+  var buf_ptr: ptr uint8 = cast[ptr uint8](buf_addr)
+
+  var actual_len: int32 = pkt_len - VIRTIO_NET_HDR_SIZE
+  if actual_len > 0 and actual_len < 2048:
+    var i: int32 = 0
+    while i < actual_len:
+      packet_buf[i] = buf_ptr[VIRTIO_NET_HDR_SIZE + i]
+      i = i + 1
+    packet_len = actual_len
+  else:
+    packet_len = 0
+
+  # Update our used index
+  virtio_rx_used_idx = virtio_rx_used_idx + 1
+
+  # Re-add buffer to available ring
+  var avail_off: int32 = 4 + ((virtio_rx_avail_idx % VIRTIO_QUEUE_SIZE) * 2)
+  virtio_rx_avail[avail_off] = cast[uint8](desc_idx and 0xFF)
+  virtio_rx_avail[avail_off + 1] = cast[uint8]((desc_idx / 256) and 0xFF)
+
+  virtio_rx_avail_idx = virtio_rx_avail_idx + 1
+  virtio_rx_avail[2] = cast[uint8](virtio_rx_avail_idx and 0xFF)
+  virtio_rx_avail[3] = cast[uint8]((virtio_rx_avail_idx / 256) and 0xFF)
+
+  # Notify device
+  virtio_write16(VIRTIO_IO_QUEUE_NOTIFY, VIRTIO_RX_QUEUE)
+
+  return packet_len
+
+# ============================================================================
 # E1000 Register Access
 # ============================================================================
 
@@ -8389,6 +10078,59 @@ proc pci_scan_device(bus: int32, slot: int32): int32 =
     if device == E1000_DEVICE_ID_3:
       return 1
 
+  return 0
+
+# Scan for Virtio network device
+proc pci_scan_virtio(bus: int32, slot: int32): int32 =
+  var vendor: int32 = pci_config_read16(bus, slot, 0, PCI_VENDOR_ID)
+  if vendor == 0xFFFF:
+    return 0  # No device
+
+  var device: int32 = pci_config_read16(bus, slot, 0, PCI_DEVICE_ID)
+
+  # Check for Virtio network
+  if vendor == VIRTIO_VENDOR_ID:
+    if device == VIRTIO_NET_DEVICE_ID:
+      return 1
+    if device == VIRTIO_NET_DEVICE_ID_MODERN:
+      return 1
+
+  return 0
+
+proc pci_find_virtio_net(): int32 =
+  var bus: int32 = 0
+  while bus < 256:
+    var slot: int32 = 0
+    while slot < 32:
+      if pci_scan_virtio(bus, slot) == 1:
+        # Found Virtio-net! Get BAR0 (I/O port base for legacy)
+        var bar0: int32 = pci_config_read32(bus, slot, 0, PCI_BAR0)
+
+        # Check if it's I/O space (bit 0 = 1)
+        if (bar0 and 1) == 1:
+          virtio_io_base = bar0 & 0xFFFFFFFC  # Mask lower 2 bits
+
+          # Get IRQ
+          virtio_irq = pci_config_read8(bus, slot, 0, PCI_IRQ_LINE)
+
+          # Enable bus mastering and I/O space
+          var cmd: int32 = pci_config_read16(bus, slot, 0, PCI_COMMAND)
+          cmd = cmd | 0x05  # I/O Space + Bus Master
+          pci_config_write32(bus, slot, 0, PCI_COMMAND, cmd)
+
+          ser_print(cast[ptr uint8]("[VIRTIO] Found at bus "))
+          ser_print_int(bus)
+          ser_print(cast[ptr uint8](" slot "))
+          ser_print_int(slot)
+          ser_print(cast[ptr uint8](" IO base: "))
+          ser_print_hex(virtio_io_base)
+          ser_print(cast[ptr uint8](" IRQ: "))
+          ser_print_int(virtio_irq)
+          ser_println(cast[ptr uint8](""))
+
+          return 1
+      slot = slot + 1
+    bus = bus + 1
   return 0
 
 proc pci_find_e1000(): int32 =
@@ -8750,15 +10492,6 @@ proc e1000_reset() =
     i = i + 1
 
 proc net_init(): int32 =
-  kprint(cast[ptr uint8]("1"))
-  # Calculate 16-byte aligned descriptor ring addresses
-  # Round up to next 16-byte boundary using bitmask
-  var rx_raw: int32 = cast[int32](addr(rx_descs_raw[0]))
-  rx_descs_aligned = (rx_raw + 15) & cast[int32](0xFFFFFFF0)
-
-  var tx_raw: int32 = cast[int32](addr(tx_descs_raw[0]))
-  tx_descs_aligned = (tx_raw + 15) & cast[int32](0xFFFFFFF0)
-
   # Set default IP (can be changed via DHCP)
   my_ip[0] = cast[uint8](10)
   my_ip[1] = cast[uint8](0)
@@ -8771,9 +10504,29 @@ proc net_init(): int32 =
     broadcast_mac[j] = cast[uint8](0xFF)
     j = j + 1
 
+  # Try Virtio-net first (preferred for QEMU)
+  ser_println(cast[ptr uint8]("[NET] Scanning for network devices..."))
+  if pci_find_virtio_net() == 1:
+    ser_println(cast[ptr uint8]("[NET] Found Virtio-net device"))
+    if virtio_net_init() == 0:
+      ser_println(cast[ptr uint8]("[NET] Virtio-net initialized successfully"))
+      return 1
+    ser_println(cast[ptr uint8]("[NET] Virtio-net init failed, trying E1000..."))
+
+  # Fall back to E1000
+  kprint(cast[ptr uint8]("1"))
+  # Calculate 16-byte aligned descriptor ring addresses
+  # Round up to next 16-byte boundary using bitmask
+  var rx_raw: int32 = cast[int32](addr(rx_descs_raw[0]))
+  rx_descs_aligned = (rx_raw + 15) & cast[int32](0xFFFFFFF0)
+
+  var tx_raw: int32 = cast[int32](addr(tx_descs_raw[0]))
+  tx_descs_aligned = (tx_raw + 15) & cast[int32](0xFFFFFFF0)
+
   kprint(cast[ptr uint8]("2"))
   # Find E1000
   if pci_find_e1000() == 0:
+    ser_println(cast[ptr uint8]("[NET] No network device found"))
     return 0  # Not found
 
   kprint(cast[ptr uint8]("3"))
@@ -8805,6 +10558,7 @@ proc net_init(): int32 =
   # Enable interrupts for RX
   e1000_write(E1000_IMS, 0x1F6DC)  # RXT0, RXO, RXDMT0, etc.
 
+  ser_println(cast[ptr uint8]("[NET] E1000 initialized successfully"))
   return 1
 
 # ============================================================================
@@ -8935,6 +10689,9 @@ proc eth_send(dest_mac: ptr uint8, eth_type: int32, data: ptr uint8, data_len: i
       total_len = total_len + 1
     total_len = 60
 
+  # Use Virtio if available, otherwise E1000
+  if virtio_found == 1:
+    return virtio_net_send(addr(eth_send_frame[0]), total_len)
   return e1000_send_packet(addr(eth_send_frame[0]), total_len)
 
 # ============================================================================
@@ -10798,7 +12555,7 @@ proc parse_mouse_input_with_esc() =
   var i: int32 = 0
   var timeout: int32 = 0
   var ch: int32 = 0
-  while i < 28 and timeout < 50000:
+  while i < 28 and timeout < 500000:
     ch = serial_getchar()
     if ch != -1:
       buf[i] = cast[uint8](ch)
@@ -12328,10 +14085,14 @@ proc net_handle_packet() =
     ip_handle_packet(payload, payload_len)
 
 proc net_poll() =
-  if e1000_found == 0:
+  if e1000_found == 0 and virtio_found == 0:
     return
 
-  var len: int32 = e1000_receive_packet()
+  var len: int32 = 0
+  if virtio_found == 1:
+    len = virtio_net_receive()
+  else:
+    len = e1000_receive_packet()
   if len > 0:
     if net_debug == 1:
       kprint(cast[ptr uint8]("[RX:"))
