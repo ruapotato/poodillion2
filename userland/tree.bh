@@ -1,0 +1,216 @@
+# tree.bh - Display directory tree
+# Usage: tree [directory]
+#
+# List contents of directories in a tree-like format.
+#
+# Options:
+#   -d         List directories only
+#   -L LEVEL   Max display depth
+#   -a         Show hidden files
+#
+# Examples:
+#   tree           Show current directory tree
+#   tree /bin      Show /bin directory tree
+#   tree -L 2      Show tree with max depth 2
+
+import "lib/syscalls"
+
+var opt_dirs_only: int32 = 0
+var opt_max_depth: int32 = 100
+var opt_show_hidden: int32 = 0
+var dir_count: int32 = 0
+var file_count: int32 = 0
+
+proc parse_int(s: ptr uint8): int32 =
+  var result: int32 = 0
+  var i: int32 = 0
+  while s[i] >= 48 and s[i] <= 57:
+    result = result * 10 + (cast[int32](s[i]) - 48)
+    i = i + 1
+  return result
+
+proc is_hidden(name: ptr uint8): int32 =
+  if name[0] == 46:  # starts with '.'
+    return 1
+  return 0
+
+proc is_directory(path: ptr uint8): int32 =
+  # Try to open as directory
+  var fd: int32 = open(path, O_RDONLY)
+  if fd < 0:
+    return 0
+
+  # Try reading directory entries
+  var buf: array[256, uint8]
+  var result: int32 = syscall3(SYS_getdents64, fd, cast[int32](addr(buf[0])), 256)
+  close(fd)
+
+  if result > 0:
+    return 1
+  return 0
+
+proc print_indent(depth: int32, is_last: int32) =
+  var i: int32 = 0
+  while i < depth - 1:
+    print(cast[ptr uint8]("│   "))
+    i = i + 1
+
+  if depth > 0:
+    if is_last != 0:
+      print(cast[ptr uint8]("└── "))
+    else:
+      print(cast[ptr uint8]("├── "))
+
+proc list_tree(path: ptr uint8, depth: int32) =
+  if depth >= opt_max_depth:
+    return
+
+  var fd: int32 = open(path, O_RDONLY)
+  if fd < 0:
+    return
+
+  # Buffer for directory entries
+  var buf: array[4096, uint8]
+  var entries: array[128, ptr uint8]
+  var entry_types: array[128, int32]
+  var entry_count: int32 = 0
+
+  # Read all entries first
+  while 1:
+    var n: int32 = syscall3(SYS_getdents64, fd, cast[int32](addr(buf[0])), 4096)
+    if n <= 0:
+      break
+
+    var pos: int32 = 0
+    while pos < n:
+      var d_ino: int32 = cast[ptr int32](addr(buf[pos]))[0]
+      var d_reclen: int32 = cast[int32](buf[pos + 8]) or (cast[int32](buf[pos + 9]) * 256)
+      var d_type: int32 = cast[int32](buf[pos + 10])
+      var d_name: ptr uint8 = addr(buf[pos + 11])
+
+      # Skip . and ..
+      if d_name[0] == 46:  # '.'
+        if d_name[1] == 0:
+          pos = pos + d_reclen
+          continue
+        if d_name[1] == 46 and d_name[2] == 0:
+          pos = pos + d_reclen
+          continue
+
+      # Skip hidden files unless -a
+      if opt_show_hidden == 0 and is_hidden(d_name) != 0:
+        pos = pos + d_reclen
+        continue
+
+      # Skip non-directories if -d
+      if opt_dirs_only != 0 and d_type != 4:
+        pos = pos + d_reclen
+        continue
+
+      if entry_count < 128:
+        # Allocate and copy name
+        var name_len: int32 = strlen(d_name)
+        var old_brk: int32 = syscall1(SYS_brk, 0)
+        var new_brk: int32 = old_brk + name_len + 1
+        discard syscall1(SYS_brk, new_brk)
+        var name_copy: ptr uint8 = cast[ptr uint8](old_brk)
+        var j: int32 = 0
+        while j <= name_len:
+          name_copy[j] = d_name[j]
+          j = j + 1
+
+        entries[entry_count] = name_copy
+        entry_types[entry_count] = d_type
+        entry_count = entry_count + 1
+
+      pos = pos + d_reclen
+
+  close(fd)
+
+  # Print entries
+  var i: int32 = 0
+  while i < entry_count:
+    var is_last: int32 = 0
+    if i + 1 == entry_count:
+      is_last = 1
+
+    print_indent(depth + 1, is_last)
+    println(entries[i])
+
+    # Track counts
+    if entry_types[i] == 4:
+      dir_count = dir_count + 1
+
+      # Build full path for recursion
+      var full_path: array[512, uint8]
+      var pi: int32 = 0
+
+      # Copy path
+      while path[pi] != 0 and pi < 500:
+        full_path[pi] = path[pi]
+        pi = pi + 1
+
+      # Add / if needed
+      if pi > 0 and full_path[pi - 1] != 47:
+        full_path[pi] = 47
+        pi = pi + 1
+
+      # Add entry name
+      var ni: int32 = 0
+      while entries[i][ni] != 0 and pi < 510:
+        full_path[pi] = entries[i][ni]
+        pi = pi + 1
+        ni = ni + 1
+      full_path[pi] = 0
+
+      # Recurse
+      list_tree(addr(full_path[0]), depth + 1)
+    else:
+      file_count = file_count + 1
+
+    i = i + 1
+
+proc main(argc: int32, argv: ptr ptr uint8): int32 =
+  var path: ptr uint8 = cast[ptr uint8](".")
+  var i: int32 = 1
+
+  # Parse options
+  while i < argc:
+    var arg: ptr uint8 = argv[i]
+
+    if arg[0] == 45:  # '-'
+      if arg[1] == 100 and arg[2] == 0:  # -d
+        opt_dirs_only = 1
+      elif arg[1] == 97 and arg[2] == 0:  # -a
+        opt_show_hidden = 1
+      elif arg[1] == 76 and arg[2] == 0:  # -L
+        i = i + 1
+        if i < argc:
+          opt_max_depth = parse_int(argv[i])
+      elif arg[1] == 104 and arg[2] == 0:  # -h
+        println(cast[ptr uint8]("Usage: tree [-d] [-a] [-L level] [directory]"))
+        println(cast[ptr uint8](""))
+        println(cast[ptr uint8]("Options:"))
+        println(cast[ptr uint8]("  -d         Directories only"))
+        println(cast[ptr uint8]("  -a         Show hidden files"))
+        println(cast[ptr uint8]("  -L LEVEL   Max display depth"))
+        return 0
+    else:
+      path = arg
+
+    i = i + 1
+
+  # Print root
+  println(path)
+
+  # List tree
+  list_tree(path, 0)
+
+  # Print summary
+  println(cast[ptr uint8](""))
+  print_int(dir_count)
+  print(cast[ptr uint8](" directories, "))
+  print_int(file_count)
+  println(cast[ptr uint8](" files"))
+
+  return 0
