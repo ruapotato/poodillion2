@@ -1,0 +1,199 @@
+# base64.bh - Base64 encoding/decoding utility
+# Usage: base64 [-d] [file]
+#        base64 [-d] < input
+#
+# Options:
+#   -d    Decode mode (default is encode)
+#   -w N  Wrap output at N columns (default 76, 0 = no wrap)
+#
+# Examples:
+#   base64 file.txt              Encode file
+#   base64 -d encoded.txt        Decode file
+#   echo "hello" | base64        Encode from stdin
+#   echo "aGVsbG8K" | base64 -d  Decode from stdin
+
+import "lib/syscalls"
+import "lib/base64"
+
+# Options
+var opt_decode: int32 = 0
+var opt_wrap: int32 = 76
+var opt_file: array[256, uint8]
+var opt_has_file: int32 = 0
+
+# Buffers
+const INPUT_BUF_SIZE: int32 = 4096
+const OUTPUT_BUF_SIZE: int32 = 8192
+
+proc show_usage() =
+  println(cast[ptr uint8]("Usage: base64 [-d] [-w cols] [file]"))
+  println(cast[ptr uint8](""))
+  println(cast[ptr uint8]("Base64 encode or decode FILE, or stdin."))
+  println(cast[ptr uint8](""))
+  println(cast[ptr uint8]("Options:"))
+  println(cast[ptr uint8]("  -d         Decode data"))
+  println(cast[ptr uint8]("  -w COLS    Wrap encoded lines at COLS (default 76, 0=no wrap)"))
+  println(cast[ptr uint8](""))
+  println(cast[ptr uint8]("Examples:"))
+  println(cast[ptr uint8]("  base64 file.txt"))
+  println(cast[ptr uint8]("  base64 -d encoded.txt"))
+  println(cast[ptr uint8]("  echo 'hello' | base64"))
+
+proc parse_int(s: ptr uint8): int32 =
+  var result: int32 = 0
+  var i: int32 = 0
+  while s[i] >= 48 and s[i] <= 57:
+    result = result * 10 + (cast[int32](s[i]) - 48)
+    i = i + 1
+  return result
+
+proc parse_args(argc: int32, argv: ptr ptr uint8): int32 =
+  var i: int32 = 1
+
+  while i < argc:
+    var arg: ptr uint8 = argv[i]
+
+    if arg[0] == 45:  # '-'
+      if arg[1] == 100 and arg[2] == 0:  # -d
+        opt_decode = 1
+      elif arg[1] == 119 and arg[2] == 0:  # -w
+        i = i + 1
+        if i >= argc:
+          println(cast[ptr uint8]("base64: -w requires argument"))
+          return -1
+        opt_wrap = parse_int(argv[i])
+      elif arg[1] == 104 and arg[2] == 0:  # -h
+        show_usage()
+        return -2
+      else:
+        print(cast[ptr uint8]("base64: invalid option -- '"))
+        print(arg)
+        println(cast[ptr uint8]("'"))
+        return -1
+    else:
+      # File argument
+      var j: int32 = 0
+      while arg[j] != 0 and j < 255:
+        opt_file[j] = arg[j]
+        j = j + 1
+      opt_file[j] = 0
+      opt_has_file = 1
+
+    i = i + 1
+
+  return 0
+
+# Write output with optional line wrapping
+proc write_wrapped(data: ptr uint8, len: int32) =
+  if opt_wrap <= 0:
+    discard write(STDOUT, data, len)
+    return
+
+  var i: int32 = 0
+  var col: int32 = 0
+  var newline: uint8 = 10
+
+  while i < len:
+    discard write(STDOUT, addr(data[i]), 1)
+    col = col + 1
+    if col >= opt_wrap:
+      discard write(STDOUT, addr(newline), 1)
+      col = 0
+    i = i + 1
+
+  # Final newline if not already at start of line
+  if col > 0:
+    discard write(STDOUT, addr(newline), 1)
+
+proc encode_stream(fd: int32) =
+  var input: array[4096, uint8]
+  var output: array[8192, uint8]
+  var total_out: int32 = 0
+
+  while 1:
+    # Read up to 3072 bytes (multiple of 3 for clean encoding)
+    var n: int32 = read(fd, addr(input[0]), 3072)
+    if n <= 0:
+      break
+
+    # Encode
+    var out_len: int32 = base64_encode(addr(input[0]), n, addr(output[0]))
+
+    # Write with wrapping
+    if opt_wrap <= 0:
+      discard write(STDOUT, addr(output[0]), out_len)
+    else:
+      var i: int32 = 0
+      while i < out_len:
+        var chunk: int32 = opt_wrap
+        if i + chunk > out_len:
+          chunk = out_len - i
+        discard write(STDOUT, addr(output[i]), chunk)
+        var nl: uint8 = 10
+        discard write(STDOUT, addr(nl), 1)
+        i = i + opt_wrap
+
+  # Final newline if no wrapping
+  if opt_wrap <= 0:
+    var nl: uint8 = 10
+    discard write(STDOUT, addr(nl), 1)
+
+proc decode_stream(fd: int32) =
+  var input: array[4096, uint8]
+  var clean_input: array[4096, uint8]
+  var output: array[4096, uint8]
+
+  while 1:
+    var n: int32 = read(fd, addr(input[0]), 4096)
+    if n <= 0:
+      break
+
+    # Remove whitespace from input
+    var clean_len: int32 = 0
+    var i: int32 = 0
+    while i < n:
+      var c: uint8 = input[i]
+      # Keep only base64 characters
+      if (c >= 65 and c <= 90) or (c >= 97 and c <= 122) or (c >= 48 and c <= 57) or c == 43 or c == 47 or c == 61:
+        clean_input[clean_len] = c
+        clean_len = clean_len + 1
+      i = i + 1
+
+    if clean_len > 0:
+      var out_len: int32 = base64_decode(addr(clean_input[0]), clean_len, addr(output[0]))
+      if out_len < 0:
+        println(cast[ptr uint8]("base64: invalid input"))
+        return
+      discard write(STDOUT, addr(output[0]), out_len)
+
+proc main(argc: int32, argv: ptr ptr uint8): int32 =
+  var result: int32 = parse_args(argc, argv)
+  if result == -2:
+    return 0
+  if result < 0:
+    return 1
+
+  # Initialize base64 tables
+  base64_init()
+
+  # Open input
+  var fd: int32 = STDIN
+  if opt_has_file != 0:
+    fd = open(addr(opt_file[0]), O_RDONLY)
+    if fd < 0:
+      print(cast[ptr uint8]("base64: "))
+      print(addr(opt_file[0]))
+      println(cast[ptr uint8](": No such file"))
+      return 1
+
+  # Encode or decode
+  if opt_decode != 0:
+    decode_stream(fd)
+  else:
+    encode_stream(fd)
+
+  # Close file
+  if fd != STDIN:
+    close(fd)
+
+  return 0

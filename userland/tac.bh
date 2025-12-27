@@ -1,0 +1,119 @@
+# tac.bh - Concatenate and print files in reverse
+# Usage: tac [file...]
+#
+# Print files in reverse line order (last line first).
+# With no FILE, or when FILE is -, read standard input.
+#
+# Examples:
+#   tac file.txt           Print file.txt in reverse
+#   tac file1.txt file2.txt
+#   cat file.txt | tac
+
+import "lib/syscalls"
+
+const MAX_LINES: int32 = 8192
+const MAX_FILE_SIZE: int32 = 262144  # 256KB
+
+var line_starts: array[8192, int32]
+var line_count: int32 = 0
+var file_buf: ptr uint8 = cast[ptr uint8](0)
+var file_size: int32 = 0
+
+proc allocate_buffer() =
+  if file_buf == cast[ptr uint8](0):
+    var old_brk: int32 = syscall1(SYS_brk, 0)
+    var new_brk: int32 = old_brk + MAX_FILE_SIZE
+    discard syscall1(SYS_brk, new_brk)
+    file_buf = cast[ptr uint8](old_brk)
+
+proc find_lines() =
+  line_count = 0
+
+  if file_size == 0:
+    return
+
+  # First line starts at 0
+  line_starts[line_count] = 0
+  line_count = 1
+
+  var i: int32 = 0
+  while i < file_size:
+    if file_buf[i] == 10:  # newline
+      # Next line starts after this newline
+      if i + 1 < file_size and line_count < MAX_LINES:
+        line_starts[line_count] = i + 1
+        line_count = line_count + 1
+    i = i + 1
+
+proc print_lines_reverse() =
+  var i: int32 = line_count - 1
+  while i >= 0:
+    var start: int32 = line_starts[i]
+    var end_pos: int32 = file_size
+
+    # Find end of this line
+    if i + 1 < line_count:
+      end_pos = line_starts[i + 1] - 1  # Exclude the newline
+    else:
+      # Last line - check if ends with newline
+      if file_size > 0 and file_buf[file_size - 1] == 10:
+        end_pos = file_size - 1
+
+    # Print line content
+    var len: int32 = end_pos - start
+    if len > 0:
+      discard write(STDOUT, addr(file_buf[start]), len)
+    println(cast[ptr uint8](""))
+
+    i = i - 1
+
+proc process_fd(fd: int32): int32 =
+  allocate_buffer()
+  file_size = 0
+
+  # Read file into buffer
+  while file_size < MAX_FILE_SIZE:
+    var n: int32 = read(fd, addr(file_buf[file_size]), MAX_FILE_SIZE - file_size)
+    if n <= 0:
+      break
+    file_size = file_size + n
+
+  # Find line boundaries
+  find_lines()
+
+  # Print in reverse
+  print_lines_reverse()
+
+  return 0
+
+proc process_file(filename: ptr uint8): int32 =
+  # Check for stdin marker
+  if filename[0] == 45 and filename[1] == 0:  # "-"
+    return process_fd(STDIN)
+
+  var fd: int32 = open(filename, O_RDONLY)
+  if fd < 0:
+    print(cast[ptr uint8]("tac: "))
+    print(filename)
+    println(cast[ptr uint8](": No such file or directory"))
+    return 1
+
+  var result: int32 = process_fd(fd)
+  close(fd)
+  return result
+
+proc main(argc: int32, argv: ptr ptr uint8): int32 =
+  if argc == 1:
+    # No args - read stdin
+    return process_fd(STDIN)
+
+  var result: int32 = 0
+  var i: int32 = 1
+
+  while i < argc:
+    var r: int32 = process_file(argv[i])
+    if r != 0:
+      result = r
+    i = i + 1
+
+  return result
