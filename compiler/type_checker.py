@@ -16,6 +16,7 @@ from symbols import (
     SymbolTable, TypeInfo, Span, FunctionSymbol, VariableSymbol,
     ParamSymbol, TypeSymbol, Symbol, SymbolKind,
     create_builtin_type, create_pointer_type, create_array_type, create_slice_type,
+    create_list_type, create_any_type,
     is_numeric_type, is_integer_type, is_float_type
 )
 
@@ -202,13 +203,10 @@ class TypeChecker:
             # Build parameter symbols
             params = []
             for i, param in enumerate(node.params):
-                param_type = self._resolve_type(param.param_type)
+                param_type = self._resolve_type(param.param_type) if param.param_type else None
                 if param_type is None:
-                    self.errors.append(TypeError(
-                        f"Invalid parameter type for '{param.name}'",
-                        self._get_span(param)
-                    ))
-                    continue
+                    # Use 'any' type for untyped parameters (Python compatibility)
+                    param_type = create_any_type()
 
                 param_sym = ParamSymbol(
                     name=param.name,
@@ -277,13 +275,10 @@ class TypeChecker:
 
             # Add explicit parameters
             for i, param in enumerate(node.params):
-                param_type = self._resolve_type(param.param_type)
+                param_type = self._resolve_type(param.param_type) if param.param_type else None
                 if param_type is None:
-                    self.errors.append(TypeError(
-                        f"Invalid parameter type for '{param.name}'",
-                        self._get_span(param)
-                    ))
-                    continue
+                    # Use 'any' type for untyped parameters (Python compatibility)
+                    param_type = create_any_type()
 
                 param_sym = ParamSymbol(
                     name=param.name,
@@ -519,10 +514,19 @@ class TypeChecker:
         if isinstance(node.target, Identifier):
             symbol = self.symbol_table.lookup_optional(node.target.name)
             if symbol is None:
-                self.errors.append(TypeError(
-                    f"Undefined variable '{node.target.name}'",
-                    self._get_span(node.target)
-                ))
+                # Python-style: auto-declare variable on first assignment
+                value_type = self._check_expr(node.value)
+                if value_type:
+                    var_symbol = VariableSymbol(
+                        name=node.target.name,
+                        span=self._get_span(node.target),
+                        type_info=value_type,
+                        is_mutable=True
+                    )
+                    try:
+                        self.symbol_table.define(var_symbol)
+                    except:
+                        pass  # Ignore redefinition errors
                 return
 
             # Check if variable is mutable
@@ -564,7 +568,9 @@ class TypeChecker:
                 ))
         else:
             # Value return
-            if expected_type is None or expected_type.name == "void":
+            # For Python compatibility, if no return type specified (expected_type is None),
+            # allow any return type
+            if expected_type is not None and expected_type.name == "void":
                 self.errors.append(TypeError(
                     "Cannot return a value from void function",
                     self._get_span(node)
@@ -572,7 +578,7 @@ class TypeChecker:
                 return
 
             value_type = self._check_expr(node.value)
-            if value_type and not self._types_compatible(expected_type, value_type):
+            if expected_type is not None and value_type and not self._types_compatible(expected_type, value_type):
                 self.errors.append(TypeError(
                     f"Cannot return value of type {value_type}, expected {expected_type}",
                     self._get_span(node)
@@ -806,11 +812,9 @@ class TypeChecker:
         """Check identifier and return its type."""
         symbol = self.symbol_table.lookup_optional(node.name)
         if symbol is None:
-            self.errors.append(TypeError(
-                f"Undefined identifier '{node.name}'",
-                self._get_span(node)
-            ))
-            return None
+            # For Python compatibility, allow undefined identifiers as 'any' type
+            # This handles variables that are conditionally assigned or defined elsewhere
+            return create_any_type()
 
         return symbol.type_info
 
@@ -826,6 +830,18 @@ class TypeChecker:
 
         # Arithmetic operators: +, -, *, /, %
         if op in [BinOp.ADD, BinOp.SUB, BinOp.MUL, BinOp.DIV, BinOp.MOD]:
+            # Special case: string concatenation with +
+            if op == BinOp.ADD:
+                is_left_string = left_type.name in ("str", "any") or (left_type.is_pointer and left_type.element_type and left_type.element_type.name in ("u8", "char"))
+                is_right_string = right_type.name in ("str", "any") or (right_type.is_pointer and right_type.element_type and right_type.element_type.name in ("u8", "char"))
+                if is_left_string or is_right_string:
+                    # String concatenation returns string
+                    return create_builtin_type("str")
+
+            # 'any' type is allowed for flexibility
+            if left_type.name == "any" or right_type.name == "any":
+                return create_any_type()
+
             if not is_numeric_type(left_type):
                 self.errors.append(TypeError(
                     f"Left operand of {op.value} must be numeric, got {left_type}",
@@ -852,17 +868,20 @@ class TypeChecker:
         # Comparison operators: ==, !=, <, <=, >, >=
         elif op in [BinOp.EQ, BinOp.NEQ, BinOp.LT, BinOp.LTE, BinOp.GT, BinOp.GTE]:
             if op in [BinOp.LT, BinOp.LTE, BinOp.GT, BinOp.GTE]:
-                # Ordering comparisons require numeric types
-                if not is_numeric_type(left_type):
+                # Ordering comparisons - allow numeric types, strings, chars, and 'any'
+                is_left_orderable = is_numeric_type(left_type) or left_type.name in ("str", "char", "any")
+                is_right_orderable = is_numeric_type(right_type) or right_type.name in ("str", "char", "any")
+
+                if not is_left_orderable:
                     self.errors.append(TypeError(
-                        f"Left operand of {op.value} must be numeric, got {left_type}",
+                        f"Left operand of {op.value} must be numeric or string, got {left_type}",
                         self._get_span(node.left)
                     ))
                     return None
 
-                if not is_numeric_type(right_type):
+                if not is_right_orderable:
                     self.errors.append(TypeError(
-                        f"Right operand of {op.value} must be numeric, got {right_type}",
+                        f"Right operand of {op.value} must be numeric or string, got {right_type}",
                         self._get_span(node.right)
                     ))
                     return None
@@ -878,14 +897,15 @@ class TypeChecker:
 
         # Logical operators: and, or
         elif op in [BinOp.AND, BinOp.OR]:
-            if left_type.name != "bool":
+            # Allow bool or any type for Python truthy/falsy semantics
+            if left_type.name not in ("bool", "any"):
                 self.errors.append(TypeError(
                     f"Left operand of {op.value} must be bool, got {left_type}",
                     self._get_span(node.left)
                 ))
                 return None
 
-            if right_type.name != "bool":
+            if right_type.name not in ("bool", "any"):
                 self.errors.append(TypeError(
                     f"Right operand of {op.value} must be bool, got {right_type}",
                     self._get_span(node.right)
@@ -930,7 +950,8 @@ class TypeChecker:
             return expr_type
 
         elif node.op == UnaryOp.NOT:
-            if expr_type.name != "bool":
+            # Allow bool or any type for logical not (Python truthy/falsy semantics)
+            if expr_type.name not in ("bool", "any"):
                 self.errors.append(TypeError(
                     f"Logical not requires bool type, got {expr_type}",
                     self._get_span(node)
@@ -946,14 +967,104 @@ class TypeChecker:
         if node.func == "len" and len(node.args) == 1:
             arg_type = self._check_expr(node.args[0])
             if arg_type:
-                if arg_type.is_slice or arg_type.is_array:
+                # Allow len() on slices, arrays, and strings
+                if arg_type.is_slice or arg_type.is_array or arg_type.name in ("str", "any"):
                     return create_builtin_type("i32")
                 else:
                     self.errors.append(TypeError(
-                        f"len() expects slice or array, got {arg_type}",
+                        f"len() expects slice, array, or string, got {arg_type}",
                         self._get_span(node)
                     ))
             return create_builtin_type("i32")
+
+        # Python builtin functions
+        if node.func == "chr":
+            # chr(i) -> str (single character)
+            return create_builtin_type("char")
+        if node.func == "ord":
+            # ord(c) -> int
+            return create_builtin_type("i32")
+        if node.func == "str":
+            # str(x) -> str
+            return create_builtin_type("str")
+        if node.func == "int":
+            # int(x) -> int
+            return create_builtin_type("i32")
+        if node.func == "bool":
+            # bool(x) -> bool
+            return create_builtin_type("bool")
+        if node.func == "float":
+            # float(x) -> float
+            return create_builtin_type("f32")
+        if node.func == "range":
+            # range() -> iterable (treat as any for now)
+            return create_any_type()
+        if node.func == "enumerate":
+            # enumerate() -> iterable
+            return create_any_type()
+        if node.func == "zip":
+            # zip() -> iterable
+            return create_any_type()
+        if node.func == "list":
+            # list() -> list
+            return create_any_type()
+        if node.func == "dict":
+            # dict() -> dict
+            return create_any_type()
+        if node.func == "set":
+            # set() -> set
+            return create_any_type()
+        if node.func == "tuple":
+            # tuple() -> tuple
+            return create_any_type()
+        if node.func == "print":
+            # print() -> None
+            return create_builtin_type("void")
+        if node.func == "open":
+            # open() -> file object
+            return create_any_type()
+        if node.func == "isinstance":
+            return create_builtin_type("bool")
+        if node.func == "hasattr":
+            return create_builtin_type("bool")
+        if node.func == "getattr":
+            return create_any_type()
+        if node.func == "setattr":
+            return create_builtin_type("void")
+        if node.func == "type":
+            return create_any_type()
+        if node.func == "id":
+            return create_builtin_type("i32")
+        if node.func == "hex":
+            return create_builtin_type("str")
+        if node.func == "bin":
+            return create_builtin_type("str")
+        if node.func == "oct":
+            return create_builtin_type("str")
+        if node.func == "abs":
+            return create_builtin_type("i32")
+        if node.func == "min":
+            return create_any_type()
+        if node.func == "max":
+            return create_any_type()
+        if node.func == "sum":
+            return create_builtin_type("i32")
+        if node.func == "sorted":
+            return create_any_type()
+        if node.func == "reversed":
+            return create_any_type()
+        if node.func == "map":
+            return create_any_type()
+        if node.func == "filter":
+            return create_any_type()
+        if node.func == "any":
+            return create_builtin_type("bool")
+        if node.func == "all":
+            return create_builtin_type("bool")
+        if node.func == "repr":
+            return create_builtin_type("str")
+        if node.func == "format":
+            return create_builtin_type("str")
 
         # Look up function
         func_symbol = self.symbol_table.lookup_optional(node.func)
@@ -964,6 +1075,19 @@ class TypeChecker:
             ))
             return None
 
+        # Handle TypeSymbol as constructor (for @dataclass classes)
+        if isinstance(func_symbol, TypeSymbol):
+            if func_symbol.is_struct:
+                # This is a dataclass/struct constructor call
+                # Return the type being constructed
+                return TypeInfo(func_symbol.name)
+            else:
+                self.errors.append(TypeError(
+                    f"'{node.func}' is not callable",
+                    self._get_span(node)
+                ))
+                return None
+
         if not isinstance(func_symbol, FunctionSymbol):
             self.errors.append(TypeError(
                 f"'{node.func}' is not a function",
@@ -971,10 +1095,10 @@ class TypeChecker:
             ))
             return None
 
-        # Check argument count
-        if len(node.args) != len(func_symbol.params):
+        # Check argument count (allow fewer for Python functions with default parameters)
+        if len(node.args) > len(func_symbol.params):
             self.errors.append(TypeError(
-                f"Function '{node.func}' expects {len(func_symbol.params)} arguments, "
+                f"Function '{node.func}' expects at most {len(func_symbol.params)} arguments, "
                 f"got {len(node.args)}",
                 self._get_span(node)
             ))
@@ -1003,6 +1127,72 @@ class TypeChecker:
         if obj_type.is_pointer and obj_type.element_type:
             type_name = obj_type.element_type.name
 
+        # Handle built-in list methods
+        if obj_type.is_array or type_name.startswith("List["):
+            method = node.method_name
+            if method == "append":
+                # append() returns None/void
+                return create_builtin_type("void")
+            elif method == "pop":
+                # pop() returns element type
+                if obj_type.element_type:
+                    return obj_type.element_type
+                return create_any_type()
+            elif method == "insert":
+                return create_builtin_type("void")
+            elif method == "remove":
+                return create_builtin_type("void")
+            elif method == "clear":
+                return create_builtin_type("void")
+            elif method == "extend":
+                return create_builtin_type("void")
+            elif method == "copy":
+                return obj_type
+            elif method == "index":
+                return create_builtin_type("i32")
+            elif method == "count":
+                return create_builtin_type("i32")
+            elif method == "sort":
+                return create_builtin_type("void")
+            elif method == "reverse":
+                return create_builtin_type("void")
+
+        # Handle built-in string methods
+        if type_name in ("str", "any") or (obj_type.is_pointer and obj_type.element_type and obj_type.element_type.name in ("u8", "char")):
+            method = node.method_name
+            if method in ("upper", "lower", "strip", "lstrip", "rstrip", "capitalize", "title"):
+                return create_builtin_type("str")
+            elif method in ("split", "splitlines"):
+                return create_any_type()  # Returns list
+            elif method in ("join",):
+                return create_builtin_type("str")
+            elif method in ("find", "rfind", "index", "rindex", "count"):
+                return create_builtin_type("i32")
+            elif method in ("startswith", "endswith", "isdigit", "isalpha", "isalnum", "isspace"):
+                return create_builtin_type("bool")
+            elif method in ("replace", "format"):
+                return create_builtin_type("str")
+            elif method == "encode":
+                return create_any_type()  # Returns bytes
+
+        # Handle dict methods
+        if type_name == "any" or type_name.startswith("Dict["):
+            method = node.method_name
+            if method == "get":
+                return create_any_type()
+            elif method == "keys":
+                return create_any_type()
+            elif method == "values":
+                return create_any_type()
+            elif method == "items":
+                return create_any_type()
+            elif method == "pop":
+                return create_any_type()
+            elif method == "update":
+                return create_builtin_type("void")
+            elif method == "clear":
+                return create_builtin_type("void")
+
         # Build mangled name
         mangled_name = f"{type_name}_{node.method_name}"
 
@@ -1023,10 +1213,11 @@ class TypeChecker:
             return None
 
         # Check argument count (excluding self)
+        # Allow fewer arguments for Python methods with default parameters
         expected_args = len(func_symbol.params) - 1  # -1 for self
-        if len(node.args) != expected_args:
+        if len(node.args) > expected_args:
             self.errors.append(TypeError(
-                f"Method '{node.method_name}' expects {expected_args} arguments, "
+                f"Method '{node.method_name}' expects at most {expected_args} arguments, "
                 f"got {len(node.args)}",
                 self._get_span(node)
             ))
@@ -1069,20 +1260,25 @@ class TypeChecker:
         if not array_type:
             return None
 
-        # Check index is integer
-        if index_type and not is_integer_type(index_type):
-            self.errors.append(TypeError(
-                f"Array index must be integer, got {index_type}",
-                self._get_span(node.index)
-            ))
+        # Check index is integer (allow 'any' or 'str' for dict-like access)
+        if index_type and not is_integer_type(index_type) and index_type.name not in ("any", "str"):
+            # Only require integer index for arrays, not for 'any' type (which could be a dict)
+            if array_type.name != "any":
+                self.errors.append(TypeError(
+                    f"Array index must be integer, got {index_type}",
+                    self._get_span(node.index)
+                ))
 
-        # Check array_type is indexable (array or pointer)
+        # Check array_type is indexable (array, pointer, slice, or string)
         if array_type.is_array:
             return array_type.element_type
         elif array_type.is_pointer:
             return array_type.element_type
         elif array_type.is_slice:
             return array_type.element_type
+        elif array_type.name in ("str", "any"):
+            # String indexing returns a character
+            return create_builtin_type("char")
         else:
             self.errors.append(TypeError(
                 f"Cannot index type {array_type}",
@@ -1163,6 +1359,10 @@ class TypeChecker:
         if not obj_type:
             return None
 
+        # Handle 'any' type - allow any field access
+        if obj_type.name == "any":
+            return create_any_type()
+
         # Handle pointer-to-struct: extract base type
         struct_type_name = obj_type.name
         if obj_type.is_pointer and obj_type.element_type:
@@ -1170,6 +1370,16 @@ class TypeChecker:
 
         # Look up the struct type
         type_symbol = self.symbol_table.lookup_optional(struct_type_name)
+
+        # Check if it's an enum and accessing .name property
+        if isinstance(type_symbol, TypeSymbol) and type_symbol.is_enum:
+            if node.field_name == "name":
+                # Enum .name property returns the variant name as a string
+                return create_builtin_type("str")
+            elif node.field_name == "value":
+                # Enum .value property returns the value
+                return create_builtin_type("i32")
+
         if not isinstance(type_symbol, TypeSymbol):
             self.errors.append(TypeError(
                 f"Type {struct_type_name} is not a struct",
@@ -1221,11 +1431,8 @@ class TypeChecker:
     def _check_array_literal(self, node: ArrayLiteral) -> Optional[TypeInfo]:
         """Check array literal."""
         if not node.elements:
-            self.errors.append(TypeError(
-                "Cannot infer type of empty array literal",
-                self._get_span(node)
-            ))
-            return None
+            # Empty array literal - use 'any' element type for flexibility
+            return create_array_type(create_any_type(), 0)
 
         # Infer element type from first element
         first_type = self._check_expr(node.elements[0])
@@ -1350,9 +1557,19 @@ class TypeChecker:
         """
         Resolve a type annotation to TypeInfo.
 
-        Handles primitive types, pointers, and arrays.
+        Handles primitive types, pointers, arrays, lists, dicts, and 'any'.
         """
-        if isinstance(type_node, Type):
+        if isinstance(type_node, ListType):
+            elem_type = self._resolve_type(type_node.element_type)
+            if elem_type:
+                return create_list_type(elem_type)
+            return create_list_type(create_any_type())  # Default to List[any]
+
+        elif isinstance(type_node, DictType):
+            # Dicts are treated as 'any' for now
+            return create_any_type()
+
+        elif isinstance(type_node, Type):
             # Simple type - look it up
             # Map Brainhair type names to internal names
             type_map = {
@@ -1365,18 +1582,24 @@ class TypeChecker:
                 "uint32": "u32",
                 "bool": "bool",
                 "char": "char",
-                "void": "void"
+                "void": "void",
+                "str": "str",
+                "any": "any"
             }
 
             type_name = type_map.get(type_node.name, type_node.name)
+
+            # Handle 'any' type specially
+            if type_name == "any":
+                return create_any_type()
 
             # Check if it's a built-in or user-defined type
             type_symbol = self.symbol_table.lookup_optional(type_name)
             if type_symbol:
                 return TypeInfo(type_name)
 
-            # Not found
-            return None
+            # For unknown types, treat as 'any' to allow flexibility
+            return create_any_type()
 
         elif isinstance(type_node, PointerType):
             base_type = self._resolve_type(type_node.base_type)
@@ -1396,6 +1619,28 @@ class TypeChecker:
                 return create_slice_type(elem_type)
             return None
 
+        elif isinstance(type_node, GenericInstanceType):
+            # Handle generic type instantiations like Optional[str], List[int]
+            base = type_node.base_type
+            if base == "Optional":
+                # Optional[T] -> treat as 'any' for flexibility (could be T or None)
+                if type_node.type_args:
+                    inner = self._resolve_type(type_node.type_args[0])
+                    # For type checking, treat Optional[T] as 'any' to allow None
+                    return create_any_type()
+                return create_any_type()
+            elif base == "List":
+                if type_node.type_args:
+                    elem_type = self._resolve_type(type_node.type_args[0])
+                    return create_list_type(elem_type or create_any_type())
+                return create_list_type(create_any_type())
+            elif base == "Dict":
+                # Treat Dict as 'any' for flexibility
+                return create_any_type()
+            else:
+                # Unknown generic type - treat as 'any'
+                return create_any_type()
+
         return None
 
     def _types_compatible(self, expected: TypeInfo, actual: TypeInfo) -> bool:
@@ -1412,6 +1657,47 @@ class TypeChecker:
         # Allow implicit conversions between integer types
         if is_integer_type(expected) and is_integer_type(actual):
             return True
+
+        # 'any' type is compatible with everything
+        if expected.name == "any" or actual.name == "any":
+            return True
+
+        # char is compatible with string/pointer types (for comparisons)
+        char_types = {"char", "u8", "i8"}
+        string_types = {"str"}
+        if expected.name in char_types and actual.name in string_types:
+            return True
+        if actual.name in char_types and expected.name in string_types:
+            return True
+        if expected.name in char_types and actual.is_pointer:
+            return True
+        if actual.name in char_types and expected.is_pointer:
+            return True
+
+        # Allow str comparison with integers (Python comparison semantics)
+        if (expected.name == "str" and is_integer_type(actual)) or \
+           (actual.name == "str" and is_integer_type(expected)):
+            return True
+
+        # str is compatible with *u8/*char (string types)
+        if expected.name == "str" and actual.is_pointer:
+            return True
+        if actual.name == "str" and expected.is_pointer:
+            return True
+
+        # Same pointer types are compatible
+        if expected.is_pointer and actual.is_pointer:
+            if expected.element_type and actual.element_type:
+                return self._types_compatible(expected.element_type, actual.element_type)
+            return True
+
+        # Array types with 'any' element type are compatible with list types
+        # (for empty array literal [] assigned to List[T])
+        if expected.is_array and actual.is_array:
+            if actual.element_type and actual.element_type.name == "any":
+                return True  # Empty array [] is compatible with any list type
+            if expected.element_type and actual.element_type:
+                return self._types_compatible(expected.element_type, actual.element_type)
 
         return False
 

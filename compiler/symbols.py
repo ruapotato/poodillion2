@@ -532,6 +532,20 @@ def create_slice_type(element_type: TypeInfo) -> TypeInfo:
     )
 
 
+def create_list_type(element_type: TypeInfo) -> TypeInfo:
+    """Create a list type (List[T]) - dynamic array."""
+    return TypeInfo(
+        name=f"List[{element_type.name}]",
+        is_array=True,  # Lists are array-like
+        element_type=element_type
+    )
+
+
+def create_any_type() -> TypeInfo:
+    """Create an 'any' type - placeholder for unknown/dynamic types."""
+    return TypeInfo(name="any")
+
+
 def is_numeric_type(type_info: TypeInfo) -> bool:
     """Check if a type is numeric (integer or float)."""
     return type_info.name in {

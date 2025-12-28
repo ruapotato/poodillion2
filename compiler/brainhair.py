@@ -13,9 +13,11 @@ import subprocess
 import os
 from pathlib import Path
 
+# Python-syntax lexer and parser
 from lexer import Lexer
 from parser import Parser
 from codegen_x86 import X86CodeGen
+from codegen_x86_64 import X86_64CodeGen
 from codegen_llvm import LLVMCodeGen
 from type_checker import TypeChecker
 from ownership import OwnershipChecker
@@ -26,7 +28,7 @@ from ast_nodes import Program, ImportDecl
 class Compiler:
     def __init__(self, source_file: str, output_file: str = None, kernel_mode: bool = False,
                  check_types: bool = True, check_ownership: bool = True, check_lifetimes: bool = True,
-                 use_llvm: bool = False):
+                 use_llvm: bool = False, use_x86_64: bool = False):
         self.source_file = source_file
         self.output_file = output_file or Path(source_file).stem
         self.kernel_mode = kernel_mode
@@ -34,6 +36,7 @@ class Compiler:
         self.check_ownership = check_ownership
         self.check_lifetimes = check_lifetimes
         self.use_llvm = use_llvm
+        self.use_x86_64 = use_x86_64
 
         # Intermediate files
         self.asm_file = f"{self.output_file}.asm"
@@ -107,28 +110,37 @@ class Compiler:
         1. Relative to source file directory
         2. Relative to compiler lib directory
         3. Absolute path
+        Supports both .bh and .py extensions.
         """
-        # Add .bh extension if not present
-        if not import_path.endswith('.bh'):
-            import_path_with_ext = import_path + '.bh'
+        # Determine extensions to try
+        if import_path.endswith('.bh') or import_path.endswith('.py'):
+            extensions = ['']  # Already has extension
         else:
-            import_path_with_ext = import_path
+            extensions = ['.bh', '.py']  # Try both
 
-        # Try relative to source directory
-        candidate = os.path.join(source_dir, import_path_with_ext)
-        if os.path.exists(candidate):
-            return candidate
+        for ext in extensions:
+            import_path_with_ext = import_path + ext
 
-        # Try relative to compiler's parent directory (project root)
-        compiler_dir = os.path.dirname(os.path.abspath(__file__))
-        project_root = os.path.dirname(compiler_dir)
-        candidate = os.path.join(project_root, import_path_with_ext)
-        if os.path.exists(candidate):
-            return candidate
+            # Try relative to source directory
+            candidate = os.path.join(source_dir, import_path_with_ext)
+            if os.path.exists(candidate):
+                return candidate
 
-        # Try as absolute path
-        if os.path.exists(import_path_with_ext):
-            return import_path_with_ext
+            # Try relative to compiler's parent directory (project root)
+            compiler_dir = os.path.dirname(os.path.abspath(__file__))
+            project_root = os.path.dirname(compiler_dir)
+            candidate = os.path.join(project_root, import_path_with_ext)
+            if os.path.exists(candidate):
+                return candidate
+
+            # Try relative to compiler directory itself (for compiler imports)
+            candidate = os.path.join(compiler_dir, import_path_with_ext)
+            if os.path.exists(candidate):
+                return candidate
+
+            # Try as absolute path
+            if os.path.exists(import_path_with_ext):
+                return import_path_with_ext
 
         return None
 
@@ -248,8 +260,12 @@ class Compiler:
                 print("ERROR: clang not found! Install with: sudo apt install clang")
                 return False
         else:
-            print("  [7/8] Generating x86 assembly...")
-            codegen = X86CodeGen(kernel_mode=self.kernel_mode)
+            if self.use_x86_64:
+                print("  [7/8] Generating x86_64 assembly...")
+                codegen = X86_64CodeGen(kernel_mode=self.kernel_mode)
+            else:
+                print("  [7/8] Generating x86 assembly...")
+                codegen = X86CodeGen(kernel_mode=self.kernel_mode)
             asm_code = codegen.generate(ast)
 
             # Write assembly file
@@ -259,10 +275,11 @@ class Compiler:
 
             # 9. Assemble with NASM
             print("  [8/8] Assembling...")
+            elf_format = 'elf64' if self.use_x86_64 else 'elf32'
             try:
                 subprocess.run([
                     'nasm',
-                    '-f', 'elf32',
+                    '-f', elf_format,
                     self.asm_file,
                     '-o', self.obj_file
                 ], check=True, capture_output=True)
@@ -280,14 +297,18 @@ class Compiler:
             print("  [9/9] Linking...")
             # Find lib/syscalls.o relative to compiler location
             compiler_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            syscalls_obj = os.path.join(compiler_dir, 'lib', 'syscalls.o')
+            if self.use_x86_64:
+                syscalls_obj = os.path.join(compiler_dir, 'lib', 'syscalls64.o')
+            else:
+                syscalls_obj = os.path.join(compiler_dir, 'lib', 'syscalls.o')
             link_files = [self.obj_file]
             if os.path.exists(syscalls_obj):
                 link_files = [syscalls_obj, self.obj_file]
+            ld_emulation = 'elf_x86_64' if self.use_x86_64 else 'elf_i386'
             try:
                 subprocess.run([
                     'ld',
-                    '-m', 'elf_i386',
+                    '-m', ld_emulation,
                     '-o', self.output_file,
                 ] + link_files, check=True, capture_output=True)
                 print(f"        Created {self.output_file}")
@@ -331,6 +352,7 @@ def main():
         print("  --no-lifetimes  Skip lifetime checking phase")
         print("  --llvm          Use LLVM backend instead of x86")
         print("  --emit-llvm     Output LLVM IR (for --llvm)")
+        print("  --x86_64        Generate 64-bit x86_64 code")
         sys.exit(1)
 
     source_file = sys.argv[1]
@@ -343,6 +365,7 @@ def main():
     check_lifetimes = True
     use_llvm = False
     emit_llvm = False
+    use_x86_64 = False
 
     # Parse arguments
     i = 2
@@ -375,13 +398,17 @@ def main():
             emit_llvm = True
             use_llvm = True
             i += 1
+        elif sys.argv[i] == '--x86_64':
+            use_x86_64 = True
+            i += 1
         else:
             print(f"Unknown option: {sys.argv[i]}")
             sys.exit(1)
 
     compiler = Compiler(source_file, output_file, kernel_mode=kernel_mode,
                        check_types=check_types, check_ownership=check_ownership,
-                       check_lifetimes=check_lifetimes, use_llvm=use_llvm)
+                       check_lifetimes=check_lifetimes, use_llvm=use_llvm,
+                       use_x86_64=use_x86_64)
 
     if asm_only or emit_llvm:
         # Just generate assembly/LLVM IR
@@ -408,6 +435,10 @@ def main():
             codegen = LLVMCodeGen()
             llvm_code = codegen.generate(ast)
             print(llvm_code)
+        elif use_x86_64:
+            codegen = X86_64CodeGen(kernel_mode=kernel_mode)
+            asm_code = codegen.generate(ast)
+            print(asm_code)
         else:
             codegen = X86CodeGen(kernel_mode=kernel_mode)
             asm_code = codegen.generate(ast)

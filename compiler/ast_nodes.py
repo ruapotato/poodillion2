@@ -14,7 +14,9 @@ class BinOp(Enum):
     SUB = '-'
     MUL = '*'
     DIV = '/'
+    IDIV = '//'  # Integer division
     MOD = '%'
+    POW = '**'   # Power/exponentiation
     EQ = '=='
     NEQ = '!='
     LT = '<'
@@ -23,6 +25,8 @@ class BinOp(Enum):
     GTE = '>='
     AND = 'and'
     OR = 'or'
+    IN = 'in'      # Membership test (Python compatibility)
+    NOT_IN = 'not in'  # Negative membership test
     # Bitwise operators
     BIT_OR = '|'
     BIT_AND = '&'
@@ -33,6 +37,7 @@ class BinOp(Enum):
 class UnaryOp(Enum):
     NEG = '-'
     NOT = '!'
+    BIT_NOT = '~'  # Bitwise NOT
 
 # Base class for all AST nodes
 class ASTNode:
@@ -95,6 +100,27 @@ class SliceType(ASTNode):
 
 
 @dataclass
+class ListType(ASTNode):
+    """List type: List[T] - dynamic growable array"""
+    element_type: 'Type'
+
+    @property
+    def name(self):
+        return f"List[{self.element_type.name}]"
+
+
+@dataclass
+class DictType(ASTNode):
+    """Dict type: Dict[K, V] - hash map"""
+    key_type: 'Type'
+    value_type: 'Type'
+
+    @property
+    def name(self):
+        return f"Dict[{self.key_type.name}, {self.value_type.name}]"
+
+
+@dataclass
 class GenericType(ASTNode):
     """Generic type parameter: T in proc foo[T](x: T)"""
     name: str
@@ -123,10 +149,11 @@ class StructField(ASTNode):
 
 @dataclass
 class StructDecl(ASTNode):
-    """Struct type definition: type Foo = object ... end"""
+    """Struct type definition: class Foo: ... or type Foo = object ..."""
     name: str
     fields: List[StructField] = field(default_factory=list)
     generic_params: List[str] = field(default_factory=list)  # For generic structs
+    is_packed: bool = False  # For @packed decorator
 
 
 # Expressions
@@ -143,8 +170,18 @@ class StringLiteral(ASTNode):
     value: str
 
 @dataclass
+class FStringLiteral(ASTNode):
+    """F-string literal: f"Hello {name}" - format string with interpolation"""
+    value: str  # Raw string, interpolation parsed at compile time
+
+@dataclass
 class BoolLiteral(ASTNode):
     value: bool
+
+@dataclass
+class NoneLiteral(ASTNode):
+    """None literal"""
+    pass
 
 @dataclass
 class Identifier(ASTNode):
@@ -171,6 +208,12 @@ class CallExpr(ASTNode):
 class CastExpr(ASTNode):
     target_type: Type
     expr: ASTNode
+
+@dataclass
+class IsInstanceExpr(ASTNode):
+    """isinstance(expr, Type) - type check expression"""
+    expr: ASTNode
+    check_type: str  # Type name to check against
 
 @dataclass
 class IndexExpr(ASTNode):
@@ -204,6 +247,18 @@ class ArrayLiteral(ASTNode):
 
 
 @dataclass
+class DictLiteral(ASTNode):
+    """Dict literal: {"key": value, ...}"""
+    pairs: List[tuple] = field(default_factory=list)  # List of (key, value) pairs
+
+
+@dataclass
+class TupleLiteral(ASTNode):
+    """Tuple literal: (a, b, c)"""
+    elements: List[ASTNode] = field(default_factory=list)
+
+
+@dataclass
 class SizeOfExpr(ASTNode):
     """sizeof(Type) - get size of type in bytes"""
     target_type: 'Type'
@@ -230,11 +285,13 @@ class VarDecl(ASTNode):
     var_type: Type
     value: Optional[ASTNode] = None
     is_const: bool = False
+    is_extern: bool = False
 
 @dataclass
 class Assignment(ASTNode):
     target: ASTNode
     value: ASTNode
+    type_hint: Optional[Type] = None  # Type annotation if present (e.g., self.x: int = 0)
 
 @dataclass
 class ReturnStmt(ASTNode):
@@ -262,8 +319,8 @@ class ForStmt(ASTNode):
 
 @dataclass
 class ForEachStmt(ASTNode):
-    """For-each loop over array: for item in array"""
-    var: str
+    """For-each loop over array: for item in array or for a, b in pairs"""
+    vars: List[str]  # List of variable names (supports tuple unpacking)
     iterable: ASTNode
     body: List[ASTNode]
 
@@ -288,6 +345,41 @@ class DeferStmt(ASTNode):
     """Defer statement: defer expr - executes expr when function returns"""
     stmt: ASTNode  # The statement to defer (usually a function call)
 
+
+@dataclass
+class PassStmt(ASTNode):
+    """Pass statement - no-op placeholder"""
+    pass
+
+
+@dataclass
+class WithStmt(ASTNode):
+    """With statement for context managers: with expr as name: body"""
+    context: ASTNode  # The context manager expression
+    var_name: Optional[str]  # Optional binding name
+    body: List[ASTNode] = field(default_factory=list)
+
+
+@dataclass
+class RaiseStmt(ASTNode):
+    """Raise statement for exceptions (Python compatibility)"""
+    exception: Optional[ASTNode] = None  # The exception expression
+
+
+@dataclass
+class RangeExpr(ASTNode):
+    """Range expression: range(start, end, step)"""
+    start: ASTNode
+    end: Optional[ASTNode] = None
+    step: Optional[ASTNode] = None
+
+
+@dataclass
+class AsmExpr(ASTNode):
+    """Inline assembly: asm("instruction")"""
+    instruction: str
+
+
 @dataclass
 class ConditionalExpr(ASTNode):
     """Conditional expression: if cond: a else: b"""
@@ -300,6 +392,7 @@ class ConditionalExpr(ASTNode):
 class Parameter(ASTNode):
     name: str
     param_type: Type
+    default_value: ASTNode = None  # Optional default value for Python compatibility
 
 @dataclass
 class ProcDecl(ASTNode):
@@ -375,9 +468,17 @@ class MatchExpr(ASTNode):
 # Import
 @dataclass
 class ImportDecl(ASTNode):
-    """Import declaration: import "path" or import "path" as alias"""
+    """Import declaration.
+
+    Supports:
+    - from lib.syscalls import *
+    - from lib.syscalls import func1, func2
+    - import lib.math
+    - import lib.math as m
+    """
     path: str  # The import path (e.g., "lib/syscalls")
-    alias: Optional[str] = None  # Optional alias (e.g., "as str")
+    alias: Optional[str] = None  # Optional alias for 'import x as y'
+    import_names: List[str] = field(default_factory=list)  # Names imported with 'from x import y, z'
 
 
 # Program

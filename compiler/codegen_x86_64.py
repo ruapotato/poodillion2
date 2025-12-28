@@ -83,6 +83,12 @@ class X86_64CodeGen:
         if isinstance(typ, SliceType):
             return 16  # Fat pointer: ptr (8) + len (8)
 
+        if isinstance(typ, ListType):
+            return 32  # List struct: data(8) + len(8) + cap(8) + elem_size(8)
+
+        if isinstance(typ, DictType):
+            return 40  # Dict struct: keys(8) + values(8) + flags(8) + cap(8) + len(8)
+
         if isinstance(typ, ArrayType):
             return typ.size * self.type_size(typ.element_type)
 
@@ -151,7 +157,11 @@ class X86_64CodeGen:
             return Type('int32')
         if isinstance(expr, BoolLiteral):
             return Type('bool')
+        if isinstance(expr, NoneLiteral):
+            return PointerType(Type('void'))
         if isinstance(expr, StringLiteral):
+            return PointerType(Type('uint8'))
+        if isinstance(expr, FStringLiteral):
             return PointerType(Type('uint8'))
         if isinstance(expr, UnaryExpr) and expr.op == UnaryOp.ADDR:
             inner = self.get_expr_type(expr.expr)
@@ -182,7 +192,20 @@ class X86_64CodeGen:
             self.emit(f"mov eax, {1 if expr.value else 0}")
             return "rax"
 
+        if isinstance(expr, NoneLiteral):
+            self.emit("xor eax, eax")  # None = 0 (null pointer)
+            return "rax"
+
         if isinstance(expr, StringLiteral):
+            label = self.add_string(expr.value)
+            if self.kernel_mode:
+                self.emit(f"lea rax, [{label}]")
+            else:
+                self.emit(f"lea rax, [rel {label}]")
+            return "rax"
+
+        if isinstance(expr, FStringLiteral):
+            # Treat f-string as regular string for now (no interpolation)
             label = self.add_string(expr.value)
             if self.kernel_mode:
                 self.emit(f"lea rax, [{label}]")
@@ -264,20 +287,6 @@ class X86_64CodeGen:
                 self.emit("movzx rax, al")
             elif expr.op == UnaryOp.BITNOT:
                 self.emit("not rax")
-            elif expr.op == UnaryOp.ADDR:
-                # Get address of variable
-                if isinstance(expr.expr, Identifier):
-                    if expr.expr.name in self.local_vars:
-                        offset = self.local_vars[expr.expr.name]
-                        if offset > 0:
-                            self.emit(f"lea rax, [rbp+{offset}]")
-                        else:
-                            self.emit(f"lea rax, [rbp{offset}]")
-                    else:
-                        if self.kernel_mode:
-                            self.emit(f"lea rax, [{expr.expr.name}]")
-                        else:
-                            self.emit(f"lea rax, [rel {expr.expr.name}]")
             elif expr.op == UnaryOp.DEREF:
                 # Dereference pointer in RAX
                 expr_type = self.get_expr_type(expr.expr)
@@ -399,6 +408,13 @@ class X86_64CodeGen:
             # Most casts are no-op at runtime in our simple type system
             return "rax"
 
+        if isinstance(expr, IsInstanceExpr):
+            # isinstance() check - in BH, this is a compile-time operation
+            # For now, we'll evaluate the expression and return 1 (true)
+            self.gen_expression(expr.expr)  # Evaluate for side effects
+            self.emit("mov rax, 1")  # Always return true (statically typed)
+            return "rax"
+
         if isinstance(expr, IndexExpr):
             # array[index]
             self.gen_expression(expr.index)
@@ -430,6 +446,52 @@ class X86_64CodeGen:
                     self.emit("mov eax, dword [rax + rcx*4]")
             else:
                 self.emit("mov rax, [rax + rcx*8]")
+            return "rax"
+
+        if isinstance(expr, AddrOfExpr):
+            # Address-of operator: get the address of a variable, array element, or function
+            if isinstance(expr.expr, Identifier):
+                if expr.expr.name in self.local_vars:
+                    offset = self.local_vars[expr.expr.name]
+                    if offset > 0:
+                        self.emit(f"lea rax, [rbp+{offset}]")
+                    else:
+                        self.emit(f"lea rax, [rbp{offset}]")
+                else:
+                    # Global variable or function - use LEA to get address
+                    if self.kernel_mode:
+                        self.emit(f"lea rax, [{expr.expr.name}]")
+                    else:
+                        self.emit(f"lea rax, [rel {expr.expr.name}]")
+            elif isinstance(expr.expr, IndexExpr):
+                # addr(arr[i]) - get address of array element
+                self.gen_expression(expr.expr.index)
+                self.emit("push rax")  # Save index
+                self.gen_expression(expr.expr.array)
+                self.emit("pop rcx")   # Index in RCX
+                # Get element type and size
+                arr_type = self.get_expr_type(expr.expr.array)
+                elem_size = 8
+                if isinstance(arr_type, ArrayType):
+                    elem_size = self.type_size(arr_type.element_type)
+                elif isinstance(arr_type, PointerType):
+                    elem_size = self.type_size(arr_type.base_type)
+                # Calculate element address
+                if elem_size == 1:
+                    self.emit("lea rax, [rax + rcx]")
+                elif elem_size == 2:
+                    self.emit("lea rax, [rax + rcx*2]")
+                elif elem_size == 4:
+                    self.emit("lea rax, [rax + rcx*4]")
+                else:
+                    self.emit("lea rax, [rax + rcx*8]")
+            elif isinstance(expr.expr, FieldAccessExpr):
+                # addr(obj.field) - get address of struct field
+                self.gen_expression(expr.expr.object)
+                # TODO: add field offset
+            else:
+                # For other expressions, just return the result
+                self.gen_expression(expr.expr)
             return "rax"
 
         # Default: return 0
