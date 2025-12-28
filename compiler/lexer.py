@@ -205,6 +205,26 @@ def is_hex(c: int) -> int:
         return 1
     return 0
 
+def poly_strlen(s) -> int:
+    """Get length of string - works for both Python str and Ptr[uint8]"""
+    # In Python, use len(). In Brainhair, iterate to find null terminator.
+    try:
+        return len(s)
+    except:
+        # Brainhair: count until null byte
+        i: int = 0
+        while s[i] != 0:
+            i = i + 1
+        return i
+
+def poly_ord(c) -> int:
+    """Get character code - works for both Python str and uint8"""
+    try:
+        return ord(c)
+    except:
+        # Brainhair: character is already an int
+        return c
+
 # ============================================================================
 # Token Class (polyglot - works in both Python and Brainhair)
 # ============================================================================
@@ -369,8 +389,15 @@ def str_eq(a: str, b: str) -> int:
     """Compare two strings for equality."""
     i: int = 0
     while True:
-        ca: int = ord(a[i]) if i < len(a) else 0
-        cb: int = ord(b[i]) if i < len(b) else 0
+        # Get char from a (handle both Python str and null-terminated)
+        ca: int = 0
+        if i < len(a):
+            ca = ord(a[i])
+        # Get char from b
+        cb: int = 0
+        if i < len(b):
+            cb = ord(b[i])
+        # Compare
         if ca != cb:
             return 0
         if ca == 0:
@@ -598,8 +625,10 @@ class Lexer:
 
     def skip_whitespace_on_line(self):
         """Skip spaces and tabs but not newlines."""
-        while self.current_char() in ' \t':
+        ch = self.current_char()
+        while ch == ' ' or ch == '\t':
             self.advance()
+            ch = self.current_char()
 
     def skip_comment(self):
         if self.current_char() == '#':
@@ -627,43 +656,54 @@ class Lexer:
         num_str = ''
 
         # Hex number
-        if self.current_char() == '0' and self.peek_char() and self.peek_char() in 'xX':
+        pk = self.peek_char()
+        if self.current_char() == '0' and pk and (pk == 'x' or pk == 'X'):
             self.advance()  # 0
             self.advance()  # x
-            while self.current_char() and self.current_char() in '0123456789abcdefABCDEF_':
-                if self.current_char() != '_':
-                    num_str += self.current_char()
+            ch = self.current_char()
+            while ch and is_hex(ord(ch)) == 1 or ch == '_':
+                if ch != '_':
+                    num_str += ch
                 self.advance()
+                ch = self.current_char()
             return Token(TT_NUMBER, int(num_str, 16), start_line, start_col,
                         self.line, self.column)
 
         # Binary number
-        if self.current_char() == '0' and self.peek_char() and self.peek_char() in 'bB':
+        pk = self.peek_char()
+        if self.current_char() == '0' and pk and (pk == 'b' or pk == 'B'):
             self.advance()  # 0
             self.advance()  # b
-            while self.current_char() and self.current_char() in '01_':
-                if self.current_char() != '_':
-                    num_str += self.current_char()
+            ch = self.current_char()
+            while ch and (ch == '0' or ch == '1' or ch == '_'):
+                if ch != '_':
+                    num_str += ch
                 self.advance()
+                ch = self.current_char()
             return Token(TT_NUMBER, int(num_str, 2), start_line, start_col,
                         self.line, self.column)
 
         # Octal number
-        if self.current_char() == '0' and self.peek_char() and self.peek_char() in 'oO':
+        pk = self.peek_char()
+        if self.current_char() == '0' and pk and (pk == 'o' or pk == 'O'):
             self.advance()  # 0
             self.advance()  # o
-            while self.current_char() and self.current_char() in '01234567_':
-                if self.current_char() != '_':
-                    num_str += self.current_char()
+            ch = self.current_char()
+            while ch and ((ord(ch) >= 48 and ord(ch) <= 55) or ch == '_'):
+                if ch != '_':
+                    num_str += ch
                 self.advance()
+                ch = self.current_char()
             return Token(TT_NUMBER, int(num_str, 8), start_line, start_col,
                         self.line, self.column)
 
         # Decimal number (with optional underscores)
-        while self.current_char() and (self.current_char().isdigit() or self.current_char() == '_'):
-            if self.current_char() != '_':
-                num_str += self.current_char()
+        ch = self.current_char()
+        while ch and (is_digit(ord(ch)) == 1 or ch == '_'):
+            if ch != '_':
+                num_str += ch
             self.advance()
+            ch = self.current_char()
 
         return Token(TT_NUMBER, int(num_str), start_line, start_col,
                     self.line, self.column)
@@ -766,12 +806,19 @@ class Lexer:
         start_line, start_col = self.line, self.column
         ident = ''
 
-        while self.current_char() and (self.current_char().isalnum() or self.current_char() == '_'):
-            ident += self.current_char()
+        ch = self.current_char()
+        while ch and (is_alnum(ord(ch)) == 1 or ch == '_'):
+            ident += ch
             self.advance()
+            ch = self.current_char()
 
-        # Check if it's a keyword
-        token_type = self.keywords.get(ident, TT_IDENT)
+        # Check if it's a keyword - use polyglot lookup_keyword if dict fails
+        try:
+            token_type = self.keywords.get(ident, TT_IDENT)
+        except:
+            token_type = lookup_keyword(ident)
+            if token_type == 0:
+                token_type = TT_IDENT
         value = None if token_type != TT_IDENT else ident
 
         return Token(token_type, value, start_line, start_col,
@@ -793,7 +840,7 @@ class Lexer:
                 continue
 
             # Skip whitespace (but track for indentation)
-            if ch in ' \t':
+            if ch == ' ' or ch == '\t':
                 self.skip_whitespace_on_line()
                 continue
 
@@ -803,26 +850,29 @@ class Lexer:
                 continue
 
             # F-strings
-            if ch in 'fF' and self.peek_char() in '"\'':
+            pk = self.peek_char()
+            if (ch == 'f' or ch == 'F') and (pk == '"' or pk == "'"):
                 self.advance()  # Skip 'f'
                 self.tokens.append(self.read_string(is_fstring=True))
                 continue
 
             # Raw strings (r"...")
-            if ch in 'rR' and self.peek_char() in '"\'':
+            pk = self.peek_char()
+            if (ch == 'r' or ch == 'R') and (pk == '"' or pk == "'"):
                 self.advance()  # Skip 'r'
                 # TODO: Handle raw strings (no escape processing)
                 self.tokens.append(self.read_string())
                 continue
 
             # Byte strings (b"...")
-            if ch in 'bB' and self.peek_char() in '"\'':
+            pk = self.peek_char()
+            if (ch == 'b' or ch == 'B') and (pk == '"' or pk == "'"):
                 self.advance()  # Skip 'b'
                 self.tokens.append(self.read_string())
                 continue
 
             # Numbers
-            if ch.isdigit():
+            if is_digit(ord(ch)) == 1:
                 self.tokens.append(self.read_number())
                 continue
 
@@ -832,7 +882,7 @@ class Lexer:
                 continue
 
             # Identifiers and keywords
-            if ch.isalpha() or ch == '_':
+            if is_alpha(ord(ch)) == 1 or ch == '_':
                 self.tokens.append(self.read_identifier())
                 continue
 

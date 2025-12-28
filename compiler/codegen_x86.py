@@ -553,8 +553,33 @@ class X86CodeGen:
                 obj_type = self._get_expr_type(expr.object)
                 type_name = obj_type.name if obj_type else ""
                 if type_name.startswith('List[') or type_name.startswith('['):
-                    # List method - for now, just evaluate args and return for compatibility
-                    # Full List support would need runtime allocation
+                    # List method - generate call to lib/list.bh functions
+                    if expr.method_name == 'append':
+                        # list.append(value) -> list_append_i32(addr(list), value)
+                        if len(expr.args) == 1:
+                            self.gen_expression(expr.args[0])  # Get value
+                            self.emit("push eax")  # Push value
+                            self.gen_expression(expr.object)  # Get list ptr
+                            self.emit("push eax")  # Push list ptr
+                            self.emit("call list_append_i32")
+                            self.emit("add esp, 8")
+                            return "eax"
+                    elif expr.method_name == 'pop':
+                        # list.pop() -> list_pop_i32(addr(list))
+                        self.gen_expression(expr.object)  # Get list ptr
+                        self.emit("push eax")
+                        self.emit("call list_pop_i32")
+                        self.emit("add esp, 4")
+                        return "eax"
+                    elif expr.method_name == 'clear':
+                        # list.clear() -> list_clear(addr(list))
+                        self.gen_expression(expr.object)  # Get list ptr
+                        self.emit("push eax")
+                        self.emit("call list_clear")
+                        self.emit("add esp, 4")
+                        self.emit("xor eax, eax")
+                        return "eax"
+                    # For unhandled list methods, fall through to generic handling
                     for arg in expr.args:
                         self.gen_expression(arg)
                     self.emit("xor eax, eax")  # Return 0/null
@@ -653,8 +678,71 @@ class X86CodeGen:
             else:
                 type_name = "Unknown"
 
+            # Handle Dict methods
+            if type_name.startswith("Dict"):
+                if expr.method_name == 'get':
+                    # dict.get(key) or dict.get(key, default) -> dict_get or dict_get_default
+                    if len(expr.args) >= 2:
+                        # dict.get(key, default) -> dict_get_default(dict, key, default)
+                        self.gen_expression(expr.args[1])  # default
+                        self.emit("push eax")
+                        self.gen_expression(expr.args[0])  # key
+                        self.emit("push eax")
+                        self.gen_expression(expr.object)  # dict ptr
+                        self.emit("push eax")
+                        self.emit("call dict_get_default")
+                        self.emit("add esp, 12")
+                    else:
+                        # dict.get(key) -> dict_get(dict, key)
+                        self.gen_expression(expr.args[0])  # key
+                        self.emit("push eax")
+                        self.gen_expression(expr.object)  # dict ptr
+                        self.emit("push eax")
+                        self.emit("call dict_get")
+                        self.emit("add esp, 8")
+                    return "eax"
+                elif expr.method_name == 'set' or expr.method_name == '__setitem__':
+                    # dict.set(key, value) or dict[key] = value -> dict_set(dict, key, value)
+                    if len(expr.args) >= 2:
+                        self.gen_expression(expr.args[1])  # value
+                        self.emit("push eax")
+                        self.gen_expression(expr.args[0])  # key
+                        self.emit("push eax")
+                        self.gen_expression(expr.object)  # dict ptr
+                        self.emit("push eax")
+                        self.emit("call dict_set")
+                        self.emit("add esp, 12")
+                        self.emit("xor eax, eax")
+                    return "eax"
+                elif expr.method_name == 'contains' or expr.method_name == '__contains__':
+                    # dict.contains(key) -> dict_contains(dict, key)
+                    self.gen_expression(expr.args[0])  # key
+                    self.emit("push eax")
+                    self.gen_expression(expr.object)  # dict ptr
+                    self.emit("push eax")
+                    self.emit("call dict_contains")
+                    self.emit("add esp, 8")
+                    return "eax"
+                elif expr.method_name == 'remove':
+                    # dict.remove(key) -> dict_remove(dict, key)
+                    self.gen_expression(expr.args[0])  # key
+                    self.emit("push eax")
+                    self.gen_expression(expr.object)  # dict ptr
+                    self.emit("push eax")
+                    self.emit("call dict_remove")
+                    self.emit("add esp, 8")
+                    return "eax"
+                elif expr.method_name == 'clear':
+                    # dict.clear() -> dict_clear(dict)
+                    self.gen_expression(expr.object)  # dict ptr
+                    self.emit("push eax")
+                    self.emit("call dict_clear")
+                    self.emit("add esp, 4")
+                    self.emit("xor eax, eax")
+                    return "eax"
+
             # Handle common methods on unknown or dynamic types (Python-style code)
-            needs_fallback = type_name == "Unknown" or type_name == "any" or type_name.startswith("Dict") or type_name.startswith("List") or type_name.startswith("Set")
+            needs_fallback = type_name == "Unknown" or type_name == "any" or type_name.startswith("Set")
             if needs_fallback:
                 if expr.method_name in ('append', 'extend', 'pop', 'clear', 'remove', 'insert', 'add', 'get', 'keys', 'values', 'items', 'update'):
                     # Collection methods - evaluate args and return first arg or None
@@ -1872,8 +1960,75 @@ class X86CodeGen:
                     for var in stmt.vars:
                         self.local_vars[var] = -4  # Placeholder
                 return
+
+            # Handle List iteration
+            if isinstance(arr_type, ListType):
+                # for item in list: body -> for i in 0..list_len(list): item = list_get(list, i); body
+                loop_var = stmt.vars[0]
+
+                # Allocate index variable (hidden)
+                self.stack_offset += 4
+                index_offset = -self.stack_offset
+
+                # Allocate loop variable
+                self.stack_offset += 4  # Assume int32/pointer elements
+                var_offset = -self.stack_offset
+                self.local_vars[loop_var] = var_offset
+                self.type_table[loop_var] = arr_type.element_type
+
+                # Get list length
+                self.gen_expression(stmt.iterable)  # Get list ptr
+                self.emit("push eax")
+                self.emit("call list_len")
+                self.emit("add esp, 4")
+                # Save length on stack
+                self.stack_offset += 4
+                len_offset = -self.stack_offset
+                self.emit(f"mov {self.ebp_addr(len_offset)}, eax")
+
+                # Initialize index to 0
+                self.emit(f"mov dword {self.ebp_addr(index_offset)}, 0")
+
+                start_label = self.new_label("foreach_list_start")
+                end_label = self.new_label("foreach_list_end")
+
+                old_start = getattr(self, 'loop_start_label', None)
+                old_end = getattr(self, 'loop_end_label', None)
+                self.loop_start_label = start_label
+                self.loop_end_label = end_label
+
+                self.emit_label(start_label)
+
+                # Check: index < length
+                self.emit(f"mov eax, {self.ebp_addr(index_offset)}")
+                self.emit(f"cmp eax, {self.ebp_addr(len_offset)}")
+                self.emit(f"jge {end_label}")
+
+                # Get element: item = list_get_i32(list, index)
+                self.emit(f"mov eax, {self.ebp_addr(index_offset)}")
+                self.emit("push eax")  # index
+                self.gen_expression(stmt.iterable)  # list ptr
+                self.emit("push eax")
+                self.emit("call list_get_i32")
+                self.emit("add esp, 8")
+                self.emit(f"mov {self.ebp_addr(var_offset)}, eax")
+
+                # Generate loop body
+                for body_stmt in stmt.body:
+                    self.gen_statement(body_stmt)
+
+                # Increment index
+                self.emit(f"inc dword {self.ebp_addr(index_offset)}")
+                self.emit(f"jmp {start_label}")
+
+                self.emit_label(end_label)
+
+                self.loop_start_label = old_start
+                self.loop_end_label = old_end
+                return
+
             if not isinstance(arr_type, ArrayType):
-                # Non-array type (could be List, etc) - skip for now
+                # Non-array type - skip for now
                 if stmt.vars:
                     for var in stmt.vars:
                         self.local_vars[var] = -4  # Placeholder

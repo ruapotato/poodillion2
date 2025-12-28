@@ -64,6 +64,72 @@ TT_SHL_EQ = TT_SHL_EQUALS
 TT_SHR_EQ = TT_SHR_EQUALS
 TT_AMP = TT_AMPERSAND
 
+# ============================================================================
+# Polyglot Helper Functions
+# ============================================================================
+
+def lookup_compound_op(tt: int):
+    """Look up compound operator binary op from token type. Returns None if not a compound op."""
+    if tt == TT_PLUS_EQUALS:
+        return BinOp.ADD
+    if tt == TT_MINUS_EQUALS:
+        return BinOp.SUB
+    if tt == TT_STAR_EQUALS:
+        return BinOp.MUL
+    if tt == TT_SLASH_EQUALS:
+        return BinOp.DIV
+    if tt == TT_DOUBLE_SLASH_EQUALS:
+        return BinOp.IDIV
+    if tt == TT_PERCENT_EQUALS:
+        return BinOp.MOD
+    if tt == TT_AMPERSAND_EQUALS:
+        return BinOp.BIT_AND
+    if tt == TT_PIPE_EQUALS:
+        return BinOp.BIT_OR
+    if tt == TT_CARET_EQUALS:
+        return BinOp.BIT_XOR
+    if tt == TT_SHL_EQUALS:
+        return BinOp.SHL
+    if tt == TT_SHR_EQUALS:
+        return BinOp.SHR
+    return None
+
+def lookup_basic_type(tt: int) -> str:
+    """Look up a basic type name from token type. Returns empty string if not a basic type."""
+    if tt == TT_INT8:
+        return 'int8'
+    if tt == TT_INT16:
+        return 'int16'
+    if tt == TT_INT32:
+        return 'int32'
+    if tt == TT_INT64:
+        return 'int64'
+    if tt == TT_UINT8:
+        return 'uint8'
+    if tt == TT_UINT16:
+        return 'uint16'
+    if tt == TT_UINT32:
+        return 'uint32'
+    if tt == TT_UINT64:
+        return 'uint64'
+    if tt == TT_FLOAT32:
+        return 'float32'
+    if tt == TT_FLOAT64:
+        return 'float64'
+    if tt == TT_BOOL:
+        return 'bool'
+    if tt == TT_CHAR:
+        return 'char'
+    if tt == TT_STR:
+        return 'str'
+    if tt == TT_BYTES:
+        return 'bytes'
+    if tt == TT_INT:
+        return 'int32'
+    if tt == TT_FLOAT:
+        return 'float32'
+    return ''
+
 class Parser:
     def __init__(self, tokens: List[Token]):
         self.tokens = tokens
@@ -97,7 +163,11 @@ class Parser:
 
     def match(self, *types) -> bool:
         """Check if current token matches any of the given types."""
-        return self.current_token().type in types
+        tt = self.current_token().type
+        for t in types:
+            if tt == t:
+                return True
+        return False
 
     # Type parsing
     def parse_type(self) -> Type:
@@ -123,28 +193,9 @@ class Parser:
             self.advance()
             return Type(type_name)
 
-        # Basic primitive types
-        basic_types = {
-            TT_INT8: 'int8',
-            TT_INT16: 'int16',
-            TT_INT32: 'int32',
-            TT_INT64: 'int64',
-            TT_UINT8: 'uint8',
-            TT_UINT16: 'uint16',
-            TT_UINT32: 'uint32',
-            TT_UINT64: 'uint64',
-            TT_FLOAT32: 'float32',
-            TT_FLOAT64: 'float64',
-            TT_BOOL: 'bool',
-            TT_CHAR: 'char',
-            TT_STR: 'str',
-            TT_BYTES: 'bytes',
-            TT_INT: 'int32',  # int is alias for int32
-            TT_FLOAT: 'float32',  # float is alias for float32
-        }
-
-        if token.type in basic_types:
-            type_name = basic_types[token.type]
+        # Basic primitive types - use polyglot lookup
+        type_name = lookup_basic_type(token.type)
+        if type_name != '':
             self.advance()
             return Type(type_name)
 
@@ -1167,27 +1218,13 @@ class Parser:
             # Not an assignment, return as tuple expression
             return TupleLiteral(targets)
 
-        # Compound assignment operators
-        compound_ops = {
-            TT_PLUS_EQUALS: BinOp.ADD,
-            TT_MINUS_EQUALS: BinOp.SUB,
-            TT_STAR_EQUALS: BinOp.MUL,
-            TT_SLASH_EQUALS: BinOp.DIV,
-            TT_DOUBLE_SLASH_EQUALS: BinOp.IDIV,
-            TT_PERCENT_EQUALS: BinOp.MOD,
-            TT_AMPERSAND_EQUALS: BinOp.BIT_AND,
-            TT_PIPE_EQUALS: BinOp.BIT_OR,
-            TT_CARET_EQUALS: BinOp.BIT_XOR,
-            TT_SHL_EQUALS: BinOp.SHL,
-            TT_SHR_EQUALS: BinOp.SHR,
-        }
-
-        if self.current_token().type in compound_ops:
-            op = compound_ops[self.current_token().type]
+        # Compound assignment operators - use polyglot lookup
+        compound_op = lookup_compound_op(self.current_token().type)
+        if compound_op is not None:
             self.advance()
             value = self.parse_expression()
             # Desugar x += y to x = x + y
-            return Assignment(expr, BinaryExpr(expr, op, value))
+            return Assignment(expr, BinaryExpr(expr, compound_op, value))
 
         # Type-annotated assignment for expressions like self.field: Type = value
         if self.current_token().type == TT_COLON:
