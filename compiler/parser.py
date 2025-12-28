@@ -5,9 +5,64 @@ Brainhair Parser - Python Syntax Edition
 Builds AST from tokens using Python-style syntax.
 """
 
-from typing import List, Optional, Dict
+# Python-only imports (Brainhair ignores these)
+try:
+    from typing import List, Optional, Dict
+except:
+    pass
+
+# Import token types as integers (works in both Python and Brainhair)
 from lexer import Token, TokenType, Lexer
+# Keywords
+from lexer import TT_DEF, TT_CLASS, TT_FROM, TT_IMPORT, TT_AS, TT_RETURN
+from lexer import TT_IF, TT_ELIF, TT_ELSE, TT_WHILE, TT_FOR, TT_IN
+from lexer import TT_BREAK, TT_CONTINUE, TT_PASS, TT_WITH, TT_RAISE
+from lexer import TT_TRY, TT_EXCEPT, TT_FINALLY, TT_LAMBDA, TT_YIELD
+from lexer import TT_ASYNC, TT_AWAIT, TT_EXTERN, TT_ASM, TT_DEFER, TT_MATCH, TT_FINAL
+# Types
+from lexer import TT_PTR, TT_LIST, TT_DICT, TT_TUPLE, TT_OPTIONAL
+from lexer import TT_INT8, TT_INT16, TT_INT32, TT_INT64
+from lexer import TT_UINT8, TT_UINT16, TT_UINT32, TT_UINT64
+from lexer import TT_FLOAT32, TT_FLOAT64, TT_BOOL, TT_CHAR, TT_STR, TT_BYTES
+from lexer import TT_INT, TT_FLOAT, TT_ARRAY, TT_REF, TT_ENUM, TT_AUTO
+from lexer import TT_DATACLASS, TT_ISINSTANCE, TT_FIELD, TT_PROPERTY
+# Literals
+from lexer import TT_IDENT, TT_NUMBER, TT_STRING, TT_FSTRING, TT_CHAR_LIT
+from lexer import TT_TRUE, TT_FALSE, TT_NONE
+# Operators (using actual lexer names)
+from lexer import TT_PLUS, TT_MINUS, TT_STAR, TT_SLASH, TT_DOUBLE_SLASH, TT_PERCENT, TT_DOUBLE_STAR
+from lexer import TT_AMPERSAND, TT_PIPE, TT_CARET, TT_TILDE, TT_SHL, TT_SHR
+from lexer import TT_EQUALS, TT_EQUALS_EQUALS, TT_NOT_EQUALS
+from lexer import TT_LESS, TT_LESS_EQUALS, TT_GREATER, TT_GREATER_EQUALS
+from lexer import TT_PLUS_EQUALS, TT_MINUS_EQUALS, TT_STAR_EQUALS, TT_SLASH_EQUALS
+from lexer import TT_DOUBLE_SLASH_EQUALS, TT_PERCENT_EQUALS
+from lexer import TT_AMPERSAND_EQUALS, TT_PIPE_EQUALS, TT_CARET_EQUALS, TT_SHL_EQUALS, TT_SHR_EQUALS
+from lexer import TT_AND, TT_OR, TT_NOT, TT_IS, TT_IS_NOT, TT_IN_OP, TT_NOT_IN
+# Punctuation
+from lexer import TT_LPAREN, TT_RPAREN, TT_LBRACKET, TT_RBRACKET, TT_LBRACE, TT_RBRACE
+from lexer import TT_COMMA, TT_DOT, TT_DOTDOT, TT_COLON, TT_ARROW, TT_AT
+from lexer import TT_NEWLINE, TT_INDENT, TT_DEDENT, TT_EOF
 from ast_nodes import *
+
+# Compatibility aliases for code that uses short names
+TT_EQ = TT_EQUALS_EQUALS
+TT_NE = TT_NOT_EQUALS
+TT_LT = TT_LESS
+TT_LE = TT_LESS_EQUALS
+TT_GT = TT_GREATER
+TT_GE = TT_GREATER_EQUALS
+TT_ASSIGN = TT_EQUALS
+TT_PLUS_EQ = TT_PLUS_EQUALS
+TT_MINUS_EQ = TT_MINUS_EQUALS
+TT_STAR_EQ = TT_STAR_EQUALS
+TT_SLASH_EQ = TT_SLASH_EQUALS
+TT_MOD_EQ = TT_PERCENT_EQUALS
+TT_AMP_EQ = TT_AMPERSAND_EQUALS
+TT_PIPE_EQ = TT_PIPE_EQUALS
+TT_CARET_EQ = TT_CARET_EQUALS
+TT_SHL_EQ = TT_SHL_EQUALS
+TT_SHR_EQ = TT_SHR_EQUALS
+TT_AMP = TT_AMPERSAND
 
 class Parser:
     def __init__(self, tokens: List[Token]):
@@ -37,7 +92,7 @@ class Parser:
         return token
 
     def skip_newlines(self):
-        while self.current_token().type == TokenType.NEWLINE:
+        while self.current_token().type == TT_NEWLINE:
             self.advance()
 
     def match(self, *types) -> bool:
@@ -63,29 +118,29 @@ class Parser:
         token = self.current_token()
 
         # Forward reference: 'TypeName' (string-quoted type)
-        if token.type == TokenType.STRING:
+        if token.type == TT_STRING:
             type_name = token.value
             self.advance()
             return Type(type_name)
 
         # Basic primitive types
         basic_types = {
-            TokenType.INT8: 'int8',
-            TokenType.INT16: 'int16',
-            TokenType.INT32: 'int32',
-            TokenType.INT64: 'int64',
-            TokenType.UINT8: 'uint8',
-            TokenType.UINT16: 'uint16',
-            TokenType.UINT32: 'uint32',
-            TokenType.UINT64: 'uint64',
-            TokenType.FLOAT32: 'float32',
-            TokenType.FLOAT64: 'float64',
-            TokenType.BOOL: 'bool',
-            TokenType.CHAR: 'char',
-            TokenType.STR: 'str',
-            TokenType.BYTES: 'bytes',
-            TokenType.INT: 'int32',  # int is alias for int32
-            TokenType.FLOAT: 'float32',  # float is alias for float32
+            TT_INT8: 'int8',
+            TT_INT16: 'int16',
+            TT_INT32: 'int32',
+            TT_INT64: 'int64',
+            TT_UINT8: 'uint8',
+            TT_UINT16: 'uint16',
+            TT_UINT32: 'uint32',
+            TT_UINT64: 'uint64',
+            TT_FLOAT32: 'float32',
+            TT_FLOAT64: 'float64',
+            TT_BOOL: 'bool',
+            TT_CHAR: 'char',
+            TT_STR: 'str',
+            TT_BYTES: 'bytes',
+            TT_INT: 'int32',  # int is alias for int32
+            TT_FLOAT: 'float32',  # float is alias for float32
         }
 
         if token.type in basic_types:
@@ -94,87 +149,97 @@ class Parser:
             return Type(type_name)
 
         # Ptr[T] - pointer type
-        if token.type == TokenType.PTR:
+        if token.type == TT_PTR:
             self.advance()
-            self.expect(TokenType.LBRACKET)
+            self.expect(TT_LBRACKET)
             base_type = self.parse_type()
-            self.expect(TokenType.RBRACKET)
+            self.expect(TT_RBRACKET)
             return PointerType(base_type)
 
         # List[T] - dynamic list
-        if token.type == TokenType.LIST:
+        if token.type == TT_LIST:
             self.advance()
-            self.expect(TokenType.LBRACKET)
+            self.expect(TT_LBRACKET)
             element_type = self.parse_type()
-            self.expect(TokenType.RBRACKET)
+            self.expect(TT_RBRACKET)
             return ListType(element_type)
 
         # Dict[K, V] - hash map
-        if token.type == TokenType.DICT:
+        if token.type == TT_DICT:
             self.advance()
-            self.expect(TokenType.LBRACKET)
+            self.expect(TT_LBRACKET)
             key_type = self.parse_type()
-            self.expect(TokenType.COMMA)
+            self.expect(TT_COMMA)
             value_type = self.parse_type()
-            self.expect(TokenType.RBRACKET)
+            self.expect(TT_RBRACKET)
             return DictType(key_type, value_type)
 
         # Optional[T]
-        if token.type == TokenType.OPTIONAL:
+        if token.type == TT_OPTIONAL:
             self.advance()
-            self.expect(TokenType.LBRACKET)
+            self.expect(TT_LBRACKET)
             inner_type = self.parse_type()
-            self.expect(TokenType.RBRACKET)
+            self.expect(TT_RBRACKET)
             return GenericInstanceType('Optional', [inner_type])
 
         # Tuple[A, B, ...]
-        if token.type == TokenType.TUPLE:
+        if token.type == TT_TUPLE:
             self.advance()
-            self.expect(TokenType.LBRACKET)
+            self.expect(TT_LBRACKET)
             types = [self.parse_type()]
-            while self.current_token().type == TokenType.COMMA:
+            while self.current_token().type == TT_COMMA:
                 self.advance()
                 types.append(self.parse_type())
-            self.expect(TokenType.RBRACKET)
+            self.expect(TT_RBRACKET)
             return GenericInstanceType('Tuple', types)
 
         # Final[T] - constant type (for type annotation only)
-        if token.type == TokenType.FINAL:
+        if token.type == TT_FINAL:
             self.advance()
-            self.expect(TokenType.LBRACKET)
+            self.expect(TT_LBRACKET)
             inner_type = self.parse_type()
-            self.expect(TokenType.RBRACKET)
+            self.expect(TT_RBRACKET)
             return inner_type  # Final is handled at declaration level
 
-        # Legacy slice type: []T
-        if token.type == TokenType.LBRACKET:
+        # Array[N, T] - fixed-size array type
+        if token.type == TT_ARRAY:
             self.advance()
-            self.expect(TokenType.RBRACKET)
+            self.expect(TT_LBRACKET)
+            size = self.expect(TT_NUMBER).value
+            self.expect(TT_COMMA)
+            element_type = self.parse_type()
+            self.expect(TT_RBRACKET)
+            return ArrayType(size, element_type)
+
+        # Legacy slice type: []T
+        if token.type == TT_LBRACKET:
+            self.advance()
+            self.expect(TT_RBRACKET)
             element_type = self.parse_type()
             return SliceType(element_type)
 
         # User-defined type (identifier) - could be struct name or generic
-        if token.type == TokenType.IDENT:
+        if token.type == TT_IDENT:
             type_name = token.value
             self.advance()
 
             # Special case: Array[N, T] where N is a number
-            if type_name == 'Array' and self.current_token().type == TokenType.LBRACKET:
+            if type_name == 'Array' and self.current_token().type == TT_LBRACKET:
                 self.advance()  # Skip '['
-                size = self.expect(TokenType.NUMBER).value
-                self.expect(TokenType.COMMA)
+                size = self.expect(TT_NUMBER).value
+                self.expect(TT_COMMA)
                 element_type = self.parse_type()
-                self.expect(TokenType.RBRACKET)
+                self.expect(TT_RBRACKET)
                 return ArrayType(size, element_type)
 
             # Check for generic instantiation: Type[Args]
-            if self.current_token().type == TokenType.LBRACKET:
+            if self.current_token().type == TT_LBRACKET:
                 self.advance()
                 type_args = [self.parse_type()]
-                while self.current_token().type == TokenType.COMMA:
+                while self.current_token().type == TT_COMMA:
                     self.advance()
                     type_args.append(self.parse_type())
-                self.expect(TokenType.RBRACKET)
+                self.expect(TT_RBRACKET)
                 return GenericInstanceType(type_name, type_args)
 
             return Type(type_name)
@@ -187,168 +252,168 @@ class Parser:
         token = self.current_token()
 
         # Literals
-        if token.type == TokenType.NUMBER:
+        if token.type == TT_NUMBER:
             self.advance()
             return IntLiteral(token.value)
 
-        if token.type == TokenType.CHAR_LIT:
+        if token.type == TT_CHAR_LIT:
             self.advance()
             return CharLiteral(token.value)
 
-        if token.type == TokenType.STRING:
+        if token.type == TT_STRING:
             self.advance()
             return StringLiteral(token.value)
 
-        if token.type == TokenType.FSTRING:
+        if token.type == TT_FSTRING:
             self.advance()
             return FStringLiteral(token.value)
 
-        if token.type == TokenType.TRUE:
+        if token.type == TT_TRUE:
             self.advance()
             return BoolLiteral(True)
 
-        if token.type == TokenType.FALSE:
+        if token.type == TT_FALSE:
             self.advance()
             return BoolLiteral(False)
 
-        if token.type == TokenType.NONE:
+        if token.type == TT_NONE:
             self.advance()
             return NoneLiteral()
 
         # List/array literal: [1, 2, 3] or list comprehension: [expr for x in iterable]
-        if token.type == TokenType.LBRACKET:
+        if token.type == TT_LBRACKET:
             self.advance()
             self.skip_newlines()
             elements = []
 
-            if self.current_token().type != TokenType.RBRACKET:
+            if self.current_token().type != TT_RBRACKET:
                 first_expr = self.parse_expression()
 
                 # Check for list comprehension: [expr for var in iterable]
-                if self.current_token().type == TokenType.FOR:
+                if self.current_token().type == TT_FOR:
                     self.advance()  # skip 'for'
-                    var_name = self.expect(TokenType.IDENT).value
-                    self.expect(TokenType.IN)
+                    var_name = self.expect(TT_IDENT).value
+                    self.expect(TT_IN)
                     iterable = self.parse_expression()
                     self.skip_newlines()
-                    self.expect(TokenType.RBRACKET)
+                    self.expect(TT_RBRACKET)
                     # Return as ForEachStmt wrapped in special node, or just return empty for now
                     # For compilation, we'll treat this as runtime loop - return placeholder
                     return ArrayLiteral([])  # TODO: proper list comprehension support
 
                 elements.append(first_expr)
-                while self.current_token().type == TokenType.COMMA:
+                while self.current_token().type == TT_COMMA:
                     self.advance()
                     self.skip_newlines()
-                    if self.current_token().type == TokenType.RBRACKET:
+                    if self.current_token().type == TT_RBRACKET:
                         break
                     elements.append(self.parse_expression())
 
             self.skip_newlines()
-            self.expect(TokenType.RBRACKET)
+            self.expect(TT_RBRACKET)
             return ArrayLiteral(elements)
 
         # Dict literal: {key: value, ...} or set comprehension: {expr for x in iterable}
-        if token.type == TokenType.LBRACE:
+        if token.type == TT_LBRACE:
             self.advance()
             self.skip_newlines()
             pairs = []
 
-            if self.current_token().type != TokenType.RBRACE:
+            if self.current_token().type != TT_RBRACE:
                 first_expr = self.parse_expression()
 
                 # Check for set comprehension: {expr for var in iterable}
-                if self.current_token().type == TokenType.FOR:
+                if self.current_token().type == TT_FOR:
                     self.advance()  # skip 'for'
-                    var_name = self.expect(TokenType.IDENT).value
-                    self.expect(TokenType.IN)
+                    var_name = self.expect(TT_IDENT).value
+                    self.expect(TT_IN)
                     iterable = self.parse_expression()
                     self.skip_newlines()
-                    self.expect(TokenType.RBRACE)
+                    self.expect(TT_RBRACE)
                     # Return empty set/dict as placeholder for now
                     return DictLiteral([])  # TODO: proper set comprehension support
 
                 # It's a dict literal - expect colon
-                self.expect(TokenType.COLON)
+                self.expect(TT_COLON)
                 value = self.parse_expression()
                 pairs.append((first_expr, value))
 
-                while self.current_token().type == TokenType.COMMA:
+                while self.current_token().type == TT_COMMA:
                     self.advance()
                     self.skip_newlines()
-                    if self.current_token().type == TokenType.RBRACE:
+                    if self.current_token().type == TT_RBRACE:
                         break
                     key = self.parse_expression()
-                    self.expect(TokenType.COLON)
+                    self.expect(TT_COLON)
                     value = self.parse_expression()
                     pairs.append((key, value))
 
             self.skip_newlines()
-            self.expect(TokenType.RBRACE)
+            self.expect(TT_RBRACE)
             return DictLiteral(pairs)
 
         # Ptr[T](value) - pointer cast/construction
-        if token.type == TokenType.PTR:
+        if token.type == TT_PTR:
             self.advance()
-            self.expect(TokenType.LBRACKET)
+            self.expect(TT_LBRACKET)
             target_type = self.parse_type()
-            self.expect(TokenType.RBRACKET)
-            self.expect(TokenType.LPAREN)
+            self.expect(TT_RBRACKET)
+            self.expect(TT_LPAREN)
             expr = self.parse_expression()
-            self.expect(TokenType.RPAREN)
+            self.expect(TT_RPAREN)
             return CastExpr(PointerType(target_type), expr)
 
         # Identifier or function call
-        if token.type == TokenType.IDENT:
+        if token.type == TT_IDENT:
             name = token.value
             self.advance()
             return Identifier(name)
 
         # Keywords used as identifiers (when not followed by their special syntax)
         # This handles cases like: asm = [], match = {}, etc.
-        keyword_as_ident = [TokenType.ASM, TokenType.MATCH, TokenType.DEFER]
+        keyword_as_ident = [TT_ASM, TT_MATCH, TT_DEFER]
         if token.type in keyword_as_ident:
             name = token.type.name.lower()
             self.advance()
             return Identifier(name)
 
         # Parenthesized expression or tuple
-        if token.type == TokenType.LPAREN:
+        if token.type == TT_LPAREN:
             self.advance()
             self.skip_newlines()
 
             # Empty tuple
-            if self.current_token().type == TokenType.RPAREN:
+            if self.current_token().type == TT_RPAREN:
                 self.advance()
                 return TupleLiteral([])
 
             expr = self.parse_expression()
 
             # Check if it's a tuple
-            if self.current_token().type == TokenType.COMMA:
+            if self.current_token().type == TT_COMMA:
                 elements = [expr]
-                while self.current_token().type == TokenType.COMMA:
+                while self.current_token().type == TT_COMMA:
                     self.advance()
                     self.skip_newlines()
-                    if self.current_token().type == TokenType.RPAREN:
+                    if self.current_token().type == TT_RPAREN:
                         break
                     elements.append(self.parse_expression())
-                self.expect(TokenType.RPAREN)
+                self.expect(TT_RPAREN)
                 return TupleLiteral(elements)
 
-            self.expect(TokenType.RPAREN)
+            self.expect(TT_RPAREN)
             return expr
 
         # Unary operators
-        if token.type == TokenType.MINUS:
+        if token.type == TT_MINUS:
             self.advance()
             return UnaryExpr(UnaryOp.NEG, self.parse_unary())
 
-        if token.type == TokenType.NOT:
+        if token.type == TT_NOT:
             self.advance()
             return UnaryExpr(UnaryOp.NOT, self.parse_unary())
 
-        if token.type == TokenType.TILDE:
+        if token.type == TT_TILDE:
             self.advance()
             return UnaryExpr(UnaryOp.BIT_NOT, self.parse_unary())
 
@@ -358,15 +423,15 @@ class Parser:
         """Parse unary expressions."""
         token = self.current_token()
 
-        if token.type == TokenType.MINUS:
+        if token.type == TT_MINUS:
             self.advance()
             return UnaryExpr(UnaryOp.NEG, self.parse_unary())
 
-        if token.type == TokenType.NOT:
+        if token.type == TT_NOT:
             self.advance()
             return UnaryExpr(UnaryOp.NOT, self.parse_unary())
 
-        if token.type == TokenType.TILDE:
+        if token.type == TT_TILDE:
             self.advance()
             return UnaryExpr(UnaryOp.BIT_NOT, self.parse_unary())
 
@@ -377,10 +442,10 @@ class Parser:
         token = self.current_token()
 
         # Lambda expression: lambda args: expr (parse and return None placeholder)
-        if token.type == TokenType.LAMBDA:
+        if token.type == TT_LAMBDA:
             self.advance()
             # Skip parameters until colon
-            while self.current_token().type != TokenType.COLON:
+            while self.current_token().type != TT_COLON:
                 self.advance()
             self.advance()  # Skip colon
             # Parse the lambda body expression
@@ -389,129 +454,129 @@ class Parser:
             return NoneLiteral()
 
         # addr(expr) - address-of (only if followed by LPAREN)
-        is_addr = token.type == TokenType.IDENT and token.value == 'addr'
-        if is_addr and self.peek_token().type == TokenType.LPAREN:
+        is_addr = token.type == TT_IDENT and token.value == 'addr'
+        if is_addr and self.peek_token().type == TT_LPAREN:
             self.advance()
-            self.expect(TokenType.LPAREN)
+            self.expect(TT_LPAREN)
             expr = self.parse_expression()
-            self.expect(TokenType.RPAREN)
+            self.expect(TT_RPAREN)
             return AddrOfExpr(expr)
 
         # cast[Type](expr) - type cast (only if followed by LBRACKET)
-        is_cast = token.type == TokenType.IDENT and token.value == 'cast'
-        if is_cast and self.peek_token().type == TokenType.LBRACKET:
+        is_cast = token.type == TT_IDENT and token.value == 'cast'
+        if is_cast and self.peek_token().type == TT_LBRACKET:
             self.advance()
-            self.expect(TokenType.LBRACKET)
+            self.expect(TT_LBRACKET)
             target_type = self.parse_type()
-            self.expect(TokenType.RBRACKET)
-            self.expect(TokenType.LPAREN)
+            self.expect(TT_RBRACKET)
+            self.expect(TT_LPAREN)
             expr = self.parse_expression()
-            self.expect(TokenType.RPAREN)
+            self.expect(TT_RPAREN)
             return CastExpr(target_type, expr)
 
         # isinstance(expr, Type) - type check (Python compatibility)
         # Handle both keyword and identifier tokenization
-        is_isinstance = token.type == TokenType.ISINSTANCE
-        is_isinstance = is_isinstance or (token.type == TokenType.IDENT and token.value == 'isinstance')
-        if is_isinstance and self.peek_token().type == TokenType.LPAREN:
+        is_isinstance = token.type == TT_ISINSTANCE
+        is_isinstance = is_isinstance or (token.type == TT_IDENT and token.value == 'isinstance')
+        if is_isinstance and self.peek_token().type == TT_LPAREN:
             self.advance()
-            self.expect(TokenType.LPAREN)
+            self.expect(TT_LPAREN)
             expr = self.parse_expression()
-            self.expect(TokenType.COMMA)
+            self.expect(TT_COMMA)
             # Parse the type - could be single name or tuple of types: (Type1, Type2)
-            if self.current_token().type == TokenType.LPAREN:
+            if self.current_token().type == TT_LPAREN:
                 # Tuple of types - skip the whole tuple and use first type
                 self.advance()  # skip (
-                type_name = self.expect(TokenType.IDENT).value
-                while self.current_token().type == TokenType.DOT:
+                type_name = self.expect(TT_IDENT).value
+                while self.current_token().type == TT_DOT:
                     self.advance()
-                    type_name += '.' + self.expect(TokenType.IDENT).value
+                    type_name += '.' + self.expect(TT_IDENT).value
                 # Skip remaining types in tuple
-                while self.current_token().type == TokenType.COMMA:
+                while self.current_token().type == TT_COMMA:
                     self.advance()
-                    self.expect(TokenType.IDENT)
-                    while self.current_token().type == TokenType.DOT:
+                    self.expect(TT_IDENT)
+                    while self.current_token().type == TT_DOT:
                         self.advance()
-                        self.expect(TokenType.IDENT)
-                self.expect(TokenType.RPAREN)  # close tuple
+                        self.expect(TT_IDENT)
+                self.expect(TT_RPAREN)  # close tuple
             else:
                 # Single type name
-                type_name = self.expect(TokenType.IDENT).value
-                while self.current_token().type == TokenType.DOT:
+                type_name = self.expect(TT_IDENT).value
+                while self.current_token().type == TT_DOT:
                     self.advance()
-                    type_name += '.' + self.expect(TokenType.IDENT).value
-            self.expect(TokenType.RPAREN)
+                    type_name += '.' + self.expect(TT_IDENT).value
+            self.expect(TT_RPAREN)
             return IsInstanceExpr(expr, type_name)
 
         # int(expr, base) or int(expr) - type conversions
-        # Handle both when 'int' is a keyword (TokenType.INT) or identifier
-        is_int_call = token.type == TokenType.INT or (token.type == TokenType.IDENT and token.value == 'int')
-        if is_int_call and self.peek_token().type == TokenType.LPAREN:
+        # Handle both when 'int' is a keyword (TT_INT) or identifier
+        is_int_call = token.type == TT_INT or (token.type == TT_IDENT and token.value == 'int')
+        if is_int_call and self.peek_token().type == TT_LPAREN:
             self.advance()
-            self.expect(TokenType.LPAREN)
+            self.expect(TT_LPAREN)
             args: List[ASTNode] = [self.parse_expression()]
-            while self.current_token().type == TokenType.COMMA:
+            while self.current_token().type == TT_COMMA:
                 self.advance()
                 args.append(self.parse_expression())
-            self.expect(TokenType.RPAREN)
+            self.expect(TT_RPAREN)
             # For BH, int() is a cast to int32, ignore base argument
             return CastExpr(Type('int32'), args[0])
 
         # str(expr) - string conversion
-        is_str_call = token.type == TokenType.STR or (token.type == TokenType.IDENT and token.value == 'str')
-        if is_str_call and self.peek_token().type == TokenType.LPAREN:
+        is_str_call = token.type == TT_STR or (token.type == TT_IDENT and token.value == 'str')
+        if is_str_call and self.peek_token().type == TT_LPAREN:
             self.advance()
-            self.expect(TokenType.LPAREN)
+            self.expect(TT_LPAREN)
             expr = self.parse_expression()
-            self.expect(TokenType.RPAREN)
+            self.expect(TT_RPAREN)
             # Treat str() as a call for now
             return CallExpr('str', [expr])
 
         # len(expr) - length function (only if followed by parenthesis)
-        is_len = token.type == TokenType.IDENT and token.value == 'len'
-        if is_len and self.peek_token() and self.peek_token().type == TokenType.LPAREN:
+        is_len = token.type == TT_IDENT and token.value == 'len'
+        if is_len and self.peek_token() and self.peek_token().type == TT_LPAREN:
             self.advance()
-            self.expect(TokenType.LPAREN)
+            self.expect(TT_LPAREN)
             expr = self.parse_expression()
-            self.expect(TokenType.RPAREN)
+            self.expect(TT_RPAREN)
             return CallExpr('len', [expr])
 
         # sizeof(Type) - size of type (only if followed by LPAREN)
-        is_sizeof = token.type == TokenType.IDENT and token.value == 'sizeof'
-        if is_sizeof and self.peek_token().type == TokenType.LPAREN:
+        is_sizeof = token.type == TT_IDENT and token.value == 'sizeof'
+        if is_sizeof and self.peek_token().type == TT_LPAREN:
             self.advance()
-            self.expect(TokenType.LPAREN)
+            self.expect(TT_LPAREN)
             target_type = self.parse_type()
-            self.expect(TokenType.RPAREN)
+            self.expect(TT_RPAREN)
             return SizeOfExpr(target_type)
 
         # range(start, end) - range function (only if followed by LPAREN)
-        is_range = token.type == TokenType.IDENT and token.value == 'range'
-        if is_range and self.peek_token().type == TokenType.LPAREN:
+        is_range = token.type == TT_IDENT and token.value == 'range'
+        if is_range and self.peek_token().type == TT_LPAREN:
             self.advance()
-            self.expect(TokenType.LPAREN)
+            self.expect(TT_LPAREN)
             start = self.parse_expression()
             end = None
             step = None
-            if self.current_token().type == TokenType.COMMA:
+            if self.current_token().type == TT_COMMA:
                 self.advance()
                 end = self.parse_expression()
-                if self.current_token().type == TokenType.COMMA:
+                if self.current_token().type == TT_COMMA:
                     self.advance()
                     step = self.parse_expression()
-            self.expect(TokenType.RPAREN)
+            self.expect(TT_RPAREN)
             return RangeExpr(start, end, step)
 
         # asm("instruction") - inline assembly (only if followed by LPAREN)
-        if token.type == TokenType.ASM and self.peek_token().type == TokenType.LPAREN:
+        if token.type == TT_ASM and self.peek_token().type == TT_LPAREN:
             self.advance()
-            self.expect(TokenType.LPAREN)
-            asm_str = self.expect(TokenType.STRING).value
-            self.expect(TokenType.RPAREN)
+            self.expect(TT_LPAREN)
+            asm_str = self.expect(TT_STRING).value
+            self.expect(TT_RPAREN)
             return AsmExpr(asm_str)
 
         # match expression
-        if token.type == TokenType.MATCH:
+        if token.type == TT_MATCH:
             return self.parse_match_expr()
 
         # Parse atom first
@@ -522,7 +587,7 @@ class Parser:
             token = self.current_token()
 
             # Function call: expr(args) or generic call: expr[types](args)
-            if token.type == TokenType.LPAREN:
+            if token.type == TT_LPAREN:
                 if isinstance(expr, Identifier):
                     # Check if previous was a struct literal pattern
                     saved_pos = self.pos
@@ -530,9 +595,9 @@ class Parser:
                     self.skip_newlines()
 
                     is_struct_literal = False
-                    if self.current_token().type == TokenType.IDENT:
+                    if self.current_token().type == TT_IDENT:
                         next_tok = self.peek_token()
-                        if next_tok.type == TokenType.COLON:
+                        if next_tok.type == TT_COLON:
                             is_struct_literal = True
 
                     self.pos = saved_pos
@@ -544,22 +609,22 @@ class Parser:
                         self.skip_newlines()
                         field_values = {}
 
-                        if self.current_token().type != TokenType.RPAREN:
-                            field_name = self.expect(TokenType.IDENT).value
-                            self.expect(TokenType.COLON)
+                        if self.current_token().type != TT_RPAREN:
+                            field_name = self.expect(TT_IDENT).value
+                            self.expect(TT_COLON)
                             field_values[field_name] = self.parse_expression()
 
-                            while self.current_token().type == TokenType.COMMA:
+                            while self.current_token().type == TT_COMMA:
                                 self.advance()
                                 self.skip_newlines()
-                                if self.current_token().type == TokenType.RPAREN:
+                                if self.current_token().type == TT_RPAREN:
                                     break
-                                field_name = self.expect(TokenType.IDENT).value
-                                self.expect(TokenType.COLON)
+                                field_name = self.expect(TT_IDENT).value
+                                self.expect(TT_COLON)
                                 field_values[field_name] = self.parse_expression()
 
                         self.skip_newlines()
-                        self.expect(TokenType.RPAREN)
+                        self.expect(TT_RPAREN)
                         expr = StructLiteral(struct_name, field_values)
                         continue
 
@@ -568,16 +633,16 @@ class Parser:
                 self.skip_newlines()
                 args: List[ASTNode] = []
 
-                while self.current_token().type != TokenType.RPAREN:
+                while self.current_token().type != TT_RPAREN:
                     # Handle *args and **kwargs unpacking (skip them)
                     cur_type = self.current_token().type
-                    if cur_type == TokenType.STAR or cur_type == TokenType.DOUBLE_STAR:
+                    if cur_type == TT_STAR or cur_type == TT_DOUBLE_STAR:
                         self.advance()
-                        if self.current_token().type == TokenType.STAR:
+                        if self.current_token().type == TT_STAR:
                             self.advance()
                         # Parse the expression being unpacked
                         self.parse_expression()
-                        if self.current_token().type == TokenType.COMMA:
+                        if self.current_token().type == TT_COMMA:
                             self.advance()
                         self.skip_newlines()
                         continue
@@ -586,31 +651,31 @@ class Parser:
                     arg_expr = self.parse_expression()
 
                     # Handle generator expression: expr for var in iterable [if cond]
-                    if self.current_token().type == TokenType.FOR:
+                    if self.current_token().type == TT_FOR:
                         # Skip the generator expression, tracking nested parens
                         paren_depth = 1
                         while paren_depth > 0:
                             self.advance()
-                            if self.current_token().type == TokenType.LPAREN:
+                            if self.current_token().type == TT_LPAREN:
                                 paren_depth = paren_depth + 1
-                            elif self.current_token().type == TokenType.RPAREN:
+                            elif self.current_token().type == TT_RPAREN:
                                 paren_depth = paren_depth - 1
                         # Return empty list as placeholder
                         args.append(ArrayLiteral([]))
                         break
 
-                    if self.current_token().type == TokenType.EQUALS:
+                    if self.current_token().type == TT_EQUALS:
                         self.advance()
                         arg_expr = self.parse_expression()
                     args.append(arg_expr)
-                    if self.current_token().type == TokenType.COMMA:
+                    if self.current_token().type == TT_COMMA:
                         self.advance()
                         self.skip_newlines()
                     else:
                         break
 
                 self.skip_newlines()
-                self.expect(TokenType.RPAREN)
+                self.expect(TT_RPAREN)
 
                 if isinstance(expr, Identifier):
                     expr = CallExpr(expr.name, args)
@@ -618,7 +683,7 @@ class Parser:
                     raise SyntaxError(f"Cannot call non-identifier at line {token.line}")
 
             # Generic call: expr[types](args)
-            elif token.type == TokenType.LBRACKET:
+            elif token.type == TT_LBRACKET:
                 if isinstance(expr, Identifier):
                     # Could be generic call or array indexing
                     saved_pos = self.pos
@@ -626,28 +691,28 @@ class Parser:
 
                     # Try to detect if this is a type list
                     type_keywords = set()
-                    type_keywords.add(TokenType.INT8)
-                    type_keywords.add(TokenType.INT16)
-                    type_keywords.add(TokenType.INT32)
-                    type_keywords.add(TokenType.INT64)
-                    type_keywords.add(TokenType.UINT8)
-                    type_keywords.add(TokenType.UINT16)
-                    type_keywords.add(TokenType.UINT32)
-                    type_keywords.add(TokenType.UINT64)
-                    type_keywords.add(TokenType.BOOL)
-                    type_keywords.add(TokenType.CHAR)
-                    type_keywords.add(TokenType.PTR)
-                    type_keywords.add(TokenType.LIST)
-                    type_keywords.add(TokenType.DICT)
-                    type_keywords.add(TokenType.OPTIONAL)
-                    type_keywords.add(TokenType.TUPLE)
-                    type_keywords.add(TokenType.INT)
-                    type_keywords.add(TokenType.FLOAT)
-                    type_keywords.add(TokenType.STR)
-                    type_keywords.add(TokenType.BYTES)
+                    type_keywords.add(TT_INT8)
+                    type_keywords.add(TT_INT16)
+                    type_keywords.add(TT_INT32)
+                    type_keywords.add(TT_INT64)
+                    type_keywords.add(TT_UINT8)
+                    type_keywords.add(TT_UINT16)
+                    type_keywords.add(TT_UINT32)
+                    type_keywords.add(TT_UINT64)
+                    type_keywords.add(TT_BOOL)
+                    type_keywords.add(TT_CHAR)
+                    type_keywords.add(TT_PTR)
+                    type_keywords.add(TT_LIST)
+                    type_keywords.add(TT_DICT)
+                    type_keywords.add(TT_OPTIONAL)
+                    type_keywords.add(TT_TUPLE)
+                    type_keywords.add(TT_INT)
+                    type_keywords.add(TT_FLOAT)
+                    type_keywords.add(TT_STR)
+                    type_keywords.add(TT_BYTES)
 
                     first_tok = self.current_token().type
-                    is_type_start = first_tok == TokenType.IDENT or first_tok in type_keywords
+                    is_type_start = first_tok == TT_IDENT or first_tok in type_keywords
 
                     if is_type_start:
                         # Scan to see if followed by ]( pattern
@@ -655,12 +720,12 @@ class Parser:
                         is_generic_call = False
                         while scan_pos < len(self.tokens):
                             tok = self.tokens[scan_pos]
-                            if tok.type == TokenType.RBRACKET:
+                            if tok.type == TT_RBRACKET:
                                 has_next = scan_pos + 1 < len(self.tokens)
-                                if has_next and self.tokens[scan_pos + 1].type == TokenType.LPAREN:
+                                if has_next and self.tokens[scan_pos + 1].type == TT_LPAREN:
                                     is_generic_call = True
                                 break
-                            elif tok.type in (TokenType.IDENT, TokenType.COMMA) or tok.type in type_keywords:
+                            elif tok.type in (TT_IDENT, TT_COMMA) or tok.type in type_keywords:
                                 scan_pos += 1
                             else:
                                 break
@@ -668,23 +733,23 @@ class Parser:
                         if is_generic_call:
                             # Parse as generic call
                             type_args = [self.parse_type()]
-                            while self.current_token().type == TokenType.COMMA:
+                            while self.current_token().type == TT_COMMA:
                                 self.advance()
                                 type_args.append(self.parse_type())
-                            self.expect(TokenType.RBRACKET)
-                            self.expect(TokenType.LPAREN)
+                            self.expect(TT_RBRACKET)
+                            self.expect(TT_LPAREN)
                             self.skip_newlines()
                             args = []
-                            if self.current_token().type != TokenType.RPAREN:
+                            if self.current_token().type != TT_RPAREN:
                                 args.append(self.parse_expression())
-                                while self.current_token().type == TokenType.COMMA:
+                                while self.current_token().type == TT_COMMA:
                                     self.advance()
                                     self.skip_newlines()
-                                    if self.current_token().type == TokenType.RPAREN:
+                                    if self.current_token().type == TT_RPAREN:
                                         break
                                     args.append(self.parse_expression())
                             self.skip_newlines()
-                            self.expect(TokenType.RPAREN)
+                            self.expect(TT_RPAREN)
                             expr = CallExpr(expr.name, args, type_args=type_args)
                             continue
 
@@ -695,47 +760,47 @@ class Parser:
                 self.advance()
 
                 # Check for slice starting with : (e.g., [:4])
-                if self.current_token().type == TokenType.COLON:
+                if self.current_token().type == TT_COLON:
                     self.advance()
                     # Slice from beginning: [:end]
-                    if self.current_token().type == TokenType.RBRACKET:
+                    if self.current_token().type == TT_RBRACKET:
                         # [:] - full slice (return as-is for now)
                         self.advance()
                         expr = expr  # No change, just skip
                     else:
                         end = self.parse_expression()
-                        self.expect(TokenType.RBRACKET)
+                        self.expect(TT_RBRACKET)
                         expr = SliceExpr(expr, IntLiteral(0), end)
                 else:
                     index = self.parse_expression()
 
                     # Check for slice: arr[start..end] or arr[start:end] or arr[start:]
-                    if self.current_token().type == TokenType.DOTDOT:
+                    if self.current_token().type == TT_DOTDOT:
                         self.advance()
                         end = self.parse_expression()
-                        self.expect(TokenType.RBRACKET)
+                        self.expect(TT_RBRACKET)
                         expr = SliceExpr(expr, index, end)
-                    elif self.current_token().type == TokenType.COLON:
+                    elif self.current_token().type == TT_COLON:
                         self.advance()
                         # Python-style slice: arr[start:end] or arr[start:]
-                        if self.current_token().type == TokenType.RBRACKET:
+                        if self.current_token().type == TT_RBRACKET:
                             # arr[start:] - slice to end (use large number as placeholder)
                             self.advance()
                             expr = SliceExpr(expr, index, IntLiteral(999999999))
                         else:
                             end = self.parse_expression()
-                            self.expect(TokenType.RBRACKET)
+                            self.expect(TT_RBRACKET)
                             expr = SliceExpr(expr, index, end)
                     else:
-                        self.expect(TokenType.RBRACKET)
+                        self.expect(TT_RBRACKET)
                         expr = IndexExpr(expr, index)
 
             # Field access or method call: expr.field or expr.method()
-            elif token.type == TokenType.DOT:
+            elif token.type == TT_DOT:
                 self.advance()
                 # Field/method name can be IDENT or keyword (like 'match', 'type', etc.)
                 tok = self.current_token()
-                if tok.type == TokenType.IDENT:
+                if tok.type == TT_IDENT:
                     field_name = tok.value
                     self.advance()
                 elif tok.type.name.isupper():
@@ -744,20 +809,20 @@ class Parser:
                 else:
                     raise SyntaxError(f"Expected field name, got {tok.type} at line {tok.line}")
 
-                if self.current_token().type == TokenType.LPAREN:
+                if self.current_token().type == TT_LPAREN:
                     # Method call
                     self.advance()
                     args: List[ASTNode] = []
 
-                    while self.current_token().type != TokenType.RPAREN:
+                    while self.current_token().type != TT_RPAREN:
                         # Handle *args and **kwargs unpacking (skip them)
                         cur_type = self.current_token().type
-                        if cur_type == TokenType.STAR or cur_type == TokenType.DOUBLE_STAR:
+                        if cur_type == TT_STAR or cur_type == TT_DOUBLE_STAR:
                             self.advance()
-                            if self.current_token().type == TokenType.STAR:
+                            if self.current_token().type == TT_STAR:
                                 self.advance()
                             self.parse_expression()
-                            if self.current_token().type == TokenType.COMMA:
+                            if self.current_token().type == TT_COMMA:
                                 self.advance()
                             continue
 
@@ -765,26 +830,26 @@ class Parser:
                         arg_expr = self.parse_expression()
 
                         # Handle generator expression: expr for var in iterable [if cond]
-                        if self.current_token().type == TokenType.FOR:
+                        if self.current_token().type == TT_FOR:
                             paren_depth = 1
                             while paren_depth > 0:
                                 self.advance()
-                                if self.current_token().type == TokenType.LPAREN:
+                                if self.current_token().type == TT_LPAREN:
                                     paren_depth = paren_depth + 1
-                                elif self.current_token().type == TokenType.RPAREN:
+                                elif self.current_token().type == TT_RPAREN:
                                     paren_depth = paren_depth - 1
                             args.append(ArrayLiteral([]))
                             break
 
-                        if self.current_token().type == TokenType.EQUALS:
+                        if self.current_token().type == TT_EQUALS:
                             self.advance()
                             arg_expr = self.parse_expression()
                         args.append(arg_expr)
-                        if self.current_token().type == TokenType.COMMA:
+                        if self.current_token().type == TT_COMMA:
                             self.advance()
                         else:
                             break
-                    self.expect(TokenType.RPAREN)
+                    self.expect(TT_RPAREN)
                     expr = MethodCallExpr(expr, field_name, args)
                 else:
                     expr = FieldAccessExpr(expr, field_name)
@@ -798,7 +863,7 @@ class Parser:
         """Parse power expressions: a ** b (right associative)"""
         left = self.parse_unary()
 
-        if self.current_token().type == TokenType.DOUBLE_STAR:
+        if self.current_token().type == TT_DOUBLE_STAR:
             self.advance()
             right = self.parse_power()  # Right associative
             left = BinaryExpr(left, BinOp.POW, right)
@@ -808,15 +873,15 @@ class Parser:
     def parse_multiplicative(self) -> ASTNode:
         left = self.parse_power()
 
-        while self.match(TokenType.STAR, TokenType.SLASH, TokenType.DOUBLE_SLASH, TokenType.PERCENT):
+        while self.match(TT_STAR, TT_SLASH, TT_DOUBLE_SLASH, TT_PERCENT):
             op_token = self.current_token()
             self.advance()
 
             op_map = {
-                TokenType.STAR: BinOp.MUL,
-                TokenType.SLASH: BinOp.DIV,
-                TokenType.DOUBLE_SLASH: BinOp.IDIV,
-                TokenType.PERCENT: BinOp.MOD,
+                TT_STAR: BinOp.MUL,
+                TT_SLASH: BinOp.DIV,
+                TT_DOUBLE_SLASH: BinOp.IDIV,
+                TT_PERCENT: BinOp.MOD,
             }
             op = op_map[op_token.type]
             right = self.parse_power()
@@ -827,11 +892,11 @@ class Parser:
     def parse_additive(self) -> ASTNode:
         left = self.parse_multiplicative()
 
-        while self.match(TokenType.PLUS, TokenType.MINUS):
+        while self.match(TT_PLUS, TT_MINUS):
             op_token = self.current_token()
             self.advance()
 
-            op = BinOp.ADD if op_token.type == TokenType.PLUS else BinOp.SUB
+            op = BinOp.ADD if op_token.type == TT_PLUS else BinOp.SUB
             right = self.parse_multiplicative()
             left = BinaryExpr(left, op, right)
 
@@ -840,11 +905,11 @@ class Parser:
     def parse_shift(self) -> ASTNode:
         left = self.parse_additive()
 
-        while self.match(TokenType.SHL, TokenType.SHR):
+        while self.match(TT_SHL, TT_SHR):
             op_token = self.current_token()
             self.advance()
 
-            op = BinOp.SHL if op_token.type == TokenType.SHL else BinOp.SHR
+            op = BinOp.SHL if op_token.type == TT_SHL else BinOp.SHR
             right = self.parse_additive()
             left = BinaryExpr(left, op, right)
 
@@ -853,7 +918,7 @@ class Parser:
     def parse_bitwise_and(self) -> ASTNode:
         left = self.parse_shift()
 
-        while self.current_token().type == TokenType.AMPERSAND:
+        while self.current_token().type == TT_AMPERSAND:
             self.advance()
             right = self.parse_shift()
             left = BinaryExpr(left, BinOp.BIT_AND, right)
@@ -863,7 +928,7 @@ class Parser:
     def parse_bitwise_xor(self) -> ASTNode:
         left = self.parse_bitwise_and()
 
-        while self.current_token().type == TokenType.CARET:
+        while self.current_token().type == TT_CARET:
             self.advance()
             right = self.parse_bitwise_and()
             left = BinaryExpr(left, BinOp.BIT_XOR, right)
@@ -873,7 +938,7 @@ class Parser:
     def parse_bitwise_or(self) -> ASTNode:
         left = self.parse_bitwise_xor()
 
-        while self.current_token().type == TokenType.PIPE:
+        while self.current_token().type == TT_PIPE:
             self.advance()
             right = self.parse_bitwise_xor()
             left = BinaryExpr(left, BinOp.BIT_OR, right)
@@ -885,15 +950,15 @@ class Parser:
         left = self.parse_bitwise_or()
 
         comp_tokens = {
-            TokenType.EQUALS_EQUALS: BinOp.EQ,
-            TokenType.NOT_EQUALS: BinOp.NEQ,
-            TokenType.LESS: BinOp.LT,
-            TokenType.LESS_EQUALS: BinOp.LTE,
-            TokenType.GREATER: BinOp.GT,
-            TokenType.GREATER_EQUALS: BinOp.GTE,
-            TokenType.IS: BinOp.EQ,  # 'is' treated as equality for None checks
-            TokenType.IS_NOT: BinOp.NEQ,  # 'is not' treated as inequality
-            TokenType.IN: BinOp.IN,  # 'in' membership test
+            TT_EQUALS_EQUALS: BinOp.EQ,
+            TT_NOT_EQUALS: BinOp.NEQ,
+            TT_LESS: BinOp.LT,
+            TT_LESS_EQUALS: BinOp.LTE,
+            TT_GREATER: BinOp.GT,
+            TT_GREATER_EQUALS: BinOp.GTE,
+            TT_IS: BinOp.EQ,  # 'is' treated as equality for None checks
+            TT_IS_NOT: BinOp.NEQ,  # 'is not' treated as inequality
+            TT_IN: BinOp.IN,  # 'in' membership test
         }
 
         # Handle comparison chaining: 0 <= x < 100 -> (0 <= x) and (x < 100)
@@ -901,8 +966,8 @@ class Parser:
         while True:
             cur_type = self.current_token().type
             is_comp = cur_type in comp_tokens
-            is_is_not = cur_type == TokenType.IS and self.peek_token().type == TokenType.NOT
-            is_not_in = cur_type == TokenType.NOT and self.peek_token().type == TokenType.IN
+            is_is_not = cur_type == TT_IS and self.peek_token().type == TT_NOT
+            is_not_in = cur_type == TT_NOT and self.peek_token().type == TT_IN
             if not (is_comp or is_is_not or is_not_in):
                 break
             # Handle 'not in' as a two-token operator
@@ -914,9 +979,9 @@ class Parser:
                 left = right
                 continue
             # Handle 'is not' as a two-token operator
-            if self.current_token().type == TokenType.IS:
+            if self.current_token().type == TT_IS:
                 self.advance()
-                if self.current_token().type == TokenType.NOT:
+                if self.current_token().type == TT_NOT:
                     self.advance()
                     op = BinOp.NEQ
                 else:
@@ -956,7 +1021,7 @@ class Parser:
 
     def parse_not(self) -> ASTNode:
         """Parse 'not' expressions"""
-        if self.current_token().type == TokenType.NOT:
+        if self.current_token().type == TT_NOT:
             self.advance()
             return UnaryExpr(UnaryOp.NOT, self.parse_not())
         return self.parse_comparison()
@@ -964,7 +1029,7 @@ class Parser:
     def parse_logical_and(self) -> ASTNode:
         left = self.parse_not()
 
-        while self.current_token().type == TokenType.AND:
+        while self.current_token().type == TT_AND:
             self.advance()
             right = self.parse_not()
             left = BinaryExpr(left, BinOp.AND, right)
@@ -974,7 +1039,7 @@ class Parser:
     def parse_logical_or(self) -> ASTNode:
         left = self.parse_logical_and()
 
-        while self.current_token().type == TokenType.OR:
+        while self.current_token().type == TT_OR:
             self.advance()
             right = self.parse_logical_and()
             left = BinaryExpr(left, BinOp.OR, right)
@@ -986,10 +1051,10 @@ class Parser:
         expr = self.parse_logical_or()
 
         # Python-style ternary: value if condition else other
-        if self.current_token().type == TokenType.IF:
+        if self.current_token().type == TT_IF:
             self.advance()
             condition = self.parse_logical_or()
-            self.expect(TokenType.ELSE)
+            self.expect(TT_ELSE)
             else_expr = self.parse_conditional_expr()
             return ConditionalExpr(condition, expr, else_expr)
 
@@ -1002,7 +1067,7 @@ class Parser:
         """Parse match expression."""
         self.advance()  # Skip 'match'
         match_expr = self.parse_expression()
-        self.expect(TokenType.COLON)
+        self.expect(TT_COLON)
         self.skip_newlines()
 
         arms = []
@@ -1012,7 +1077,7 @@ class Parser:
             self.skip_newlines()
             token = self.current_token()
 
-            if token.type == TokenType.EOF:
+            if token.type == TT_EOF:
                 break
 
             if block_indent is None:
@@ -1021,21 +1086,21 @@ class Parser:
                 break
 
             # Parse pattern
-            variant_name = self.expect(TokenType.IDENT).value
+            variant_name = self.expect(TT_IDENT).value
             bindings = []
 
-            if self.current_token().type == TokenType.LPAREN:
+            if self.current_token().type == TT_LPAREN:
                 self.advance()
-                if self.current_token().type != TokenType.RPAREN:
-                    bindings.append(self.expect(TokenType.IDENT).value)
-                    while self.current_token().type == TokenType.COMMA:
+                if self.current_token().type != TT_RPAREN:
+                    bindings.append(self.expect(TT_IDENT).value)
+                    while self.current_token().type == TT_COMMA:
                         self.advance()
-                        bindings.append(self.expect(TokenType.IDENT).value)
-                self.expect(TokenType.RPAREN)
+                        bindings.append(self.expect(TT_IDENT).value)
+                self.expect(TT_RPAREN)
 
             pattern = Pattern(variant_name, bindings)
 
-            self.expect(TokenType.COLON)
+            self.expect(TT_COLON)
             self.skip_newlines()
 
             body = self.parse_block()
@@ -1047,22 +1112,22 @@ class Parser:
 
     def parse_var_decl(self, is_final: bool = False) -> VarDecl:
         """Parse variable declaration: name: Type = value or name = value"""
-        name = self.expect(TokenType.IDENT).value
-        self.expect(TokenType.COLON)
+        name = self.expect(TT_IDENT).value
+        self.expect(TT_COLON)
 
         # Check if type starts with Final[
         var_type = None
-        if self.current_token().type == TokenType.FINAL:
+        if self.current_token().type == TT_FINAL:
             is_final = True
             self.advance()
-            self.expect(TokenType.LBRACKET)
+            self.expect(TT_LBRACKET)
             var_type = self.parse_type()
-            self.expect(TokenType.RBRACKET)
+            self.expect(TT_RBRACKET)
         else:
             var_type = self.parse_type()
 
         value = None
-        if self.current_token().type == TokenType.EQUALS:
+        if self.current_token().type == TT_EQUALS:
             self.advance()
             value = self.parse_expression()
 
@@ -1073,18 +1138,18 @@ class Parser:
         expr = self.parse_expression()
 
         # Handle tuple unpacking: a, b = x, y (Python compatibility)
-        if self.current_token().type == TokenType.COMMA:
+        if self.current_token().type == TT_COMMA:
             targets = [expr]
-            while self.current_token().type == TokenType.COMMA:
+            while self.current_token().type == TT_COMMA:
                 self.advance()
                 targets.append(self.parse_expression())
 
-            if self.current_token().type == TokenType.EQUALS:
+            if self.current_token().type == TT_EQUALS:
                 self.advance()
                 # Parse the right side (could be a tuple)
                 value = self.parse_expression()
                 values = [value]
-                while self.current_token().type == TokenType.COMMA:
+                while self.current_token().type == TT_COMMA:
                     self.advance()
                     values.append(self.parse_expression())
 
@@ -1104,17 +1169,17 @@ class Parser:
 
         # Compound assignment operators
         compound_ops = {
-            TokenType.PLUS_EQUALS: BinOp.ADD,
-            TokenType.MINUS_EQUALS: BinOp.SUB,
-            TokenType.STAR_EQUALS: BinOp.MUL,
-            TokenType.SLASH_EQUALS: BinOp.DIV,
-            TokenType.DOUBLE_SLASH_EQUALS: BinOp.IDIV,
-            TokenType.PERCENT_EQUALS: BinOp.MOD,
-            TokenType.AMPERSAND_EQUALS: BinOp.BIT_AND,
-            TokenType.PIPE_EQUALS: BinOp.BIT_OR,
-            TokenType.CARET_EQUALS: BinOp.BIT_XOR,
-            TokenType.SHL_EQUALS: BinOp.SHL,
-            TokenType.SHR_EQUALS: BinOp.SHR,
+            TT_PLUS_EQUALS: BinOp.ADD,
+            TT_MINUS_EQUALS: BinOp.SUB,
+            TT_STAR_EQUALS: BinOp.MUL,
+            TT_SLASH_EQUALS: BinOp.DIV,
+            TT_DOUBLE_SLASH_EQUALS: BinOp.IDIV,
+            TT_PERCENT_EQUALS: BinOp.MOD,
+            TT_AMPERSAND_EQUALS: BinOp.BIT_AND,
+            TT_PIPE_EQUALS: BinOp.BIT_OR,
+            TT_CARET_EQUALS: BinOp.BIT_XOR,
+            TT_SHL_EQUALS: BinOp.SHL,
+            TT_SHR_EQUALS: BinOp.SHR,
         }
 
         if self.current_token().type in compound_ops:
@@ -1125,10 +1190,10 @@ class Parser:
             return Assignment(expr, BinaryExpr(expr, op, value))
 
         # Type-annotated assignment for expressions like self.field: Type = value
-        if self.current_token().type == TokenType.COLON:
+        if self.current_token().type == TT_COLON:
             self.advance()
             var_type = self.parse_type()
-            if self.current_token().type == TokenType.EQUALS:
+            if self.current_token().type == TT_EQUALS:
                 self.advance()
                 value = self.parse_expression()
                 return Assignment(expr, value, type_hint=var_type)  # Preserve type annotation
@@ -1136,7 +1201,7 @@ class Parser:
             return ExprStmt(expr)
 
         # Simple assignment
-        if self.current_token().type == TokenType.EQUALS:
+        if self.current_token().type == TT_EQUALS:
             self.advance()
             value = self.parse_expression()
             return Assignment(expr, value)
@@ -1146,22 +1211,22 @@ class Parser:
     def parse_annotated_assignment(self) -> ASTNode:
         """Parse: name: Type = value (variable with type annotation)"""
         # This is called when we see IDENT followed by COLON
-        name = self.expect(TokenType.IDENT).value
-        self.expect(TokenType.COLON)
+        name = self.expect(TT_IDENT).value
+        self.expect(TT_COLON)
 
         # Check for Final[T]
         is_final = False
-        if self.current_token().type == TokenType.FINAL:
+        if self.current_token().type == TT_FINAL:
             is_final = True
             self.advance()
-            self.expect(TokenType.LBRACKET)
+            self.expect(TT_LBRACKET)
             var_type = self.parse_type()
-            self.expect(TokenType.RBRACKET)
+            self.expect(TT_RBRACKET)
         else:
             var_type = self.parse_type()
 
         value = None
-        if self.current_token().type == TokenType.EQUALS:
+        if self.current_token().type == TT_EQUALS:
             self.advance()
             value = self.parse_expression()
 
@@ -1170,15 +1235,15 @@ class Parser:
     def parse_return_stmt(self) -> ReturnStmt:
         self.advance()  # Skip 'return'
 
-        if self.current_token().type == TokenType.NEWLINE:
+        if self.current_token().type == TT_NEWLINE:
             return ReturnStmt()
 
         # Parse expression, check for tuple return (comma-separated values)
         value = self.parse_expression()
-        if self.current_token().type == TokenType.COMMA:
+        if self.current_token().type == TT_COMMA:
             # Tuple return: return a, b, c
             elements: List[ASTNode] = [value]
-            while self.current_token().type == TokenType.COMMA:
+            while self.current_token().type == TT_COMMA:
                 self.advance()
                 elements.append(self.parse_expression())
             value = TupleLiteral(elements)
@@ -1189,7 +1254,7 @@ class Parser:
         self.advance()  # Skip 'if'
 
         condition = self.parse_expression()
-        self.expect(TokenType.COLON)
+        self.expect(TT_COLON)
         self.skip_newlines()
 
         then_block = self.parse_block()
@@ -1197,22 +1262,22 @@ class Parser:
         elif_blocks: List[tuple] = []
         while True:
             cur = self.current_token()
-            is_elif = cur.type == TokenType.ELIF and cur.col == if_col
+            is_elif = cur.type == TT_ELIF and cur.col == if_col
             if not is_elif:
                 break
             self.advance()
             elif_cond = self.parse_expression()
-            self.expect(TokenType.COLON)
+            self.expect(TT_COLON)
             self.skip_newlines()
             elif_body = self.parse_block()
             elif_blocks.append((elif_cond, elif_body))
 
         else_block = None
         cur = self.current_token()
-        is_else = cur.type == TokenType.ELSE and cur.col == if_col
+        is_else = cur.type == TT_ELSE and cur.col == if_col
         if is_else:
             self.advance()
-            self.expect(TokenType.COLON)
+            self.expect(TT_COLON)
             self.skip_newlines()
             else_block = self.parse_block()
 
@@ -1222,7 +1287,7 @@ class Parser:
         self.advance()  # Skip 'while'
 
         condition = self.parse_expression()
-        self.expect(TokenType.COLON)
+        self.expect(TT_COLON)
         self.skip_newlines()
 
         body = self.parse_block()
@@ -1234,27 +1299,27 @@ class Parser:
 
         # Parse variable names (supports tuple unpacking: for a, b in ... or for i, (a, b) in ...)
         var_names: List[str] = []
-        var_names.append(self.expect(TokenType.IDENT).value)
-        while self.current_token().type == TokenType.COMMA:
+        var_names.append(self.expect(TT_IDENT).value)
+        while self.current_token().type == TT_COMMA:
             self.advance()  # Skip comma
-            if self.current_token().type == TokenType.LPAREN:
+            if self.current_token().type == TT_LPAREN:
                 # Nested tuple like (a, b) - parse and flatten
                 self.advance()  # skip (
-                var_names.append(self.expect(TokenType.IDENT).value)
-                while self.current_token().type == TokenType.COMMA:
+                var_names.append(self.expect(TT_IDENT).value)
+                while self.current_token().type == TT_COMMA:
                     self.advance()
-                    var_names.append(self.expect(TokenType.IDENT).value)
-                self.expect(TokenType.RPAREN)
+                    var_names.append(self.expect(TT_IDENT).value)
+                self.expect(TT_RPAREN)
             else:
-                var_names.append(self.expect(TokenType.IDENT).value)
+                var_names.append(self.expect(TT_IDENT).value)
 
         var_name = var_names[0]  # For ForStmt compatibility
-        self.expect(TokenType.IN)
+        self.expect(TT_IN)
 
         # Check for range() call
-        if self.current_token().type == TokenType.IDENT and self.current_token().value == 'range':
+        if self.current_token().type == TT_IDENT and self.current_token().value == 'range':
             self.advance()
-            self.expect(TokenType.LPAREN)
+            self.expect(TT_LPAREN)
 
             # Parse range arguments
             first = self.parse_expression()
@@ -1262,33 +1327,33 @@ class Parser:
             end = first
             step = None
 
-            if self.current_token().type == TokenType.COMMA:
+            if self.current_token().type == TT_COMMA:
                 self.advance()
                 start = first
                 end = self.parse_expression()
 
-                if self.current_token().type == TokenType.COMMA:
+                if self.current_token().type == TT_COMMA:
                     self.advance()
                     step = self.parse_expression()
 
-            self.expect(TokenType.RPAREN)
-            self.expect(TokenType.COLON)
+            self.expect(TT_RPAREN)
+            self.expect(TT_COLON)
             self.skip_newlines()
             body = self.parse_block()
             return ForStmt(var_name, start, end, body)
 
         # Check for start..end range syntax
         first_expr = self.parse_expression()
-        if self.current_token().type == TokenType.DOTDOT:
+        if self.current_token().type == TT_DOTDOT:
             self.advance()
             end = self.parse_expression()
-            self.expect(TokenType.COLON)
+            self.expect(TT_COLON)
             self.skip_newlines()
             body = self.parse_block()
             return ForStmt(var_name, first_expr, end, body)
 
         # For-each over iterable
-        self.expect(TokenType.COLON)
+        self.expect(TT_COLON)
         self.skip_newlines()
         body = self.parse_block()
         return ForEachStmt(var_names, first_expr, body)
@@ -1299,11 +1364,11 @@ class Parser:
 
         context = self.parse_expression()
         var_name = None
-        if self.current_token().type == TokenType.AS:
+        if self.current_token().type == TT_AS:
             self.advance()
-            var_name = self.expect(TokenType.IDENT).value
+            var_name = self.expect(TT_IDENT).value
 
-        self.expect(TokenType.COLON)
+        self.expect(TT_COLON)
         self.skip_newlines()
         body = self.parse_block()
 
@@ -1318,84 +1383,81 @@ class Parser:
         token = self.current_token()
 
         # Check for annotated assignment: name: Type = value
-        if token.type == TokenType.IDENT:
-            if self.peek_token().type == TokenType.COLON:
+        if token.type == TT_IDENT:
+            if self.peek_token().type == TT_COLON:
                 return self.parse_annotated_assignment()
 
-        if token.type == TokenType.RETURN:
+        if token.type == TT_RETURN:
             return self.parse_return_stmt()
 
-        if token.type == TokenType.BREAK:
+        if token.type == TT_BREAK:
             self.advance()
             return BreakStmt()
 
-        if token.type == TokenType.CONTINUE:
+        if token.type == TT_CONTINUE:
             self.advance()
             return ContinueStmt()
 
-        if token.type == TokenType.PASS:
+        if token.type == TT_PASS:
             self.advance()
             return PassStmt()
 
-        if token.type == TokenType.IF:
+        if token.type == TT_IF:
             return self.parse_if_stmt()
 
-        if token.type == TokenType.WHILE:
+        if token.type == TT_WHILE:
             return self.parse_while_stmt()
 
-        if token.type == TokenType.FOR:
+        if token.type == TT_FOR:
             return self.parse_for_stmt()
 
-        if token.type == TokenType.WITH:
+        if token.type == TT_WITH:
             return self.parse_with_stmt()
 
-        if token.type == TokenType.DEFER:
+        if token.type == TT_DEFER:
             return self.parse_defer_stmt()
 
-        if token.type == TokenType.RAISE:
+        if token.type == TT_RAISE:
             self.advance()
             # Parse the exception expression
-            if self.current_token().type in (TokenType.NEWLINE, TokenType.EOF):
+            if self.current_token().type in (TT_NEWLINE, TT_EOF):
                 return RaiseStmt(None)
             exception = self.parse_expression()
             return RaiseStmt(exception)
 
         # Try/except block (parse but simplify to just the try body for now)
-        if token.type == TokenType.TRY:
+        if token.type == TT_TRY:
             self.advance()
-            self.expect(TokenType.COLON)
+            self.expect(TT_COLON)
             self.skip_newlines()
             try_body = self.parse_block()
 
             # Parse except clauses
-            while self.current_token().type == TokenType.EXCEPT:
+            while self.current_token().type == TT_EXCEPT:
                 self.advance()
                 # Skip exception type and 'as name' if present
-                if self.current_token().type != TokenType.COLON:
+                if self.current_token().type != TT_COLON:
                     self.parse_expression()  # Exception type
-                    if self.current_token().type == TokenType.AS:
+                    if self.current_token().type == TT_AS:
                         self.advance()
-                        self.expect(TokenType.IDENT)
-                self.expect(TokenType.COLON)
+                        self.expect(TT_IDENT)
+                self.expect(TT_COLON)
                 self.skip_newlines()
                 self.parse_block()  # Except body (ignored for now)
 
             # Parse optional finally
-            if self.current_token().type == TokenType.FINALLY:
+            if self.current_token().type == TT_FINALLY:
                 self.advance()
-                self.expect(TokenType.COLON)
+                self.expect(TT_COLON)
                 self.skip_newlines()
                 self.parse_block()
 
-            # For simplicity, return just the try body statements
-            # A proper implementation would need a TryStmt AST node
-            if len(try_body) == 1:
-                return try_body[0]
-            # Return first statement (not ideal but works for parsing)
-            return try_body[0] if try_body else PassStmt()
+            # For polyglot code: try/except blocks wrap Python-only code
+            # Skip the entire try block and return PassStmt
+            return PassStmt()
 
         # Import inside a block (Python allows this)
-        if token.type in (TokenType.FROM, TokenType.IMPORT):
+        if token.type in (TT_FROM, TT_IMPORT):
             # Skip the import and return a pass statement
             self.parse_import()
             return PassStmt()
@@ -1412,11 +1474,12 @@ class Parser:
             self.skip_newlines()
             token = self.current_token()
 
-            if token.type == TokenType.EOF:
+            if token.type == TT_EOF:
                 break
 
-            # Stop at these keywords at base level
-            if token.type in [TokenType.DEF, TokenType.CLASS, TokenType.ELIF, TokenType.ELSE]:
+            # Stop at these keywords at base level (but not inside try blocks)
+            # EXCEPT and FINALLY handled by try/except parsing
+            if token.type in [TT_ELIF, TT_ELSE, TT_EXCEPT, TT_FINALLY]:
                 break
 
             if block_indent is None:
@@ -1424,39 +1487,52 @@ class Parser:
             elif token.col < block_indent and len(statements) > 0:
                 break
 
-            stmt = self.parse_statement()
-            statements.append(stmt)
+            # Handle class and def inside blocks (e.g., in try blocks)
+            if token.type == TT_CLASS:
+                # Parse class as a statement (skip it for try blocks)
+                result = self.parse_class([])
+                if isinstance(result, tuple):
+                    struct, class_methods = result
+                    statements.append(struct)
+                    statements.extend(class_methods)
+                else:
+                    statements.append(result)
+            elif token.type == TT_DEF:
+                statements.append(self.parse_def([]))
+            else:
+                stmt = self.parse_statement()
+                statements.append(stmt)
             self.skip_newlines()
 
         return statements
 
     def parse_decorator(self) -> str:
         """Parse a decorator: @name or @name(args)"""
-        self.expect(TokenType.AT)
+        self.expect(TT_AT)
         # Decorator name can be IDENT or a keyword like DATACLASS, PROPERTY
         token = self.current_token()
-        if token.type == TokenType.IDENT:
+        if token.type == TT_IDENT:
             name = token.value
             self.advance()
-        elif token.type == TokenType.DATACLASS:
+        elif token.type == TT_DATACLASS:
             name = 'dataclass'
             self.advance()
-        elif token.type == TokenType.PROPERTY:
+        elif token.type == TT_PROPERTY:
             name = 'property'
             self.advance()
         else:
             raise SyntaxError(f"Expected decorator name, got {token.type} at line {token.line}")
 
         args = None
-        if self.current_token().type == TokenType.LPAREN:
+        if self.current_token().type == TT_LPAREN:
             self.advance()
             args = []
-            if self.current_token().type != TokenType.RPAREN:
+            if self.current_token().type != TT_RPAREN:
                 args.append(self.parse_expression())
-                while self.current_token().type == TokenType.COMMA:
+                while self.current_token().type == TT_COMMA:
                     self.advance()
                     args.append(self.parse_expression())
-            self.expect(TokenType.RPAREN)
+            self.expect(TT_RPAREN)
 
         return (name, args)
 
@@ -1464,71 +1540,71 @@ class Parser:
         """Parse function definition: def name(params) -> ReturnType:"""
         self.advance()  # Skip 'def'
 
-        name = self.expect(TokenType.IDENT).value
+        name = self.expect(TT_IDENT).value
 
         # Parse optional generic type parameters: def foo[T, U](...)
         type_params = []
-        if self.current_token().type == TokenType.LBRACKET:
+        if self.current_token().type == TT_LBRACKET:
             self.advance()
-            if self.current_token().type != TokenType.RBRACKET:
-                type_name = self.expect(TokenType.IDENT).value
+            if self.current_token().type != TT_RBRACKET:
+                type_name = self.expect(TT_IDENT).value
                 type_params.append(GenericType(name=type_name))
 
-                while self.current_token().type == TokenType.COMMA:
+                while self.current_token().type == TT_COMMA:
                     self.advance()
-                    type_name = self.expect(TokenType.IDENT).value
+                    type_name = self.expect(TT_IDENT).value
                     type_params.append(GenericType(name=type_name))
 
-            self.expect(TokenType.RBRACKET)
+            self.expect(TT_RBRACKET)
 
-        self.expect(TokenType.LPAREN)
+        self.expect(TT_LPAREN)
 
         # Parse parameters
         params: List[Parameter] = []
         self.skip_newlines()
-        while self.current_token().type != TokenType.RPAREN:
+        while self.current_token().type != TT_RPAREN:
             # Handle *args and **kwargs (skip them)
             cur_type = self.current_token().type
-            if cur_type == TokenType.STAR or cur_type == TokenType.DOUBLE_STAR:
+            if cur_type == TT_STAR or cur_type == TT_DOUBLE_STAR:
                 self.advance()
-                if self.current_token().type == TokenType.STAR:
+                if self.current_token().type == TT_STAR:
                     self.advance()  # ** as two stars
-                if self.current_token().type == TokenType.IDENT:
+                if self.current_token().type == TT_IDENT:
                     self.advance()  # Skip the parameter name
                 # Skip comma if present
-                if self.current_token().type == TokenType.COMMA:
+                if self.current_token().type == TT_COMMA:
                     self.advance()
                 self.skip_newlines()
                 continue
 
             # Parse parameter: name: Type = default or name = default
-            param_name = self.expect(TokenType.IDENT).value
+            param_name = self.expect(TT_IDENT).value
             param_type = None
             default_value = None
-            if self.current_token().type == TokenType.COLON:
+            if self.current_token().type == TT_COLON:
                 self.advance()
                 param_type = self.parse_type()
-            if self.current_token().type == TokenType.EQUALS:
+            if self.current_token().type == TT_EQUALS:
                 self.advance()
                 default_value = self.parse_expression()
             params.append(Parameter(param_name, param_type, default_value))
 
-            if self.current_token().type == TokenType.COMMA:
+            if self.current_token().type == TT_COMMA:
                 self.advance()
                 self.skip_newlines()
             else:
                 break
 
         self.skip_newlines()
-        self.expect(TokenType.RPAREN)
+        self.expect(TT_RPAREN)
 
         # Parse return type: -> Type
         return_type = None
-        if self.current_token().type == TokenType.ARROW:
+        if self.current_token().type == TT_ARROW:
             self.advance()
             return_type = self.parse_type()
 
-        self.expect(TokenType.COLON)
+        self.expect(TT_COLON)
         self.skip_newlines()
 
         # Parse body
@@ -1543,13 +1619,57 @@ class Parser:
 
         return ProcDecl(name, params, return_type, body, is_inline=is_inline, type_params=type_params)
 
-    def _infer_fields_from_init(self, methods: List[MethodDecl], existing_fields: List[StructField]) -> List[StructField]:
-        """Infer class fields from self.field = value assignments in __init__.
+    def _infer_type_from_expr(self, expr: ASTNode, param_types) -> Type:
+        """Infer type from an expression (helper for _infer_fields_from_init)."""
+        if isinstance(expr, IntLiteral):
+            return Type('int32')
+        if isinstance(expr, BoolLiteral):
+            return Type('bool')
+        if isinstance(expr, StringLiteral):
+            return PointerType(Type('uint8'))
+        if isinstance(expr, FStringLiteral):
+            return PointerType(Type('uint8'))
+        if isinstance(expr, CharLiteral):
+            return Type('char')
+        if isinstance(expr, ArrayLiteral):
+            return Type('any')
+        if isinstance(expr, DictLiteral):
+            return Type('any')
+        if isinstance(expr, Identifier):
+            if expr.name in param_types:
+                if param_types[expr.name] is not None:
+                    return param_types[expr.name]
+            return Type('any')
+        if isinstance(expr, NoneLiteral):
+            return Type('any')
+        return Type('any')
 
-        This enables Python-style class definitions where fields are defined
-        in __init__ rather than explicitly declared.
-        """
-        # Find __init__ method
+    def _scan_body_for_fields(self, stmts, existing_names, seen_fields, param_types, inferred_fields):
+        """Scan statement body for self.field assignments (helper for _infer_fields_from_init)."""
+        for stmt in stmts:
+            if isinstance(stmt, Assignment):
+                if isinstance(stmt.target, FieldAccessExpr):
+                    if isinstance(stmt.target.object, Identifier):
+                        if stmt.target.object.name == 'self':
+                            field_name: str = stmt.target.field_name
+                            if field_name not in existing_names:
+                                if field_name not in seen_fields:
+                                    field_type: Type = self._infer_type_from_expr(stmt.value, param_types)
+                                    inferred_fields.append(StructField(field_name, field_type, None))
+                                    seen_fields.add(field_name)
+            if isinstance(stmt, IfStmt):
+                self._scan_body_for_fields(stmt.then_body, existing_names, seen_fields, param_types, inferred_fields)
+                if stmt.else_body:
+                    self._scan_body_for_fields(stmt.else_body, existing_names, seen_fields, param_types, inferred_fields)
+            if isinstance(stmt, WhileStmt):
+                self._scan_body_for_fields(stmt.body, existing_names, seen_fields, param_types, inferred_fields)
+            if isinstance(stmt, ForStmt):
+                self._scan_body_for_fields(stmt.body, existing_names, seen_fields, param_types, inferred_fields)
+            if isinstance(stmt, ForEachStmt):
+                self._scan_body_for_fields(stmt.body, existing_names, seen_fields, param_types, inferred_fields)
+
+    def _infer_fields_from_init(self, methods, existing_fields):
+        """Infer class fields from self.field = value assignments in __init__."""
         init_method = None
         for m in methods:
             if m.name == '__init__':
@@ -1559,70 +1679,18 @@ class Parser:
         if init_method is None:
             return []
 
-        # Build a map of parameter names to their types
-        param_types: Dict[str, Type] = {}
+        param_types = {}
         for param in init_method.params:
             param_types[param.name] = param.param_type
 
-        # Track existing field names to avoid duplicates
-        existing_names = {f.name for f in existing_fields}
+        existing_names = set()
+        for f in existing_fields:
+            existing_names.add(f.name)
 
-        # Scan the body for self.field = value assignments
-        inferred_fields: List[StructField] = []
+        inferred_fields = []
         seen_fields = set()
 
-        def infer_type_from_expr(expr: ASTNode) -> Type:
-            """Infer type from an expression."""
-            if isinstance(expr, IntLiteral):
-                return Type('int32')
-            elif isinstance(expr, BoolLiteral):
-                return Type('bool')
-            elif isinstance(expr, StringLiteral) or isinstance(expr, FStringLiteral):
-                return PointerType(Type('uint8'))
-            elif isinstance(expr, CharLiteral):
-                return Type('char')
-            elif isinstance(expr, ArrayLiteral):
-                return Type('any')  # Can't easily infer element type
-            elif isinstance(expr, DictLiteral):
-                return Type('any')
-            elif isinstance(expr, Identifier):
-                # Check if it's a parameter
-                if expr.name in param_types and param_types[expr.name] is not None:
-                    return param_types[expr.name]
-                return Type('any')
-            elif isinstance(expr, NoneLiteral):
-                return Type('any')  # None could be any pointer type
-            else:
-                return Type('any')  # Default fallback
-
-        def scan_body(stmts: List[ASTNode]):
-            for stmt in stmts:
-                if isinstance(stmt, Assignment):
-                    # Check if target is self.field
-                    if isinstance(stmt.target, FieldAccessExpr):
-                        if isinstance(stmt.target.object, Identifier) and stmt.target.object.name == 'self':
-                            field_name = stmt.target.field_name
-                            if field_name not in existing_names and field_name not in seen_fields:
-                                # Use type hint if available, otherwise infer from value
-                                if hasattr(stmt, 'type_hint') and stmt.type_hint is not None:
-                                    field_type = stmt.type_hint
-                                else:
-                                    field_type = infer_type_from_expr(stmt.value)
-                                inferred_fields.append(StructField(field_name, field_type, None))
-                                seen_fields.add(field_name)
-                # Recurse into blocks
-                elif isinstance(stmt, IfStmt):
-                    scan_body(stmt.then_body)
-                    if stmt.else_body:
-                        scan_body(stmt.else_body)
-                elif isinstance(stmt, WhileStmt):
-                    scan_body(stmt.body)
-                elif isinstance(stmt, ForRangeStmt):
-                    scan_body(stmt.body)
-                elif isinstance(stmt, ForEachStmt):
-                    scan_body(stmt.body)
-
-        scan_body(init_method.body)
+        self._scan_body_for_fields(init_method.body, existing_names, seen_fields, param_types, inferred_fields)
         return inferred_fields
 
     def parse_class(self, decorators=None) -> StructDecl:
@@ -1637,26 +1705,26 @@ class Parser:
         """
         self.advance()  # Skip 'class'
 
-        name = self.expect(TokenType.IDENT).value
+        name = self.expect(TT_IDENT).value
 
         # Check for inheritance or Enum
         parent = None
         is_enum = False
-        if self.current_token().type == TokenType.LPAREN:
+        if self.current_token().type == TT_LPAREN:
             self.advance()
             # Parent can be IDENT or the ENUM keyword (for 'class Foo(Enum):')
-            if self.current_token().type == TokenType.ENUM:
+            if self.current_token().type == TT_ENUM:
                 self.advance()
                 is_enum = True
             else:
-                parent_name = self.expect(TokenType.IDENT).value
+                parent_name = self.expect(TT_IDENT).value
                 if parent_name == 'Enum':
                     is_enum = True
                 else:
                     parent = parent_name
-            self.expect(TokenType.RPAREN)
+            self.expect(TT_RPAREN)
 
-        self.expect(TokenType.COLON)
+        self.expect(TT_COLON)
         self.skip_newlines()
 
         if is_enum:
@@ -1671,7 +1739,7 @@ class Parser:
             self.skip_newlines()
             token = self.current_token()
 
-            if token.type == TokenType.EOF:
+            if token.type == TT_EOF:
                 break
 
             if block_indent is None:
@@ -1681,34 +1749,34 @@ class Parser:
 
             # Parse decorators
             inner_decorators = []
-            while token.type == TokenType.AT:
+            while token.type == TT_AT:
                 inner_decorators.append(self.parse_decorator())
                 self.skip_newlines()
                 token = self.current_token()
 
             # Method definition
-            if token.type == TokenType.DEF:
+            if token.type == TT_DEF:
                 method = self.parse_method(name, inner_decorators)
                 methods.append(method)
             # Pass statement
-            elif token.type == TokenType.PASS:
+            elif token.type == TT_PASS:
                 self.advance()
             # Field definition: name: Type or name: Type = default
             # Or class variable: name = value (no type annotation)
-            elif token.type == TokenType.IDENT:
+            elif token.type == TT_IDENT:
                 field_name = token.value
                 self.advance()
 
-                if self.current_token().type == TokenType.COLON:
+                if self.current_token().type == TT_COLON:
                     # Typed field: name: Type = default
                     self.advance()
                     field_type = self.parse_type()
                     default_value = None
-                    if self.current_token().type == TokenType.EQUALS:
+                    if self.current_token().type == TT_EQUALS:
                         self.advance()
                         default_value = self.parse_expression()
                     fields.append(StructField(field_name, field_type, default_value))
-                elif self.current_token().type == TokenType.EQUALS:
+                elif self.current_token().type == TT_EQUALS:
                     # Untyped class variable: name = value (skip it)
                     self.advance()
                     self.parse_expression()
@@ -1742,7 +1810,7 @@ class Parser:
 
         # Method name can be an identifier or a keyword (Python allows 'match' as method name)
         token = self.current_token()
-        if token.type == TokenType.IDENT:
+        if token.type == TT_IDENT:
             method_name = token.value
             self.advance()
         elif token.type.name.isupper():
@@ -1752,67 +1820,67 @@ class Parser:
         else:
             raise SyntaxError(f"Expected method name, got {token.type} at line {token.line}")
 
-        self.expect(TokenType.LPAREN)
+        self.expect(TT_LPAREN)
 
         # First parameter should be 'self'
         params = []
         receiver_name = None
         receiver_type = None
 
-        if self.current_token().type != TokenType.RPAREN:
-            first_param = self.expect(TokenType.IDENT).value
+        if self.current_token().type != TT_RPAREN:
+            first_param = self.expect(TT_IDENT).value
             if first_param == 'self':
                 receiver_name = 'self'
                 receiver_type = PointerType(Type(class_name))
 
-                if self.current_token().type == TokenType.COMMA:
+                if self.current_token().type == TT_COMMA:
                     self.advance()
             else:
                 # First param isn't self - could be a static method
                 param_type = None
-                if self.current_token().type == TokenType.COLON:
+                if self.current_token().type == TT_COLON:
                     self.advance()
                     param_type = self.parse_type()
                 params.append(Parameter(first_param, param_type))
 
             # Parse remaining parameters
-            while self.current_token().type != TokenType.RPAREN:
-                if self.current_token().type == TokenType.COMMA:
+            while self.current_token().type != TT_RPAREN:
+                if self.current_token().type == TT_COMMA:
                     self.advance()
                     self.skip_newlines()  # Handle multi-line parameters
-                if self.current_token().type == TokenType.RPAREN:
+                if self.current_token().type == TT_RPAREN:
                     break
 
                 # Handle *args and **kwargs (variadic parameters)
                 cur_type = self.current_token().type
-                if cur_type == TokenType.STAR or cur_type == TokenType.DOUBLE_STAR:
+                if cur_type == TT_STAR or cur_type == TT_DOUBLE_STAR:
                     self.advance()
-                    if self.current_token().type == TokenType.STAR:
+                    if self.current_token().type == TT_STAR:
                         self.advance()  # ** as two stars
-                    if self.current_token().type == TokenType.IDENT:
+                    if self.current_token().type == TT_IDENT:
                         self.advance()  # Skip the parameter name
                     continue
 
-                param_name = self.expect(TokenType.IDENT).value
+                param_name = self.expect(TT_IDENT).value
                 param_type = None
                 default_value = None
-                if self.current_token().type == TokenType.COLON:
+                if self.current_token().type == TT_COLON:
                     self.advance()
                     param_type = self.parse_type()
-                if self.current_token().type == TokenType.EQUALS:
+                if self.current_token().type == TT_EQUALS:
                     self.advance()
                     default_value = self.parse_expression()
                 params.append(Parameter(param_name, param_type, default_value))
 
-        self.expect(TokenType.RPAREN)
+        self.expect(TT_RPAREN)
 
         # Return type
         return_type = None
-        if self.current_token().type == TokenType.ARROW:
+        if self.current_token().type == TT_ARROW:
             self.advance()
             return_type = self.parse_type()
 
-        self.expect(TokenType.COLON)
+        self.expect(TT_COLON)
         self.skip_newlines()
 
         body = self.parse_block()
@@ -1846,7 +1914,7 @@ class Parser:
             self.skip_newlines()
             token = self.current_token()
 
-            if token.type == TokenType.EOF:
+            if token.type == TT_EOF:
                 break
 
             if block_indent is None:
@@ -1854,14 +1922,14 @@ class Parser:
             elif token.col < block_indent:
                 break
 
-            if token.type == TokenType.PASS:
+            if token.type == TT_PASS:
                 self.advance()
                 continue
 
             # Parse variant: Name or Name(Type1, Type2, ...) or Name = auto() or Name = value
             # For Python compatibility, allow keywords as enum variant names (like DEF, CLASS, etc.)
             token = self.current_token()
-            if token.type == TokenType.IDENT:
+            if token.type == TT_IDENT:
                 variant_name = token.value
                 self.advance()
             elif token.type.name.isupper():
@@ -1873,17 +1941,17 @@ class Parser:
             payload_types = []
 
             # Python-style: NAME = auto() or NAME = value
-            if self.current_token().type == TokenType.EQUALS:
+            if self.current_token().type == TT_EQUALS:
                 self.advance()
                 # Check for auto() - can be AUTO token or IDENT with value 'auto'
                 cur = self.current_token()
-                if cur.type == TokenType.AUTO or (cur.type == TokenType.IDENT and cur.value == 'auto'):
+                if cur.type == TT_AUTO or (cur.type == TT_IDENT and cur.value == 'auto'):
                     self.advance()
-                    self.expect(TokenType.LPAREN)
-                    self.expect(TokenType.RPAREN)
+                    self.expect(TT_LPAREN)
+                    self.expect(TT_RPAREN)
                     # auto() just increments, no payload
                     auto_value += 1
-                elif self.current_token().type == TokenType.NUMBER:
+                elif self.current_token().type == TT_NUMBER:
                     # Explicit value - skip it, BH enums are just sequential
                     self.advance()
                     auto_value += 1
@@ -1892,14 +1960,14 @@ class Parser:
                     self.parse_expression()
                     auto_value += 1
             # Brainhair-style: Name(Type1, Type2, ...)
-            elif self.current_token().type == TokenType.LPAREN:
+            elif self.current_token().type == TT_LPAREN:
                 self.advance()
-                if self.current_token().type != TokenType.RPAREN:
+                if self.current_token().type != TT_RPAREN:
                     payload_types.append(self.parse_type())
-                    while self.current_token().type == TokenType.COMMA:
+                    while self.current_token().type == TT_COMMA:
                         self.advance()
                         payload_types.append(self.parse_type())
-                self.expect(TokenType.RPAREN)
+                self.expect(TT_RPAREN)
 
             variants.append(EnumVariant(variant_name, payload_types))
 
@@ -1910,42 +1978,42 @@ class Parser:
         self.advance()  # Skip 'extern'
 
         # Check for 'def' keyword (function declaration)
-        if self.current_token().type == TokenType.DEF:
+        if self.current_token().type == TT_DEF:
             self.advance()
-            name = self.expect(TokenType.IDENT).value
-            self.expect(TokenType.LPAREN)
+            name = self.expect(TT_IDENT).value
+            self.expect(TT_LPAREN)
         else:
             # Could be variable or function
-            name = self.expect(TokenType.IDENT).value
+            name = self.expect(TT_IDENT).value
 
             # Check if it's a variable declaration (name: Type)
-            if self.current_token().type == TokenType.COLON:
+            if self.current_token().type == TT_COLON:
                 self.advance()  # Skip ':'
                 var_type = self.parse_type()
                 # Return as VarDecl with is_extern flag (or ExternVarDecl)
                 return VarDecl(name, var_type, None, is_const=False, is_extern=True)
 
             # Otherwise it's a function declaration
-            self.expect(TokenType.LPAREN)
+            self.expect(TT_LPAREN)
 
         params = []
-        if self.current_token().type != TokenType.RPAREN:
-            param_name = self.expect(TokenType.IDENT).value
-            self.expect(TokenType.COLON)
+        if self.current_token().type != TT_RPAREN:
+            param_name = self.expect(TT_IDENT).value
+            self.expect(TT_COLON)
             param_type = self.parse_type()
             params.append(Parameter(param_name, param_type))
 
-            while self.current_token().type == TokenType.COMMA:
+            while self.current_token().type == TT_COMMA:
                 self.advance()
-                param_name = self.expect(TokenType.IDENT).value
-                self.expect(TokenType.COLON)
+                param_name = self.expect(TT_IDENT).value
+                self.expect(TT_COLON)
                 param_type = self.parse_type()
                 params.append(Parameter(param_name, param_type))
 
-        self.expect(TokenType.RPAREN)
+        self.expect(TT_RPAREN)
 
         return_type = None
-        if self.current_token().type == TokenType.ARROW:
+        if self.current_token().type == TT_ARROW:
             self.advance()
             return_type = self.parse_type()
 
@@ -1962,38 +2030,38 @@ class Parser:
 
         Python stdlib imports (typing, enum, dataclasses) are skipped.
         """
-        if self.current_token().type == TokenType.FROM:
+        if self.current_token().type == TT_FROM:
             self.advance()
 
             # Parse module path: lib.syscalls -> lib/syscalls
-            first_part = self.expect(TokenType.IDENT).value
+            first_part = self.expect(TT_IDENT).value
 
             # Skip Python stdlib imports
             if first_part in ('typing', 'enum', 'dataclasses', 'copy'):
                 # Skip the rest of the import statement
-                while self.current_token().type not in (TokenType.NEWLINE, TokenType.EOF):
+                while self.current_token().type not in (TT_NEWLINE, TT_EOF):
                     self.advance()
                 return None  # Signal to skip this import
 
             path_parts = [first_part]
-            while self.current_token().type == TokenType.DOT:
+            while self.current_token().type == TT_DOT:
                 self.advance()
-                path_parts.append(self.expect(TokenType.IDENT).value)
+                path_parts.append(self.expect(TT_IDENT).value)
 
             path = '/'.join(path_parts)
 
-            self.expect(TokenType.IMPORT)
+            self.expect(TT_IMPORT)
 
             # Parse imported names
             names = []
-            if self.current_token().type == TokenType.STAR:
+            if self.current_token().type == TT_STAR:
                 self.advance()
                 names = ['*']
             else:
-                names.append(self.expect(TokenType.IDENT).value)
-                while self.current_token().type == TokenType.COMMA:
+                names.append(self.expect(TT_IDENT).value)
+                while self.current_token().type == TT_COMMA:
                     self.advance()
-                    names.append(self.expect(TokenType.IDENT).value)
+                    names.append(self.expect(TT_IDENT).value)
 
             return ImportDecl(path, import_names=names)
 
@@ -2001,17 +2069,17 @@ class Parser:
             self.advance()  # Skip 'import'
 
             # Parse module path
-            path_parts = [self.expect(TokenType.IDENT).value]
-            while self.current_token().type == TokenType.DOT:
+            path_parts = [self.expect(TT_IDENT).value]
+            while self.current_token().type == TT_DOT:
                 self.advance()
-                path_parts.append(self.expect(TokenType.IDENT).value)
+                path_parts.append(self.expect(TT_IDENT).value)
 
             path = '/'.join(path_parts)
 
             alias = None
-            if self.current_token().type == TokenType.AS:
+            if self.current_token().type == TT_AS:
                 self.advance()
-                alias = self.expect(TokenType.IDENT).value
+                alias = self.expect(TT_IDENT).value
 
             return ImportDecl(path, alias)
 
@@ -2023,21 +2091,21 @@ class Parser:
         self.skip_newlines()
 
         # Skip module docstring (string literal at start of file)
-        if self.current_token().type == TokenType.STRING:
+        if self.current_token().type == TT_STRING:
             self.advance()
             self.skip_newlines()
 
         # Parse imports first (imports can be interspersed with docstrings/comments)
-        while self.match(TokenType.FROM, TokenType.IMPORT):
+        while self.match(TT_FROM, TT_IMPORT):
             imp = self.parse_import()
             if imp is not None:  # Skip Python stdlib imports
                 imports.append(imp)
             self.skip_newlines()
 
         # Parse declarations
-        while self.current_token().type != TokenType.EOF:
+        while self.current_token().type != TT_EOF:
             # Allow imports anywhere in the file (Python compatibility)
-            if self.match(TokenType.FROM, TokenType.IMPORT):
+            if self.match(TT_FROM, TT_IMPORT):
                 imp = self.parse_import()
                 if imp is not None:
                     imports.append(imp)
@@ -2045,17 +2113,17 @@ class Parser:
                 continue
             # Parse decorators
             decorators = []
-            while self.current_token().type == TokenType.AT:
+            while self.current_token().type == TT_AT:
                 decorators.append(self.parse_decorator())
                 self.skip_newlines()
 
             token = self.current_token()
 
-            if token.type == TokenType.EXTERN:
+            if token.type == TT_EXTERN:
                 declarations.append(self.parse_extern_decl())
-            elif token.type == TokenType.DEF:
+            elif token.type == TT_DEF:
                 declarations.append(self.parse_def(decorators))
-            elif token.type == TokenType.CLASS:
+            elif token.type == TT_CLASS:
                 result = self.parse_class(decorators)
                 if isinstance(result, tuple):
                     struct, class_methods = result
@@ -2063,9 +2131,9 @@ class Parser:
                     methods.extend(class_methods)
                 else:
                     declarations.append(result)
-            elif token.type == TokenType.IDENT:
+            elif token.type == TT_IDENT:
                 # Top-level variable with type annotation
-                if self.peek_token().type == TokenType.COLON:
+                if self.peek_token().type == TT_COLON:
                     declarations.append(self.parse_annotated_assignment())
                 else:
                     declarations.append(self.parse_statement())

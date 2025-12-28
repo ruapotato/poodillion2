@@ -2366,11 +2366,6 @@ class X86CodeGen:
             asm.append("    xor eax, eax")
             asm.append("    ret")
             asm.append("")
-            asm.append("Parser_parse_import:")
-            asm.append("    ; Parser method stub")
-            asm.append("    xor eax, eax")
-            asm.append("    ret")
-            asm.append("")
         else:
             # In kernel mode, export brainhair_kernel_main
             asm.append("global brainhair_kernel_main")

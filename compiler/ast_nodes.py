@@ -52,17 +52,20 @@ class ASTNode:
         return self
 
 
-# Mixin to add span support to dataclasses
-def _add_span_support(cls):
-    """Decorator to add span tracking to dataclass nodes"""
-    original_init = cls.__init__
-    def new_init(self, *args, **kwargs):
-        original_init(self, *args, **kwargs)
-        if not hasattr(self, 'span'):
-            self.span = None
-    cls.__init__ = new_init
-    cls.with_span = lambda self, span: (setattr(self, 'span', span), self)[1]
-    return cls
+# Mixin to add span support to dataclasses (Python-only)
+try:
+    def _add_span_support(cls):
+        """Decorator to add span tracking to dataclass nodes"""
+        original_init = cls.__init__
+        def new_init(self, *args, **kwargs):
+            original_init(self, *args, **kwargs)
+            if not hasattr(self, 'span'):
+                self.span = None
+        cls.__init__ = new_init
+        cls.with_span = lambda self, span: (setattr(self, 'span', span), self)[1]
+        return cls
+except:
+    pass
 
 # Types
 @dataclass
