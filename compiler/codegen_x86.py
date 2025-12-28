@@ -175,7 +175,70 @@ class X86CodeGen:
                 var_name = var_name[:-1]
 
             # Print variable value
-            if var_name in self.local_vars:
+            # Check for field access (e.g., self.source_file)
+            if '.' in var_name:
+                # Parse field access: obj.field
+                parts = var_name.split('.')
+                obj_name = parts[0]
+                if obj_name in self.local_vars:
+                    # Get object pointer
+                    offset = self.local_vars[obj_name]
+                    if offset > 0:
+                        self.emit(f"mov eax, [ebp+{offset}]")
+                    else:
+                        self.emit(f"mov eax, {self.ebp_addr(-offset)}")
+                    # Follow field chain
+                    for field in parts[1:]:
+                        # Assume field is at offset based on field name hash
+                        # For now, use struct layout if known
+                        obj_type = self.type_table.get(obj_name)
+                        if obj_type and hasattr(obj_type, 'name'):
+                            type_name = obj_type.name
+                            if type_name.startswith('ptr '):
+                                type_name = type_name[4:]
+                            if type_name in self.struct_types:
+                                field_offset = self.get_field_offset(type_name, field)
+                                self.emit(f"mov eax, [eax+{field_offset}]")
+                            else:
+                                # Simple offset based on field index
+                                field_idx = 0
+                                if field == 'source_file':
+                                    field_idx = 0
+                                elif field == 'output_file':
+                                    field_idx = 4
+                                self.emit(f"mov eax, [eax+{field_idx}]")
+                        else:
+                            # Default to first field
+                            self.emit("mov eax, [eax]")
+                    # Now eax has the string pointer, print it
+                    self.emit("push eax")
+                    self.emit("xor ecx, ecx")
+                    strlen_loop = self.new_label("fstr_strlen")
+                    strlen_done = self.new_label("fstr_strlen_done")
+                    self.emit_label(strlen_loop)
+                    self.emit("mov bl, [eax]")
+                    self.emit("test bl, bl")
+                    self.emit(f"jz {strlen_done}")
+                    self.emit("inc eax")
+                    self.emit("inc ecx")
+                    self.emit(f"jmp {strlen_loop}")
+                    self.emit_label(strlen_done)
+                    self.emit("pop ebx")
+                    self.emit("mov edx, ecx")
+                    self.emit("mov ecx, ebx")
+                    self.emit("mov ebx, 1")
+                    self.emit("mov eax, 4")
+                    self.emit("int 0x80")
+                else:
+                    # Unknown object - print placeholder
+                    placeholder = "<" + var_name + ">"
+                    label = self.add_string(placeholder)
+                    self.emit(f"mov ecx, {label}")
+                    self.emit(f"mov edx, {len(placeholder)}")
+                    self.emit("mov ebx, 1")
+                    self.emit("mov eax, 4")
+                    self.emit("int 0x80")
+            elif var_name in self.local_vars:
                 offset = self.local_vars[var_name]
                 if offset > 0:
                     self.emit(f"mov eax, [ebp+{offset}]")
@@ -409,7 +472,7 @@ class X86CodeGen:
             if self.kernel_mode:
                 self.emit(f"lea eax, [{label}]")
             else:
-                self.emit(f"lea eax, [rel {label}]")
+                self.emit(f"mov eax, {label}")
             return "eax"
 
         if isinstance(expr, FStringLiteral):
@@ -418,7 +481,7 @@ class X86CodeGen:
             if self.kernel_mode:
                 self.emit(f"lea eax, [{label}]")
             else:
-                self.emit(f"lea eax, [rel {label}]")
+                self.emit(f"mov eax, {label}")
             return "eax"
 
         if isinstance(expr, Identifier):
@@ -452,7 +515,7 @@ class X86CodeGen:
                 var_size = self.type_size(var_type) if var_type else 4
 
                 # In kernel mode (32-bit), don't use RIP-relative addressing
-                addr = f"[{expr.name}]" if self.kernel_mode else f"[rel {expr.name}]"
+                addr = f"[{expr.name}]" if self.kernel_mode else f"[{expr.name}]"
                 if var_size == 1:
                     self.emit(f"movzx eax, byte {addr}")
                 elif var_size == 2:
@@ -501,13 +564,50 @@ class X86CodeGen:
                 self.emit("idiv ebx")
                 self.emit("mov eax, edx")  # Remainder is in EDX, move to EAX
             elif expr.op == BinOp.EQ:
-                self.emit("cmp eax, ebx")
-                self.emit("sete al")
-                self.emit("movzx eax, al")
+                # Check if comparing strings (either operand is StringLiteral)
+                is_string_cmp = isinstance(expr.left, StringLiteral) or isinstance(expr.right, StringLiteral)
+                # Also check if comparing against a variable that's likely a string (e.g., from argv)
+                left_type = self._get_expr_type(expr.left)
+                right_type = self._get_expr_type(expr.right)
+                if left_type and hasattr(left_type, 'name') and left_type.name in ('str', 'uint8', 'any'):
+                    is_string_cmp = True
+                if right_type and hasattr(right_type, 'name') and right_type.name in ('str', 'uint8', 'any'):
+                    is_string_cmp = True
+                if is_string_cmp:
+                    # Use strcmp for string comparison
+                    self.emit("push ebx")  # s2
+                    self.emit("push eax")  # s1
+                    self.emit("call strcmp")
+                    self.emit("add esp, 8")
+                    self.emit("test eax, eax")
+                    self.emit("setz al")  # EQ: strcmp returns 0 if equal
+                    self.emit("movzx eax, al")
+                else:
+                    self.emit("cmp eax, ebx")
+                    self.emit("sete al")
+                    self.emit("movzx eax, al")
             elif expr.op == BinOp.NEQ:
-                self.emit("cmp eax, ebx")
-                self.emit("setne al")
-                self.emit("movzx eax, al")
+                # Check if comparing strings
+                is_string_cmp = isinstance(expr.left, StringLiteral) or isinstance(expr.right, StringLiteral)
+                left_type = self._get_expr_type(expr.left)
+                right_type = self._get_expr_type(expr.right)
+                if left_type and hasattr(left_type, 'name') and left_type.name in ('str', 'uint8', 'any'):
+                    is_string_cmp = True
+                if right_type and hasattr(right_type, 'name') and right_type.name in ('str', 'uint8', 'any'):
+                    is_string_cmp = True
+                if is_string_cmp:
+                    # Use strcmp for string comparison
+                    self.emit("push ebx")  # s2
+                    self.emit("push eax")  # s1
+                    self.emit("call strcmp")
+                    self.emit("add esp, 8")
+                    self.emit("test eax, eax")
+                    self.emit("setnz al")  # NEQ: strcmp returns nonzero if different
+                    self.emit("movzx eax, al")
+                else:
+                    self.emit("cmp eax, ebx")
+                    self.emit("setne al")
+                    self.emit("movzx eax, al")
             elif expr.op == BinOp.LT:
                 self.emit("cmp eax, ebx")
                 self.emit("setl al")
@@ -620,9 +720,9 @@ class X86CodeGen:
                 self.emit("xor eax, eax")
                 return "eax"
 
-            # Check for struct constructors (e.g., Token(...))
+            # Check for struct constructors (e.g., Token(...) or Compiler(...))
             if expr.func in self.struct_types:
-                # Struct constructor - allocate on stack and initialize fields
+                # Struct constructor - allocate on stack and call __init__ if exists
                 struct_name = expr.func
                 struct_decl = self.struct_types[struct_name]
                 struct_sz = self.struct_size(struct_name)
@@ -631,24 +731,62 @@ class X86CodeGen:
                 self.stack_offset += struct_sz
                 struct_offset = -self.stack_offset
 
-                # Initialize fields from arguments (positional)
-                fields = [f.name for f in struct_decl.fields]
-                for i, arg in enumerate(expr.args):
-                    if i < len(fields):
-                        field_name = fields[i]
-                        field_offset = self.get_field_offset(struct_name, field_name)
+                # Check if this class has an __init__ method
+                init_func = f"{struct_name}___init__"
+                if init_func in self.func_names:
+                    # Python-style class: call __init__(self, args...)
+                    # Push args in reverse order
+                    for arg in reversed(expr.args):
                         self.gen_expression(arg)
-                        total_offset = struct_offset + field_offset
-                        if total_offset >= 0:
-                            self.emit(f"mov [ebp+{total_offset}], eax")
-                        else:
-                            self.emit(f"mov {self.ebp_addr(total_offset)}, eax")
+                        self.emit("push eax")
+                    # Push self pointer
+                    self.emit(f"lea eax, {self.ebp_addr(struct_offset)}")
+                    self.emit("push eax")
+                    # Call __init__
+                    self.emit(f"call {init_func}")
+                    # Clean up stack (self + args)
+                    self.emit(f"add esp, {4 + len(expr.args) * 4}")
+                else:
+                    # Brainhair-style struct: initialize fields from arguments (positional)
+                    fields = [f.name for f in struct_decl.fields]
+                    for i, arg in enumerate(expr.args):
+                        if i < len(fields):
+                            field_name = fields[i]
+                            field_offset = self.get_field_offset(struct_name, field_name)
+                            self.gen_expression(arg)
+                            total_offset = struct_offset + field_offset
+                            if total_offset >= 0:
+                                self.emit(f"mov [ebp+{total_offset}], eax")
+                            else:
+                                self.emit(f"mov {self.ebp_addr(total_offset)}, eax")
 
                 # Return pointer to struct
                 if struct_offset >= 0:
                     self.emit(f"lea eax, [ebp+{struct_offset}]")
                 else:
                     self.emit(f"lea eax, {self.ebp_addr(struct_offset)}")
+                return "eax"
+
+            # Handle open() - open file and return file descriptor
+            if expr.func == "open" and len(expr.args) >= 1:
+                # open(path, mode) -> fd using sys_open
+                # mode 'r' = O_RDONLY = 0, 'w' = O_WRONLY|O_CREAT|O_TRUNC = 577
+                self.gen_expression(expr.args[0])  # path
+                self.emit("push eax")  # save path
+                # Determine flags based on mode
+                flags = 0  # O_RDONLY by default
+                if len(expr.args) >= 2 and isinstance(expr.args[1], StringLiteral):
+                    mode = expr.args[1].value
+                    if 'w' in mode:
+                        flags = 577  # O_WRONLY | O_CREAT | O_TRUNC
+                    elif 'a' in mode:
+                        flags = 1089  # O_WRONLY | O_CREAT | O_APPEND
+                self.emit("pop ebx")  # path
+                self.emit(f"mov ecx, {flags}")  # flags
+                self.emit("mov edx, 420")  # mode 0644
+                self.emit("mov eax, 5")  # sys_open
+                self.emit("int 0x80")
+                # eax now contains fd (or negative error)
                 return "eax"
 
             # Handle print() - output string to stdout with newline
@@ -850,6 +988,81 @@ class X86CodeGen:
             if expr.method_name in string_methods:
                 # String methods - evaluate receiver and return it (no-op stub)
                 self.gen_expression(expr.object)
+                return "eax"
+
+            # Handle file I/O methods: read(), write(), close()
+            if expr.method_name == 'read':
+                # f.read() - read entire file using sys_read
+                # fd is in the receiver (treated as integer)
+                self.gen_expression(expr.object)  # Get fd
+                self.emit("push eax")  # save fd
+                # First, get file size using sys_lseek to end
+                self.emit("mov ebx, eax")  # fd
+                self.emit("xor ecx, ecx")  # offset 0
+                self.emit("mov edx, 2")  # SEEK_END
+                self.emit("mov eax, 19")  # sys_lseek
+                self.emit("int 0x80")
+                self.emit("push eax")  # save size
+                # Seek back to start
+                self.emit("mov ebx, [esp+4]")  # fd
+                self.emit("xor ecx, ecx")  # offset 0
+                self.emit("xor edx, edx")  # SEEK_SET
+                self.emit("mov eax, 19")  # sys_lseek
+                self.emit("int 0x80")
+                # Allocate buffer on heap using sys_brk
+                self.emit("xor ebx, ebx")  # get current brk
+                self.emit("mov eax, 45")  # sys_brk
+                self.emit("int 0x80")
+                self.emit("push eax")  # save buffer start
+                self.emit("mov ebx, eax")
+                self.emit("add ebx, [esp+4]")  # size
+                self.emit("add ebx, 1")  # null terminator
+                self.emit("mov eax, 45")  # sys_brk
+                self.emit("int 0x80")
+                # Now read the file: sys_read(fd, buf, size)
+                self.emit("mov edx, [esp+4]")  # size
+                self.emit("mov ecx, [esp]")  # buffer
+                self.emit("mov ebx, [esp+8]")  # fd
+                self.emit("mov eax, 3")  # sys_read
+                self.emit("int 0x80")
+                # Null terminate
+                self.emit("mov ecx, [esp]")  # buffer
+                self.emit("add ecx, eax")  # end of data
+                self.emit("mov byte [ecx], 0")
+                # Return buffer pointer
+                self.emit("mov eax, [esp]")
+                self.emit("add esp, 12")  # clean up stack
+                return "eax"
+
+            if expr.method_name == 'write':
+                # f.write(data) - write string to file using sys_write
+                self.gen_expression(expr.args[0])  # data string
+                self.emit("push eax")  # save string ptr
+                self.gen_expression(expr.object)  # Get fd
+                self.emit("mov ebx, eax")  # fd
+                self.emit("pop ecx")  # buffer
+                self.emit("push ecx")  # save for strlen
+                # Get string length
+                self.emit("xor edx, edx")
+                write_strlen = self.new_label("write_strlen")
+                self.emit(f"{write_strlen}:")
+                self.emit("cmp byte [ecx+edx], 0")
+                self.emit(f"je .write_done_len_{id(expr)}")
+                self.emit("inc edx")
+                self.emit(f"jmp {write_strlen}")
+                self.emit(f".write_done_len_{id(expr)}:")
+                # sys_write(fd, buf, len)
+                self.emit("pop ecx")  # buffer
+                self.emit("mov eax, 4")  # sys_write
+                self.emit("int 0x80")
+                return "eax"
+
+            if expr.method_name == 'close':
+                # f.close() - close file using sys_close
+                self.gen_expression(expr.object)  # Get fd
+                self.emit("mov ebx, eax")  # fd
+                self.emit("mov eax, 6")  # sys_close
+                self.emit("int 0x80")
                 return "eax"
 
             # Handle list.append() on any type - fallback to list_append_i32
@@ -1062,7 +1275,7 @@ class X86CodeGen:
                 # Check if this is a function name (not a variable)
                 if hasattr(self, 'func_names') and func_name in self.func_names:
                     # Use LEA to get the address of the function, not MOV
-                    addr = f"[{func_name}]" if self.kernel_mode else f"[rel {func_name}]"
+                    addr = f"[{func_name}]" if self.kernel_mode else f"[{func_name}]"
                     self.emit(f"lea eax, {addr}")
                     return "eax"
             # For other casts, just generate the expression
@@ -1137,7 +1350,7 @@ class X86CodeGen:
                 else:
                     # Global variable - check if array or pointer
                     var_type = self.type_table.get(expr.base.name)
-                    addr = f"[{expr.base.name}]" if self.kernel_mode else f"[rel {expr.base.name}]"
+                    addr = f"[{expr.base.name}]"
                     if isinstance(var_type, ArrayType):
                         # Array storage is the data, use LEA to get address
                         self.emit(f"lea eax, {addr}")
@@ -1225,7 +1438,7 @@ class X86CodeGen:
                             self.emit(f"mov eax, {self.ebp_addr(offset)}")
                 else:
                     # Global
-                    addr = f"[{expr.target.name}]" if self.kernel_mode else f"[rel {expr.target.name}]"
+                    addr = f"[{expr.target.name}]"
                     self.emit(f"lea eax, {addr}")
             else:
                 self.emit("push ecx")  # Save scaled start
@@ -1277,7 +1490,7 @@ class X86CodeGen:
                         self.emit(f"lea eax, {self.ebp_addr(offset)}")  # offset is already negative
                 else:
                     # Global variable
-                    addr = f"[{expr.expr.name}]" if self.kernel_mode else f"[rel {expr.expr.name}]"
+                    addr = f"[{expr.expr.name}]"
                     self.emit(f"lea eax, {addr}")
             elif isinstance(expr.expr, IndexExpr):
                 # Address of array element: addr(array[index])
@@ -1323,7 +1536,7 @@ class X86CodeGen:
                     else:
                         # Global variable - check if array or pointer
                         var_type = self.type_table.get(expr.expr.base.name)
-                        addr = f"[{expr.expr.base.name}]" if self.kernel_mode else f"[rel {expr.expr.base.name}]"
+                        addr = f"[{expr.expr.base.name}]"
                         if isinstance(var_type, ArrayType):
                             self.emit(f"lea eax, {addr}")
                         else:
@@ -1476,7 +1689,7 @@ class X86CodeGen:
                         else:
                             self.emit(f"mov eax, {self.ebp_addr(offset)}")
                     else:
-                        addr = f"[{expr.object.name}]" if self.kernel_mode else f"[rel {expr.object.name}]"
+                        addr = f"[{expr.object.name}]"
                         self.emit(f"mov eax, {addr}")
                     # Generic field access - just return pointer for now
                     return "eax"
@@ -1543,7 +1756,7 @@ class X86CodeGen:
                         else:
                             self.emit(f"lea eax, {self.ebp_addr(offset)}")
                     else:
-                        addr = f"[{expr.object.name}]" if self.kernel_mode else f"[rel {expr.object.name}]"
+                        addr = f"[{expr.object.name}]"
                         self.emit(f"lea eax, {addr}")
                 else:
                     # For complex expressions, generate and assume it returns struct address
@@ -1879,7 +2092,7 @@ class X86CodeGen:
                         self.emit(f"mov {addr}, eax")
                 else:
                     # Global variable
-                    addr = f"[{stmt.target.name}]" if self.kernel_mode else f"[rel {stmt.target.name}]"
+                    addr = f"[{stmt.target.name}]"
                     if var_size == 1:
                         self.emit(f"mov byte {addr}, al")
                     elif var_size == 2:
@@ -1936,7 +2149,7 @@ class X86CodeGen:
                     else:
                         # Global variable - check if array or pointer
                         var_type = self.type_table.get(stmt.target.base.name)
-                        addr = f"[{stmt.target.base.name}]" if self.kernel_mode else f"[rel {stmt.target.base.name}]"
+                        addr = f"[{stmt.target.base.name}]"
                         if isinstance(var_type, ArrayType):
                             # Array storage is the data, use LEA to get address
                             self.emit(f"lea eax, {addr}")
@@ -1982,7 +2195,7 @@ class X86CodeGen:
                             else:
                                 self.emit(f"mov eax, {self.ebp_addr(offset)}")
                         else:
-                            addr = f"[{stmt.target.object.name}]" if self.kernel_mode else f"[rel {stmt.target.object.name}]"
+                            addr = f"[{stmt.target.object.name}]"
                             self.emit(f"mov eax, {addr}")
                         # Store value at pointer (treating as generic field at offset 0)
                         self.emit("pop ebx")  # Get value
@@ -2006,7 +2219,7 @@ class X86CodeGen:
                             else:
                                 self.emit(f"lea eax, {self.ebp_addr(offset)}")
                         else:
-                            addr = f"[{stmt.target.object.name}]" if self.kernel_mode else f"[rel {stmt.target.object.name}]"
+                            addr = f"[{stmt.target.object.name}]"
                             self.emit(f"lea eax, {addr}")
                     else:
                         self.gen_expression(stmt.target.object)
@@ -2317,7 +2530,7 @@ class X86CodeGen:
                     else:
                         self.emit(f"lea ebx, {self.ebp_addr(arr_offset)}")
                 else:
-                    addr = f"[{stmt.iterable.name}]" if self.kernel_mode else f"[rel {stmt.iterable.name}]"
+                    addr = f"[{stmt.iterable.name}]"
                     self.emit(f"lea ebx, {addr}")
             else:
                 self.gen_expression(stmt.iterable)
@@ -2608,6 +2821,15 @@ class X86CodeGen:
             elif isinstance(decl, ProcDecl):
                 # Track procedure names for function pointer support
                 self.func_names.add(decl.name)
+            elif isinstance(decl, MethodDecl):
+                # Track method names (ClassName___methodName)
+                # receiver_type can be PointerType(base_type=Type(name='ClassName'))
+                if isinstance(decl.receiver_type, PointerType):
+                    class_name = decl.receiver_type.base_type.name
+                else:
+                    class_name = decl.receiver_type.name
+                method_name = f"{class_name}___{decl.name}"
+                self.func_names.add(method_name)
 
         # Generate code for all declarations
         for decl in program.declarations:
@@ -2777,6 +2999,38 @@ class X86CodeGen:
             asm_lines.append("")
             # Add stub functions for common missing symbols
             asm_lines.append("; Stub functions for Python-style code compatibility")
+            asm_lines.append("")
+            asm_lines.append("; strcmp(s1, s2) - returns 0 if equal, nonzero otherwise")
+            asm_lines.append("strcmp:")
+            asm_lines.append("    push ebp")
+            asm_lines.append("    mov ebp, esp")
+            asm_lines.append("    push esi")
+            asm_lines.append("    push edi")
+            asm_lines.append("    mov esi, [ebp+8]   ; s1")
+            asm_lines.append("    mov edi, [ebp+12]  ; s2")
+            asm_lines.append(".strcmp_loop:")
+            asm_lines.append("    mov al, [esi]")
+            asm_lines.append("    mov bl, [edi]")
+            asm_lines.append("    cmp al, bl")
+            asm_lines.append("    jne .strcmp_diff")
+            asm_lines.append("    test al, al")
+            asm_lines.append("    jz .strcmp_equal")
+            asm_lines.append("    inc esi")
+            asm_lines.append("    inc edi")
+            asm_lines.append("    jmp .strcmp_loop")
+            asm_lines.append(".strcmp_equal:")
+            asm_lines.append("    xor eax, eax")
+            asm_lines.append("    jmp .strcmp_done")
+            asm_lines.append(".strcmp_diff:")
+            asm_lines.append("    movzx eax, al")
+            asm_lines.append("    movzx ebx, bl")
+            asm_lines.append("    sub eax, ebx")
+            asm_lines.append(".strcmp_done:")
+            asm_lines.append("    pop edi")
+            asm_lines.append("    pop esi")
+            asm_lines.append("    pop ebp")
+            asm_lines.append("    ret")
+            asm_lines.append("")
             asm_lines.append("uint8_join:")
             asm_lines.append("    ; String join stub - just return first arg")
             asm_lines.append("    mov eax, [esp+4]")

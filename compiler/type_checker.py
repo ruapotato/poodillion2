@@ -1285,7 +1285,7 @@ class TypeChecker:
 
     def _check_slice_expr(self, node: SliceExpr) -> Optional[TypeInfo]:
         """Check slice expression: arr[start..end]"""
-        array_type = self._check_expr(node.base)
+        array_type = self._check_expr(node.target)
         start_type = self._check_expr(node.start)
         end_type = self._check_expr(node.end)
 
@@ -1315,7 +1315,7 @@ class TypeChecker:
         else:
             self.errors.append(TypeError(
                 f"Cannot slice type {array_type}",
-                self._get_span(node.base)
+                self._get_span(node.target)
             ))
             return None
 
