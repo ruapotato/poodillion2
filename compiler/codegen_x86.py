@@ -85,6 +85,132 @@ class X86CodeGen:
         result = result.replace('>', '_')
         return result
 
+    def _print_string_expr(self, expr):
+        """Helper: Print a string expression to stdout"""
+        self.gen_expression(expr)
+        self.emit("push eax")  # Save string pointer
+        # Calculate string length
+        self.emit("xor ecx, ecx")
+        strlen_loop = self.new_label("print_strlen")
+        strlen_done = self.new_label("print_strlen_done")
+        self.emit_label(strlen_loop)
+        self.emit("mov bl, [eax]")
+        self.emit("test bl, bl")
+        self.emit(f"jz {strlen_done}")
+        self.emit("inc eax")
+        self.emit("inc ecx")
+        self.emit(f"jmp {strlen_loop}")
+        self.emit_label(strlen_done)
+        # sys_write(1, string, length)
+        self.emit("pop ebx")  # String pointer
+        self.emit("mov edx, ecx")  # Length
+        self.emit("mov ecx, ebx")  # Buffer
+        self.emit("mov ebx, 1")  # stdout
+        self.emit("mov eax, 4")  # sys_write
+        self.emit("int 0x80")
+
+    def _print_fstring(self, fstring_value: str):
+        """Helper: Parse and print an f-string with interpolation"""
+        # Parse f-string without regex: find {expr} patterns
+        i = 0
+        n = len(fstring_value)
+        while i < n:
+            # Find next {
+            brace_start = -1
+            j = i
+            while j < n:
+                if fstring_value[j] == '{':
+                    brace_start = j
+                    break
+                j = j + 1
+
+            if brace_start == -1:
+                # No more braces, print rest of string
+                rest = fstring_value[i:]
+                if rest:
+                    label = self.add_string(rest)
+                    self.emit(f"mov ecx, {label}")
+                    self.emit(f"mov edx, {len(rest)}")
+                    self.emit("mov ebx, 1")
+                    self.emit("mov eax, 4")
+                    self.emit("int 0x80")
+                break
+
+            # Print static text before brace
+            if brace_start > i:
+                static_part = fstring_value[i:brace_start]
+                label = self.add_string(static_part)
+                self.emit(f"mov ecx, {label}")
+                self.emit(f"mov edx, {len(static_part)}")
+                self.emit("mov ebx, 1")
+                self.emit("mov eax, 4")
+                self.emit("int 0x80")
+
+            # Find closing brace
+            brace_end = -1
+            k = brace_start + 1
+            while k < n:
+                if fstring_value[k] == '}':
+                    brace_end = k
+                    break
+                k = k + 1
+
+            if brace_end == -1:
+                # No closing brace, print rest as literal
+                rest = fstring_value[brace_start:]
+                label = self.add_string(rest)
+                self.emit(f"mov ecx, {label}")
+                self.emit(f"mov edx, {len(rest)}")
+                self.emit("mov ebx, 1")
+                self.emit("mov eax, 4")
+                self.emit("int 0x80")
+                break
+
+            # Extract variable name
+            var_name = fstring_value[brace_start+1:brace_end]
+            # Strip whitespace manually
+            while var_name and var_name[0] == ' ':
+                var_name = var_name[1:]
+            while var_name and var_name[-1] == ' ':
+                var_name = var_name[:-1]
+
+            # Print variable value
+            if var_name in self.local_vars:
+                offset = self.local_vars[var_name]
+                if offset > 0:
+                    self.emit(f"mov eax, [ebp+{offset}]")
+                else:
+                    self.emit(f"mov eax, {self.ebp_addr(-offset)}")
+                self.emit("push eax")
+                self.emit("xor ecx, ecx")
+                strlen_loop = self.new_label("fstr_strlen")
+                strlen_done = self.new_label("fstr_strlen_done")
+                self.emit_label(strlen_loop)
+                self.emit("mov bl, [eax]")
+                self.emit("test bl, bl")
+                self.emit(f"jz {strlen_done}")
+                self.emit("inc eax")
+                self.emit("inc ecx")
+                self.emit(f"jmp {strlen_loop}")
+                self.emit_label(strlen_done)
+                self.emit("pop ebx")
+                self.emit("mov edx, ecx")
+                self.emit("mov ecx, ebx")
+                self.emit("mov ebx, 1")
+                self.emit("mov eax, 4")
+                self.emit("int 0x80")
+            else:
+                # Unknown variable - print placeholder
+                placeholder = "<" + var_name + ">"
+                label = self.add_string(placeholder)
+                self.emit(f"mov ecx, {label}")
+                self.emit(f"mov edx, {len(placeholder)}")
+                self.emit("mov ebx, 1")
+                self.emit("mov eax, 4")
+                self.emit("int 0x80")
+
+            i = brace_end + 1
+
     # Code generation for types
     def type_size(self, typ: Type) -> int:
         """Get size in bytes for a type"""
@@ -223,7 +349,7 @@ class X86CodeGen:
                 return arr_type.element_type
             return None
         if isinstance(expr, SliceExpr):
-            arr_type = self._get_expr_type(expr.base)
+            arr_type = self._get_expr_type(expr.target)
             if arr_type is None:
                 return None
             if isinstance(arr_type, ArrayType):
@@ -525,13 +651,33 @@ class X86CodeGen:
                     self.emit(f"lea eax, {self.ebp_addr(struct_offset)}")
                 return "eax"
 
+            # Handle print() - output string to stdout with newline
+            if expr.func == "print":
+                if expr.args:
+                    arg = expr.args[0]
+                    # Check for f-string with interpolation
+                    if isinstance(arg, FStringLiteral):
+                        self._print_fstring(arg.value)
+                    else:
+                        # Regular string - print it
+                        self._print_string_expr(arg)
+                # Print newline
+                newline_label = self.add_string("\n")
+                self.emit(f"mov ecx, {newline_label}")
+                self.emit("mov edx, 1")
+                self.emit("mov ebx, 1")
+                self.emit("mov eax, 4")
+                self.emit("int 0x80")
+                self.emit("xor eax, eax")
+                return "eax"
+
             # Handle Python builtins that don't exist in compiled code
             python_builtins = ('set', 'dict', 'list', 'tuple', 'frozenset', 'types', 'type',
                                'isinstance', 'issubclass', 'hasattr', 'getattr', 'setattr',
                                'iter', 'next', 'enumerate', 'zip', 'map', 'filter', 'sorted',
                                'reversed', 'all', 'any', 'sum', 'min', 'max', 'abs', 'int',
                                'str', 'bool', 'float', 'chr', 'ord', 'hex', 'bin', 'oct',
-                               'range', 'print', 'input', 'open', 'id', 'hash', 'repr',
+                               'range', 'input', 'open', 'id', 'hash', 'repr',
                                # Python class constructors (dataclasses, etc.)
                                'LLVMIntType', 'LLVMFloatType', 'LLVMPointerType', 'LLVMArrayType',
                                'LLVMVoidType', 'LLVMStructType', 'LLVMTypeMapper', 'LLVMType',
@@ -1044,7 +1190,7 @@ class X86CodeGen:
             self.emit("push edx")  # Save length
 
             # Get element size
-            arr_type = self._get_expr_type(expr.base)
+            arr_type = self._get_expr_type(expr.target)
             element_size = 4  # Default
             if isinstance(arr_type, ArrayType):
                 element_size = self.type_size(arr_type.element_type)
@@ -1062,10 +1208,10 @@ class X86CodeGen:
                     self.emit(f"imul ecx, {element_size}")
 
             # Get array base address
-            if isinstance(expr.base, Identifier):
-                if expr.base.name in self.local_vars:
-                    offset = self.local_vars[expr.base.name]
-                    var_type = self.type_table.get(expr.base.name)
+            if isinstance(expr.target, Identifier):
+                if expr.target.name in self.local_vars:
+                    offset = self.local_vars[expr.target.name]
+                    var_type = self.type_table.get(expr.target.name)
                     if isinstance(var_type, ArrayType):
                         if offset > 0:
                             self.emit(f"lea eax, [ebp+{offset}]")
@@ -1079,11 +1225,11 @@ class X86CodeGen:
                             self.emit(f"mov eax, {self.ebp_addr(offset)}")
                 else:
                     # Global
-                    addr = f"[{expr.base.name}]" if self.kernel_mode else f"[rel {expr.base.name}]"
+                    addr = f"[{expr.target.name}]" if self.kernel_mode else f"[rel {expr.target.name}]"
                     self.emit(f"lea eax, {addr}")
             else:
                 self.emit("push ecx")  # Save scaled start
-                self.gen_expression(expr.base)
+                self.gen_expression(expr.target)
                 self.emit("pop ecx")
 
             # ptr = base + scaled_start
