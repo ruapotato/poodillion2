@@ -714,6 +714,9 @@ class X86_64CodeGen:
                 # Inline constants
                 if isinstance(decl.value, IntLiteral):
                     self.constants[decl.name] = decl.value.value
+                elif isinstance(decl.value, UnaryExpr) and decl.value.op == UnaryOp.NEG and isinstance(decl.value.expr, IntLiteral):
+                    # Handle negative constants like -1
+                    self.constants[decl.name] = -decl.value.expr.value
             elif isinstance(decl, VarDecl) and not decl.is_const:
                 # Register global variable types BEFORE generating code
                 self.type_table[decl.name] = decl.var_type

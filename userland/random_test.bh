@@ -1,229 +1,87 @@
-# random_test.bh - Test program for RNG functionality
-# Demonstrates random number generation and various RNG functions
+# Random library test
+from lib.syscalls import write, exit, STDOUT
+from lib.random import random_bytes, random_range, random_string, random_shuffle, random_uuid
 
-import "../lib/random"
+def print_str(s: Ptr[uint8]):
+    len: int32 = 0
+    while (s[len] != cast[uint8](0)):
+        len = (len + 1)
+    write(STDOUT, s, len)
 
-# Simple print functions
-extern syscall3(num: int32, arg1: int32, arg2: int32, arg3: int32): int32
+def print_hex_byte(b: uint8):
+    hex: Ptr[uint8] = Ptr[uint8]("0123456789abcdef")
+    high: uint8 = hex[cast[int32](b) >> 4]
+    low: uint8 = hex[cast[int32](b) & 15]
+    write(STDOUT, addr(high), 1)
+    write(STDOUT, addr(low), 1)
 
-const SYS_WRITE: int32 = 4
-const STDOUT: int32 = 1
-const SYS_EXIT: int32 = 1
+def print_decimal(n: int32):
+    if (n == 0):
+        print_str(Ptr[uint8]("0"))
+        return
+    negative: int32 = 0
+    if (n < 0):
+        negative = 1
+        n = (0 - n)
+    buf: Array[12, uint8]
+    i: int32 = 10
+    buf[11] = cast[uint8](0)
+    while (n > 0):
+        buf[i] = cast[uint8](48 + (n % 10))
+        n = (n / 10)
+        i = (i - 1)
+    if (negative == 1):
+        buf[i] = cast[uint8](45)
+        i = (i - 1)
+    print_str(cast[Ptr[uint8]](cast[int32](addr(buf)) + i + 1))
 
-proc print(s: ptr uint8) =
-  var len: int32 = 0
-  while s[len] != cast[uint8](0):
-    len = len + 1
-  discard syscall3(SYS_WRITE, STDOUT, cast[int32](s), len)
+def main() -> int32:
+    print_str(Ptr[uint8]("=== Random Library Test ===\n\n"))
 
-proc println(s: ptr uint8) =
-  print(s)
-  discard syscall3(SYS_WRITE, STDOUT, cast[int32](cast[ptr uint8]("\n")), 1)
+    # Test random_bytes
+    print_str(Ptr[uint8]("Testing random_bytes(16): "))
+    bytes_buf: Array[16, uint8]
+    result: int32 = random_bytes(Ptr[uint8](addr(bytes_buf)), 16)
+    if (result == 0):
+        i: int32 = 0
+        while (i < 16):
+            print_hex_byte(bytes_buf[i])
+            i = (i + 1)
+        print_str(Ptr[uint8]("\n"))
+    else:
+        print_str(Ptr[uint8]("FAILED\n"))
 
-proc print_hex(n: int32) =
-  var hex: ptr uint8 = cast[ptr uint8]("0123456789abcdef")
-  var buf: int32 = 0
-  var i: int32 = 7
+    # Test random_range
+    print_str(Ptr[uint8]("\nTesting random_range(1, 100):\n"))
+    i: int32 = 0
+    while (i < 5):
+        val: int32 = random_range(1, 100)
+        print_str(Ptr[uint8]("  "))
+        print_decimal(val)
+        print_str(Ptr[uint8]("\n"))
+        i = (i + 1)
 
-  # Print "0x"
-  print(cast[ptr uint8]("0x"))
+    # Test random_string
+    print_str(Ptr[uint8]("\nTesting random_string(16): "))
+    str_buf: Array[32, uint8]
+    result = random_string(Ptr[uint8](addr(str_buf)), 16)
+    if (result == 0):
+        print_str(Ptr[uint8](addr(str_buf)))
+        print_str(Ptr[uint8]("\n"))
+    else:
+        print_str(Ptr[uint8]("FAILED\n"))
 
-  # Print 8 hex digits
-  while i >= 0:
-    var shift: int32 = i * 4
-    var digit: int32 = (n >> shift) & 15
-    var c: uint8 = hex[digit]
-    discard syscall3(SYS_WRITE, STDOUT, cast[int32](addr(c)), 1)
-    i = i - 1
+    # Test uuid4
+    print_str(Ptr[uint8]("\nTesting random_uuid():\n"))
+    uuid_buf: Array[40, uint8]
+    i = 0
+    while (i < 3):
+        result = random_uuid(Ptr[uint8](addr(uuid_buf)))
+        if (result == 0):
+            print_str(Ptr[uint8]("  "))
+            print_str(Ptr[uint8](addr(uuid_buf)))
+            print_str(Ptr[uint8]("\n"))
+        i = (i + 1)
 
-proc print_int(n: int32) =
-  if n == 0:
-    print(cast[ptr uint8]("0"))
-    return
-
-  var negative: int32 = 0
-  if n < 0:
-    negative = 1
-    n = 0 - n
-
-  # Count digits
-  var temp: int32 = n
-  var digits: int32 = 0
-  while temp > 0:
-    temp = temp / 10
-    digits = digits + 1
-
-  # Print negative sign
-  if negative == 1:
-    discard syscall3(SYS_WRITE, STDOUT, cast[int32](cast[ptr uint8]("-")), 1)
-
-  # Build digits in reverse
-  var reversed: int32 = 0
-  temp = n
-  while temp > 0:
-    reversed = reversed * 10 + (temp % 10)
-    temp = temp / 10
-
-  # Print digits
-  while digits > 0:
-    var d: uint8 = cast[uint8](48 + (reversed % 10))
-    discard syscall3(SYS_WRITE, STDOUT, cast[int32](addr(d)), 1)
-    reversed = reversed / 10
-    digits = digits - 1
-
-# Main program
-var _start: int32 = 0
-_start = cast[int32](addr(_start))  # Dummy to avoid unused warning
-
-# Initialize RNG
-println(cast[ptr uint8]("=== BrainhairOS Random Number Generator Test ==="))
-println(cast[ptr uint8](""))
-
-println(cast[ptr uint8]("Initializing RNG..."))
-random_init()
-println(cast[ptr uint8]("RNG initialized."))
-println(cast[ptr uint8](""))
-
-# Test 1: Generate random 32-bit integers
-println(cast[ptr uint8]("Test 1: Random 32-bit integers"))
-println(cast[ptr uint8]("--------------------------------"))
-var i: int32 = 0
-while i < 10:
-  var r: int32 = random_int()
-  print(cast[ptr uint8]("  Random int: "))
-  print_hex(r)
-  println(cast[ptr uint8](""))
-  i = i + 1
-println(cast[ptr uint8](""))
-
-# Test 2: Random bytes
-println(cast[ptr uint8]("Test 2: Random bytes (16 bytes)"))
-println(cast[ptr uint8]("--------------------------------"))
-var bytes: int32 = 0
-var byte_array: int32 = 0
-var byte_storage: int32 = 0  # Space for 16 bytes (4 int32s)
-var byte_ptr: ptr uint8 = cast[ptr uint8](addr(byte_storage))
-
-var result: int32 = random_bytes(byte_ptr, 16)
-print(cast[ptr uint8]("Generated "))
-print_int(result)
-println(cast[ptr uint8](" bytes:"))
-print(cast[ptr uint8]("  "))
-
-i = 0
-while i < 16:
-  var b: uint8 = byte_ptr[i]
-  var hi: int32 = (cast[int32](b) >> 4) & 15
-  var lo: int32 = cast[int32](b) & 15
-  var hex_chars: ptr uint8 = cast[ptr uint8]("0123456789abcdef")
-  var h: uint8 = hex_chars[hi]
-  var l: uint8 = hex_chars[lo]
-  discard syscall3(SYS_WRITE, STDOUT, cast[int32](addr(h)), 1)
-  discard syscall3(SYS_WRITE, STDOUT, cast[int32](addr(l)), 1)
-  discard syscall3(SYS_WRITE, STDOUT, cast[int32](cast[ptr uint8](" ")), 1)
-  i = i + 1
-println(cast[ptr uint8](""))
-println(cast[ptr uint8](""))
-
-# Test 3: Random range
-println(cast[ptr uint8]("Test 3: Random range [1, 100]"))
-println(cast[ptr uint8]("------------------------------"))
-i = 0
-while i < 10:
-  var r: int32 = random_range(1, 101)
-  print(cast[ptr uint8]("  Random [1,100]: "))
-  print_int(r)
-  println(cast[ptr uint8](""))
-  i = i + 1
-println(cast[ptr uint8](""))
-
-# Test 4: Random boolean
-println(cast[ptr uint8]("Test 4: Random boolean"))
-println(cast[ptr uint8]("-----------------------"))
-i = 0
-while i < 10:
-  var b: int32 = random_bool()
-  print(cast[ptr uint8]("  Random bool: "))
-  if b == 1:
-    println(cast[ptr uint8]("true"))
-  else:
-    println(cast[ptr uint8]("false"))
-  i = i + 1
-println(cast[ptr uint8](""))
-
-# Test 5: Random alphanumeric string
-println(cast[ptr uint8]("Test 5: Random strings"))
-println(cast[ptr uint8]("-----------------------"))
-var str_storage_1: int32 = 0
-var str_storage_2: int32 = 0
-var str_storage_3: int32 = 0
-var str_storage_4: int32 = 0
-var str_ptr: ptr uint8 = cast[ptr uint8](addr(str_storage_1))
-
-random_string(str_ptr, 12)
-print(cast[ptr uint8]("  Random string (12 chars): "))
-println(str_ptr)
-
-str_ptr = cast[ptr uint8](addr(str_storage_2))
-random_hex_string(str_ptr, 16)
-print(cast[ptr uint8]("  Random hex (16 chars): "))
-println(str_ptr)
-println(cast[ptr uint8](""))
-
-# Test 6: UUID generation
-println(cast[ptr uint8]("Test 6: UUID generation (v4)"))
-println(cast[ptr uint8]("-----------------------------"))
-var uuid_s1: int32 = 0
-var uuid_s2: int32 = 0
-var uuid_s3: int32 = 0
-var uuid_s4: int32 = 0
-var uuid_s5: int32 = 0
-var uuid_s6: int32 = 0
-var uuid_s7: int32 = 0
-var uuid_s8: int32 = 0
-var uuid_s9: int32 = 0
-var uuid_s10: int32 = 0
-var uuid_ptr: ptr uint8 = cast[ptr uint8](addr(uuid_s1))
-
-i = 0
-while i < 3:
-  random_uuid(uuid_ptr)
-  print(cast[ptr uint8]("  UUID: "))
-  println(uuid_ptr)
-  i = i + 1
-println(cast[ptr uint8](""))
-
-# Test 7: Array shuffling
-println(cast[ptr uint8]("Test 7: Array shuffling"))
-println(cast[ptr uint8]("------------------------"))
-var arr1: int32 = 1
-var arr2: int32 = 2
-var arr3: int32 = 3
-var arr4: int32 = 4
-var arr5: int32 = 5
-var arr: ptr int32 = cast[ptr int32](addr(arr1))
-
-print(cast[ptr uint8]("  Original: "))
-i = 0
-while i < 5:
-  print_int(arr[i])
-  print(cast[ptr uint8](" "))
-  i = i + 1
-println(cast[ptr uint8](""))
-
-random_shuffle(arr, 5)
-
-print(cast[ptr uint8]("  Shuffled: "))
-i = 0
-while i < 5:
-  print_int(arr[i])
-  print(cast[ptr uint8](" "))
-  i = i + 1
-println(cast[ptr uint8](""))
-println(cast[ptr uint8](""))
-
-# Test complete
-println(cast[ptr uint8]("=== All tests complete! ==="))
-
-# Exit
-discard syscall3(SYS_EXIT, 0, 0, 0)
+    print_str(Ptr[uint8]("\n=== Test Complete ===\n"))
+    return 0
