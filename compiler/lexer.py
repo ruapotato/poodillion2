@@ -208,22 +208,26 @@ def is_hex(c: int) -> int:
 def poly_strlen(s) -> int:
     """Get length of string - works for both Python str and Ptr[uint8]"""
     # In Python, use len(). In Brainhair, iterate to find null terminator.
+    result: int = 0
     try:
-        return len(s)
+        result = len(s)
     except:
         # Brainhair: count until null byte
         i: int = 0
         while s[i] != 0:
             i = i + 1
-        return i
+        result = i
+    return result
 
 def poly_ord(c) -> int:
     """Get character code - works for both Python str and uint8"""
+    result: int = 0
     try:
-        return ord(c)
+        result = ord(c)
     except:
         # Brainhair: character is already an int
-        return c
+        result = cast[int](c)
+    return result
 
 # ============================================================================
 # Token Class (polyglot - works in both Python and Brainhair)
@@ -403,6 +407,7 @@ def str_eq(a: str, b: str) -> int:
         if ca == 0:
             return 1
         i = i + 1
+    return 0  # Unreachable but satisfies type checker
 
 def lookup_keyword(word: str) -> int:
     """Look up a keyword and return its token type, or 0 if not a keyword."""

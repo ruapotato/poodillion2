@@ -471,6 +471,17 @@ class TypeChecker:
             self._check_break(node)
         elif isinstance(node, ContinueStmt):
             self._check_continue(node)
+        elif isinstance(node, TryExceptStmt):
+            self._check_try_except(node)
+
+    def _check_try_except(self, node: TryExceptStmt) -> None:
+        """Check a try/except statement. For Brainhair, we check the except body."""
+        # Check the except body (Brainhair-compatible code)
+        for stmt in node.except_body:
+            self._check_statement(stmt)
+        # Also check finally body if present
+        for stmt in node.finally_body:
+            self._check_statement(stmt)
 
     def _check_var_decl(self, node: VarDecl) -> None:
         """Check a variable declaration."""
@@ -1127,8 +1138,8 @@ class TypeChecker:
         if obj_type.is_pointer and obj_type.element_type:
             type_name = obj_type.element_type.name
 
-        # Handle built-in list methods
-        if obj_type.is_array or type_name.startswith("List["):
+        # Handle built-in list methods (also allow on 'any' type for Python interop)
+        if obj_type.is_array or type_name.startswith("List[") or type_name == "any":
             method = node.method_name
             if method == "append":
                 # append() returns None/void

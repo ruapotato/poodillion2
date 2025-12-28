@@ -744,15 +744,57 @@ class X86CodeGen:
             # Handle common methods on unknown or dynamic types (Python-style code)
             needs_fallback = type_name == "Unknown" or type_name == "any" or type_name.startswith("Set")
             if needs_fallback:
-                if expr.method_name in ('append', 'extend', 'pop', 'clear', 'remove', 'insert', 'add', 'get', 'keys', 'values', 'items', 'update'):
-                    # Collection methods - evaluate args and return first arg or None
-                    for arg in expr.args:
-                        self.gen_expression(arg)
-                    if expr.method_name == 'get' and len(expr.args) >= 2:
-                        # Dict.get with default - return default
-                        self.gen_expression(expr.args[1])
+                # For 'any' type, generate actual list/dict operations assuming List/Dict
+                if expr.method_name == 'append' and len(expr.args) == 1:
+                    # Assume it's a List - call list_append_i32(obj, value)
+                    self.gen_expression(expr.args[0])  # Get value
+                    self.emit("push eax")
+                    self.gen_expression(expr.object)  # Get list ptr
+                    self.emit("push eax")
+                    self.emit("call list_append_i32")
+                    self.emit("add esp, 8")
+                    return "eax"
+                elif expr.method_name == 'pop' and len(expr.args) == 0:
+                    # Assume it's a List - call list_pop_i32(obj)
+                    self.gen_expression(expr.object)
+                    self.emit("push eax")
+                    self.emit("call list_pop_i32")
+                    self.emit("add esp, 4")
+                    return "eax"
+                elif expr.method_name == 'clear':
+                    # Assume it's a List - call list_clear(obj)
+                    self.gen_expression(expr.object)
+                    self.emit("push eax")
+                    self.emit("call list_clear")
+                    self.emit("add esp, 4")
+                    self.emit("xor eax, eax")
+                    return "eax"
+                elif expr.method_name == 'get':
+                    # Assume it's a Dict - call dict_get or dict_get_default
+                    if len(expr.args) >= 2:
+                        self.gen_expression(expr.args[1])  # default
+                        self.emit("push eax")
+                        self.gen_expression(expr.args[0])  # key
+                        self.emit("push eax")
+                        self.gen_expression(expr.object)
+                        self.emit("push eax")
+                        self.emit("call dict_get_default")
+                        self.emit("add esp, 12")
+                    elif len(expr.args) == 1:
+                        self.gen_expression(expr.args[0])  # key
+                        self.emit("push eax")
+                        self.gen_expression(expr.object)
+                        self.emit("push eax")
+                        self.emit("call dict_get")
+                        self.emit("add esp, 8")
                     else:
                         self.emit("xor eax, eax")
+                    return "eax"
+                elif expr.method_name in ('extend', 'remove', 'insert', 'add', 'keys', 'values', 'items', 'update'):
+                    # Other collection methods - evaluate args and return None (stub)
+                    for arg in expr.args:
+                        self.gen_expression(arg)
+                    self.emit("xor eax, eax")
                     return "eax"
                 elif expr.method_name in ('lower', 'upper', 'strip', 'split', 'join', 'replace', 'match'):
                     # String methods - evaluate receiver and return it (no-op)
@@ -2135,6 +2177,15 @@ class X86CodeGen:
         elif isinstance(stmt, DeferStmt):
             # Add to defer stack - will be executed at function return
             self.defer_stack.append(stmt.stmt)
+
+        elif isinstance(stmt, TryExceptStmt):
+            # For Brainhair, execute the except body (Brainhair-compatible code)
+            # The try body contains Python-only code which we skip
+            for s in stmt.except_body:
+                self.gen_statement(s)
+            # Also execute finally body if present
+            for s in stmt.finally_body:
+                self.gen_statement(s)
 
     # Procedure code generation
     def gen_procedure(self, proc: ProcDecl):

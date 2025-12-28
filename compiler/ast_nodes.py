@@ -370,6 +370,16 @@ class RaiseStmt(ASTNode):
 
 
 @dataclass
+class TryExceptStmt(ASTNode):
+    """Try/except statement for polyglot code.
+    In Brainhair, we execute the except_body (Brainhair-compatible code).
+    In Python, the try_body runs first and except_body only on exception."""
+    try_body: List[ASTNode] = field(default_factory=list)
+    except_body: List[ASTNode] = field(default_factory=list)
+    finally_body: List[ASTNode] = field(default_factory=list)
+
+
+@dataclass
 class RangeExpr(ASTNode):
     """Range expression: range(start, end, step)"""
     start: ASTNode

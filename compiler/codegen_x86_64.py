@@ -617,6 +617,13 @@ class X86_64CodeGen:
             if hasattr(self, 'continue_label'):
                 self.emit(f"jmp {self.continue_label}")
 
+        elif isinstance(stmt, TryExceptStmt):
+            # For Brainhair, execute the except body (Brainhair-compatible code)
+            for s in stmt.except_body:
+                self.gen_statement(s)
+            for s in stmt.finally_body:
+                self.gen_statement(s)
+
     def gen_procedure(self, proc: ProcDecl):
         """Generate code for a procedure"""
         self.emit("")

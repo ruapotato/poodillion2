@@ -144,6 +144,49 @@ class Compiler:
 
         return None
 
+    def _auto_import_stdlib(self, ast: Program, source_dir: str) -> Program:
+        """Auto-import standard library files when needed (lib/list.bh, lib/memory.bh)."""
+        # Standard library files to auto-import
+        stdlib_files = ['lib/list', 'lib/memory']
+
+        all_stdlib_decls = []
+        for lib_path in stdlib_files:
+            import_path = self._resolve_import_path(lib_path, source_dir)
+            if import_path is None:
+                continue
+
+            abs_path = os.path.abspath(import_path)
+            if abs_path in self.imported_files:
+                continue  # Already imported
+
+            self.imported_files.add(abs_path)
+
+            try:
+                with open(import_path, 'r') as f:
+                    import_source = f.read()
+
+                lexer = Lexer(import_source)
+                tokens = lexer.tokenize()
+
+                parser = Parser(tokens)
+                imported_ast = parser.parse()
+
+                # Recursively resolve imports in the library
+                import_dir = os.path.dirname(import_path)
+                imported_ast = self.resolve_imports(imported_ast, import_dir)
+
+                for decl in imported_ast.declarations:
+                    all_stdlib_decls.append(decl)
+
+            except Exception as e:
+                # Silently skip if stdlib not found
+                continue
+
+        if all_stdlib_decls:
+            merged_decls = all_stdlib_decls + ast.declarations
+            return Program(declarations=merged_decls, imports=[])
+        return ast
+
     def compile(self):
         """Full compilation pipeline"""
         print(f"[Brainhair] Compiling {self.source_file}...")
@@ -165,12 +208,15 @@ class Compiler:
         print(f"        Generated AST with {len(ast.declarations)} declarations")
 
         # 3.5 Resolve imports
+        source_dir = os.path.dirname(os.path.abspath(self.source_file))
+        self.imported_files.add(os.path.abspath(self.source_file))  # Mark main file as imported
         if ast.imports:
             print("  [2.5/8] Resolving imports...")
-            source_dir = os.path.dirname(os.path.abspath(self.source_file))
-            self.imported_files.add(os.path.abspath(self.source_file))  # Mark main file as imported
             ast = self.resolve_imports(ast, source_dir)
             print(f"        Now have {len(ast.declarations)} declarations after imports")
+
+        # 3.6 Auto-import standard library files (lib/list.bh, lib/memory.bh)
+        ast = self._auto_import_stdlib(ast, source_dir)
 
         # 4. Monomorphization (instantiate generic functions/types)
         print("  [3/8] Monomorphizing generics...")

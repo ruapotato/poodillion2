@@ -1462,14 +1462,16 @@ class Parser:
             exception = self.parse_expression()
             return RaiseStmt(exception)
 
-        # Try/except block (parse but simplify to just the try body for now)
+        # Try/except block - for polyglot code
+        # Pattern: try: Python-only code; except: Brainhair-compatible code
         if token.type == TT_TRY:
             self.advance()
             self.expect(TT_COLON)
             self.skip_newlines()
             try_body = self.parse_block()
 
-            # Parse except clauses
+            # Parse except clauses and capture the body for Brainhair execution
+            except_body = []
             while self.current_token().type == TT_EXCEPT:
                 self.advance()
                 # Skip exception type and 'as name' if present
@@ -1480,18 +1482,18 @@ class Parser:
                         self.expect(TT_IDENT)
                 self.expect(TT_COLON)
                 self.skip_newlines()
-                self.parse_block()  # Except body (ignored for now)
+                except_body = self.parse_block()  # Capture except body for Brainhair
 
             # Parse optional finally
+            finally_body = []
             if self.current_token().type == TT_FINALLY:
                 self.advance()
                 self.expect(TT_COLON)
                 self.skip_newlines()
-                self.parse_block()
+                finally_body = self.parse_block()
 
-            # For polyglot code: try/except blocks wrap Python-only code
-            # Skip the entire try block and return PassStmt
-            return PassStmt()
+            # Return TryExceptStmt - codegen will use except_body for Brainhair
+            return TryExceptStmt(try_body, except_body, finally_body)
 
         # Import inside a block (Python allows this)
         if token.type in (TT_FROM, TT_IMPORT):
