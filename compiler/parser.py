@@ -193,6 +193,11 @@ class Parser:
             self.advance()
             return Type(type_name)
 
+        # None type (Python-style void/unit return type)
+        if token.type == TT_NONE:
+            self.advance()
+            return Type('None')
+
         # Basic primitive types - use polyglot lookup
         type_name = lookup_basic_type(token.type)
         if type_name != '':
@@ -207,23 +212,33 @@ class Parser:
             self.expect(TT_RBRACKET)
             return PointerType(base_type)
 
-        # List[T] - dynamic list
+        # *T - C-style pointer type
+        if token.type == TT_STAR:
+            self.advance()
+            base_type = self.parse_type()
+            return PointerType(base_type)
+
+        # List[T] - dynamic list (or just List for unparameterized)
         if token.type == TT_LIST:
             self.advance()
-            self.expect(TT_LBRACKET)
-            element_type = self.parse_type()
-            self.expect(TT_RBRACKET)
-            return ListType(element_type)
+            if self.current_token().type == TT_LBRACKET:
+                self.advance()
+                element_type = self.parse_type()
+                self.expect(TT_RBRACKET)
+                return ListType(element_type)
+            return Type('List')
 
-        # Dict[K, V] - hash map
+        # Dict[K, V] - hash map (or just Dict for unparameterized)
         if token.type == TT_DICT:
             self.advance()
-            self.expect(TT_LBRACKET)
-            key_type = self.parse_type()
-            self.expect(TT_COMMA)
-            value_type = self.parse_type()
-            self.expect(TT_RBRACKET)
-            return DictType(key_type, value_type)
+            if self.current_token().type == TT_LBRACKET:
+                self.advance()
+                key_type = self.parse_type()
+                self.expect(TT_COMMA)
+                value_type = self.parse_type()
+                self.expect(TT_RBRACKET)
+                return DictType(key_type, value_type)
+            return Type('Dict')
 
         # Optional[T]
         if token.type == TT_OPTIONAL:
@@ -486,6 +501,11 @@ class Parser:
             self.advance()
             return UnaryExpr(UnaryOp.BIT_NOT, self.parse_unary())
 
+        # Dereference operator: *ptr
+        if token.type == TT_STAR:
+            self.advance()
+            return UnaryExpr(UnaryOp.DEREF, self.parse_unary())
+
         return self.parse_primary()
 
     def parse_primary(self) -> ASTNode:
@@ -618,12 +638,16 @@ class Parser:
             self.expect(TT_RPAREN)
             return RangeExpr(start, end, step)
 
-        # asm("instruction") - inline assembly (only if followed by LPAREN)
-        if token.type == TT_ASM and self.peek_token().type == TT_LPAREN:
+        # asm("instruction") or asm "instruction" - inline assembly
+        if token.type == TT_ASM:
             self.advance()
-            self.expect(TT_LPAREN)
-            asm_str = self.expect(TT_STRING).value
-            self.expect(TT_RPAREN)
+            if self.current_token().type == TT_LPAREN:
+                self.advance()  # Skip (
+                asm_str = self.expect(TT_STRING).value
+                self.expect(TT_RPAREN)
+            else:
+                # asm "instruction" syntax (no parentheses)
+                asm_str = self.expect(TT_STRING).value
             return AsmExpr(asm_str)
 
         # match expression
@@ -1497,8 +1521,10 @@ class Parser:
 
         # Import inside a block (Python allows this)
         if token.type in (TT_FROM, TT_IMPORT):
-            # Skip the import and return a pass statement
-            self.parse_import()
+            # Return the import so it can be collected for polyglot code
+            imp = self.parse_import()
+            if imp is not None:
+                return imp
             return PassStmt()
 
         # Assignment or expression
@@ -1697,9 +1723,9 @@ class Parser:
                                     inferred_fields.append(StructField(field_name, field_type, None))
                                     seen_fields.add(field_name)
             if isinstance(stmt, IfStmt):
-                self._scan_body_for_fields(stmt.then_body, existing_names, seen_fields, param_types, inferred_fields)
-                if stmt.else_body:
-                    self._scan_body_for_fields(stmt.else_body, existing_names, seen_fields, param_types, inferred_fields)
+                self._scan_body_for_fields(stmt.then_block, existing_names, seen_fields, param_types, inferred_fields)
+                if stmt.else_block:
+                    self._scan_body_for_fields(stmt.else_block, existing_names, seen_fields, param_types, inferred_fields)
             if isinstance(stmt, WhileStmt):
                 self._scan_body_for_fields(stmt.body, existing_names, seen_fields, param_types, inferred_fields)
             if isinstance(stmt, ForStmt):
@@ -1799,6 +1825,9 @@ class Parser:
                 methods.append(method)
             # Pass statement
             elif token.type == TT_PASS:
+                self.advance()
+            # Docstring - skip it
+            elif token.type == TT_STRING:
                 self.advance()
             # Field definition: name: Type or name: Type = default
             # Or class variable: name = value (no type annotation)
@@ -1971,12 +2000,13 @@ class Parser:
             if token.type == TT_IDENT:
                 variant_name = token.value
                 self.advance()
-            elif token.type.name.isupper():
-                # Allow keyword tokens as enum variant names (DEF, CLASS, etc.)
-                variant_name = token.type.name
-                self.advance()
             else:
-                raise SyntaxError(f"Expected enum variant name, got {token.type} at line {token.line}")
+                # Try to use the token value as variant name for keyword tokens
+                if hasattr(token, 'value') and token.value:
+                    variant_name = token.value
+                    self.advance()
+                else:
+                    raise SyntaxError(f"Expected enum variant name, got {token.type} at line {token.line}")
             payload_types = []
 
             # Python-style: NAME = auto() or NAME = value
@@ -2076,7 +2106,7 @@ class Parser:
             first_part = self.expect(TT_IDENT).value
 
             # Skip Python stdlib imports
-            if first_part in ('typing', 'enum', 'dataclasses', 'copy'):
+            if first_part in ('typing', 'enum', 'dataclasses', 'copy', 'sys', 'os', 'pathlib', 'subprocess'):
                 # Skip the rest of the import statement
                 while self.current_token().type not in (TT_NEWLINE, TT_EOF):
                     self.advance()
@@ -2091,16 +2121,25 @@ class Parser:
 
             self.expect(TT_IMPORT)
 
-            # Parse imported names
+            # Parse imported names (supports 'as' aliases: from X import Y as Z)
             names = []
             if self.current_token().type == TT_STAR:
                 self.advance()
                 names = ['*']
             else:
-                names.append(self.expect(TT_IDENT).value)
+                name = self.expect(TT_IDENT).value
+                # Skip 'as alias' if present
+                if self.current_token().type == TT_AS:
+                    self.advance()
+                    self.expect(TT_IDENT)  # Skip the alias
+                names.append(name)
                 while self.current_token().type == TT_COMMA:
                     self.advance()
-                    names.append(self.expect(TT_IDENT).value)
+                    name = self.expect(TT_IDENT).value
+                    if self.current_token().type == TT_AS:
+                        self.advance()
+                        self.expect(TT_IDENT)  # Skip the alias
+                    names.append(name)
 
             return ImportDecl(path, import_names=names)
 
@@ -2108,7 +2147,15 @@ class Parser:
             self.advance()  # Skip 'import'
 
             # Parse module path
-            path_parts = [self.expect(TT_IDENT).value]
+            first_part = self.expect(TT_IDENT).value
+
+            # Skip Python stdlib imports
+            if first_part in ('typing', 'enum', 'dataclasses', 'copy', 'sys', 'os', 'pathlib', 'subprocess'):
+                while self.current_token().type not in (TT_NEWLINE, TT_EOF):
+                    self.advance()
+                return None
+
+            path_parts = [first_part]
             while self.current_token().type == TT_DOT:
                 self.advance()
                 path_parts.append(self.expect(TT_IDENT).value)
@@ -2183,6 +2230,26 @@ class Parser:
 
         # Add methods to declarations
         declarations.extend(methods)
+
+        # Extract imports from TryExceptStmt bodies (for polyglot code)
+        def extract_imports_from_stmt(stmt):
+            extracted = []
+            if hasattr(stmt, 'try_body'):
+                for s in stmt.try_body:
+                    if isinstance(s, ImportDecl):
+                        extracted.append(s)
+                    else:
+                        extracted.extend(extract_imports_from_stmt(s))
+            if hasattr(stmt, 'except_body'):
+                for s in stmt.except_body:
+                    if isinstance(s, ImportDecl):
+                        extracted.append(s)
+                    else:
+                        extracted.extend(extract_imports_from_stmt(s))
+            return extracted
+
+        for decl in declarations:
+            imports.extend(extract_imports_from_stmt(decl))
 
         return Program(declarations, imports)
 

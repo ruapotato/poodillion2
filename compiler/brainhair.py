@@ -8,10 +8,55 @@ Usage:
 Compiles Brainhair to native x86 executable
 """
 
-import sys
-import subprocess
-import os
-from pathlib import Path
+# Polyglot imports: try Brainhair native, fall back to Python stdlib
+try:
+    from lib.sys import exit, argv, argc
+    from lib.os import path_exists, path_join, path_dirname, path_abspath, path_getsize, path_stem
+    from lib.subprocess import run
+
+    def get_compiler_path() -> str:
+        return path_abspath(argv(0))
+except:
+    import sys as _sys
+    import os as _os
+    from pathlib import Path as _Path
+    import subprocess as _subprocess
+
+    def exit(code: int):
+        _sys.exit(code)
+
+    def argv(i: int):
+        if i < len(_sys.argv):
+            return _sys.argv[i]
+        return ""
+
+    def argc() -> int:
+        return len(_sys.argv)
+
+    def path_exists(p: str) -> bool:
+        return _os.path.exists(p)
+
+    def path_join(a: str, b: str) -> str:
+        return _os.path.join(a, b)
+
+    def path_dirname(p: str) -> str:
+        return _os.path.dirname(p)
+
+    def path_abspath(p: str) -> str:
+        return _os.path.abspath(p)
+
+    def path_getsize(p: str) -> int:
+        return _os.path.getsize(p)
+
+    def path_stem(p: str) -> str:
+        return _Path(p).stem
+
+    def run(cmd: str) -> int:
+        result = _subprocess.run(cmd, shell=True)
+        return result.returncode
+
+    def get_compiler_path() -> str:
+        return _os.path.abspath(__file__)
 
 # Python-syntax lexer and parser
 from lexer import Lexer
@@ -22,15 +67,23 @@ from codegen_llvm import LLVMCodeGen
 from type_checker import TypeChecker
 from ownership import OwnershipChecker
 from lifetimes import LifetimeChecker
-from generics import monomorphize
 from ast_nodes import Program, ImportDecl
+
+# Generics is optional - provide fallback that gets overridden in Python
+def monomorphize(ast):
+    return ast
+
+try:
+    from generics import monomorphize
+except:
+    pass
 
 class Compiler:
     def __init__(self, source_file: str, output_file: str = None, kernel_mode: bool = False,
                  check_types: bool = True, check_ownership: bool = True, check_lifetimes: bool = True,
                  use_llvm: bool = False, use_x86_64: bool = False):
         self.source_file = source_file
-        self.output_file = output_file or Path(source_file).stem
+        self.output_file = output_file or path_stem(source_file)
         self.kernel_mode = kernel_mode
         self.check_types = check_types
         self.check_ownership = check_ownership
@@ -65,7 +118,7 @@ class Compiler:
                 continue
 
             # Check for circular imports
-            abs_path = os.path.abspath(import_path)
+            abs_path = path_abspath(import_path)
             if abs_path in self.imported_files:
                 continue  # Already imported, skip
 
@@ -83,7 +136,7 @@ class Compiler:
                 imported_ast = parser.parse()
 
                 # Recursively resolve imports in the imported file
-                import_dir = os.path.dirname(import_path)
+                import_dir = path_dirname(import_path)
                 imported_ast = self.resolve_imports(imported_ast, import_dir)
 
                 # Collect declarations (skip duplicates by name)
@@ -122,32 +175,32 @@ class Compiler:
             import_path_with_ext = import_path + ext
 
             # Try relative to source directory
-            candidate = os.path.join(source_dir, import_path_with_ext)
-            if os.path.exists(candidate):
+            candidate = path_join(source_dir, import_path_with_ext)
+            if path_exists(candidate):
                 return candidate
 
             # Try relative to compiler's parent directory (project root)
-            compiler_dir = os.path.dirname(os.path.abspath(__file__))
-            project_root = os.path.dirname(compiler_dir)
-            candidate = os.path.join(project_root, import_path_with_ext)
-            if os.path.exists(candidate):
+            compiler_dir = path_dirname(get_compiler_path())
+            project_root = path_dirname(compiler_dir)
+            candidate = path_join(project_root, import_path_with_ext)
+            if path_exists(candidate):
                 return candidate
 
             # Try relative to compiler directory itself (for compiler imports)
-            candidate = os.path.join(compiler_dir, import_path_with_ext)
-            if os.path.exists(candidate):
+            candidate = path_join(compiler_dir, import_path_with_ext)
+            if path_exists(candidate):
                 return candidate
 
             # Try as absolute path
-            if os.path.exists(import_path_with_ext):
+            if path_exists(import_path_with_ext):
                 return import_path_with_ext
 
         return None
 
     def _auto_import_stdlib(self, ast: Program, source_dir: str) -> Program:
-        """Auto-import standard library files when needed (lib/list.bh, lib/memory.bh)."""
+        """Auto-import standard library files when needed."""
         # Standard library files to auto-import
-        stdlib_files = ['lib/list', 'lib/memory']
+        stdlib_files = ['lib/list', 'lib/memory', 'lib/dict']
 
         all_stdlib_decls = []
         for lib_path in stdlib_files:
@@ -155,7 +208,7 @@ class Compiler:
             if import_path is None:
                 continue
 
-            abs_path = os.path.abspath(import_path)
+            abs_path = path_abspath(import_path)
             if abs_path in self.imported_files:
                 continue  # Already imported
 
@@ -172,7 +225,7 @@ class Compiler:
                 imported_ast = parser.parse()
 
                 # Recursively resolve imports in the library
-                import_dir = os.path.dirname(import_path)
+                import_dir = path_dirname(import_path)
                 imported_ast = self.resolve_imports(imported_ast, import_dir)
 
                 for decl in imported_ast.declarations:
@@ -208,8 +261,8 @@ class Compiler:
         print(f"        Generated AST with {len(ast.declarations)} declarations")
 
         # 3.5 Resolve imports
-        source_dir = os.path.dirname(os.path.abspath(self.source_file))
-        self.imported_files.add(os.path.abspath(self.source_file))  # Mark main file as imported
+        source_dir = path_dirname(path_abspath(self.source_file))
+        self.imported_files.add(path_abspath(self.source_file))  # Mark main file as imported
         if ast.imports:
             print("  [2.5/8] Resolving imports...")
             ast = self.resolve_imports(ast, source_dir)
@@ -289,22 +342,12 @@ class Compiler:
 
             # 9. Compile LLVM IR to object file
             print("  [8/8] Compiling LLVM IR...")
-            try:
-                subprocess.run([
-                    'clang',
-                    '-m32',
-                    '-c',
-                    self.ll_file,
-                    '-o', self.obj_file
-                ], check=True, capture_output=True)
-                print(f"        Created {self.obj_file}")
-            except subprocess.CalledProcessError as e:
-                print(f"ERROR: LLVM compilation failed!")
-                print(e.stderr.decode())
+            cmd = f"clang -m32 -c {self.ll_file} -o {self.obj_file}"
+            ret = run(cmd)
+            if ret != 0:
+                print("ERROR: LLVM compilation failed!")
                 return False
-            except FileNotFoundError:
-                print("ERROR: clang not found! Install with: sudo apt install clang")
-                return False
+            print(f"        Created {self.obj_file}")
         else:
             if self.use_x86_64:
                 print("  [7/8] Generating x86_64 assembly...")
@@ -322,54 +365,42 @@ class Compiler:
             # 9. Assemble with NASM
             print("  [8/8] Assembling...")
             elf_format = 'elf64' if self.use_x86_64 else 'elf32'
-            try:
-                subprocess.run([
-                    'nasm',
-                    '-f', elf_format,
-                    self.asm_file,
-                    '-o', self.obj_file
-                ], check=True, capture_output=True)
-                print(f"        Created {self.obj_file}")
-            except subprocess.CalledProcessError as e:
-                print(f"ERROR: Assembly failed!")
-                print(e.stderr.decode())
+            cmd = f"nasm -f {elf_format} {self.asm_file} -o {self.obj_file}"
+            ret = run(cmd)
+            if ret != 0:
+                print("ERROR: Assembly failed!")
                 return False
-            except FileNotFoundError:
-                print("ERROR: nasm not found! Install with: sudo apt install nasm")
-                return False
+            print(f"        Created {self.obj_file}")
 
         # 10. Link (for standalone binary - skip in kernel mode)
         if not self.kernel_mode:
             print("  [9/9] Linking...")
             # Find lib/syscalls.o relative to compiler location
-            compiler_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            compiler_dir = path_dirname(path_dirname(get_compiler_path()))
+            lib_dir = path_join(compiler_dir, 'lib')
             if self.use_x86_64:
-                syscalls_obj = os.path.join(compiler_dir, 'lib', 'syscalls64.o')
+                syscalls_obj = path_join(lib_dir, 'syscalls64.o')
             else:
-                syscalls_obj = os.path.join(compiler_dir, 'lib', 'syscalls.o')
+                syscalls_obj = path_join(lib_dir, 'syscalls.o')
             link_files = [self.obj_file]
-            if os.path.exists(syscalls_obj):
+            if path_exists(syscalls_obj):
                 link_files = [syscalls_obj, self.obj_file]
             ld_emulation = 'elf_x86_64' if self.use_x86_64 else 'elf_i386'
-            try:
-                subprocess.run([
-                    'ld',
-                    '-m', ld_emulation,
-                    '-o', self.output_file,
-                ] + link_files, check=True, capture_output=True)
-                print(f"        Created {self.output_file}")
-            except subprocess.CalledProcessError as e:
-                print(f"ERROR: Linking failed!")
-                print(e.stderr.decode())
+            link_files_str = ' '.join(link_files)
+            cmd = f"ld -m {ld_emulation} -o {self.output_file} {link_files_str}"
+            ret = run(cmd)
+            if ret != 0:
+                print("ERROR: Linking failed!")
                 return False
+            print(f"        Created {self.output_file}")
 
             print(f"\n✓ Compilation successful!")
             print(f"  Output: {self.output_file}")
-            print(f"  Size: {os.path.getsize(self.output_file)} bytes")
+            print(f"  Size: {path_getsize(self.output_file)} bytes")
         else:
             print(f"\n✓ Compilation successful!")
             print(f"  Output: {self.obj_file} (kernel object file)")
-            print(f"  Size: {os.path.getsize(self.obj_file)} bytes")
+            print(f"  Size: {path_getsize(self.obj_file)} bytes")
 
         return True
 
@@ -378,13 +409,13 @@ class Compiler:
         if self.compile():
             print(f"\n[Brainhair] Running {self.output_file}...\n")
             print("=" * 50)
-            result = subprocess.run([f"./{self.output_file}"])
+            ret = run(f"./{self.output_file}")
             print("=" * 50)
-            return result.returncode
+            return ret
         return 1
 
 def main():
-    if len(sys.argv) < 2:
+    if argc() < 2:
         print("Brainhair Compiler")
         print("Usage: brainhair.py <source.bh> [-o output] [--run] [--kernel]")
         print("")
@@ -399,9 +430,9 @@ def main():
         print("  --llvm          Use LLVM backend instead of x86")
         print("  --emit-llvm     Output LLVM IR (for --llvm)")
         print("  --x86_64        Generate 64-bit x86_64 code")
-        sys.exit(1)
+        exit(1)
 
-    source_file = sys.argv[1]
+    source_file = argv(1)
     output_file = None
     run_after = False
     asm_only = False
@@ -415,41 +446,42 @@ def main():
 
     # Parse arguments
     i = 2
-    while i < len(sys.argv):
-        if sys.argv[i] == '-o' and i + 1 < len(sys.argv):
-            output_file = sys.argv[i + 1]
-            i += 2
-        elif sys.argv[i] == '--run':
+    while i < argc():
+        arg = argv(i)
+        if arg == '-o' and i + 1 < argc():
+            output_file = argv(i + 1)
+            i = i + 2
+        elif arg == '--run':
             run_after = True
-            i += 1
-        elif sys.argv[i] == '--asm-only':
+            i = i + 1
+        elif arg == '--asm-only':
             asm_only = True
-            i += 1
-        elif sys.argv[i] == '--kernel':
+            i = i + 1
+        elif arg == '--kernel':
             kernel_mode = True
-            i += 1
-        elif sys.argv[i] == '--no-typecheck':
+            i = i + 1
+        elif arg == '--no-typecheck':
             check_types = False
-            i += 1
-        elif sys.argv[i] == '--no-ownership':
+            i = i + 1
+        elif arg == '--no-ownership':
             check_ownership = False
-            i += 1
-        elif sys.argv[i] == '--no-lifetimes':
+            i = i + 1
+        elif arg == '--no-lifetimes':
             check_lifetimes = False
-            i += 1
-        elif sys.argv[i] == '--llvm':
+            i = i + 1
+        elif arg == '--llvm':
             use_llvm = True
-            i += 1
-        elif sys.argv[i] == '--emit-llvm':
+            i = i + 1
+        elif arg == '--emit-llvm':
             emit_llvm = True
             use_llvm = True
-            i += 1
-        elif sys.argv[i] == '--x86_64':
+            i = i + 1
+        elif arg == '--x86_64':
             use_x86_64 = True
-            i += 1
+            i = i + 1
         else:
-            print(f"Unknown option: {sys.argv[i]}")
-            sys.exit(1)
+            print(f"Unknown option: {arg}")
+            exit(1)
 
     compiler = Compiler(source_file, output_file, kernel_mode=kernel_mode,
                        check_types=check_types, check_ownership=check_ownership,
@@ -470,8 +502,8 @@ def main():
         # Resolve imports (create temp compiler for import resolution)
         if ast.imports:
             temp_compiler = Compiler(source_file, kernel_mode=kernel_mode)
-            source_dir = os.path.dirname(os.path.abspath(source_file))
-            temp_compiler.imported_files.add(os.path.abspath(source_file))
+            source_dir = path_dirname(path_abspath(source_file))
+            temp_compiler.imported_files.add(path_abspath(source_file))
             ast = temp_compiler.resolve_imports(ast, source_dir)
 
         # Monomorphize generics
@@ -490,9 +522,10 @@ def main():
             asm_code = codegen.generate(ast)
             print(asm_code)
     elif run_after:
-        sys.exit(compiler.run())
+        exit(compiler.run())
     else:
-        sys.exit(0 if compiler.compile() else 1)
+        result = 0 if compiler.compile() else 1
+        exit(result)
 
 if __name__ == '__main__':
     main()

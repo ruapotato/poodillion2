@@ -255,7 +255,7 @@ class ASTToMIRLowerer:
             raise ValueError(f"Unknown variable: {expr.name}")
 
         elif isinstance(expr, IndexExpr):
-            base = self._lower_expression(expr.array)
+            base = self._lower_expression(expr.base)
             index = self._lower_expression(expr.index)
             return self.builder.gep(base, [index])
 
@@ -417,8 +417,8 @@ class ASTToMIRLowerer:
         # Pop loop context
         self.loop_stack.pop()
 
-        # Clean up loop variable
-        del self.variables[stmt.var]
+        # Clean up loop variable (set to None for Brainhair compatibility)
+        self.variables[stmt.var] = None
 
         # Continue after loop
         self.builder.set_insert_point(end_block)
@@ -480,7 +480,7 @@ class ASTToMIRLowerer:
             return self.builder.cast(value, target_ty)
 
         elif isinstance(expr, IndexExpr):
-            base = self._lower_expression(expr.array)
+            base = self._lower_expression(expr.base)
             index = self._lower_expression(expr.index)
             ptr = self.builder.gep(base, [index])
             return self.builder.load(ptr)

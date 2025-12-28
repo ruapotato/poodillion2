@@ -59,8 +59,7 @@ class Span:
             )
         if self.end_line == self.line and self.end_column < self.column:
             raise ValueError(
-                f"end_column ({self.end_column}) cannot be before column "
-                f"({self.column}) on the same line"
+                f"end_column ({self.end_column}) cannot be before column ({self.column}) on the same line"
             )
 
     def __lt__(self, other: 'Span') -> bool:

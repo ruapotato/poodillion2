@@ -38,6 +38,8 @@ class UnaryOp(Enum):
     NEG = '-'
     NOT = '!'
     BIT_NOT = '~'  # Bitwise NOT
+    DEREF = '*'    # Pointer dereference
+    ADDR = '&'     # Address-of operator
 
 # Base class for all AST nodes
 class ASTNode:
@@ -52,8 +54,14 @@ class ASTNode:
         return self
 
 
-# Mixin to add span support to dataclasses (Python-only)
+# Mixin to add span support to dataclasses
+# Polyglot: try = Brainhair (simple), except = Python (full support)
 try:
+    # Brainhair version: identity decorator (no span support in compiled code)
+    def _add_span_support(cls):
+        return cls
+except:
+    # Python version: full span support implementation
     def _add_span_support(cls):
         """Decorator to add span tracking to dataclass nodes"""
         original_init = cls.__init__
@@ -64,8 +72,6 @@ try:
         cls.__init__ = new_init
         cls.with_span = lambda self, span: (setattr(self, 'span', span), self)[1]
         return cls
-except:
-    pass
 
 # Types
 @dataclass
@@ -220,7 +226,7 @@ class IsInstanceExpr(ASTNode):
 
 @dataclass
 class IndexExpr(ASTNode):
-    array: ASTNode
+    base: ASTNode  # The array/list being indexed
     index: ASTNode
 
 @dataclass
@@ -276,7 +282,7 @@ class DerefExpr(ASTNode):
 @dataclass
 class SliceExpr(ASTNode):
     """Slice creation: arr[start..end] - creates a fat pointer"""
-    array: ASTNode
+    target: ASTNode  # The array being sliced
     start: ASTNode
     end: ASTNode
 

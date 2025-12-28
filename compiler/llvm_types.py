@@ -14,6 +14,17 @@ from enum import Enum, auto
 
 from ast_nodes import *
 
+# Polyglot: Python string type detection
+# In Brainhair, this always returns False; in Python, checks isinstance(ty, str)
+def is_python_str(ty) -> bool:
+    return False
+
+try:
+    def is_python_str(ty) -> bool:
+        return isinstance(ty, type(""))
+except:
+    pass
+
 
 @dataclass
 class LLVMType:
@@ -161,7 +172,7 @@ class LLVMTypeMapper:
             elem = self.map_type(ty.element_type)
             return LLVMArrayType(ty.size, elem)
 
-        if isinstance(ty, str):
+        if is_python_str(ty):
             lower = ty.lower()
             if lower in self.primitive_map:
                 return self.primitive_map[lower]

@@ -212,7 +212,7 @@ class X86CodeGen:
                 struct_name = obj_type.name
             return self.get_field_type(struct_name, expr.field_name)
         if isinstance(expr, IndexExpr):
-            arr_type = self._get_expr_type(expr.array)
+            arr_type = self._get_expr_type(expr.base)
             if arr_type is None:
                 return None
             if isinstance(arr_type, ArrayType):
@@ -223,7 +223,7 @@ class X86CodeGen:
                 return arr_type.element_type
             return None
         if isinstance(expr, SliceExpr):
-            arr_type = self._get_expr_type(expr.array)
+            arr_type = self._get_expr_type(expr.base)
             if arr_type is None:
                 return None
             if isinstance(arr_type, ArrayType):
@@ -269,6 +269,11 @@ class X86CodeGen:
 
         if isinstance(expr, NoneLiteral):
             self.emit("xor eax, eax")  # None = 0 (null pointer)
+            return "eax"
+
+        if isinstance(expr, AsmExpr):
+            # Inline assembly - emit the instruction directly
+            self.emit(expr.instruction)
             return "eax"
 
         if isinstance(expr, StringLiteral):
@@ -483,6 +488,12 @@ class X86CodeGen:
                     self.emit("xor eax, eax")
                     return "eax"
 
+            # Python dataclass field() function - returns default value or 0
+            if expr.func == "field":
+                # field(default_factory=list) -> return 0 (null pointer)
+                self.emit("xor eax, eax")
+                return "eax"
+
             # Check for struct constructors (e.g., Token(...))
             if expr.func in self.struct_types:
                 # Struct constructor - allocate on stack and initialize fields
@@ -520,7 +531,13 @@ class X86CodeGen:
                                'iter', 'next', 'enumerate', 'zip', 'map', 'filter', 'sorted',
                                'reversed', 'all', 'any', 'sum', 'min', 'max', 'abs', 'int',
                                'str', 'bool', 'float', 'chr', 'ord', 'hex', 'bin', 'oct',
-                               'range', 'print', 'input', 'open', 'id', 'hash', 'repr')
+                               'range', 'print', 'input', 'open', 'id', 'hash', 'repr',
+                               # Python class constructors (dataclasses, etc.)
+                               'LLVMIntType', 'LLVMFloatType', 'LLVMPointerType', 'LLVMArrayType',
+                               'LLVMVoidType', 'LLVMStructType', 'LLVMTypeMapper', 'LLVMType',
+                               'TypeInfo', 'Span', 'Symbol', 'VariableSymbol', 'ParamSymbol',
+                               'FunctionSymbol', 'TypeSymbol', 'Scope', 'SymbolTable',
+                               'SymbolError', 'DuplicateSymbolError', 'UndefinedSymbolError')
             if expr.func in python_builtins:
                 # Evaluate arguments for side effects, return first arg or 0
                 for arg in expr.args:
@@ -678,6 +695,34 @@ class X86CodeGen:
             else:
                 type_name = "Unknown"
 
+            # Handle string methods regardless of detected type (for Python compatibility)
+            # Python strings use methods like .replace(), .lower() etc
+            string_methods = ('lower', 'upper', 'strip', 'lstrip', 'rstrip', 'split', 'join',
+                            'replace', 'startswith', 'endswith', 'find', 'rfind', 'index',
+                            'rindex', 'count', 'format', 'center', 'ljust', 'rjust', 'zfill',
+                            'capitalize', 'title', 'swapcase', 'encode', 'decode')
+            if expr.method_name in string_methods:
+                # String methods - evaluate receiver and return it (no-op stub)
+                self.gen_expression(expr.object)
+                return "eax"
+
+            # Handle list.append() on any type - fallback to list_append_i32
+            if expr.method_name == 'append' and len(expr.args) == 1:
+                self.gen_expression(expr.args[0])  # Get value
+                self.emit("push eax")
+                self.gen_expression(expr.object)  # Get list ptr
+                self.emit("push eax")
+                self.emit("call list_append_i32")
+                self.emit("add esp, 8")
+                return "eax"
+
+            # Handle lookup() method on scope-like objects (symbol tables, etc.)
+            if expr.method_name == 'lookup':
+                # Just evaluate receiver and return null for now
+                self.gen_expression(expr.object)
+                self.emit("xor eax, eax")  # Return null
+                return "eax"
+
             # Handle Dict methods
             if type_name.startswith("Dict"):
                 if expr.method_name == 'get':
@@ -826,6 +871,11 @@ class X86CodeGen:
                     self.gen_expression(expr.object)
                     return "eax"
 
+            # Handle string methods on 'str' type (no-op: just return the string)
+            if type_name == "str" and expr.method_name in ('lower', 'upper', 'strip', 'lstrip', 'rstrip', 'split', 'join', 'replace', 'startswith', 'endswith', 'find', 'rfind', 'index', 'rindex', 'count', 'format'):
+                self.gen_expression(expr.object)
+                return "eax"
+
             mangled_name = self.sanitize_label(f"{type_name}_{expr.method_name}")
 
             # Push explicit arguments in reverse order
@@ -890,13 +940,13 @@ class X86CodeGen:
 
             # Determine pointer type to calculate element size
             pointer_type = None
-            if isinstance(expr.array, CastExpr):
+            if isinstance(expr.base, CastExpr):
                 # Type comes from cast expression
-                pointer_type = expr.array.target_type
-            elif isinstance(expr.array, Identifier):
+                pointer_type = expr.base.target_type
+            elif isinstance(expr.base, Identifier):
                 # Look up type from type table
-                if expr.array.name in self.type_table:
-                    pointer_type = self.type_table[expr.array.name]
+                if expr.base.name in self.type_table:
+                    pointer_type = self.type_table[expr.base.name]
 
             # Calculate element size
             element_size = 1  # Default to 1 byte
@@ -908,18 +958,18 @@ class X86CodeGen:
                 element_size = self.type_size(pointer_type.element_type)
 
             # Generate array base address
-            if isinstance(expr.array, CastExpr):
+            if isinstance(expr.base, CastExpr):
                 # Generate the cast expression to get the pointer value
-                self.gen_expression(expr.array)
-            elif isinstance(expr.array, FieldAccessExpr):
+                self.gen_expression(expr.base)
+            elif isinstance(expr.base, FieldAccessExpr):
                 # Field access like self.source - need to preserve index in ebx
                 self.emit("push ebx")  # Save index
-                self.gen_expression(expr.array)  # Load field value into eax
+                self.gen_expression(expr.base)  # Load field value into eax
                 self.emit("pop ebx")  # Restore index
-            elif isinstance(expr.array, Identifier):
-                if expr.array.name in self.local_vars:
-                    offset = self.local_vars[expr.array.name]
-                    var_type = self.type_table.get(expr.array.name)
+            elif isinstance(expr.base, Identifier):
+                if expr.base.name in self.local_vars:
+                    offset = self.local_vars[expr.base.name]
+                    var_type = self.type_table.get(expr.base.name)
                     # For local arrays, get address with LEA; for pointers/slices, load value with MOV
                     if isinstance(var_type, ArrayType):
                         if offset > 0:
@@ -940,8 +990,8 @@ class X86CodeGen:
                             self.emit(f"mov eax, {self.ebp_addr(offset)}")
                 else:
                     # Global variable - check if array or pointer
-                    var_type = self.type_table.get(expr.array.name)
-                    addr = f"[{expr.array.name}]" if self.kernel_mode else f"[rel {expr.array.name}]"
+                    var_type = self.type_table.get(expr.base.name)
+                    addr = f"[{expr.base.name}]" if self.kernel_mode else f"[rel {expr.base.name}]"
                     if isinstance(var_type, ArrayType):
                         # Array storage is the data, use LEA to get address
                         self.emit(f"lea eax, {addr}")
@@ -954,7 +1004,7 @@ class X86CodeGen:
             else:
                 # General fallback for other expression types (method calls, etc.)
                 self.emit("push ebx")  # Save index
-                self.gen_expression(expr.array)  # Evaluate to get pointer
+                self.gen_expression(expr.base)  # Evaluate to get pointer
                 self.emit("pop ebx")  # Restore index
 
             # Calculate address: base + index * element_size
@@ -994,7 +1044,7 @@ class X86CodeGen:
             self.emit("push edx")  # Save length
 
             # Get element size
-            arr_type = self._get_expr_type(expr.array)
+            arr_type = self._get_expr_type(expr.base)
             element_size = 4  # Default
             if isinstance(arr_type, ArrayType):
                 element_size = self.type_size(arr_type.element_type)
@@ -1012,10 +1062,10 @@ class X86CodeGen:
                     self.emit(f"imul ecx, {element_size}")
 
             # Get array base address
-            if isinstance(expr.array, Identifier):
-                if expr.array.name in self.local_vars:
-                    offset = self.local_vars[expr.array.name]
-                    var_type = self.type_table.get(expr.array.name)
+            if isinstance(expr.base, Identifier):
+                if expr.base.name in self.local_vars:
+                    offset = self.local_vars[expr.base.name]
+                    var_type = self.type_table.get(expr.base.name)
                     if isinstance(var_type, ArrayType):
                         if offset > 0:
                             self.emit(f"lea eax, [ebp+{offset}]")
@@ -1029,11 +1079,11 @@ class X86CodeGen:
                             self.emit(f"mov eax, {self.ebp_addr(offset)}")
                 else:
                     # Global
-                    addr = f"[{expr.array.name}]" if self.kernel_mode else f"[rel {expr.array.name}]"
+                    addr = f"[{expr.base.name}]" if self.kernel_mode else f"[rel {expr.base.name}]"
                     self.emit(f"lea eax, {addr}")
             else:
                 self.emit("push ecx")  # Save scaled start
-                self.gen_expression(expr.array)
+                self.gen_expression(expr.base)
                 self.emit("pop ecx")
 
             # ptr = base + scaled_start
@@ -1093,11 +1143,11 @@ class X86CodeGen:
 
                 # Determine pointer type to calculate element size
                 pointer_type = None
-                if isinstance(expr.expr.array, CastExpr):
-                    pointer_type = expr.expr.array.target_type
-                elif isinstance(expr.expr.array, Identifier):
-                    if expr.expr.array.name in self.type_table:
-                        pointer_type = self.type_table[expr.expr.array.name]
+                if isinstance(expr.expr.base, CastExpr):
+                    pointer_type = expr.expr.base.target_type
+                elif isinstance(expr.expr.base, Identifier):
+                    if expr.expr.base.name in self.type_table:
+                        pointer_type = self.type_table[expr.expr.base.name]
 
                 # Calculate element size
                 element_size = 1  # Default to 1 byte
@@ -1108,12 +1158,12 @@ class X86CodeGen:
                         element_size = self.type_size(pointer_type.element_type)
 
                 # Generate array base address
-                if isinstance(expr.expr.array, CastExpr):
-                    self.gen_expression(expr.expr.array)
-                elif isinstance(expr.expr.array, Identifier):
-                    if expr.expr.array.name in self.local_vars:
-                        offset = self.local_vars[expr.expr.array.name]
-                        var_type = self.type_table.get(expr.expr.array.name)
+                if isinstance(expr.expr.base, CastExpr):
+                    self.gen_expression(expr.expr.base)
+                elif isinstance(expr.expr.base, Identifier):
+                    if expr.expr.base.name in self.local_vars:
+                        offset = self.local_vars[expr.expr.base.name]
+                        var_type = self.type_table.get(expr.expr.base.name)
                         if isinstance(var_type, ArrayType):
                             if offset > 0:
                                 self.emit(f"lea eax, [ebp+{offset}]")
@@ -1126,8 +1176,8 @@ class X86CodeGen:
                                 self.emit(f"mov eax, {self.ebp_addr(offset)}")
                     else:
                         # Global variable - check if array or pointer
-                        var_type = self.type_table.get(expr.expr.array.name)
-                        addr = f"[{expr.expr.array.name}]" if self.kernel_mode else f"[rel {expr.expr.array.name}]"
+                        var_type = self.type_table.get(expr.expr.base.name)
+                        addr = f"[{expr.expr.base.name}]" if self.kernel_mode else f"[rel {expr.expr.base.name}]"
                         if isinstance(var_type, ArrayType):
                             self.emit(f"lea eax, {addr}")
                         else:
@@ -1427,10 +1477,10 @@ class X86CodeGen:
                 for stmt in arm.body:
                     self.gen_statement(stmt)
 
-                # Clean up bindings
+                # Clean up bindings (set to None for Brainhair compatibility)
                 for binding in arm.pattern.bindings:
                     if binding in self.local_vars:
-                        del self.local_vars[binding]
+                        self.local_vars[binding] = None
 
                 # Jump to end
                 self.emit(f"jmp {end_label}")
@@ -1534,7 +1584,7 @@ class X86CodeGen:
             self.gen_expression(expr.index)
             self.emit("mov ebx, eax")
             # Get base address and add scaled index
-            self.gen_expression(expr.array)
+            self.gen_expression(expr.base)
             self.emit("imul ebx, 4")  # Assume 4-byte elements
             self.emit("add eax, ebx")
         else:
@@ -1701,13 +1751,13 @@ class X86CodeGen:
 
                 # Determine pointer type to calculate element size
                 pointer_type = None
-                if isinstance(stmt.target.array, CastExpr):
+                if isinstance(stmt.target.base, CastExpr):
                     # Type comes from cast expression
-                    pointer_type = stmt.target.array.target_type
-                elif isinstance(stmt.target.array, Identifier):
+                    pointer_type = stmt.target.base.target_type
+                elif isinstance(stmt.target.base, Identifier):
                     # Look up type from type table
-                    if stmt.target.array.name in self.type_table:
-                        pointer_type = self.type_table[stmt.target.array.name]
+                    if stmt.target.base.name in self.type_table:
+                        pointer_type = self.type_table[stmt.target.base.name]
 
                 # Calculate element size
                 element_size = 1  # Default to 1 byte
@@ -1718,13 +1768,13 @@ class X86CodeGen:
                         element_size = self.type_size(pointer_type.element_type)
 
                 # Generate array base address
-                if isinstance(stmt.target.array, CastExpr):
+                if isinstance(stmt.target.base, CastExpr):
                     # Generate the cast expression to get the pointer value
-                    self.gen_expression(stmt.target.array)
-                elif isinstance(stmt.target.array, Identifier):
-                    if stmt.target.array.name in self.local_vars:
-                        offset = self.local_vars[stmt.target.array.name]
-                        var_type = self.type_table.get(stmt.target.array.name)
+                    self.gen_expression(stmt.target.base)
+                elif isinstance(stmt.target.base, Identifier):
+                    if stmt.target.base.name in self.local_vars:
+                        offset = self.local_vars[stmt.target.base.name]
+                        var_type = self.type_table.get(stmt.target.base.name)
                         # For local arrays, get address with LEA; for pointers, load value with MOV
                         if isinstance(var_type, ArrayType):
                             if offset > 0:
@@ -1739,8 +1789,8 @@ class X86CodeGen:
                                 self.emit(f"mov eax, {self.ebp_addr(offset)}")
                     else:
                         # Global variable - check if array or pointer
-                        var_type = self.type_table.get(stmt.target.array.name)
-                        addr = f"[{stmt.target.array.name}]" if self.kernel_mode else f"[rel {stmt.target.array.name}]"
+                        var_type = self.type_table.get(stmt.target.base.name)
+                        addr = f"[{stmt.target.base.name}]" if self.kernel_mode else f"[rel {stmt.target.base.name}]"
                         if isinstance(var_type, ArrayType):
                             # Array storage is the data, use LEA to get address
                             self.emit(f"lea eax, {addr}")
@@ -2171,6 +2221,10 @@ class X86CodeGen:
         elif isinstance(stmt, ExprStmt):
             self.gen_expression(stmt.expr)
 
+        elif isinstance(stmt, AsmExpr):
+            # Inline assembly statement - emit directly
+            self.emit(stmt.instruction)
+
         elif isinstance(stmt, DiscardStmt):
             pass  # No code needed
 
@@ -2179,12 +2233,25 @@ class X86CodeGen:
             self.defer_stack.append(stmt.stmt)
 
         elif isinstance(stmt, TryExceptStmt):
-            # For Brainhair, execute the except body (Brainhair-compatible code)
-            # The try body contains Python-only code which we skip
-            for s in stmt.except_body:
+            # For Brainhair, execute the try body (primary Brainhair code)
+            # The except body is fallback which we skip
+            for s in stmt.try_body:
                 self.gen_statement(s)
             # Also execute finally body if present
             for s in stmt.finally_body:
+                self.gen_statement(s)
+
+        elif isinstance(stmt, WithStmt):
+            # With statement: evaluate context, optionally bind to var, execute body
+            # Note: This doesn't properly call __enter__/__exit__ context manager methods
+            self.gen_expression(stmt.context)
+            if stmt.var_name:
+                # Allocate stack space and store the context value
+                self.stack_offset += 4
+                self.local_vars[stmt.var_name] = self.stack_offset
+                self.emit(f"mov [ebp-{self.stack_offset}], eax")
+            # Execute body
+            for s in stmt.body:
                 self.gen_statement(s)
 
     # Procedure code generation
@@ -2247,9 +2314,9 @@ class X86CodeGen:
             self.local_vars[param.name] = param_offset
             param_offset += 4
 
-        # Initialize default return value for integer-returning functions
-        # This ensures functions return 0 if no explicit return is executed
-        if proc.return_type and proc.return_type.name in ('i8', 'i16', 'i32', 'i64', 'u8', 'u16', 'u32', 'u64', 'int32', 'int16', 'int8', 'uint32', 'uint16', 'uint8'):
+        # Initialize default return value for all functions (Python auto-return None)
+        # This ensures functions return 0/null if no explicit return is executed
+        if proc.return_type:
             self.emit("xor eax, eax")
 
         # Generate body (this will add local variables with negative offsets)
@@ -2335,8 +2402,8 @@ class X86CodeGen:
             self.local_vars[param.name] = param_offset
             param_offset += 4
 
-        # Initialize default return value for integer-returning methods
-        if method.return_type and method.return_type.name in ('i8', 'i16', 'i32', 'i64', 'u8', 'u16', 'u32', 'u64', 'int32', 'int16', 'int8', 'uint32', 'uint16', 'uint8'):
+        # Initialize default return value for all methods (Python auto-return None)
+        if method.return_type:
             self.emit("xor eax, eax")
 
         # Generate body
@@ -2402,6 +2469,13 @@ class X86CodeGen:
                 self.gen_procedure(decl)
             elif isinstance(decl, MethodDecl):
                 self.gen_method(decl)
+            elif isinstance(decl, TryExceptStmt):
+                # Extract ProcDecl from try_body for polyglot code
+                for stmt in decl.try_body:
+                    if isinstance(stmt, ProcDecl):
+                        self.gen_procedure(stmt)
+                    elif isinstance(stmt, MethodDecl):
+                        self.gen_method(stmt)
             elif isinstance(decl, ExternDecl):
                 # External declarations - no code generation needed
                 # They're just function prototypes
@@ -2437,22 +2511,22 @@ class X86CodeGen:
                     self.bss_section.append(f"{unique_name}: resb {self.type_size(decl.var_type)}")
 
         # Build final assembly
-        asm = []
-        asm.append("; Generated by Brainhair Compiler")
-        asm.append("bits 32")
-        asm.append("")
+        asm_lines = []
+        asm_lines.append("; Generated by Brainhair Compiler")
+        asm_lines.append("bits 32")
+        asm_lines.append("")
 
         # External declarations (skip built-in get_argc/get_argv)
         builtin_funcs = ['get_argc', 'get_argv']
         if self.externs:
             for extern_name in self.externs:
                 if extern_name not in builtin_funcs:
-                    asm.append(f"extern {extern_name}")
-            asm.append("")
+                    asm_lines.append(f"extern {extern_name}")
+            asm_lines.append("")
 
         # Data section
         if self.strings or self.data_section:
-            asm.append("section .data")
+            asm_lines.append("section .data")
             for label, value in self.strings.items():
                 # Build proper NASM string with escape sequences
                 # NASM uses single quotes for raw strings, double quotes allow backtick escapes
@@ -2492,139 +2566,139 @@ class X86CodeGen:
                 if current_str:
                     parts.append(f"'{current_str}'")
                 parts.append('0')  # Null terminator
-                asm.append(f'{label}: db {", ".join(parts)}')
-            asm.extend(self.data_section)
-            asm.append("")
+                asm_lines.append(f'{label}: db {", ".join(parts)}')
+            asm_lines.extend(self.data_section)
+            asm_lines.append("")
 
         # BSS section
         if self.bss_section:
-            asm.append("section .bss")
-            asm.extend(self.bss_section)
-            asm.append("")
+            asm_lines.append("section .bss")
+            asm_lines.extend(self.bss_section)
+            asm_lines.append("")
 
         # Text section
-        asm.append("section .text")
+        asm_lines.append("section .text")
 
         # Only generate _start if not in kernel mode
         if not self.kernel_mode:
-            asm.append("global _start")
-            asm.append("global get_argc")
-            asm.append("global get_argv")
-            asm.append("")
-            asm.append("section .bss")
-            asm.append("_startup_esp: resd 1")
-            asm.append("")
-            asm.append("section .text")
-            asm.append("")
+            asm_lines.append("global _start")
+            asm_lines.append("global get_argc")
+            asm_lines.append("global get_argv")
+            asm_lines.append("")
+            asm_lines.append("section .bss")
+            asm_lines.append("_startup_esp: resd 1")
+            asm_lines.append("")
+            asm_lines.append("section .text")
+            asm_lines.append("")
 
             # Check if main function exists
             has_main = any(isinstance(d, ProcDecl) and d.name == "main" for d in program.declarations)
 
             if not has_main:
                 # Generate a stub main function for Python files without explicit main
-                asm.append("main:")
-                asm.append("    push ebp")
-                asm.append("    mov ebp, esp")
-                asm.append("    xor eax, eax  ; Return 0")
-                asm.append("    pop ebp")
-                asm.append("    ret")
-                asm.append("")
+                asm_lines.append("main:")
+                asm_lines.append("    push ebp")
+                asm_lines.append("    mov ebp, esp")
+                asm_lines.append("    xor eax, eax  ; Return 0")
+                asm_lines.append("    pop ebp")
+                asm_lines.append("    ret")
+                asm_lines.append("")
 
-            asm.append("_start:")
-            asm.append("    mov [_startup_esp], esp  ; Save initial stack pointer")
-            asm.append("    call main")
-            asm.append("    ; Exit with return code from main")
-            asm.append("    mov ebx, eax  ; Exit code")
-            asm.append("    mov eax, 1    ; sys_exit")
-            asm.append("    int 0x80")
-            asm.append("")
-            asm.append("; get_argc() - returns argument count")
-            asm.append("get_argc:")
-            asm.append("    mov eax, [_startup_esp]")
-            asm.append("    mov eax, [eax]  ; argc is at [esp]")
-            asm.append("    ret")
-            asm.append("")
-            asm.append("; get_argv(index) - returns pointer to argument string")
-            asm.append("get_argv:")
-            asm.append("    push ebp")
-            asm.append("    mov ebp, esp")
-            asm.append("    mov eax, [_startup_esp]")
-            asm.append("    mov ecx, [ebp+8]  ; index")
-            asm.append("    lea eax, [eax + 4 + ecx*4]  ; argv[index] = esp + 4 + index*4")
-            asm.append("    mov eax, [eax]")
-            asm.append("    pop ebp")
-            asm.append("    ret")
-            asm.append("")
+            asm_lines.append("_start:")
+            asm_lines.append("    mov [_startup_esp], esp  ; Save initial stack pointer")
+            asm_lines.append("    call main")
+            asm_lines.append("    ; Exit with return code from main")
+            asm_lines.append("    mov ebx, eax  ; Exit code")
+            asm_lines.append("    mov eax, 1    ; sys_exit")
+            asm_lines.append("    int 0x80")
+            asm_lines.append("")
+            asm_lines.append("; get_argc() - returns argument count")
+            asm_lines.append("get_argc:")
+            asm_lines.append("    mov eax, [_startup_esp]")
+            asm_lines.append("    mov eax, [eax]  ; argc is at [esp]")
+            asm_lines.append("    ret")
+            asm_lines.append("")
+            asm_lines.append("; get_argv(index) - returns pointer to argument string")
+            asm_lines.append("get_argv:")
+            asm_lines.append("    push ebp")
+            asm_lines.append("    mov ebp, esp")
+            asm_lines.append("    mov eax, [_startup_esp]")
+            asm_lines.append("    mov ecx, [ebp+8]  ; index")
+            asm_lines.append("    lea eax, [eax + 4 + ecx*4]  ; argv[index] = esp + 4 + index*4")
+            asm_lines.append("    mov eax, [eax]")
+            asm_lines.append("    pop ebp")
+            asm_lines.append("    ret")
+            asm_lines.append("")
             # Add stub functions for common missing symbols
-            asm.append("; Stub functions for Python-style code compatibility")
-            asm.append("uint8_join:")
-            asm.append("    ; String join stub - just return first arg")
-            asm.append("    mov eax, [esp+4]")
-            asm.append("    ret")
-            asm.append("")
-            asm.append("original_init:")
-            asm.append("    ; Original __init__ stub")
-            asm.append("    xor eax, eax")
-            asm.append("    ret")
-            asm.append("")
-            asm.append("types:")
-            asm.append("    ; Python types module stub")
-            asm.append("    xor eax, eax")
-            asm.append("    ret")
-            asm.append("")
+            asm_lines.append("; Stub functions for Python-style code compatibility")
+            asm_lines.append("uint8_join:")
+            asm_lines.append("    ; String join stub - just return first arg")
+            asm_lines.append("    mov eax, [esp+4]")
+            asm_lines.append("    ret")
+            asm_lines.append("")
+            asm_lines.append("original_init:")
+            asm_lines.append("    ; Original __init__ stub")
+            asm_lines.append("    xor eax, eax")
+            asm_lines.append("    ret")
+            asm_lines.append("")
+            asm_lines.append("types:")
+            asm_lines.append("    ; Python types module stub")
+            asm_lines.append("    xor eax, eax")
+            asm_lines.append("    ret")
+            asm_lines.append("")
         else:
             # In kernel mode, export brainhair_kernel_main
-            asm.append("global brainhair_kernel_main")
+            asm_lines.append("global brainhair_kernel_main")
             # Export networking functions for syscall handlers
-            asm.append("global tcp_listen")
-            asm.append("global tcp_accept_ready")
-            asm.append("global tcp_connect")
-            asm.append("global tcp_write")
-            asm.append("global tcp_read")
-            asm.append("global tcp_close")
-            asm.append("global tcp_state")
-            asm.append("global net_poll")
-            asm.append("global tcp_has_data")
+            asm_lines.append("global tcp_listen")
+            asm_lines.append("global tcp_accept_ready")
+            asm_lines.append("global tcp_connect")
+            asm_lines.append("global tcp_write")
+            asm_lines.append("global tcp_read")
+            asm_lines.append("global tcp_close")
+            asm_lines.append("global tcp_state")
+            asm_lines.append("global net_poll")
+            asm_lines.append("global tcp_has_data")
             # Filesystem syscalls
-            asm.append("global sys_link")
-            asm.append("global sys_unlink")
-            asm.append("global sys_symlink")
-            asm.append("global sys_readlink")
-            asm.append("global sys_flock")
+            asm_lines.append("global sys_link")
+            asm_lines.append("global sys_unlink")
+            asm_lines.append("global sys_symlink")
+            asm_lines.append("global sys_readlink")
+            asm_lines.append("global sys_flock")
             # Extended attribute syscalls
-            asm.append("global sys_getxattr")
-            asm.append("global sys_setxattr")
-            asm.append("global sys_listxattr")
-            asm.append("global sys_removexattr")
+            asm_lines.append("global sys_getxattr")
+            asm_lines.append("global sys_setxattr")
+            asm_lines.append("global sys_listxattr")
+            asm_lines.append("global sys_removexattr")
             # Unix domain socket functions
-            asm.append("global unix_listen")
-            asm.append("global unix_connect")
-            asm.append("global unix_accept")
-            asm.append("global unix_send")
-            asm.append("global unix_recv")
-            asm.append("global unix_close")
-            asm.append("global unix_has_data")
+            asm_lines.append("global unix_listen")
+            asm_lines.append("global unix_connect")
+            asm_lines.append("global unix_accept")
+            asm_lines.append("global unix_send")
+            asm_lines.append("global unix_recv")
+            asm_lines.append("global unix_close")
+            asm_lines.append("global unix_has_data")
             # RTC functions
-            asm.append("global rtc_get_time")
-            asm.append("global rtc_to_unix_timestamp")
+            asm_lines.append("global rtc_get_time")
+            asm_lines.append("global rtc_to_unix_timestamp")
             # VTNext graphics commands
-            asm.append("global vtn_draw_text_cmd")
-            asm.append("global vtn_draw_rect_cmd")
-            asm.append("global vtn_draw_line_cmd")
-            asm.append("global vtn_draw_circle_cmd")
-            asm.append("global vtn_clear_cmd")
-            asm.append("global vtn_draw_rrect_cmd")
-            asm.append("global vtn_input_cmd")
-            asm.append("global vtn_cursor_cmd")
-            asm.append("global vtn_viewport_cmd")
-            asm.append("global vtn_query_cmd")
-            asm.append("global vtn_draw_ellipse_cmd")
-            asm.append("global vtn_draw_poly_cmd")
-            asm.append("")
+            asm_lines.append("global vtn_draw_text_cmd")
+            asm_lines.append("global vtn_draw_rect_cmd")
+            asm_lines.append("global vtn_draw_line_cmd")
+            asm_lines.append("global vtn_draw_circle_cmd")
+            asm_lines.append("global vtn_clear_cmd")
+            asm_lines.append("global vtn_draw_rrect_cmd")
+            asm_lines.append("global vtn_input_cmd")
+            asm_lines.append("global vtn_cursor_cmd")
+            asm_lines.append("global vtn_viewport_cmd")
+            asm_lines.append("global vtn_query_cmd")
+            asm_lines.append("global vtn_draw_ellipse_cmd")
+            asm_lines.append("global vtn_draw_poly_cmd")
+            asm_lines.append("")
 
-        asm.extend(self.output)
+        asm_lines.extend(self.output)
 
-        return '\n'.join(asm)
+        return '\n'.join(asm_lines)
 
 # Test the code generator
 if __name__ == '__main__':

@@ -15,10 +15,7 @@ from typing import Dict, List, Optional, Set, Tuple
 from enum import Enum, auto
 
 from ast_nodes import *
-from llvm_types import (
-    LLVMTypeMapper, LLVMType, LLVMIntType, LLVMFloatType,
-    LLVMVoidType, LLVMPointerType, LLVMArrayType, LLVMStructType
-)
+from llvm_types import LLVMTypeMapper, LLVMType, LLVMIntType, LLVMFloatType, LLVMVoidType, LLVMPointerType, LLVMArrayType, LLVMStructType
 
 
 class LLVMCodeGen:
@@ -414,8 +411,8 @@ class LLVMCodeGen:
         # End
         self._emit(f"{end_label}:")
 
-        # Remove loop variable from scope
-        del self.locals[stmt.var]
+        # Remove loop variable from scope (set to None for Brainhair compatibility)
+        self.locals[stmt.var] = None
 
     def _gen_expr(self, expr: ASTNode) -> Tuple[str, LLVMType]:
         """Generate an expression. Returns (value, type)."""
@@ -594,9 +591,9 @@ class LLVMCodeGen:
     def _gen_gep(self, expr: IndexExpr) -> Tuple[str, LLVMType]:
         """Generate a GEP (getelementptr) for array/pointer indexing."""
         # Get base pointer
-        if isinstance(expr.array, Identifier):
-            ptr = self.locals.get(expr.array.name)
-            base_type = self.local_types.get(expr.array.name, LLVMIntType(32))
+        if isinstance(expr.base, Identifier):
+            ptr = self.locals.get(expr.base.name)
+            base_type = self.local_types.get(expr.base.name, LLVMIntType(32))
 
             if isinstance(base_type, LLVMArrayType):
                 # Array: need to load address and index

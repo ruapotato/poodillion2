@@ -504,7 +504,7 @@ def lookup_keyword(word: str) -> int:
         return TT_ENUM
     if str_eq(word, "auto") == 1:
         return TT_AUTO
-    if str_eq(word, "Array") == 1:
+    if str_eq(word, "Array") == 1 or str_eq(word, "array") == 1:
         return TT_ARRAY
     if str_eq(word, "Ref") == 1:
         return TT_REF
@@ -589,7 +589,7 @@ class Lexer:
                 'Ptr': TokenType.PTR, 'List': TokenType.LIST,
                 'Dict': TokenType.DICT, 'Tuple': TokenType.TUPLE,
                 'Optional': TokenType.OPTIONAL, 'Enum': TokenType.ENUM,
-                'auto': TokenType.AUTO, 'Array': TokenType.ARRAY,
+                'auto': TokenType.AUTO, 'Array': TokenType.ARRAY, 'array': TokenType.ARRAY,
                 'Ref': TokenType.REF, 'dataclass': TokenType.DATACLASS,
                 'isinstance': TokenType.ISINSTANCE,
                 'int8': TokenType.INT8, 'int16': TokenType.INT16,
@@ -1164,7 +1164,7 @@ def main() -> int32:
     for token in tokens:
         print(f"  {token}")
 
-# Brainhair native entry point (stub for now)
-# Returns 0 to indicate successful compilation as a native binary
-def main() -> int:
+# Brainhair native entry point (stub for standalone testing)
+# Renamed to avoid conflict when imported
+def _lexer_main() -> int:
     return 0

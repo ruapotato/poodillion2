@@ -24,6 +24,15 @@ from copy import deepcopy
 
 from ast_nodes import *
 
+# Polyglot: get reference to Python's str type using type("") trick
+try:
+    _str_type = type("")
+    _to_str = _str_type
+except:
+    _str_type = None
+    def _to_str(x):
+        return ""
+
 
 @dataclass
 class GenericParam:
@@ -38,7 +47,7 @@ class GenericFunction:
     name: str
     type_params: List[GenericParam]
     proc_decl: 'ProcDecl'
-    instantiations: Dict[Tuple[str, ...], 'ProcDecl'] = field(default_factory=dict)
+    instantiations: Dict = field(default_factory=dict)
 
 
 @dataclass
@@ -47,7 +56,7 @@ class GenericStruct:
     name: str
     type_params: List[GenericParam]
     struct_decl: 'StructDecl'
-    instantiations: Dict[Tuple[str, ...], 'StructDecl'] = field(default_factory=dict)
+    instantiations: Dict = field(default_factory=dict)
 
 
 def mangle_name(base_name: str, type_args: List[str]) -> str:
@@ -101,8 +110,10 @@ class GenericCollector:
 
     def _collect_generic_proc(self, proc: ProcDecl) -> None:
         """Collect a generic procedure."""
-        params = [GenericParam(name=p.name if hasattr(p, 'name') else str(p))
-                  for p in proc.type_params]
+        params = []
+        for p in proc.type_params:
+            param_name = p.name if hasattr(p, 'name') else _to_str(p)
+            params.append(GenericParam(name=param_name))
         self.generic_functions[proc.name] = GenericFunction(
             name=proc.name,
             type_params=params,
@@ -111,8 +122,10 @@ class GenericCollector:
 
     def _collect_generic_struct(self, struct: StructDecl) -> None:
         """Collect a generic struct."""
-        params = [GenericParam(name=p.name if hasattr(p, 'name') else str(p))
-                  for p in struct.type_params]
+        params = []
+        for p in struct.type_params:
+            param_name = p.name if hasattr(p, 'name') else _to_str(p)
+            params.append(GenericParam(name=param_name))
         self.generic_structs[struct.name] = GenericStruct(
             name=struct.name,
             type_params=params,
@@ -220,9 +233,15 @@ class Monomorphizer:
         if isinstance(expr, CallExpr):
             # Check if this is a generic call
             if hasattr(expr, 'type_args') and expr.type_args:
-                type_arg_names = [self._type_to_string(t) for t in expr.type_args]
-                if (expr.func, tuple(type_arg_names)) not in \
-                   [(p[0], tuple(p[1])) for p in self.pending_instantiations]:
+                type_arg_names = []
+                for t in expr.type_args:
+                    type_arg_names.append(self._type_to_string(t))
+                already_pending = False
+                for p in self.pending_instantiations:
+                    if p[0] == expr.func and tuple(p[1]) == tuple(type_arg_names):
+                        already_pending = True
+                        break
+                if not already_pending:
                     self.pending_instantiations.append((expr.func, type_arg_names))
             for arg in expr.args:
                 self._find_in_expr(arg)
@@ -235,7 +254,7 @@ class Monomorphizer:
             self._find_in_type(expr.target_type)
             self._find_in_expr(expr.expr)
         elif isinstance(expr, IndexExpr):
-            self._find_in_expr(expr.array)
+            self._find_in_expr(expr.base)
             self._find_in_expr(expr.index)
         elif isinstance(expr, AddrOfExpr):
             self._find_in_expr(expr.expr)
@@ -245,9 +264,15 @@ class Monomorphizer:
     def _find_in_type(self, ty) -> None:
         """Find generic usage in a type."""
         if isinstance(ty, GenericInstanceType):
-            type_arg_names = [self._type_to_string(t) for t in ty.type_args]
-            if (ty.base_type, tuple(type_arg_names)) not in \
-               [(p[0], tuple(p[1])) for p in self.pending_instantiations]:
+            type_arg_names = []
+            for t in ty.type_args:
+                type_arg_names.append(self._type_to_string(t))
+            already_pending = False
+            for p in self.pending_instantiations:
+                if p[0] == ty.base_type and tuple(p[1]) == tuple(type_arg_names):
+                    already_pending = True
+                    break
+            if not already_pending:
                 self.pending_instantiations.append((ty.base_type, type_arg_names))
         elif isinstance(ty, PointerType):
             self._find_in_type(ty.base_type)
@@ -262,9 +287,9 @@ class Monomorphizer:
             return f"ptr_{self._type_to_string(ty.base_type)}"
         elif isinstance(ty, ArrayType):
             return f"array_{ty.size}_{self._type_to_string(ty.element_type)}"
-        elif isinstance(ty, str):
+        elif _str_type is not None and isinstance(ty, _str_type):
             return ty
-        return str(ty)
+        return _to_str(ty)
 
     def _instantiate(self, name: str, type_args: List[str]) -> None:
         """Instantiate a generic function or struct."""
@@ -443,7 +468,7 @@ class Monomorphizer:
 
         elif isinstance(expr, IndexExpr):
             new_expr = deepcopy(expr)
-            new_expr.array = self._subst_expr(expr.array, subst)
+            new_expr.base = self._subst_expr(expr.base, subst)
             new_expr.index = self._subst_expr(expr.index, subst)
             return new_expr
 
@@ -537,7 +562,7 @@ class Monomorphizer:
 
         elif isinstance(expr, IndexExpr):
             new_expr = deepcopy(expr)
-            new_expr.array = self._rewrite_expr(expr.array)
+            new_expr.base = self._rewrite_expr(expr.base)
             new_expr.index = self._rewrite_expr(expr.index)
             return new_expr
 

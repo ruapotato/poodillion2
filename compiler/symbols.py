@@ -216,10 +216,7 @@ class DuplicateSymbolError(SymbolError):
     def __init__(self, symbol: Symbol, existing: Symbol):
         self.symbol = symbol
         self.existing = existing
-        super().__init__(
-            f"Duplicate symbol '{symbol.name}' at {symbol.span}. "
-            f"Previously defined at {existing.span}"
-        )
+        self.message = f"Duplicate symbol '{symbol.name}' at {symbol.span}. Previously defined at {existing.span}"
 
 
 class UndefinedSymbolError(SymbolError):
@@ -229,7 +226,7 @@ class UndefinedSymbolError(SymbolError):
         self.name = name
         self.span = span
         location = f" at {span}" if span else ""
-        super().__init__(f"Undefined symbol '{name}'{location}")
+        self.message = f"Undefined symbol '{name}'{location}"
 
 
 class Scope:
@@ -548,31 +545,24 @@ def create_any_type() -> TypeInfo:
 
 def is_numeric_type(type_info: TypeInfo) -> bool:
     """Check if a type is numeric (integer or float)."""
-    return type_info.name in {
-        "i8", "i16", "i32", "i64",
-        "u8", "u16", "u32", "u64",
-        "f32", "f64"
-    }
+    return type_info.name in ("i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "f32", "f64")
 
 
 def is_integer_type(type_info: TypeInfo) -> bool:
     """Check if a type is an integer type."""
-    return type_info.name in {
-        "i8", "i16", "i32", "i64",
-        "u8", "u16", "u32", "u64"
-    }
+    return type_info.name in ("i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64")
 
 
 def is_float_type(type_info: TypeInfo) -> bool:
     """Check if a type is a floating-point type."""
-    return type_info.name in {"f32", "f64"}
+    return type_info.name in ("f32", "f64")
 
 
 def is_signed_type(type_info: TypeInfo) -> bool:
     """Check if a type is a signed integer type."""
-    return type_info.name in {"i8", "i16", "i32", "i64"}
+    return type_info.name in ("i8", "i16", "i32", "i64")
 
 
 def is_unsigned_type(type_info: TypeInfo) -> bool:
     """Check if a type is an unsigned integer type."""
-    return type_info.name in {"u8", "u16", "u32", "u64"}
+    return type_info.name in ("u8", "u16", "u32", "u64")

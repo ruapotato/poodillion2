@@ -190,8 +190,7 @@ class LifetimeChecker:
         param_lifetime = self._new_lifetime(f"params_{proc.name}", LifetimeKind.PARAM)
         for param in proc.params:
             is_ptr = self._is_pointer_type(param.param_type)
-            self.current_scope.declare(param.name, is_pointer=is_ptr,
-                                       points_to=param_lifetime if is_ptr else None)
+            self.current_scope.declare(param.name, is_pointer=is_ptr, points_to=param_lifetime if is_ptr else None)
 
         # Check body
         for stmt in proc.body:
@@ -229,11 +228,9 @@ class LifetimeChecker:
         if is_global:
             # Global variables have static lifetime
             points_to_lt = self.scope_stack[0].lifetime if is_ptr else None
-            self.current_scope.declare(decl.name, is_pointer=is_ptr,
-                                       points_to=points_to_lt)
+            self.current_scope.declare(decl.name, is_pointer=is_ptr, points_to=points_to_lt)
         else:
-            self.current_scope.declare(decl.name, is_pointer=is_ptr,
-                                       points_to=points_to)
+            self.current_scope.declare(decl.name, is_pointer=is_ptr, points_to=points_to)
 
         if decl.value:
             self._check_expression(decl.value)
@@ -350,7 +347,7 @@ class LifetimeChecker:
             for arg in expr.args:
                 self._check_expression(arg)
         elif isinstance(expr, IndexExpr):
-            self._check_expression(expr.array)
+            self._check_expression(expr.base)
             self._check_expression(expr.index)
         elif isinstance(expr, AddrOfExpr):
             self._check_expression(expr.expr)
@@ -406,7 +403,7 @@ class LifetimeChecker:
             return self._get_expression_lifetime(expr.expr)
 
         elif isinstance(expr, IndexExpr):
-            return self._get_expression_lifetime(expr.array)
+            return self._get_expression_lifetime(expr.base)
 
         elif isinstance(expr, FieldAccessExpr):
             return self._get_expression_lifetime(expr.object)

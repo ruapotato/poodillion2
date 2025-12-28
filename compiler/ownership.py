@@ -134,13 +134,7 @@ class OwnershipChecker:
         self.scope_stack: List[OwnershipScope] = []
 
         # Types that are Copy (primitives)
-        self.copy_types = {
-            'int8', 'int16', 'int32', 'int64',
-            'uint8', 'uint16', 'uint32', 'uint64',
-            'bool', 'char', 'float32', 'float64',
-            'i8', 'i16', 'i32', 'i64',
-            'u8', 'u16', 'u32', 'u64',
-        }
+        self.copy_types = ('int8', 'int16', 'int32', 'int64', 'uint8', 'uint16', 'uint32', 'uint64', 'bool', 'char', 'float32', 'float64', 'i8', 'i16', 'i32', 'i64', 'u8', 'u16', 'u32', 'u64')
 
     def check(self, program: Program) -> List[OwnershipError]:
         """
@@ -360,7 +354,7 @@ class OwnershipChecker:
                 self._check_expression(arg, consuming=True)
 
         elif isinstance(expr, IndexExpr):
-            self._check_expression(expr.array, consuming=False)
+            self._check_expression(expr.base, consuming=False)
             self._check_expression(expr.index, consuming=False)
 
         elif isinstance(expr, AddrOfExpr):

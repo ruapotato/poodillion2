@@ -245,8 +245,8 @@ def test_array_indexing():
     expr = parse_expression("arr[5]")
 
     assert_true(isinstance(expr, IndexExpr), "Should be IndexExpr")
-    assert_true(isinstance(expr.array, Identifier), "Array should be Identifier")
-    assert_eq(expr.array.name, "arr", "Array name should be 'arr'")
+    assert_true(isinstance(expr.base, Identifier), "Array should be Identifier")
+    assert_eq(expr.base.name, "arr", "Array name should be 'arr'")
     assert_true(isinstance(expr.index, IntLiteral), "Index should be IntLiteral")
     assert_eq(expr.index.value, 5, "Index value should be 5")
 
