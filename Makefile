@@ -1055,3 +1055,109 @@ test-kernel: microkernel-uweb
 test-http: microkernel-uweb
 	@echo "Testing HTTP server..."
 	@./tests/test_http.sh
+
+# =============================================================================
+# 64-bit (x86_64) Build Targets
+# =============================================================================
+
+# Assembly flags for 64-bit
+ASFLAGS_64 = -f elf64
+LDFLAGS_64 = -m elf_x86_64 -T boot/linker64.ld --no-relax
+
+# 64-bit boot components
+STAGE2_64_BIN = $(BUILD_DIR)/stage2_64.bin
+BOOT_64_OBJ = $(BUILD_DIR)/boot64.o
+ISR_64_OBJ = $(BUILD_DIR)/isr64.o
+
+# Build 64-bit stage2 bootloader
+$(STAGE2_64_BIN): boot/stage2_64.asm | $(BUILD_DIR)
+	@echo "Building 64-bit Stage 2 bootloader..."
+	$(AS) -f bin boot/stage2_64.asm -o $(STAGE2_64_BIN)
+	@echo "  Size: $$(stat -c%s $(STAGE2_64_BIN)) bytes"
+
+# Build 64-bit kernel entry
+$(BOOT_64_OBJ): boot/boot64.asm | $(BUILD_DIR)
+	@echo "Assembling 64-bit kernel boot code..."
+	$(AS) $(ASFLAGS_64) boot/boot64.asm -o $(BOOT_64_OBJ)
+
+# Build 64-bit ISR
+$(ISR_64_OBJ): kernel/isr64.asm | $(BUILD_DIR)
+	@echo "Assembling 64-bit ISR..."
+	$(AS) $(ASFLAGS_64) kernel/isr64.asm -o $(ISR_64_OBJ)
+
+# Build 64-bit kernel support
+SUPPORT_64_OBJ = $(BUILD_DIR)/kernel_support64.o
+$(SUPPORT_64_OBJ): kernel/kernel_support64.asm | $(BUILD_DIR)
+	@echo "Assembling 64-bit kernel support..."
+	$(AS) $(ASFLAGS_64) kernel/kernel_support64.asm -o $(SUPPORT_64_OBJ)
+
+# 64-bit microkernel target
+DISK_64_IMG = $(BUILD_DIR)/brainhair64.img
+KERNEL_64_OBJ = $(BUILD_DIR)/kernel_main64.o
+CHACHA20_64_OBJ = $(BUILD_DIR)/chacha20_64.o
+NET_64_OBJ = $(BUILD_DIR)/net_64.o
+SHA256_64_OBJ = $(BUILD_DIR)/sha256_64.o
+POLY1305_64_OBJ = $(BUILD_DIR)/poly1305_64.o
+
+# Compile kernel with 64-bit code generator
+$(KERNEL_64_OBJ): kernel/kernel_main.bh | $(BUILD_DIR)
+	@echo "Compiling 64-bit kernel..."
+	$(PYTHON) compiler/brainhair.py kernel/kernel_main.bh --x86_64 --kernel -o $(BUILD_DIR)/kernel_main64
+
+# ChaCha20 64-bit
+$(CHACHA20_64_OBJ): kernel/chacha20_64.asm | $(BUILD_DIR)
+	@echo "Assembling 64-bit ChaCha20..."
+	nasm -f elf64 kernel/chacha20_64.asm -o $(CHACHA20_64_OBJ)
+
+# Networking 64-bit
+$(NET_64_OBJ): kernel/net_64.asm | $(BUILD_DIR)
+	@echo "Assembling 64-bit networking..."
+	nasm -f elf64 kernel/net_64.asm -o $(NET_64_OBJ)
+
+# SHA-256 64-bit
+$(SHA256_64_OBJ): kernel/sha256_64.asm | $(BUILD_DIR)
+	@echo "Assembling 64-bit SHA-256..."
+	nasm -f elf64 kernel/sha256_64.asm -o $(SHA256_64_OBJ)
+
+# Poly1305 64-bit
+$(POLY1305_64_OBJ): kernel/poly1305_64.asm | $(BUILD_DIR)
+	@echo "Assembling 64-bit Poly1305..."
+	nasm -f elf64 kernel/poly1305_64.asm -o $(POLY1305_64_OBJ)
+
+microkernel-64: $(STAGE1_BIN) $(STAGE2_64_BIN) $(BOOT_64_OBJ) $(ISR_64_OBJ) $(SUPPORT_64_OBJ) $(CHACHA20_64_OBJ) $(NET_64_OBJ) $(SHA256_64_OBJ) $(POLY1305_64_OBJ) $(KERNEL_64_OBJ)
+	@echo "Building 64-bit BrainhairOS Microkernel..."
+	@echo "Linking full 64-bit kernel..."
+	$(LD) $(LDFLAGS_64) -o $(BUILD_DIR)/kernel64.elf $(BOOT_64_OBJ) $(ISR_64_OBJ) $(SUPPORT_64_OBJ) $(CHACHA20_64_OBJ) $(NET_64_OBJ) $(SHA256_64_OBJ) $(POLY1305_64_OBJ) $(KERNEL_64_OBJ)
+	objcopy -O binary $(BUILD_DIR)/kernel64.elf $(BUILD_DIR)/kernel64.bin
+	@echo "  Kernel64 size: $$(stat -c%s $(BUILD_DIR)/kernel64.bin) bytes"
+	@echo "Creating 64-bit disk image..."
+	dd if=/dev/zero of=$(DISK_64_IMG) bs=512 count=20480 2>/dev/null
+	dd if=$(STAGE1_BIN) of=$(DISK_64_IMG) conv=notrunc bs=512 count=1 2>/dev/null
+	dd if=$(STAGE2_64_BIN) of=$(DISK_64_IMG) conv=notrunc bs=512 seek=1 2>/dev/null
+	dd if=$(BUILD_DIR)/kernel64.bin of=$(DISK_64_IMG) conv=notrunc bs=512 seek=18 2>/dev/null
+	@echo ""
+	@echo "64-bit BrainhairOS Microkernel ready:"
+	@echo "  Stage1: $(STAGE1_BIN)"
+	@echo "  Stage2: $(STAGE2_64_BIN)"
+	@echo "  Kernel64: $(BUILD_DIR)/kernel64.bin"
+	@echo "  Disk image: $(DISK_64_IMG)"
+	@echo ""
+	@echo "Run with: make run-64"
+
+# Run 64-bit bootloader test
+run-64: microkernel-64
+	@echo "Testing 64-bit bootloader..."
+	qemu-system-x86_64 -cpu qemu64 \
+		-drive format=raw,file=$(DISK_64_IMG) \
+		-serial stdio \
+		-m 128M
+
+# Run 64-bit with VGA display
+run-64-gui: microkernel-64
+	@echo "Testing 64-bit bootloader (GUI)..."
+	qemu-system-x86_64 -cpu qemu64 \
+		-drive format=raw,file=$(DISK_64_IMG) \
+		-serial stdio \
+		-m 128M
+
+.PHONY: microkernel-64 run-64 run-64-gui

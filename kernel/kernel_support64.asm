@@ -29,6 +29,10 @@ kbd_buffer: times 256 db 0
 kbd_head: dq 0
 kbd_tail: dq 0
 
+; Page table allocation tracking
+; Use 0x6000-0x1FFFF for dynamic page tables (about 100KB = 25 page tables)
+next_page_table: dq 0x6000
+
 section .bss
 ; Reserved space for various subsystems
 resb 4096  ; Reserved space
@@ -408,9 +412,163 @@ free_frame:
     ret
 
 global map_page
+; map_page(virtual_addr: int32, physical_addr: int32, flags: int32): int32
+; RDI = virtual address, RSI = physical address, RDX = flags
+; For 64-bit, we use 4-level paging: PML4 -> PDPT -> PD -> PT
+; PML4 is at 0x1000 (set up by bootloader)
 map_page:
-    ; TODO: Implement page mapping
+    push rbx
+    push rcx
+    push r8
+    push r9
+    push r10
+    push r11
+
+    ; Zero-extend 32-bit addresses to 64-bit
+    mov rdi, rdi
+    and rdi, 0xFFFFFFFF
+    mov rsi, rsi
+    and rsi, 0xFFFFFFFF
+    mov rdx, rdx
+    and rdx, 0xFF              ; Only lower bits of flags matter
+
+    ; Calculate page table indices
+    ; PML4 index = (vaddr >> 39) & 0x1FF
+    mov rax, rdi
+    shr rax, 39
+    and rax, 0x1FF
+    mov r8, rax                ; r8 = PML4 index
+
+    ; PDPT index = (vaddr >> 30) & 0x1FF
+    mov rax, rdi
+    shr rax, 30
+    and rax, 0x1FF
+    mov r9, rax                ; r9 = PDPT index
+
+    ; PD index = (vaddr >> 21) & 0x1FF
+    mov rax, rdi
+    shr rax, 21
+    and rax, 0x1FF
+    mov r10, rax               ; r10 = PD index
+
+    ; PT index = (vaddr >> 12) & 0x1FF
+    mov rax, rdi
+    shr rax, 12
+    and rax, 0x1FF
+    mov r11, rax               ; r11 = PT index
+
+    ; PML4 is at 0x1000
+    mov rbx, 0x1000
+
+    ; Get PML4 entry
+    mov rax, [rbx + r8*8]
+    test rax, 1                ; Check present bit
+    jnz .have_pdpt
+
+    ; Need to allocate PDPT
+    mov rax, [rel next_page_table]
+    mov rcx, rax
+    add rcx, 4096
+    mov [rel next_page_table], rcx
+
+    ; Clear new PDPT
+    push rdi
+    mov rdi, rax
+    push rax
     xor eax, eax
+    mov rcx, 512
+    rep stosq
+    pop rax
+    pop rdi
+
+    ; Set PML4 entry to new PDPT
+    or rax, 0x03               ; Present + Writable
+    mov [rbx + r8*8], rax
+    and rax, 0xFFFFFFFFFFFFF000 ; Get address only
+
+.have_pdpt:
+    ; rax = PDPT address (with flags), get address only
+    and rax, 0xFFFFFFFFFFFFF000
+    mov rbx, rax               ; rbx = PDPT address
+
+    ; Get PDPT entry
+    mov rax, [rbx + r9*8]
+    test rax, 1                ; Check present bit
+    jnz .have_pd
+
+    ; Need to allocate PD
+    mov rax, [rel next_page_table]
+    mov rcx, rax
+    add rcx, 4096
+    mov [rel next_page_table], rcx
+
+    ; Clear new PD
+    push rdi
+    mov rdi, rax
+    push rax
+    xor eax, eax
+    mov rcx, 512
+    rep stosq
+    pop rax
+    pop rdi
+
+    ; Set PDPT entry to new PD
+    or rax, 0x03               ; Present + Writable
+    mov [rbx + r9*8], rax
+    and rax, 0xFFFFFFFFFFFFF000
+
+.have_pd:
+    and rax, 0xFFFFFFFFFFFFF000
+    mov rbx, rax               ; rbx = PD address
+
+    ; Get PD entry
+    mov rax, [rbx + r10*8]
+    test rax, 1                ; Check present bit
+    jnz .have_pt
+
+    ; Need to allocate PT
+    mov rax, [rel next_page_table]
+    mov rcx, rax
+    add rcx, 4096
+    mov [rel next_page_table], rcx
+
+    ; Clear new PT
+    push rdi
+    mov rdi, rax
+    push rax
+    xor eax, eax
+    mov rcx, 512
+    rep stosq
+    pop rax
+    pop rdi
+
+    ; Set PD entry to new PT
+    or rax, 0x03               ; Present + Writable
+    mov [rbx + r10*8], rax
+    and rax, 0xFFFFFFFFFFFFF000
+
+.have_pt:
+    and rax, 0xFFFFFFFFFFFFF000
+    mov rbx, rax               ; rbx = PT address
+
+    ; Set PT entry to physical page
+    mov rax, rsi               ; Physical address
+    and rax, 0xFFFFFFFFFFFFF000 ; Page-align
+    or rax, rdx                ; Add flags
+    or rax, 1                  ; Ensure present bit is set
+    mov [rbx + r11*8], rax
+
+    ; Invalidate TLB entry for this virtual address
+    invlpg [rdi]
+
+    mov eax, 1                 ; Success
+
+    pop r11
+    pop r10
+    pop r9
+    pop r8
+    pop rcx
+    pop rbx
     ret
 
 global get_physical_address
@@ -435,11 +593,61 @@ get_cr3:
     ret
 
 ; ============================================================================
-; Process/Scheduler Stubs
+; Threading System - Cooperative Multithreading
 ; ============================================================================
+
+; Thread states
+THREAD_FREE     equ 0
+THREAD_READY    equ 1
+THREAD_RUNNING  equ 2
+THREAD_BLOCKED  equ 3
+THREAD_DEAD     equ 4
+
+; Thread Control Block (TCB) - 64 bytes each
+; Offset 0:  rsp (saved stack pointer)
+; Offset 8:  state
+; Offset 16: tid
+; Offset 24: entry
+; Offset 32: arg
+; Offset 40: stack_base
+; Offset 48-63: reserved
+
+MAX_THREADS     equ 16
+THREAD_STACK_SIZE equ 8192  ; 8KB per thread stack
+TCB_SIZE        equ 64
+
+section .bss
+align 16
+thread_table:   resb MAX_THREADS * TCB_SIZE
+thread_stacks:  resb MAX_THREADS * THREAD_STACK_SIZE
+current_thread: resq 1      ; Index of currently running thread
+thread_count:   resq 1      ; Number of active threads
+scheduler_lock: resq 1      ; Simple spinlock
+
+section .text
 
 global init_scheduler
 init_scheduler:
+    push rbx
+    push rcx
+
+    ; Clear thread table
+    lea rdi, [thread_table]
+    mov rcx, MAX_THREADS * TCB_SIZE / 8
+    xor rax, rax
+    rep stosq
+
+    ; Initialize main thread (thread 0)
+    lea rdi, [thread_table]
+    mov qword [rdi + 8], THREAD_RUNNING  ; state = RUNNING
+    mov qword [rdi + 16], 0              ; tid = 0
+
+    mov qword [current_thread], 0
+    mov qword [thread_count], 1
+    mov qword [scheduler_lock], 0
+
+    pop rcx
+    pop rbx
     ret
 
 global create_process
@@ -449,16 +657,78 @@ create_process:
 
 global schedule
 schedule:
-    xor eax, eax
+    ; Find next ready thread (round-robin)
+    push rbx
+    push rcx
+    push rdx
+
+    mov rax, [current_thread]
+    mov rcx, MAX_THREADS
+
+.find_next:
+    inc rax
+    cmp rax, MAX_THREADS
+    jl .check_thread
+    xor rax, rax                    ; Wrap around
+
+.check_thread:
+    ; Calculate TCB address: thread_table + rax * TCB_SIZE
+    mov rdx, rax
+    shl rdx, 6                      ; * 64 (TCB_SIZE)
+    lea rbx, [thread_table]
+    add rbx, rdx
+
+    ; Check if thread is READY
+    cmp qword [rbx + 8], THREAD_READY
+    je .found
+
+    dec rcx
+    jnz .find_next
+
+    ; No ready thread found, return current
+    mov rax, [current_thread]
+
+.found:
+    pop rdx
+    pop rcx
+    pop rbx
     ret
 
 global context_switch
 context_switch:
+    ; RDI = new thread index
+    ; Note: called from thread_exit, no need to save current state
+    ; (current thread is already marked DEAD)
+
+    ; Switch to new thread
+    mov [current_thread], rdi
+
+    ; Calculate new TCB address
+    mov rax, rdi
+    shl rax, 6
+    lea rcx, [thread_table]
+    add rcx, rax
+
+    ; Mark as RUNNING
+    mov qword [rcx + 8], THREAD_RUNNING
+
+    ; Restore new thread's RSP
+    mov rsp, [rcx]
+
+    ; The new thread's stack was saved by thread_yield with:
+    ; push rbx, push r12, push r13, push r14, push r15, push rbp
+    ; So we need to pop them all in reverse order
+    pop rbp
+    pop r15
+    pop r14
+    pop r13
+    pop r12
+    pop rbx
     ret
 
 global yield
 yield:
-    hlt
+    call thread_yield
     ret
 
 global exit_process
@@ -472,7 +742,7 @@ fork:
 
 global get_current_pid
 get_current_pid:
-    mov rax, [rel current_pid]
+    mov rax, [current_thread]
     ret
 
 global set_process_state
@@ -481,26 +751,220 @@ set_process_state:
 
 global thread_create
 thread_create:
-    xor eax, eax
+    ; RDI = entry point, RSI = arg
+    ; Returns thread ID or -1 on error
+    push rbx
+    push r12
+    push r13
+    push r14
+
+    mov r12, rdi        ; Save entry
+    mov r13, rsi        ; Save arg
+
+    ; Find free thread slot
+    xor rcx, rcx        ; Start at 1 (0 is main thread)
+    inc rcx
+
+.find_slot:
+    cmp rcx, MAX_THREADS
+    jge .no_slot
+
+    mov rax, rcx
+    shl rax, 6
+    lea rbx, [thread_table]
+    add rbx, rax
+
+    cmp qword [rbx + 8], THREAD_FREE
+    je .found_slot
+    cmp qword [rbx + 8], THREAD_DEAD
+    je .found_slot
+
+    inc rcx
+    jmp .find_slot
+
+.no_slot:
+    mov rax, -1
+    jmp .done
+
+.found_slot:
+    ; RCX = thread index, RBX = TCB pointer
+    mov r14, rcx        ; Save thread index
+
+    ; Calculate stack address: thread_stacks + rcx * THREAD_STACK_SIZE + THREAD_STACK_SIZE
+    mov rax, rcx
+    shl rax, 13         ; * 8192 (THREAD_STACK_SIZE)
+    lea rdx, [thread_stacks]
+    add rdx, rax
+    add rdx, THREAD_STACK_SIZE  ; Top of stack
+
+    ; Set up initial stack frame for new thread
+    ; Stack layout matches what thread_yield expects when it pops:
+    ; pop rbp, pop r15, pop r14, pop r13, pop r12, pop rbx, ret
+    ; So from RSP upward: rbp, r15, r14, r13, r12, rbx, return_addr
+
+    ; Start from top of stack
+    ; First, push the return address for when thread_start returns
+    sub rdx, 8
+    lea rax, [thread_exit_wrapper]
+    mov [rdx], rax              ; Return to exit wrapper when thread returns
+
+    ; Now set up the stack frame that thread_yield expects
+    ; thread_yield pops: rbp, r15, r14, r13, r12, rbx, then ret
+    ; So we push in reverse order: ret, rbx, r12, r13, r14, r15, rbp
+
+    sub rdx, 8
+    lea rax, [thread_start]
+    mov [rdx], rax              ; Return address -> thread_start
+
+    sub rdx, 8
+    mov qword [rdx], 0          ; rbx
+
+    sub rdx, 8
+    mov [rdx], r12              ; r12 = entry point
+
+    sub rdx, 8
+    mov [rdx], r13              ; r13 = arg
+
+    sub rdx, 8
+    mov qword [rdx], 0          ; r14
+
+    sub rdx, 8
+    mov qword [rdx], 0          ; r15
+
+    sub rdx, 8
+    mov qword [rdx], 0          ; rbp
+
+    ; Fill in TCB
+    mov [rbx], rdx              ; rsp
+    mov qword [rbx + 8], THREAD_READY  ; state
+    mov [rbx + 16], r14         ; tid
+    mov [rbx + 24], r12         ; entry
+    mov [rbx + 32], r13         ; arg
+
+    ; Calculate and save stack base
+    mov rax, r14
+    shl rax, 13
+    lea rdx, [thread_stacks]
+    add rdx, rax
+    mov [rbx + 40], rdx         ; stack_base
+
+    ; Increment thread count
+    inc qword [thread_count]
+
+    mov rax, r14                ; Return thread ID
+
+.done:
+    pop r14
+    pop r13
+    pop r12
+    pop rbx
     ret
+
+; Internal: start a new thread
+thread_start:
+    ; After context switch, callee-saved registers are restored from stack:
+    ; r12 = entry point (function pointer)
+    ; r13 = arg
+    ; Call the entry function with arg in RDI
+    mov rax, r12        ; Entry point
+    mov rdi, r13        ; Arg as first parameter
+    call rax
+    ; If function returns, exit thread
+    xor edi, edi
+    call thread_exit
+    jmp $               ; Should never reach here
+
+; Internal: wrapper for thread exit
+thread_exit_wrapper:
+    xor edi, edi
+    call thread_exit
+    jmp $
 
 global thread_exit
 thread_exit:
-    ret
+    ; Mark current thread as DEAD
+    mov rax, [current_thread]
+    shl rax, 6
+    lea rcx, [thread_table]
+    add rcx, rax
+    mov qword [rcx + 8], THREAD_DEAD
+
+    dec qword [thread_count]
+
+    ; Yield to another thread
+    call schedule
+    mov rdi, rax
+    call context_switch
+
+    ; Should never return here
+    jmp $
 
 global thread_yield
 thread_yield:
-    ; Just return - no threading support yet
+    ; Save callee-saved registers
+    push rbx
+    push r12
+    push r13
+    push r14
+    push r15
+    push rbp
+
+    ; Find next thread
+    call schedule
+
+    ; If same thread, just return
+    cmp rax, [current_thread]
+    je .same_thread
+
+    ; Switch to new thread
+    mov rdi, rax
+
+    ; Save current RSP
+    mov rax, [current_thread]
+    shl rax, 6
+    lea rcx, [thread_table]
+    add rcx, rax
+    mov [rcx], rsp
+
+    ; Mark current as READY
+    mov qword [rcx + 8], THREAD_READY
+
+    ; Switch current_thread
+    mov [current_thread], rdi
+
+    ; Calculate new TCB
+    mov rax, rdi
+    shl rax, 6
+    lea rcx, [thread_table]
+    add rcx, rax
+
+    ; Mark as RUNNING
+    mov qword [rcx + 8], THREAD_RUNNING
+
+    ; Restore new thread's RSP
+    mov rsp, [rcx]
+
+.same_thread:
+    pop rbp
+    pop r15
+    pop r14
+    pop r13
+    pop r12
+    pop rbx
     ret
 
 global get_thread_id
 get_thread_id:
-    xor eax, eax
+    mov rax, [current_thread]
     ret
 
 global is_thread
 is_thread:
-    xor eax, eax
+    mov rax, [current_thread]
+    ; Return 1 if not main thread (tid > 0)
+    cmp rax, 0
+    setne al
+    movzx eax, al
     ret
 
 global thread_join
@@ -928,14 +1392,6 @@ devfs_get_type:
     ret
 
 ; ============================================================================
-; ChaCha20 Encryption
-; ============================================================================
-
-global chacha20_encrypt
-chacha20_encrypt:
-    ret
-
-; ============================================================================
 ; Process State Functions
 ; ============================================================================
 
@@ -996,176 +1452,6 @@ get_webapp_bin:
 global get_webapp_bin_size
 get_webapp_bin_size:
     xor eax, eax
-    ret
-
-; ============================================================================
-; Port I/O Functions (alternative names)
-; ============================================================================
-
-global port_inb
-port_inb:
-    mov dx, di
-    in al, dx
-    movzx eax, al
-    ret
-
-global port_outb
-port_outb:
-    mov dx, di
-    mov al, sil
-    out dx, al
-    ret
-
-global port_inw
-port_inw:
-    mov dx, di
-    in ax, dx
-    movzx eax, ax
-    ret
-
-global port_outw
-port_outw:
-    mov dx, di
-    mov ax, si
-    out dx, ax
-    ret
-
-global port_inl
-port_inl:
-    mov dx, di
-    in eax, dx
-    ret
-
-global port_outl
-port_outl:
-    mov dx, di
-    mov eax, esi
-    out dx, eax
-    ret
-
-; ============================================================================
-; MMIO Functions
-; ============================================================================
-
-global mmio_read32
-mmio_read32:
-    mov eax, [rdi]
-    ret
-
-global mmio_write32
-mmio_write32:
-    mov [rdi], esi
-    ret
-
-; ============================================================================
-; PCI Functions
-; ============================================================================
-
-global pci_config_read8
-pci_config_read8:
-    ; RDI = bus, RSI = device, RDX = function, RCX = offset
-    push rbx
-    ; Build config address
-    mov eax, 0x80000000
-    shl edi, 16
-    or eax, edi
-    shl esi, 11
-    or eax, esi
-    shl edx, 8
-    or eax, edx
-    and ecx, 0xFC
-    or eax, ecx
-    ; Write address
-    mov dx, 0xCF8
-    out dx, eax
-    ; Read data
-    mov dx, 0xCFC
-    in eax, dx
-    pop rbx
-    ; Return byte based on offset
-    movzx eax, al
-    ret
-
-global pci_config_read16
-pci_config_read16:
-    push rbx
-    mov eax, 0x80000000
-    shl edi, 16
-    or eax, edi
-    shl esi, 11
-    or eax, esi
-    shl edx, 8
-    or eax, edx
-    and ecx, 0xFC
-    or eax, ecx
-    mov dx, 0xCF8
-    out dx, eax
-    mov dx, 0xCFC
-    in eax, dx
-    pop rbx
-    movzx eax, ax
-    ret
-
-global pci_config_read32
-pci_config_read32:
-    push rbx
-    mov eax, 0x80000000
-    shl edi, 16
-    or eax, edi
-    shl esi, 11
-    or eax, esi
-    shl edx, 8
-    or eax, edx
-    and ecx, 0xFC
-    or eax, ecx
-    mov dx, 0xCF8
-    out dx, eax
-    mov dx, 0xCFC
-    in eax, dx
-    pop rbx
-    ret
-
-global pci_config_write32
-pci_config_write32:
-    ; RDI = bus, RSI = device, RDX = function, RCX = offset, R8 = value
-    push rbx
-    mov eax, 0x80000000
-    shl edi, 16
-    or eax, edi
-    shl esi, 11
-    or eax, esi
-    shl edx, 8
-    or eax, edx
-    and ecx, 0xFC
-    or eax, ecx
-    mov dx, 0xCF8
-    out dx, eax
-    mov dx, 0xCFC
-    mov eax, r8d
-    out dx, eax
-    pop rbx
-    ret
-
-; ============================================================================
-; Memory Copy Function
-; ============================================================================
-
-global net_memcpy
-net_memcpy:
-    ; RDI = dest, RSI = src, RDX = count
-    push rcx
-    mov rcx, rdx
-    rep movsb
-    pop rcx
-    ret
-
-; ============================================================================
-; Timer Wait Functions
-; ============================================================================
-
-global wait_tick
-wait_tick:
-    hlt
     ret
 
 ; ============================================================================

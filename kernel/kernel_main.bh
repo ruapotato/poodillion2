@@ -38,7 +38,7 @@ extern context_switch(new_pid: int32)
 extern yield()
 extern exit_process(code: int32)
 extern fork(): int32
-extern thread_create(entry: int32, arg: int32): int32
+extern thread_create(entry: ptr uint8, arg: int64): int32
 extern thread_exit(code: int32)
 extern thread_yield()
 extern get_thread_id(): int32
@@ -156,6 +156,15 @@ extern chacha20_block()
 extern chacha20_encrypt(input: ptr uint8, output: ptr uint8, length: int32, key: ptr uint8, nonce: ptr uint8, counter: int32)
 extern chacha20_get_block(): ptr uint8
 
+# External assembly functions - SHA-256
+extern sha256_init(ctx: ptr uint8): int32
+extern sha256_update(ctx: ptr uint8, data: ptr uint8, len: int32): int32
+extern sha256_final(ctx: ptr uint8, output: ptr uint8): int32
+extern sha256_hash(data: ptr uint8, len: int32, output: ptr uint8): int32
+
+# External assembly functions - Poly1305 MAC
+extern poly1305_auth(output: ptr uint8, msg: ptr uint8, len: int32, key: ptr uint8): int32
+
 # Multiboot framebuffer info (from boot/multiboot.asm)
 extern multiboot_fb_addr(): int32
 extern multiboot_fb_width(): int32
@@ -177,8 +186,8 @@ extern pci_config_read16(bus: int32, slot: int32, func: int32, offset: int32): i
 extern pci_config_read8(bus: int32, slot: int32, func: int32, offset: int32): int32
 
 # External assembly functions - MMIO
-extern mmio_read32(address: int32): int32
-extern mmio_write32(address: int32, value: int32)
+extern mmio_read32(address: int64): int32
+extern mmio_write32(address: int64, value: int32)
 extern net_memcpy(dest: int32, src: int32, len: int32)
 
 # External assembly functions - ELF loader
@@ -221,7 +230,7 @@ proc strlen(s: ptr uint8): int32 =
   return len
 
 # Test thread function for kernel thread testing
-proc test_thread_func(arg: int32) =
+proc test_thread_func(arg: int64) =
   ser_print(cast[ptr uint8]("[THREAD] Hello from thread! arg = "))
   ser_print_int(arg)
   ser_print(cast[ptr uint8](", TID = "))
@@ -243,7 +252,7 @@ proc test_thread_func(arg: int32) =
 
 # Socket test server thread
 var socket_test_server_done: int32 = 0
-proc socket_test_server(arg: int32) =
+proc socket_test_server(arg: int64) =
   ser_println(cast[ptr uint8]("[SOCK SERVER] Starting server..."))
 
   # Listen on socket
@@ -304,7 +313,7 @@ proc socket_test_server(arg: int32) =
   thread_exit(0)
 
 # Socket test client thread
-proc socket_test_client(arg: int32) =
+proc socket_test_client(arg: int64) =
   # Wait a bit for server to start
   var i: int32 = 0
   while i < 5:
@@ -663,6 +672,19 @@ proc print_skip(msg: ptr uint8) =
   vga_set_color(VGA_DARK_GREY, VGA_BLACK)
   vga_println(msg)
   ser_print(cast[ptr uint8]("[--] "))
+  ser_println(msg)
+
+# Print status fail line (for failed initialization)
+proc print_fail(msg: ptr uint8) =
+  vga_set_color(VGA_YELLOW, VGA_BLACK)
+  vga_print(cast[ptr uint8]("  ["))
+  vga_set_color(VGA_LIGHT_RED, VGA_BLACK)
+  vga_print(cast[ptr uint8]("!!"))
+  vga_set_color(VGA_YELLOW, VGA_BLACK)
+  vga_print(cast[ptr uint8]("] "))
+  vga_set_color(VGA_LIGHT_RED, VGA_BLACK)
+  vga_println(msg)
+  ser_print(cast[ptr uint8]("[!!] "))
   ser_println(msg)
 
 # =============================================================================
@@ -4243,9 +4265,11 @@ proc main() =
   # Initialize tab completion
   init_builtins()
 
-  # Initialize networking (DISABLED - mmio_write32 stalls)
-  # TODO: Fix e1000_init_rx mmio writes
-  print_ok(cast[ptr uint8]("Network: DISABLED"))
+  # Initialize networking
+  if net_init() == 1:
+    print_ok(cast[ptr uint8]("Network: ENABLED"))
+  else:
+    print_fail(cast[ptr uint8]("Network: FAILED"))
 
   kprintln(cast[ptr uint8](""))
   vga_set_color(VGA_LIGHT_GREEN, VGA_BLACK)
@@ -4266,7 +4290,7 @@ proc main() =
   ser_print_int(is_thread())
   ser_println(cast[ptr uint8](""))
 
-  var test_tid: int32 = thread_create(cast[int32](addr(test_thread_func)), 42)
+  var test_tid: int32 = thread_create(cast[ptr uint8](addr(test_thread_func)), 42)
   if test_tid < 0:
     ser_println(cast[ptr uint8]("[THREAD TEST] ERROR: Failed to create thread"))
   else:
@@ -4287,7 +4311,7 @@ proc main() =
   ser_println(cast[ptr uint8]("[SOCKET TEST] unix_init completed"))
 
   # Create server thread
-  var server_tid: int32 = thread_create(cast[int32](addr(socket_test_server)), 0)
+  var server_tid: int32 = thread_create(cast[ptr uint8](addr(socket_test_server)), 0)
   if server_tid < 0:
     ser_println(cast[ptr uint8]("[SOCKET TEST] ERROR: Failed to create server thread"))
   else:
@@ -4296,7 +4320,7 @@ proc main() =
     ser_println(cast[ptr uint8](""))
 
     # Create client thread
-    var client_tid: int32 = thread_create(cast[int32](addr(socket_test_client)), 0)
+    var client_tid: int32 = thread_create(cast[ptr uint8](addr(socket_test_client)), 0)
     if client_tid < 0:
       ser_println(cast[ptr uint8]("[SOCKET TEST] ERROR: Failed to create client thread"))
     else:
@@ -4380,6 +4404,162 @@ proc main() =
     ser_println(cast[ptr uint8]("/64 bytes match after decryption"))
 
   ser_println(cast[ptr uint8]("[CHACHA20 TEST] ChaCha20 test complete"))
+  ser_println(cast[ptr uint8](""))
+
+  # Test SHA-256
+  ser_println(cast[ptr uint8]("[SHA256 TEST] Starting SHA-256 test..."))
+
+  # Test data: "abc" - expected hash is known
+  var sha_data: array[4, uint8]
+  sha_data[0] = cast[uint8](97)   # 'a'
+  sha_data[1] = cast[uint8](98)   # 'b'
+  sha_data[2] = cast[uint8](99)   # 'c'
+  sha_data[3] = cast[uint8](0)    # null term
+
+  var sha_output: array[32, uint8]
+
+  # Expected SHA-256("abc") = ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad
+  sha256_hash(addr(sha_data[0]), 3, addr(sha_output[0]))
+
+  # Check first few bytes of expected hash
+  var sha_ok: int32 = 1
+  if sha_output[0] != cast[uint8](0xba):
+    sha_ok = 0
+  if sha_output[1] != cast[uint8](0x78):
+    sha_ok = 0
+  if sha_output[2] != cast[uint8](0x16):
+    sha_ok = 0
+  if sha_output[3] != cast[uint8](0xbf):
+    sha_ok = 0
+  if sha_output[31] != cast[uint8](0xad):
+    sha_ok = 0
+
+  if sha_ok == 1:
+    ser_println(cast[ptr uint8]("[SHA256 TEST] SHA-256('abc') verified correctly!"))
+  else:
+    ser_print(cast[ptr uint8]("[SHA256 TEST] ERROR: Hash mismatch. Got: "))
+    var shi: int32 = 0
+    while shi < 8:
+      ser_print_hex(cast[int32](sha_output[shi]))
+      ser_print(cast[ptr uint8](" "))
+      shi = shi + 1
+    ser_println(cast[ptr uint8]("..."))
+
+  ser_println(cast[ptr uint8]("[SHA256 TEST] SHA-256 test complete"))
+  ser_println(cast[ptr uint8](""))
+
+  # ==========================================================================
+  # Poly1305 Test - RFC 8439 test vector
+  # ==========================================================================
+  ser_println(cast[ptr uint8]("[POLY1305 TEST] Starting Poly1305 test..."))
+
+  # Test key (32 bytes) from RFC 8439
+  var poly_key: array[32, uint8]
+  poly_key[0] = cast[uint8](0x85)
+  poly_key[1] = cast[uint8](0xd6)
+  poly_key[2] = cast[uint8](0xbe)
+  poly_key[3] = cast[uint8](0x78)
+  poly_key[4] = cast[uint8](0x57)
+  poly_key[5] = cast[uint8](0x55)
+  poly_key[6] = cast[uint8](0x6d)
+  poly_key[7] = cast[uint8](0x33)
+  poly_key[8] = cast[uint8](0x7f)
+  poly_key[9] = cast[uint8](0x44)
+  poly_key[10] = cast[uint8](0x52)
+  poly_key[11] = cast[uint8](0xfe)
+  poly_key[12] = cast[uint8](0x3d)
+  poly_key[13] = cast[uint8](0x50)
+  poly_key[14] = cast[uint8](0x62)
+  poly_key[15] = cast[uint8](0x48)
+  poly_key[16] = cast[uint8](0xd0)
+  poly_key[17] = cast[uint8](0xd5)
+  poly_key[18] = cast[uint8](0xc0)
+  poly_key[19] = cast[uint8](0xd9)
+  poly_key[20] = cast[uint8](0x7c)
+  poly_key[21] = cast[uint8](0x9e)
+  poly_key[22] = cast[uint8](0x0a)
+  poly_key[23] = cast[uint8](0xe1)
+  poly_key[24] = cast[uint8](0xc5)
+  poly_key[25] = cast[uint8](0xc5)
+  poly_key[26] = cast[uint8](0xf8)
+  poly_key[27] = cast[uint8](0xb8)
+  poly_key[28] = cast[uint8](0xa0)
+  poly_key[29] = cast[uint8](0xc4)
+  poly_key[30] = cast[uint8](0xe4)
+  poly_key[31] = cast[uint8](0xf5)
+
+  # Message: "Cryptographic Forum Research Group" (34 bytes)
+  var poly_msg: array[35, uint8]
+  poly_msg[0] = cast[uint8](67)   # C
+  poly_msg[1] = cast[uint8](114)  # r
+  poly_msg[2] = cast[uint8](121)  # y
+  poly_msg[3] = cast[uint8](112)  # p
+  poly_msg[4] = cast[uint8](116)  # t
+  poly_msg[5] = cast[uint8](111)  # o
+  poly_msg[6] = cast[uint8](103)  # g
+  poly_msg[7] = cast[uint8](114)  # r
+  poly_msg[8] = cast[uint8](97)   # a
+  poly_msg[9] = cast[uint8](112)  # p
+  poly_msg[10] = cast[uint8](104) # h
+  poly_msg[11] = cast[uint8](105) # i
+  poly_msg[12] = cast[uint8](99)  # c
+  poly_msg[13] = cast[uint8](32)  # (space)
+  poly_msg[14] = cast[uint8](70)  # F
+  poly_msg[15] = cast[uint8](111) # o
+  poly_msg[16] = cast[uint8](114) # r
+  poly_msg[17] = cast[uint8](117) # u
+  poly_msg[18] = cast[uint8](109) # m
+  poly_msg[19] = cast[uint8](32)  # (space)
+  poly_msg[20] = cast[uint8](82)  # R
+  poly_msg[21] = cast[uint8](101) # e
+  poly_msg[22] = cast[uint8](115) # s
+  poly_msg[23] = cast[uint8](101) # e
+  poly_msg[24] = cast[uint8](97)  # a
+  poly_msg[25] = cast[uint8](114) # r
+  poly_msg[26] = cast[uint8](99)  # c
+  poly_msg[27] = cast[uint8](104) # h
+  poly_msg[28] = cast[uint8](32)  # (space)
+  poly_msg[29] = cast[uint8](71)  # G
+  poly_msg[30] = cast[uint8](114) # r
+  poly_msg[31] = cast[uint8](111) # o
+  poly_msg[32] = cast[uint8](117) # u
+  poly_msg[33] = cast[uint8](112) # p
+
+  # Output tag (16 bytes)
+  var poly_tag: array[16, uint8]
+  var ptagi: int32 = 0
+  while ptagi < 16:
+    poly_tag[ptagi] = cast[uint8](0)
+    ptagi = ptagi + 1
+
+  # Compute Poly1305 MAC
+  poly1305_auth(addr(poly_tag[0]), addr(poly_msg[0]), 34, addr(poly_key[0]))
+
+  # Expected tag: a8 06 1d c1 30 5f e8 a3 6a 4f b2 cf 37 9d 3b 0a
+  var poly_ok: int32 = 1
+  if poly_tag[0] != cast[uint8](0xa8):
+    poly_ok = 0
+  if poly_tag[1] != cast[uint8](0x06):
+    poly_ok = 0
+  if poly_tag[2] != cast[uint8](0x1d):
+    poly_ok = 0
+  if poly_tag[3] != cast[uint8](0xc1):
+    poly_ok = 0
+  if poly_tag[15] != cast[uint8](0x0a):
+    poly_ok = 0
+
+  if poly_ok == 1:
+    ser_println(cast[ptr uint8]("[POLY1305 TEST] Poly1305 verified correctly!"))
+  else:
+    ser_print(cast[ptr uint8]("[POLY1305 TEST] ERROR: Tag mismatch. Got: "))
+    var pti: int32 = 0
+    while pti < 16:
+      ser_print_hex(cast[int32](poly_tag[pti]))
+      ser_print(cast[ptr uint8](" "))
+      pti = pti + 1
+    ser_println(cast[ptr uint8](""))
+
+  ser_println(cast[ptr uint8]("[POLY1305 TEST] Poly1305 test complete"))
   ser_println(cast[ptr uint8](""))
 
   ser_println(cast[ptr uint8]("Starting kernel shell..."))
@@ -4600,7 +4780,7 @@ var env_count: int32 = 0
 # ============================================================================
 # Networking Variables (forward declarations for shell_execute)
 # ============================================================================
-var e1000_mmio_base: int32 = 0          # Memory-mapped I/O base address
+var e1000_mmio_base: int64 = 0          # Memory-mapped I/O base address
 var e1000_irq: int32 = 0                # IRQ line
 var e1000_found: int32 = 0              # 1 if E1000 found
 var my_mac: array[6, uint8]             # Our MAC address
@@ -8681,7 +8861,7 @@ proc shell_execute() =
     kprintln(cast[ptr uint8](""))
 
     kprintln(cast[ptr uint8]("Creating test thread..."))
-    var tid: int32 = thread_create(cast[int32](addr(test_thread_func)), 42)
+    var tid: int32 = thread_create(cast[ptr uint8](addr(test_thread_func)), 42)
     if tid < 0:
       kprintln(cast[ptr uint8]("ERROR: Failed to create thread"))
       return
@@ -10053,10 +10233,10 @@ proc virtio_net_receive(): int32 =
 # ============================================================================
 
 proc e1000_read(reg: int32): int32 =
-  return mmio_read32(e1000_mmio_base + reg)
+  return mmio_read32(e1000_mmio_base + cast[int64](reg))
 
 proc e1000_write(reg: int32, value: int32) =
-  mmio_write32(e1000_mmio_base + reg, value)
+  mmio_write32(e1000_mmio_base + cast[int64](reg), value)
 
 # ============================================================================
 # PCI Enumeration
@@ -10141,7 +10321,9 @@ proc pci_find_e1000(): int32 =
       if pci_scan_device(bus, slot) == 1:
         # Found E1000! Get BAR0 (MMIO address)
         var bar0: int32 = pci_config_read32(bus, slot, 0, PCI_BAR0)
-        e1000_mmio_base = bar0 & 0xFFFFFFF0  # Mask lower bits
+        # Zero-extend bar0 to 64-bit by masking with 0xFFFFFFFF, then mask lower bits
+        var bar0_u64: int64 = cast[int64](bar0) & cast[int64](0xFFFFFFFF)
+        e1000_mmio_base = bar0_u64 & cast[int64](0xFFFFFFF0)
 
         # Get IRQ
         e1000_irq = pci_config_read8(bus, slot, 0, PCI_IRQ_LINE)
@@ -10373,51 +10555,37 @@ proc e1000_reset_rx() =
   rx_cur = rdh
 
 proc e1000_init_rx() =
-  kprint(cast[ptr uint8]("r0"))
   # Set up RX descriptor ring
   var i: int32 = 0
   while i < RX_DESC_COUNT:
-    kprint(cast[ptr uint8]("."))
     var desc_addr: int32 = rx_descs_aligned + (i * 16)
     var buf_addr: int32 = cast[int32](addr(rx_buffers[0])) + (i * RX_BUFFER_SIZE)
-    kprint(cast[ptr uint8]("a"))
 
     # Buffer address (64-bit, low 32 bits)
-    mmio_write32(desc_addr, buf_addr)
-    kprint(cast[ptr uint8]("b"))
-    mmio_write32(desc_addr + 4, 0)  # High 32 bits
-    kprint(cast[ptr uint8]("c"))
+    mmio_write32(cast[int64](desc_addr), buf_addr)
+    mmio_write32(cast[int64](desc_addr + 4), 0)  # High 32 bits
 
     # Clear status
-    mmio_write32(desc_addr + 8, 0)
-    kprint(cast[ptr uint8]("d"))
-    mmio_write32(desc_addr + 12, 0)
-    kprint(cast[ptr uint8]("e"))
+    mmio_write32(cast[int64](desc_addr + 8), 0)
+    mmio_write32(cast[int64](desc_addr + 12), 0)
 
     i = i + 1
 
-  kprint(cast[ptr uint8]("r1"))
   # Set RX descriptor base address
   e1000_write(E1000_RDBAL, rx_descs_aligned)
   e1000_write(E1000_RDBAH, 0)
 
-  kprint(cast[ptr uint8]("r2"))
   # Set RX descriptor length (in bytes)
   e1000_write(E1000_RDLEN, RX_DESC_COUNT * 16)
 
-  kprint(cast[ptr uint8]("r3"))
   # Set head and tail
   e1000_write(E1000_RDH, 0)
   e1000_write(E1000_RDT, RX_DESC_COUNT - 1)
 
-  kprint(cast[ptr uint8]("r4"))
   # Enable receiver (with promiscuous mode for debugging)
-  # UPE = Unicast Promiscuous Enable (bit 3)
-  # MPE = Multicast Promiscuous Enable (bit 4)
   var rctl: int32 = E1000_RCTL_EN | E1000_RCTL_BAM | E1000_RCTL_BSIZE_2048 | E1000_RCTL_SECRC
-  rctl = rctl | 0x18  # Add UPE and MPE bits
+  rctl = rctl | 0x18  # UPE + MPE (promiscuous mode)
   e1000_write(E1000_RCTL, rctl)
-  kprint(cast[ptr uint8]("r5"))
 
 
 proc e1000_init_tx() =
@@ -10470,7 +10638,6 @@ proc e1000_reset() =
   e1000_write(E1000_CTRL, ctrl | E1000_CTRL_RST)
 
   # Wait for reset to complete
-  # (Using nested loops to work around compiler bug with large constants)
   var i: int32 = 0
   var j: int32 = 0
   while i < 100:
@@ -10514,47 +10681,34 @@ proc net_init(): int32 =
     ser_println(cast[ptr uint8]("[NET] Virtio-net init failed, trying E1000..."))
 
   # Fall back to E1000
-  kprint(cast[ptr uint8]("1"))
   # Calculate 16-byte aligned descriptor ring addresses
-  # Round up to next 16-byte boundary using bitmask
   var rx_raw: int32 = cast[int32](addr(rx_descs_raw[0]))
   rx_descs_aligned = (rx_raw + 15) & cast[int32](0xFFFFFFF0)
 
   var tx_raw: int32 = cast[int32](addr(tx_descs_raw[0]))
   tx_descs_aligned = (tx_raw + 15) & cast[int32](0xFFFFFFF0)
 
-  kprint(cast[ptr uint8]("2"))
   # Find E1000
   if pci_find_e1000() == 0:
     ser_println(cast[ptr uint8]("[NET] No network device found"))
     return 0  # Not found
 
-  kprint(cast[ptr uint8]("3"))
   e1000_found = 1
 
   # Map MMIO region (128KB should be enough for E1000)
-  var mmio_page: int32 = e1000_mmio_base & 0xFFFFF000
+  var mmio_page: int64 = e1000_mmio_base & cast[int64](0xFFFFF000)
   var i: int32 = 0
   while i < 32:  # Map 32 pages (128KB)
-    map_page(mmio_page + (i * 4096), mmio_page + (i * 4096), 3)  # Present + R/W
+    map_page(cast[int32](mmio_page + cast[int64](i * 4096)), cast[int32](mmio_page + cast[int64](i * 4096)), 3)  # Present + R/W
     i = i + 1
   flush_tlb()
 
-  kprint(cast[ptr uint8]("4"))
-  # Reset device
+  # Reset and initialize device
   e1000_reset()
-
-  kprint(cast[ptr uint8]("5"))
-  # Read MAC address
   e1000_read_mac()
-
-  kprint(cast[ptr uint8]("6"))
-  # Initialize RX and TX
   e1000_init_rx()
-  kprint(cast[ptr uint8]("6b"))
   e1000_init_tx()
 
-  kprint(cast[ptr uint8]("7"))
   # Enable interrupts for RX
   e1000_write(E1000_IMS, 0x1F6DC)  # RXT0, RXO, RXDMT0, etc.
 
