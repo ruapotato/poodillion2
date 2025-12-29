@@ -845,6 +845,8 @@ class Lexer:
                 if ch != '_':
                     num_str += ch
                 self.advance()
+                if self.at_end():
+                    break
                 ch = self.current_char()
             return Token(TT_NUMBER, int(num_str, 16), start_line, start_col,
                         self.line, self.column)
@@ -859,6 +861,8 @@ class Lexer:
                 if ch != '_':
                     num_str += ch
                 self.advance()
+                if self.at_end():
+                    break
                 ch = self.current_char()
             return Token(TT_NUMBER, int(num_str, 2), start_line, start_col,
                         self.line, self.column)
@@ -873,6 +877,8 @@ class Lexer:
                 if ch != '_':
                     num_str += ch
                 self.advance()
+                if self.at_end():
+                    break
                 ch = self.current_char()
             return Token(TT_NUMBER, int(num_str, 8), start_line, start_col,
                         self.line, self.column)
@@ -883,6 +889,8 @@ class Lexer:
             if ch != '_':
                 num_str += ch
             self.advance()
+            if self.at_end():
+                break
             ch = self.current_char()
 
         return Token(TT_NUMBER, int(num_str), start_line, start_col,

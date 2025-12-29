@@ -262,6 +262,12 @@ class DictLiteral(ASTNode):
 
 
 @dataclass
+class SetLiteral(ASTNode):
+    """Set literal: {a, b, c}"""
+    elements: List[ASTNode] = field(default_factory=list)
+
+
+@dataclass
 class TupleLiteral(ASTNode):
     """Tuple literal: (a, b, c)"""
     elements: List[ASTNode] = field(default_factory=list)
