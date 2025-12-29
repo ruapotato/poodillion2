@@ -1,37 +1,37 @@
 # hostname - Print the system hostname
 # Reads /proc/sys/kernel/hostname
 
-import "lib/syscalls"
+from lib.syscalls import *
 
-proc main(): int32 =
-  # Allocate memory
-  var old_brk: int32 = syscall1(SYS_brk, 0)
-  var new_brk: int32 = old_brk + 512
-  discard syscall1(SYS_brk, new_brk)
+def main() -> int32:
+    # Allocate memory
+    old_brk: int32 = syscall1(SYS_brk, 0)
+    new_brk: int32 = old_brk + 512
+    _ = syscall1(SYS_brk, new_brk)
 
-  var buffer: ptr uint8 = cast[ptr uint8](old_brk)
+    buffer: *uint8 = cast[*uint8](old_brk)
 
-  var fd: int32 = open("/proc/sys/kernel/hostname", O_RDONLY, 0)
-  if fd < 0:
-    perror("hostname: cannot open /proc/sys/kernel/hostname")
-    return 1
+    fd: int32 = open("/proc/sys/kernel/hostname", O_RDONLY, 0)
+    if fd < 0:
+        perror("hostname: cannot open /proc/sys/kernel/hostname")
+        return 1
 
-  var nread: int32 = read(fd, buffer, 256)
-  discard close(fd)
+    nread: int32 = read(fd, buffer, 256)
+    _ = close(fd)
 
-  if nread <= 0:
-    perror("hostname: cannot read hostname")
-    return 1
+    if nread <= 0:
+        perror("hostname: cannot read hostname")
+        return 1
 
-  # Remove trailing newline if present
-  if nread > 0:
-    if buffer[nread - 1] == cast[uint8](10):  # newline
-      nread = nread - 1
+    # Remove trailing newline if present
+    if nread > 0:
+        if buffer[nread - 1] == cast[uint8](10):  # newline
+            nread = nread - 1
 
-  buffer[nread] = cast[uint8](0)
+    buffer[nread] = cast[uint8](0)
 
-  # Print hostname
-  print(buffer)
-  newline()
+    # Print hostname
+    print(buffer)
+    newline()
 
-  return 0
+    return 0

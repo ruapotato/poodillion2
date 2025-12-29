@@ -1,22 +1,22 @@
 # mv - move/rename file or directory
 # Usage: mv source destination
 
-import "lib/syscalls"
+from lib.syscalls import *
 
-extern get_argc(): int32
-extern get_argv(index: int32): ptr uint8
+extern def get_argc() -> int32
+extern def get_argv(index: int32) -> *uint8
 
-proc main(): int32 =
-  var argc: int32 = get_argc()
+def main() -> int32:
+  argc: int32 = get_argc()
 
   if argc < 3:
     perror("Usage: mv source destination")
     return 1
 
-  var source: ptr uint8 = get_argv(1)
-  var dest: ptr uint8 = get_argv(2)
+  source: *uint8 = get_argv(1)
+  dest: *uint8 = get_argv(2)
 
-  var result: int32 = rename(source, dest)
+  result: int32 = rename(source, dest)
 
   if result < 0:
     perror("mv: cannot move/rename file")

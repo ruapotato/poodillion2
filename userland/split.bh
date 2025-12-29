@@ -2,18 +2,18 @@
 # Usage: split [-l LINES] [FILE] [PREFIX]
 # Default: 1000 lines per piece, prefix = x
 
-import "lib/syscalls"
+from lib.syscalls import *
 
-extern get_argc(): int32
-extern get_argv(index: int32): ptr uint8
+extern def get_argc() -> int32
+extern def get_argv(index: int32) -> *uint8
 
-proc print_err(msg: ptr uint8) =
-  var len: int32 = strlen(msg)
-  discard syscall3(SYS_write, STDERR, cast[int32](msg), len)
+def print_err(msg: *uint8):
+  len: int32 = strlen(msg)
+  syscall3(SYS_write, STDERR, cast[int32](msg), len)
 
-proc parse_int(s: ptr uint8): int32 =
-  var result: int32 = 0
-  var i: int32 = 0
+def parse_int(s: *uint8) -> int32:
+  result: int32 = 0
+  i: int32 = 0
   while s[i] >= cast[uint8](48):
     if s[i] > cast[uint8](57):
       break
@@ -22,25 +22,25 @@ proc parse_int(s: ptr uint8): int32 =
   return result
 
 # Build output filename: prefix + suffix (aa, ab, ac, ...)
-proc make_filename(base: ptr uint8, idx: int32, dest: ptr uint8) =
+def make_filename(base: *uint8, idx: int32, dest: *uint8):
   strcpy(dest, base)
-  var len: int32 = strlen(base)
-  var first: int32 = idx / 26
-  var second: int32 = idx % 26
+  len: int32 = strlen(base)
+  first: int32 = idx / 26
+  second: int32 = idx % 26
   dest[len] = cast[uint8](97 + first)
   dest[len + 1] = cast[uint8](97 + second)
   dest[len + 2] = cast[uint8](0)
 
-proc main() =
-  var argc: int32 = get_argc()
-  var lines_per_file: int32 = 1000
-  var input_fd: int32 = STDIN
-  var prefix: ptr uint8 = cast[ptr uint8]("x")
-  var arg_idx: int32 = 1
+def main():
+  argc: int32 = get_argc()
+  lines_per_file: int32 = 1000
+  input_fd: int32 = STDIN
+  prefix: *uint8 = cast[*uint8]("x")
+  arg_idx: int32 = 1
 
   # Parse arguments
   if argc > 1:
-    var arg: ptr uint8 = get_argv(arg_idx)
+    arg: *uint8 = get_argv(arg_idx)
     # Check for -l option
     if arg[0] == cast[uint8](45):  # '-'
       if arg[1] == cast[uint8](108):  # 'l'
@@ -54,11 +54,11 @@ proc main() =
 
   # Get input file
   if argc > arg_idx:
-    var filename: ptr uint8 = get_argv(arg_idx)
+    filename: *uint8 = get_argv(arg_idx)
     input_fd = syscall3(SYS_open, cast[int32](filename), O_RDONLY, 0)
     if input_fd < 0:
-      print_err(cast[ptr uint8]("split: cannot open input file\n"))
-      discard syscall1(SYS_exit, 1)
+      print_err(cast[*uint8]("split: cannot open input file\n"))
+      syscall1(SYS_exit, 1)
     arg_idx = arg_idx + 1
 
   # Get prefix
@@ -66,36 +66,36 @@ proc main() =
     prefix = get_argv(arg_idx)
 
   # Allocate buffers
-  var old_brk: int32 = syscall1(SYS_brk, 0)
-  var new_brk: int32 = old_brk + 8192
-  discard syscall1(SYS_brk, new_brk)
-  var buffer: ptr uint8 = cast[ptr uint8](old_brk)
-  var out_name: ptr uint8 = cast[ptr uint8](old_brk + 4096)
-  var line_buf: ptr uint8 = cast[ptr uint8](old_brk + 4096 + 256)
+  old_brk: int32 = syscall1(SYS_brk, 0)
+  new_brk: int32 = old_brk + 8192
+  syscall1(SYS_brk, new_brk)
+  buffer: *uint8 = cast[*uint8](old_brk)
+  out_name: *uint8 = cast[*uint8](old_brk + 4096)
+  line_buf: *uint8 = cast[*uint8](old_brk + 4096 + 256)
 
-  var file_count: int32 = 0
-  var line_count: int32 = 0
-  var out_fd: int32 = -1
+  file_count: int32 = 0
+  line_count: int32 = 0
+  out_fd: int32 = -1
 
-  var buf_pos: int32 = 0
-  var buf_size: int32 = 0
-  var running: int32 = 1
+  buf_pos: int32 = 0
+  buf_size: int32 = 0
+  running: int32 = 1
 
   while running != 0:
     # Open new output file if needed
     if line_count == 0:
       if out_fd >= 0:
-        discard syscall1(SYS_close, out_fd)
+        syscall1(SYS_close, out_fd)
       make_filename(prefix, file_count, out_name)
       out_fd = syscall3(SYS_open, cast[int32](out_name), O_WRONLY + O_CREAT + O_TRUNC, 420)
       if out_fd < 0:
-        print_err(cast[ptr uint8]("split: cannot create output file\n"))
-        discard syscall1(SYS_exit, 1)
+        print_err(cast[*uint8]("split: cannot create output file\n"))
+        syscall1(SYS_exit, 1)
       file_count = file_count + 1
 
     # Read and process a line
-    var line_start: int32 = 0
-    var line_done: int32 = 0
+    line_start: int32 = 0
+    line_done: int32 = 0
 
     while line_done == 0:
       # Need more data?
@@ -108,7 +108,7 @@ proc main() =
           break
 
       if buf_pos < buf_size:
-        var c: uint8 = buffer[buf_pos]
+        c: uint8 = buffer[buf_pos]
         buf_pos = buf_pos + 1
 
         line_buf[line_start] = c
@@ -119,7 +119,7 @@ proc main() =
 
     # Write the line to output
     if line_start > 0:
-      discard syscall3(SYS_write, out_fd, cast[int32](line_buf), line_start)
+      syscall3(SYS_write, out_fd, cast[int32](line_buf), line_start)
       line_count = line_count + 1
 
       # Check if we need a new file
@@ -128,8 +128,8 @@ proc main() =
 
   # Close files
   if out_fd >= 0:
-    discard syscall1(SYS_close, out_fd)
+    syscall1(SYS_close, out_fd)
   if input_fd != STDIN:
-    discard syscall1(SYS_close, input_fd)
+    syscall1(SYS_close, input_fd)
 
-  discard syscall1(SYS_exit, 0)
+  syscall1(SYS_exit, 0)

@@ -1,69 +1,69 @@
 # mmap_test - Debug mmap syscall
 
-import "lib/syscalls"
+from lib.syscalls import *
 
 const PROT_READ: int32 = 1
 const PROT_WRITE: int32 = 2
 const MAP_PRIVATE: int32 = 2
 const MAP_ANONYMOUS: int32 = 32
 
-proc print_str(s: ptr uint8): int32 =
-    var len: int32 = 0
+def print_str(s: *uint8) -> int32:
+    len: int32 = 0
     while s[len] != 0:
         len = len + 1
     return syscall3(SYS_write, 1, cast[int32](s), len)
 
-proc print_hex(n: int32) =
-    var old_brk: int32 = syscall1(SYS_brk, 0)
-    discard syscall1(SYS_brk, old_brk + 32)
-    var buf: ptr uint8 = cast[ptr uint8](old_brk)
+def print_hex(n: int32):
+    old_brk: int32 = syscall1(SYS_brk, 0)
+    _ = syscall1(SYS_brk, old_brk + 32)
+    buf: *uint8 = cast[*uint8](old_brk)
 
     buf[0] = 48  # '0'
     buf[1] = 120 # 'x'
 
-    var i: int32 = 0
+    i: int32 = 0
     while i < 8:
-        var nibble: int32 = (n >> (28 - i * 4)) & 15
+        nibble: int32 = (n >> (28 - i * 4)) & 15
         if nibble < 10:
             buf[i + 2] = cast[uint8](48 + nibble)
         else:
             buf[i + 2] = cast[uint8](97 + nibble - 10)
         i = i + 1
 
-    discard syscall3(SYS_write, 1, cast[int32](buf), 10)
+    _ = syscall3(SYS_write, 1, cast[int32](buf), 10)
 
-proc main(): int32 =
-    discard print_str(cast[ptr uint8]("Testing mmap2 syscall...\n"))
+def main() -> int32:
+    _ = print_str(cast[*uint8]("Testing mmap2 syscall...\n"))
 
     # Try mmap2 (syscall 192) with 4MB like gc_init
-    var result: int32 = syscall6(SYS_mmap2, 0, 4194304,
-                                  PROT_READ | PROT_WRITE,
-                                  MAP_PRIVATE | MAP_ANONYMOUS, -1, 0)
+    result: int32 = syscall6(SYS_mmap2, 0, 4194304,
+                              PROT_READ | PROT_WRITE,
+                              MAP_PRIVATE | MAP_ANONYMOUS, -1, 0)
 
-    discard print_str(cast[ptr uint8]("mmap2 returned: "))
+    _ = print_str(cast[*uint8]("mmap2 returned: "))
     print_hex(result)
-    discard print_str(cast[ptr uint8]("\n"))
+    _ = print_str(cast[*uint8]("\n"))
 
     # mmap returns -errno on error (negative values)
     # Note: addresses > 0x7FFFFFFF appear negative in signed comparison!
     # Error codes are small negative numbers (-1 to -4095)
-    var is_error: int32 = 0
+    is_error: int32 = 0
     if result < 0:
         if result > -4096:  # It's an error code
             is_error = 1
 
     if is_error != 0:
-        discard print_str(cast[ptr uint8]("mmap2 FAILED with error: "))
+        _ = print_str(cast[*uint8]("mmap2 FAILED with error: "))
         print_hex(0 - result)
-        discard print_str(cast[ptr uint8]("\n"))
+        _ = print_str(cast[*uint8]("\n"))
     else:
-        discard print_str(cast[ptr uint8]("mmap2 succeeded!\n"))
+        _ = print_str(cast[*uint8]("mmap2 succeeded!\n"))
         # Write something to the memory
-        var mem: ptr uint8 = cast[ptr uint8](result)
+        mem: *uint8 = cast[*uint8](result)
         mem[0] = 65  # 'A'
-        discard print_str(cast[ptr uint8]("Wrote to memory successfully\n"))
+        _ = print_str(cast[*uint8]("Wrote to memory successfully\n"))
 
         # Unmap
-        discard syscall6(SYS_munmap, result, 4096, 0, 0, 0, 0)
+        _ = syscall6(SYS_munmap, result, 4096, 0, 0, 0, 0)
 
     return 0

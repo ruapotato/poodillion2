@@ -2,15 +2,15 @@
 # Usage: nproc
 # Reads /proc/cpuinfo and counts "processor" lines
 
-import "lib/syscalls"
+from lib.syscalls import *
 
-proc print_err(s: ptr uint8) =
-  var len: int32 = strlen(s)
-  discard syscall3(SYS_write, STDERR, cast[int32](s), len)
+def print_err(s: *uint8):
+  len: int32 = strlen(s)
+  _ = syscall3(SYS_write, STDERR, cast[int32](s), len)
 
 # Print integer
 # Check if line starts with "processor"
-proc starts_with_processor(buf: ptr uint8, start: int32): int32 =
+def starts_with_processor(buf: *uint8, start: int32) -> int32:
   # "processor" = 112 114 111 99 101 115 115 111 114
   if buf[start] != cast[uint8](112):  # p
     return 0
@@ -32,14 +32,14 @@ proc starts_with_processor(buf: ptr uint8, start: int32): int32 =
     return 0
   return 1
 
-proc main() =
+def main():
   # Allocate memory
-  var old_brk: int32 = syscall1(SYS_brk, 0)
-  var new_brk: int32 = old_brk + 32768  # 32KB for cpuinfo
-  discard syscall1(SYS_brk, new_brk)
+  old_brk: int32 = syscall1(SYS_brk, 0)
+  new_brk: int32 = old_brk + 32768  # 32KB for cpuinfo
+  _ = syscall1(SYS_brk, new_brk)
 
-  var path: ptr uint8 = cast[ptr uint8](old_brk)
-  var buf: ptr uint8 = cast[ptr uint8](old_brk + 256)
+  path: *uint8 = cast[*uint8](old_brk)
+  buf: *uint8 = cast[*uint8](old_brk + 256)
 
   # Build path: /proc/cpuinfo
   path[0] = cast[uint8](47)   # /
@@ -57,25 +57,25 @@ proc main() =
   path[12] = cast[uint8](111) # o
   path[13] = cast[uint8](0)
 
-  var fd: int32 = syscall3(SYS_open, cast[int32](path), O_RDONLY, 0)
+  fd: int32 = syscall3(SYS_open, cast[int32](path), O_RDONLY, 0)
   if fd < 0:
-    print_err(cast[ptr uint8]("nproc: cannot open /proc/cpuinfo\n"))
-    discard syscall1(SYS_exit, 1)
+    print_err(cast[*uint8]("nproc: cannot open /proc/cpuinfo\n"))
+    _ = syscall1(SYS_exit, 1)
 
   # Read cpuinfo
-  var total_read: int32 = 0
+  total_read: int32 = 0
   while 1 == 1:
-    var n: int32 = syscall3(SYS_read, fd, cast[int32](buf) + total_read, 32000 - total_read)
+    n: int32 = syscall3(SYS_read, fd, cast[int32](buf) + total_read, 32000 - total_read)
     if n <= 0:
       break
     total_read = total_read + n
 
-  discard syscall1(SYS_close, fd)
+  _ = syscall1(SYS_close, fd)
 
   # Count "processor" lines
-  var count: int32 = 0
-  var i: int32 = 0
-  var line_start: int32 = 0
+  count: int32 = 0
+  i: int32 = 0
+  line_start: int32 = 0
 
   while i < total_read:
     if buf[i] == cast[uint8](10):  # newline
@@ -97,6 +97,6 @@ proc main() =
     count = 1  # At least 1 CPU
 
   print_int(count)
-  print(cast[ptr uint8]("\n"))
+  print(cast[*uint8]("\n"))
 
-  discard syscall1(SYS_exit, 0)
+  _ = syscall1(SYS_exit, 0)

@@ -3,85 +3,85 @@
 # Default width: 80 characters
 # Part of BrainhairOS text utilities
 
-import "lib/syscalls"
+from lib.syscalls import *
 
-extern get_argc(): int32
-extern get_argv(index: int32): ptr uint8
+extern def get_argc() -> int32
+extern def get_argv(index: int32) -> *uint8
 
-proc print_err(msg: ptr uint8) =
-  var len: int32 = strlen(msg)
-  discard syscall3(SYS_write, STDERR, cast[int32](msg), len)
+def print_err(msg: *uint8):
+    len: int32 = strlen(msg)
+    _ = syscall3(SYS_write, STDERR, cast[int32](msg), len)
 
-proc parse_int(s: ptr uint8): int32 =
-  var result: int32 = 0
-  var i: int32 = 0
-  while s[i] >= cast[uint8](48):
-    if s[i] > cast[uint8](57):
-      break
-    result = result * 10 + cast[int32](s[i]) - 48
-    i = i + 1
-  return result
+def parse_int(s: *uint8) -> int32:
+    result: int32 = 0
+    i: int32 = 0
+    while s[i] >= cast[uint8](48):
+        if s[i] > cast[uint8](57):
+            break
+        result = result * 10 + cast[int32](s[i]) - 48
+        i = i + 1
+    return result
 
-proc main() =
-  var argc: int32 = get_argc()
+def main():
+    argc: int32 = get_argc()
 
-  # Allocate buffer
-  var old_brk: int32 = syscall1(SYS_brk, 0)
-  var new_brk: int32 = old_brk + 4096
-  discard syscall1(SYS_brk, new_brk)
-  var buffer: ptr uint8 = cast[ptr uint8](old_brk)
+    # Allocate buffer
+    old_brk: int32 = syscall1(SYS_brk, 0)
+    new_brk: int32 = old_brk + 4096
+    _ = syscall1(SYS_brk, new_brk)
+    buffer: *uint8 = cast[*uint8](old_brk)
 
-  # Parse arguments
-  var width: int32 = 80
-  var input_fd: int32 = STDIN
-  var i: int32 = 1
+    # Parse arguments
+    width: int32 = 80
+    input_fd: int32 = STDIN
+    i: int32 = 1
 
-  while i < argc:
-    var arg: ptr uint8 = get_argv(i)
-    if strcmp(arg, cast[ptr uint8]("-w")) == 0:
-      i = i + 1
-      if i >= argc:
-        print_err(cast[ptr uint8]("fold: -w requires width\n"))
-        discard syscall1(SYS_exit, 1)
-      var width_arg: ptr uint8 = get_argv(i)
-      width = parse_int(width_arg)
-      if width <= 0:
-        width = 80
-    else:
-      if arg[0] != cast[uint8](45):  # not a flag
-        input_fd = syscall2(SYS_open, cast[int32](arg), O_RDONLY)
-        if input_fd < 0:
-          print_err(cast[ptr uint8]("fold: cannot open file\n"))
-          discard syscall1(SYS_exit, 1)
-    i = i + 1
+    while i < argc:
+        arg: *uint8 = get_argv(i)
+        if strcmp(arg, cast[*uint8]("-w")) == 0:
+            i = i + 1
+            if i >= argc:
+                print_err(cast[*uint8]("fold: -w requires width\n"))
+                _ = syscall1(SYS_exit, 1)
+            width_arg: *uint8 = get_argv(i)
+            width = parse_int(width_arg)
+            if width <= 0:
+                width = 80
+        else:
+            if arg[0] != cast[uint8](45):  # not a flag
+                input_fd = syscall2(SYS_open, cast[int32](arg), O_RDONLY)
+                if input_fd < 0:
+                    print_err(cast[*uint8]("fold: cannot open file\n"))
+                    _ = syscall1(SYS_exit, 1)
+        i = i + 1
 
-  # Process input
-  var col: int32 = 0
-  var running: int32 = 1
+    # Process input
+    col: int32 = 0
+    running: int32 = 1
 
-  while running != 0:
-    var n: int32 = syscall3(SYS_read, input_fd, cast[int32](buffer), 4096)
-    if n <= 0:
-      running = 0
-      break
+    while running != 0:
+        n: int32 = syscall3(SYS_read, input_fd, cast[int32](buffer), 4096)
+        if n <= 0:
+            running = 0
+            break
 
-    var j: int32 = 0
-    while j < n:
-      var ch: uint8 = buffer[j]
+        j: int32 = 0
+        while j < n:
+            ch: uint8 = buffer[j]
 
-      if ch == cast[uint8](10):  # newline
-        discard syscall3(SYS_write, STDOUT, cast[int32](addr(ch)), 1)
-        col = 0
-      else:
-        if col >= width:
-          discard syscall3(SYS_write, STDOUT, cast[int32]("\n"), 1)
-          col = 0
-        discard syscall3(SYS_write, STDOUT, cast[int32](addr(ch)), 1)
-        col = col + 1
+            if ch == cast[uint8](10):  # newline
+                _ = syscall3(SYS_write, STDOUT, cast[int32](addr(ch)), 1)
+                col = 0
+            else:
+                if col >= width:
+                    _ = syscall3(SYS_write, STDOUT, cast[int32]("\n"), 1)
+                    col = 0
+                _ = syscall3(SYS_write, STDOUT, cast[int32](addr(ch)), 1)
+                col = col + 1
 
-      j = j + 1
+            j = j + 1
 
-  if input_fd != STDIN:
-    discard syscall1(SYS_close, input_fd)
+    if input_fd != STDIN:
+        _ = syscall1(SYS_close, input_fd)
 
-  discard syscall1(SYS_exit, 0)
+    _ = syscall1(SYS_exit, 0)

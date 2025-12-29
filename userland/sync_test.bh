@@ -1,8 +1,8 @@
 # sync_test.bh - Test synchronization primitives
 # Demonstrates spinlocks, mutexes, atomic operations, and other sync primitives
 
-import "lib/syscalls"
-import "lib/sync"
+from lib.syscalls import *
+from lib.sync import *
 
 # Thread system calls
 const SYS_thread_create: int32 = 200
@@ -10,55 +10,55 @@ const SYS_thread_exit: int32 = 201
 const SYS_thread_yield: int32 = 202
 const SYS_get_thread_id: int32 = 203
 
-proc thread_create(entry: int32, stack_ptr: int32): int32 =
+def thread_create(entry: int32, stack_ptr: int32) -> int32:
   return syscall2(SYS_thread_create, entry, stack_ptr)
 
-proc thread_exit(code: int32) =
-  discard syscall1(SYS_thread_exit, code)
+def thread_exit(code: int32):
+  syscall1(SYS_thread_exit, code)
 
-proc thread_yield() =
-  discard syscall1(SYS_thread_yield, 0)
+def thread_yield():
+  syscall1(SYS_thread_yield, 0)
 
-proc get_thread_id(): int32 =
+def get_thread_id() -> int32:
   return syscall1(SYS_get_thread_id, 0)
 
 # Print helpers
-proc print_msg(msg: ptr uint8) =
-  var len: int32 = 0
+def print_msg(msg: *uint8):
+  len: int32 = 0
   while msg[len] != cast[uint8](0):
     len = len + 1
-  discard write(STDOUT, msg, len)
+  write(STDOUT, msg, len)
 
-proc print_int(num: int32) =
+def print_int(num: int32):
   if num == 0:
-    discard write(STDOUT, "0", 1)
+    write(STDOUT, "0", 1)
     return
 
-  var buf: array[12, uint8]
-  var i: int32 = 0
-  var n: int32 = num
+  buf: array[12, uint8]
+  i: int32 = 0
+  n: int32 = num
 
   if n < 0:
-    discard write(STDOUT, "-", 1)
+    write(STDOUT, "-", 1)
     n = 0 - n
 
   while n > 0:
-    var digit: int32 = n - (n / 10) * 10
+    digit: int32 = n - (n / 10) * 10
     buf[i] = cast[uint8](48 + digit)
     n = n / 10
     i = i + 1
 
   while i > 0:
     i = i - 1
-    discard write(STDOUT, addr(buf[i]), 1)
+    write(STDOUT, addr(buf[i]), 1)
 
 # ===========================================================================
 # Test 1: Atomic Counter
 # ===========================================================================
 
-var atomic_test_counter: AtomicCounter = 0
+atomic_test_counter: AtomicCounter = 0
 
-proc test_atomic_operations() =
+def test_atomic_operations():
   print_msg("\n=== Test 1: Atomic Operations ===\n")
 
   atomic_counter_init(addr(atomic_test_counter), 0)
@@ -67,7 +67,7 @@ proc test_atomic_operations() =
   print_msg("\n")
 
   # Increment
-  var old_val: int32 = atomic_counter_inc(addr(atomic_test_counter))
+  old_val: int32 = atomic_counter_inc(addr(atomic_test_counter))
   print_msg("After increment (old value was ")
   print_int(old_val)
   print_msg("): ")
@@ -96,10 +96,10 @@ proc test_atomic_operations() =
 # Test 2: Spinlock
 # ===========================================================================
 
-var spinlock_test_lock: Spinlock = 0
-var spinlock_test_counter: int32 = 0
+spinlock_test_lock: Spinlock = 0
+spinlock_test_counter: int32 = 0
 
-proc test_spinlock() =
+def test_spinlock():
   print_msg("\n=== Test 2: Spinlock ===\n")
 
   spinlock_init(addr(spinlock_test_lock))
@@ -122,7 +122,7 @@ proc test_spinlock() =
   print_msg("Spinlock released\n")
 
   # Try lock
-  var result: int32 = spinlock_trylock(addr(spinlock_test_lock))
+  result: int32 = spinlock_trylock(addr(spinlock_test_lock))
   if result == 1:
     print_msg("Trylock succeeded\n")
     spinlock_unlock(addr(spinlock_test_lock))
@@ -135,10 +135,10 @@ proc test_spinlock() =
 # Test 3: Mutex
 # ===========================================================================
 
-var mutex_test: Mutex
-var mutex_test_counter: int32 = 0
+mutex_test: Mutex
+mutex_test_counter: int32 = 0
 
-proc test_mutex() =
+def test_mutex():
   print_msg("\n=== Test 3: Mutex ===\n")
 
   mutex_init(addr(mutex_test))
@@ -161,7 +161,7 @@ proc test_mutex() =
   print_msg("Mutex unlocked\n")
 
   # Try lock
-  var result: int32 = mutex_trylock(addr(mutex_test))
+  result: int32 = mutex_trylock(addr(mutex_test))
   if result == 1:
     print_msg("Mutex trylock succeeded\n")
     mutex_unlock(addr(mutex_test))
@@ -174,9 +174,9 @@ proc test_mutex() =
 # Test 4: Semaphore
 # ===========================================================================
 
-var semaphore_test: Semaphore
+semaphore_test: Semaphore
 
-proc test_semaphore() =
+def test_semaphore():
   print_msg("\n=== Test 4: Semaphore ===\n")
 
   # Initialize with count=3, max=5
@@ -200,7 +200,7 @@ proc test_semaphore() =
   print_msg("\n")
 
   # Try wait
-  var result: int32 = semaphore_trywait(addr(semaphore_test))
+  result: int32 = semaphore_trywait(addr(semaphore_test))
   if result == 1:
     print_msg("Trywait succeeded, value: ")
     print_int(semaphore_getvalue(addr(semaphore_test)))
@@ -214,10 +214,10 @@ proc test_semaphore() =
 # Test 5: Read-Write Lock
 # ===========================================================================
 
-var rwlock_test: RWLock
-var rwlock_shared_data: int32 = 42
+rwlock_test: RWLock
+rwlock_shared_data: int32 = 42
 
-proc test_rwlock() =
+def test_rwlock():
   print_msg("\n=== Test 5: Read-Write Lock ===\n")
 
   rwlock_init(addr(rwlock_test))
@@ -249,16 +249,16 @@ proc test_rwlock() =
 # Test 6: Atomic Flag
 # ===========================================================================
 
-var flag_test: AtomicFlag = 0
+flag_test: AtomicFlag = 0
 
-proc test_atomic_flag() =
+def test_atomic_flag():
   print_msg("\n=== Test 6: Atomic Flag ===\n")
 
   atomic_flag_clear(addr(flag_test))
   print_msg("Flag cleared\n")
 
   # Test and set (should succeed first time)
-  var result: int32 = atomic_flag_test_and_set(addr(flag_test))
+  result: int32 = atomic_flag_test_and_set(addr(flag_test))
   print_msg("First test_and_set returned: ")
   print_int(result)
   print_msg(" (should be 0)\n")
@@ -279,9 +279,9 @@ proc test_atomic_flag() =
 # Test 7: Barrier (single-threaded simulation)
 # ===========================================================================
 
-var barrier_test: Barrier
+barrier_test: Barrier
 
-proc test_barrier() =
+def test_barrier():
   print_msg("\n=== Test 7: Barrier (single-threaded) ===\n")
 
   # Initialize for 1 thread (just to test structure)
@@ -298,7 +298,7 @@ proc test_barrier() =
 # Main Program
 # ===========================================================================
 
-proc main(): int32 =
+def main() -> int32:
   print_msg("\n")
   print_msg("=====================================\n")
   print_msg("  BrainhairOS Synchronization Tests\n")

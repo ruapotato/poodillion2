@@ -2,59 +2,59 @@
 # Usage: nice [-n PRIORITY] COMMAND [ARGS...]
 # Priority range: -20 (highest) to 19 (lowest), default +10
 
-import "lib/syscalls"
+from lib.syscalls import *
 
 const PRIO_PROCESS: int32 = 0
 
-proc print_err(msg: ptr uint8) =
-  var len: int32 = strlen(msg)
-  discard syscall3(SYS_write, STDERR, cast[int32](msg), len)
+def print_err(msg: *uint8):
+  len: int32 = strlen(msg)
+  _ = syscall3(SYS_write, STDERR, cast[int32](msg), len)
 
 # Print integer
-proc main() =
+def main():
   # Default nice increment is 10
-  var nice_value: int32 = 10
+  nice_value: int32 = 10
 
-  print_err(cast[ptr uint8]("nice: Setting process priority to +10\n"))
+  print_err(cast[*uint8]("nice: Setting process priority to +10\n"))
 
   # Get current priority
-  var current_prio: int32 = syscall2(SYS_getpriority, PRIO_PROCESS, 0)
-  print_err(cast[ptr uint8]("Current priority: "))
+  current_prio: int32 = syscall2(SYS_getpriority, PRIO_PROCESS, 0)
+  print_err(cast[*uint8]("Current priority: "))
   print_int(current_prio)
-  discard syscall3(SYS_write, STDERR, cast[int32]("\n"), 1)
+  _ = syscall3(SYS_write, STDERR, cast[int32]("\n"), 1)
 
   # Adjust priority using nice syscall
   # nice() adds the increment to the current nice value
-  var result: int32 = syscall1(SYS_nice, nice_value)
+  result: int32 = syscall1(SYS_nice, nice_value)
 
   if result < 0:
     # Check if it's a real error or just a negative nice value
     # In a real implementation, we'd check errno
-    print_err(cast[ptr uint8]("nice: warning - may have failed\n"))
+    print_err(cast[*uint8]("nice: warning - may have failed\n"))
 
   # Get new priority
-  var new_prio: int32 = syscall2(SYS_getpriority, PRIO_PROCESS, 0)
-  print_err(cast[ptr uint8]("New priority: "))
+  new_prio: int32 = syscall2(SYS_getpriority, PRIO_PROCESS, 0)
+  print_err(cast[*uint8]("New priority: "))
   print_int(new_prio)
-  discard syscall3(SYS_write, STDERR, cast[int32]("\n"), 1)
+  _ = syscall3(SYS_write, STDERR, cast[int32]("\n"), 1)
 
   # Fork and exec command
-  var pid: int32 = syscall1(SYS_fork, 0)
+  pid: int32 = syscall1(SYS_fork, 0)
 
   if pid < 0:
-    print_err(cast[ptr uint8]("nice: fork failed\n"))
-    discard syscall1(SYS_exit, 1)
+    print_err(cast[*uint8]("nice: fork failed\n"))
+    _ = syscall1(SYS_exit, 1)
 
   if pid == 0:
     # Child process - would exec command here
-    print(cast[ptr uint8]("nice: Command would run here with modified priority\n"))
+    print(cast[*uint8]("nice: Command would run here with modified priority\n"))
 
     # Example: execve("/bin/sh", argv, envp)
-    # var cmd: ptr uint8 = cast[ptr uint8]("/bin/sh")
-    # discard syscall3(SYS_execve, cast[int32](cmd), 0, 0)
+    # cmd: *uint8 = cast[*uint8]("/bin/sh")
+    # _ = syscall3(SYS_execve, cast[int32](cmd), 0, 0)
 
-    discard syscall1(SYS_exit, 0)
+    _ = syscall1(SYS_exit, 0)
 
   # Parent process - just exit
-  print_err(cast[ptr uint8]("nice: Command started with modified priority\n"))
-  discard syscall1(SYS_exit, 0)
+  print_err(cast[*uint8]("nice: Command started with modified priority\n"))
+  _ = syscall1(SYS_exit, 0)

@@ -2,59 +2,59 @@
 # Usage: renice PRIORITY PID
 # Priority range: -20 (highest) to 19 (lowest)
 
-import "lib/syscalls"
+from lib.syscalls import *
 
-const PRIO_PROCESS: int32 = 0
+PRIO_PROCESS: int32 = 0
 
-extern get_argc(): int32
-extern get_argv(index: int32): ptr uint8
+extern def get_argc() -> int32
+extern def get_argv(index: int32) -> *uint8
 
-proc print_err(msg: ptr uint8) =
-  var len: int32 = strlen(msg)
-  discard syscall3(SYS_write, STDERR, cast[int32](msg), len)
+def print_err(msg: *uint8):
+  len: int32 = strlen(msg)
+  syscall3(SYS_write, STDERR, cast[int32](msg), len)
 
 # Parse integer from string (handles negative)
 # Print integer (handles negative)
-proc main() =
-  var argc: int32 = get_argc()
+def main():
+  argc: int32 = get_argc()
 
   if argc < 3:
-    print_err(cast[ptr uint8]("Usage: renice PRIORITY PID\n"))
-    print_err(cast[ptr uint8]("  Priority range: -20 (highest) to 19 (lowest)\n"))
-    discard syscall1(SYS_exit, 1)
+    print_err(cast[*uint8]("Usage: renice PRIORITY PID\n"))
+    print_err(cast[*uint8]("  Priority range: -20 (highest) to 19 (lowest)\n"))
+    syscall1(SYS_exit, 1)
 
   # Get priority and PID
-  var priority_arg: ptr uint8 = get_argv(1)
-  var pid_arg: ptr uint8 = get_argv(2)
+  priority_arg: *uint8 = get_argv(1)
+  pid_arg: *uint8 = get_argv(2)
 
-  var priority: int32 = atoi(priority_arg)
-  var pid: int32 = atoi(pid_arg)
+  priority: int32 = atoi(priority_arg)
+  pid: int32 = atoi(pid_arg)
 
   if pid <= 0:
-    print_err(cast[ptr uint8]("renice: invalid PID\n"))
-    discard syscall1(SYS_exit, 1)
+    print_err(cast[*uint8]("renice: invalid PID\n"))
+    syscall1(SYS_exit, 1)
 
   if priority < -20 or priority > 19:
-    print_err(cast[ptr uint8]("renice: priority must be between -20 and 19\n"))
-    discard syscall1(SYS_exit, 1)
+    print_err(cast[*uint8]("renice: priority must be between -20 and 19\n"))
+    syscall1(SYS_exit, 1)
 
   # Get current priority
-  var current_prio: int32 = syscall2(SYS_getpriority, PRIO_PROCESS, pid)
+  current_prio: int32 = syscall2(SYS_getpriority, PRIO_PROCESS, pid)
 
   # Set new priority
-  var result: int32 = syscall3(SYS_setpriority, PRIO_PROCESS, pid, priority)
+  result: int32 = syscall3(SYS_setpriority, PRIO_PROCESS, pid, priority)
 
   if result < 0:
-    print_err(cast[ptr uint8]("renice: failed to set priority (permission denied?)\n"))
-    discard syscall1(SYS_exit, 1)
+    print_err(cast[*uint8]("renice: failed to set priority (permission denied?)\n"))
+    syscall1(SYS_exit, 1)
 
   # Confirm change
-  print(cast[ptr uint8]("renice: PID "))
+  print(cast[*uint8]("renice: PID "))
   print_int(pid)
-  print(cast[ptr uint8](" priority changed from "))
+  print(cast[*uint8](" priority changed from "))
   print_int(current_prio)
-  print(cast[ptr uint8](" to "))
+  print(cast[*uint8](" to "))
   print_int(priority)
-  print(cast[ptr uint8]("\n"))
+  print(cast[*uint8]("\n"))
 
-  discard syscall1(SYS_exit, 0)
+  syscall1(SYS_exit, 0)

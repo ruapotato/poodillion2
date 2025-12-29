@@ -1,9 +1,9 @@
 # route - Display IP routing table
 # Reads from /proc/net/route
 
-import "lib/syscalls"
+from lib.syscalls import *
 
-proc hexchar_to_int(c: uint8): int32 =
+def hexchar_to_int(c: uint8) -> int32:
   if c >= cast[uint8](48):
     if c <= cast[uint8](57):
       return cast[int32](c) - 48
@@ -15,25 +15,25 @@ proc hexchar_to_int(c: uint8): int32 =
       return cast[int32](c) - 97 + 10
   return 0
 
-proc int_to_char(val: int32): uint8 =
+def int_to_char(val: int32) -> uint8:
   if val < 10:
     return cast[uint8](val + 48)
   return cast[uint8](0)
 
-proc hex_to_ip(hex_str: ptr uint8, out: ptr uint8) =
+def hex_to_ip(hex_str: *uint8, out: *uint8):
   # Convert hex IP (little endian) to dotted decimal
   # Example: 00000000 -> 0.0.0.0
-  var i: int32 = 0
-  var j: int32 = 0
-  var octet: int32 = 0
+  i: int32 = 0
+  j: int32 = 0
+  octet: int32 = 0
 
   while i < 8:
-    var byte_val: int32 = hexchar_to_int(hex_str[i]) * 16 + hexchar_to_int(hex_str[i + 1])
+    byte_val: int32 = hexchar_to_int(hex_str[i]) * 16 + hexchar_to_int(hex_str[i + 1])
 
     # Convert to decimal string
-    var d1: int32 = byte_val / 100
-    var d2: int32 = (byte_val % 100) / 10
-    var d3: int32 = byte_val % 10
+    d1: int32 = byte_val / 100
+    d2: int32 = (byte_val % 100) / 10
+    d3: int32 = byte_val % 10
 
     if d1 > 0:
       out[j] = int_to_char(d1)
@@ -61,19 +61,19 @@ proc hex_to_ip(hex_str: ptr uint8, out: ptr uint8) =
 
   out[j] = cast[uint8](0)
 
-proc pad_string(s: ptr uint8, width: int32) =
-  var len: int32 = strlen(s)
+def pad_string(s: *uint8, width: int32):
+  len: int32 = strlen(s)
   while len < width:
-    print(cast[ptr uint8](" "))
+    print(cast[*uint8](" "))
     len = len + 1
 
-proc parse_route_line(line: ptr uint8, iface: ptr uint8, dest: ptr uint8, gateway: ptr uint8, mask: ptr uint8) =
+def parse_route_line(line: *uint8, iface: *uint8, dest: *uint8, gateway: *uint8, mask: *uint8):
   # Parse /proc/net/route format:
   # Iface Destination Gateway Flags RefCnt Use Metric Mask MTU Window IRTT
   # eth0  00000000    0102A8C0 0003  0      0   0      00000000 0   0   0
 
-  var i: int32 = 0
-  var j: int32 = 0
+  i: int32 = 0
+  j: int32 = 0
 
   # Parse interface name (first field)
   while line[i] != cast[uint8](9):  # tab
@@ -111,7 +111,7 @@ proc parse_route_line(line: ptr uint8, iface: ptr uint8, dest: ptr uint8, gatewa
   gateway[j] = cast[uint8](0)
 
   # Skip to mask field (fields 4-7)
-  var field: int32 = 3
+  field: int32 = 3
   while field < 7:
     while line[i] != cast[uint8](9):
       if line[i] == cast[uint8](0):
@@ -149,22 +149,22 @@ proc parse_route_line(line: ptr uint8, iface: ptr uint8, dest: ptr uint8, gatewa
           i = i + 1
   mask[j] = cast[uint8](0)
 
-proc main() =
+def main():
   # Allocate memory
-  var old_brk: int32 = syscall1(SYS_brk, 0)
-  var new_brk: int32 = old_brk + 16384
-  discard syscall1(SYS_brk, new_brk)
+  old_brk: int32 = syscall1(SYS_brk, 0)
+  new_brk: int32 = old_brk + 16384
+  syscall1(SYS_brk, new_brk)
 
-  var path: ptr uint8 = cast[ptr uint8](old_brk)
-  var buffer: ptr uint8 = cast[ptr uint8](old_brk + 256)
-  var line_buf: ptr uint8 = cast[ptr uint8](old_brk + 8192)
-  var iface_buf: ptr uint8 = cast[ptr uint8](old_brk + 8192 + 512)
-  var dest_hex: ptr uint8 = cast[ptr uint8](old_brk + 8192 + 512 + 64)
-  var gw_hex: ptr uint8 = cast[ptr uint8](old_brk + 8192 + 512 + 128)
-  var mask_hex: ptr uint8 = cast[ptr uint8](old_brk + 8192 + 512 + 192)
-  var dest_ip: ptr uint8 = cast[ptr uint8](old_brk + 8192 + 512 + 256)
-  var gw_ip: ptr uint8 = cast[ptr uint8](old_brk + 8192 + 512 + 320)
-  var mask_ip: ptr uint8 = cast[ptr uint8](old_brk + 8192 + 512 + 384)
+  path: *uint8 = cast[*uint8](old_brk)
+  buffer: *uint8 = cast[*uint8](old_brk + 256)
+  line_buf: *uint8 = cast[*uint8](old_brk + 8192)
+  iface_buf: *uint8 = cast[*uint8](old_brk + 8192 + 512)
+  dest_hex: *uint8 = cast[*uint8](old_brk + 8192 + 512 + 64)
+  gw_hex: *uint8 = cast[*uint8](old_brk + 8192 + 512 + 128)
+  mask_hex: *uint8 = cast[*uint8](old_brk + 8192 + 512 + 192)
+  dest_ip: *uint8 = cast[*uint8](old_brk + 8192 + 512 + 256)
+  gw_ip: *uint8 = cast[*uint8](old_brk + 8192 + 512 + 320)
+  mask_ip: *uint8 = cast[*uint8](old_brk + 8192 + 512 + 384)
 
   # Build /proc/net/route path
   path[0] = cast[uint8](47)   # /
@@ -184,26 +184,26 @@ proc main() =
   path[14] = cast[uint8](101) # e
   path[15] = cast[uint8](0)
 
-  var fd: int32 = syscall3(SYS_open, cast[int32](path), O_RDONLY, 0)
+  fd: int32 = syscall3(SYS_open, cast[int32](path), O_RDONLY, 0)
   if fd < 0:
-    print(cast[ptr uint8]("route: cannot open /proc/net/route\n"))
-    discard syscall1(SYS_exit, 1)
+    print(cast[*uint8]("route: cannot open /proc/net/route\n"))
+    syscall1(SYS_exit, 1)
 
-  var nread: int32 = syscall3(SYS_read, fd, cast[int32](buffer), 8192)
-  discard syscall1(SYS_close, fd)
+  nread: int32 = syscall3(SYS_read, fd, cast[int32](buffer), 8192)
+  syscall1(SYS_close, fd)
 
   if nread <= 0:
-    print(cast[ptr uint8]("route: cannot read routing table\n"))
-    discard syscall1(SYS_exit, 1)
+    print(cast[*uint8]("route: cannot read routing table\n"))
+    syscall1(SYS_exit, 1)
 
   # Print header
-  print(cast[ptr uint8]("Kernel IP routing table\n"))
-  print(cast[ptr uint8]("Destination     Gateway         Genmask         Iface\n"))
+  print(cast[*uint8]("Kernel IP routing table\n"))
+  print(cast[*uint8]("Destination     Gateway         Genmask         Iface\n"))
 
   # Parse line by line
-  var line_start: int32 = 0
-  var i: int32 = 0
-  var first_line: int32 = 1
+  line_start: int32 = 0
+  i: int32 = 0
+  first_line: int32 = 1
 
   while i < nread:
     if buffer[i] == cast[uint8](10):  # newline
@@ -216,8 +216,8 @@ proc main() =
           return
       if first_line == 0:
         # Copy line to line_buf
-        var j: int32 = 0
-        var k: int32 = line_start
+        j: int32 = 0
+        k: int32 = line_start
         while k < i:
           line_buf[j] = buffer[k]
           j = j + 1
@@ -243,10 +243,10 @@ proc main() =
         pad_string(mask_ip, 16)
 
         print(iface_buf)
-        print(cast[ptr uint8]("\n"))
+        print(cast[*uint8]("\n"))
 
         line_start = i + 1
 
     i = i + 1
 
-  discard syscall1(SYS_exit, 0)
+  syscall1(SYS_exit, 0)

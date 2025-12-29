@@ -3,27 +3,27 @@
 #
 # Simple wrapper: sync filesystems + halt syscall
 
-import "lib/syscalls"
+from lib.syscalls import *
 
-proc main(): int32 =
-  println("halt: syncing filesystems...")
+def main() -> int32:
+    println("halt: syncing filesystems...")
 
-  # Sync filesystems three times for safety
-  discard syscall1(SYS_sync, 0)
-  discard syscall1(SYS_sync, 0)
-  discard syscall1(SYS_sync, 0)
+    # Sync filesystems three times for safety
+    _ = syscall1(SYS_sync, 0)
+    _ = syscall1(SYS_sync, 0)
+    _ = syscall1(SYS_sync, 0)
 
-  println("halt: halting system now...")
+    println("halt: halting system now...")
 
-  # Call reboot syscall with HALT command
-  # SYS_reboot: syscall4(88, MAGIC1, MAGIC2, cmd, 0)
-  # MAGIC1 = 0xfee1dead, MAGIC2 = 672274793, CMD_HALT = 0xcdef0123 = 3455992611
-  var magic1: int32 = 4276215469
-  var magic2: int32 = 672274793
-  var cmd: int32 = 3455992611
-  var result: int32 = syscall4(SYS_reboot, magic1, magic2, cmd, 0)
+    # Call reboot syscall with HALT command
+    # SYS_reboot: syscall4(88, MAGIC1, MAGIC2, cmd, 0)
+    # MAGIC1 = 0xfee1dead, MAGIC2 = 672274793, CMD_HALT = 0xcdef0123 = 3455992611
+    magic1: int32 = 4276215469
+    magic2: int32 = 672274793
+    cmd: int32 = 3455992611
+    result: int32 = syscall4(SYS_reboot, magic1, magic2, cmd, 0)
 
-  # If we get here, halt failed
-  perror("halt: failed to halt system")
-  println("halt: you may need root privileges")
-  return 1
+    # If we get here, halt failed
+    perror("halt: failed to halt system")
+    println("halt: you may need root privileges")
+    return 1

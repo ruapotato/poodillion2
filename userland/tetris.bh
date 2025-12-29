@@ -1,7 +1,7 @@
 # tetris - Classic Tetris Game
 # Use arrow keys or A/D to move, W/Up to rotate, S/Down to drop
 
-import "lib/syscalls"
+from lib.syscalls import *
 
 const O_NONBLOCK: int32 = 2048
 const F_SETFL: int32 = 4
@@ -26,88 +26,88 @@ const PIECE_J: int32 = 5
 const PIECE_L: int32 = 6
 
 # Global framebuffer state
-var g_fb: ptr uint32 = cast[ptr uint32](0)
-var g_xres: int32 = 0
-var g_yres: int32 = 0
-var g_fb_fd: int32 = 0
+g_fb: *uint32 = cast[*uint32](0)
+g_xres: int32 = 0
+g_yres: int32 = 0
+g_fb_fd: int32 = 0
 
 # Game state
-var g_board: array[200, int32]        # 10x20 board, 0 = empty, 1-7 = piece colors
-var g_current_piece: int32 = 0
-var g_current_rot: int32 = 0
-var g_piece_x: int32 = 4
-var g_piece_y: int32 = 0
-var g_next_piece: int32 = 0
-var g_score: int32 = 0
-var g_lines: int32 = 0
-var g_level: int32 = 1
-var g_game_over: int32 = 0
-var g_running: int32 = 1
+g_board: array[200, int32]        # 10x20 board, 0 = empty, 1-7 = piece colors
+g_current_piece: int32 = 0
+g_current_rot: int32 = 0
+g_piece_x: int32 = 4
+g_piece_y: int32 = 0
+g_next_piece: int32 = 0
+g_score: int32 = 0
+g_lines: int32 = 0
+g_level: int32 = 1
+g_game_over: int32 = 0
+g_running: int32 = 1
 
 # Board position on screen
-var g_board_x: int32 = 0
-var g_board_y: int32 = 0
+g_board_x: int32 = 0
+g_board_y: int32 = 0
 
 # Timing
-var g_drop_timer: int32 = 0
-var g_drop_delay: int32 = 500  # ms between drops
+g_drop_timer: int32 = 0
+g_drop_delay: int32 = 500  # ms between drops
 
 # Random state
-var g_rand_state: int32 = 12345
+g_rand_state: int32 = 12345
 
 # Colors for pieces (0=empty, 1-7=piece types)
-var g_colors: array[8, int32]
+g_colors: array[8, int32]
 
 # Piece shapes (4x4 grid for each rotation of each piece)
 # Each piece has 4 rotations, each rotation is 4 cells (x,y pairs)
-var g_pieces: array[224, int32]  # 7 pieces * 4 rotations * 4 cells * 2 coords
+g_pieces: array[224, int32]  # 7 pieces * 4 rotations * 4 cells * 2 coords
 
-proc print_str(s: ptr uint8) =
-  var len: int32 = 0
+def print_str(s: *uint8):
+  len: int32 = 0
   while s[len] != cast[uint8](0):
     len = len + 1
-  discard syscall3(SYS_write, STDOUT, cast[int32](s), len)
+  syscall3(SYS_write, STDOUT, cast[int32](s), len)
 
-proc print_num(n: int32) =
-  var buf: array[16, uint8]
+def print_num(n: int32):
+  buf: array[16, uint8]
   if n == 0:
     buf[0] = cast[uint8](48)
     buf[1] = cast[uint8](0)
-    print_str(cast[ptr uint8](buf))
+    print_str(cast[*uint8](buf))
     return
-  var tmp: int32 = n
-  var i: int32 = 0
+  tmp: int32 = n
+  i: int32 = 0
   while tmp > 0:
     buf[i] = cast[uint8](48 + tmp - (tmp / 10) * 10)
     tmp = tmp / 10
     i = i + 1
   buf[i] = cast[uint8](0)
-  var j: int32 = 0
-  var k: int32 = i - 1
+  j: int32 = 0
+  k: int32 = i - 1
   while j < k:
-    var t: uint8 = buf[j]
+    t: uint8 = buf[j]
     buf[j] = buf[k]
     buf[k] = t
     j = j + 1
     k = k - 1
-  print_str(cast[ptr uint8](buf))
+  print_str(cast[*uint8](buf))
 
-proc sleep_ms(ms: int32) =
-  var old_brk: int32 = syscall1(SYS_brk, 0)
-  discard syscall1(SYS_brk, old_brk + 16)
-  var ts: ptr int32 = cast[ptr int32](old_brk)
+def sleep_ms(ms: int32):
+  old_brk: int32 = syscall1(SYS_brk, 0)
+  syscall1(SYS_brk, old_brk + 16)
+  ts: *int32 = cast[*int32](old_brk)
   ts[0] = 0
   ts[1] = ms * 1000000
-  discard syscall2(SYS_nanosleep, cast[int32](ts), 0)
+  syscall2(SYS_nanosleep, cast[int32](ts), 0)
 
-proc random(): int32 =
+def random() -> int32:
   g_rand_state = g_rand_state * 1103515245 + 12345
-  var r: int32 = g_rand_state / 65536
+  r: int32 = g_rand_state / 65536
   if r < 0:
     r = 0 - r
   return r
 
-proc init_colors() =
+def init_colors():
   g_colors[0] = 0x1A1A2E   # Empty (dark)
   g_colors[1] = 0x00FFFF   # I - Cyan
   g_colors[2] = 0xFFFF00   # O - Yellow
@@ -117,7 +117,7 @@ proc init_colors() =
   g_colors[6] = 0x0000FF   # J - Blue
   g_colors[7] = 0xFF8000   # L - Orange
 
-proc init_pieces() =
+def init_pieces():
   # I piece (index 0)
   # Rotation 0
   g_pieces[0] = 0
@@ -157,7 +157,7 @@ proc init_pieces() =
   g_pieces[31] = 3
 
   # O piece (index 1)
-  var i: int32 = 32
+  i: int32 = 32
   while i < 64:
     g_pieces[i] = 1
     g_pieces[i + 1] = 1
@@ -356,42 +356,42 @@ proc init_pieces() =
 
 # ============ Drawing ============
 
-proc fb_pixel(x: int32, y: int32, color: int32) =
+def fb_pixel(x: int32, y: int32, color: int32):
   if x >= 0 and x < g_xres and y >= 0 and y < g_yres:
     g_fb[y * g_xres + x] = cast[uint32](color)
 
-proc fill_rect(x: int32, y: int32, w: int32, h: int32, color: int32) =
-  var cy: int32 = y
+def fill_rect(x: int32, y: int32, w: int32, h: int32, color: int32):
+  cy: int32 = y
   while cy < y + h:
     if cy >= 0 and cy < g_yres:
-      var cx: int32 = x
+      cx: int32 = x
       while cx < x + w:
         if cx >= 0 and cx < g_xres:
           g_fb[cy * g_xres + cx] = cast[uint32](color)
         cx = cx + 1
     cy = cy + 1
 
-proc draw_cell(x: int32, y: int32, color_idx: int32) =
-  var px: int32 = g_board_x + x * CELL_SIZE
-  var py: int32 = g_board_y + y * CELL_SIZE
-  var color: int32 = g_colors[color_idx]
+def draw_cell(x: int32, y: int32, color_idx: int32):
+  px: int32 = g_board_x + x * CELL_SIZE
+  py: int32 = g_board_y + y * CELL_SIZE
+  color: int32 = g_colors[color_idx]
 
   # Main cell
   fill_rect(px + 1, py + 1, CELL_SIZE - 2, CELL_SIZE - 2, color)
 
   # Highlight (top-left)
   if color_idx > 0:
-    var bright: int32 = color + 0x303030
+    bright: int32 = color + 0x303030
     if bright > 0xFFFFFF:
       bright = 0xFFFFFF
     fill_rect(px + 1, py + 1, CELL_SIZE - 2, 2, bright)
     fill_rect(px + 1, py + 1, 2, CELL_SIZE - 2, bright)
 
 # Simple font for score display
-var font: array[768, uint8]
+font: array[768, uint8]
 
-proc init_font() =
-  var i: int32 = 0
+def init_font():
+  i: int32 = 0
   while i < 768:
     font[i] = cast[uint8](0)
     i = i + 1
@@ -487,17 +487,17 @@ proc init_font() =
   font[462] = cast[uint8](0x38)
   font[463] = cast[uint8](0x00)
 
-proc draw_char(x: int32, y: int32, c: uint8, color: int32) =
-  var idx: int32 = cast[int32](c) * 8
+def draw_char(x: int32, y: int32, c: uint8, color: int32):
+  idx: int32 = cast[int32](c) * 8
   if idx < 0 or idx >= 760:
     return
-  var row: int32 = 0
+  row: int32 = 0
   while row < 8:
-    var bits: uint8 = font[idx + row]
-    var col: int32 = 0
+    bits: uint8 = font[idx + row]
+    col: int32 = 0
     while col < 8:
-      var mask: int32 = 128
-      var shift: int32 = col
+      mask: int32 = 128
+      shift: int32 = col
       while shift > 0:
         mask = mask / 2
         shift = shift - 1
@@ -506,23 +506,23 @@ proc draw_char(x: int32, y: int32, c: uint8, color: int32) =
       col = col + 1
     row = row + 1
 
-proc draw_number(x: int32, y: int32, n: int32, color: int32) =
-  var buf: array[12, uint8]
+def draw_number(x: int32, y: int32, n: int32, color: int32):
+  buf: array[12, uint8]
   if n == 0:
     buf[0] = cast[uint8](48)
     buf[1] = cast[uint8](0)
     draw_char(x, y, buf[0], color)
     return
-  var tmp: int32 = n
-  var i: int32 = 0
+  tmp: int32 = n
+  i: int32 = 0
   while tmp > 0:
     buf[i] = cast[uint8](48 + tmp - (tmp / 10) * 10)
     tmp = tmp / 10
     i = i + 1
-  var j: int32 = 0
-  var k: int32 = i - 1
+  j: int32 = 0
+  k: int32 = i - 1
   while j < k:
-    var t: uint8 = buf[j]
+    t: uint8 = buf[j]
     buf[j] = buf[k]
     buf[k] = t
     j = j + 1
@@ -534,10 +534,10 @@ proc draw_number(x: int32, y: int32, n: int32, color: int32) =
 
 # ============ Framebuffer Setup ============
 
-proc init_framebuffer(): int32 =
-  var old_brk: int32 = syscall1(SYS_brk, 0)
-  discard syscall1(SYS_brk, old_brk + 512)
-  var path: ptr uint8 = cast[ptr uint8](old_brk)
+def init_framebuffer() -> int32:
+  old_brk: int32 = syscall1(SYS_brk, 0)
+  syscall1(SYS_brk, old_brk + 512)
+  path: *uint8 = cast[*uint8](old_brk)
   path[0] = cast[uint8](47)
   path[1] = cast[uint8](100)
   path[2] = cast[uint8](101)
@@ -550,23 +550,23 @@ proc init_framebuffer(): int32 =
 
   g_fb_fd = syscall3(SYS_open, cast[int32](path), O_RDWR, 0)
   if g_fb_fd < 0:
-    print_str(cast[ptr uint8]("Error: cannot open /dev/fb0\n"))
+    print_str(cast[*uint8]("Error: cannot open /dev/fb0\n"))
     return 1
 
-  var vinfo: ptr int32 = cast[ptr int32](old_brk + 32)
-  var i: int32 = 0
+  vinfo: *int32 = cast[*int32](old_brk + 32)
+  i: int32 = 0
   while i < 40:
     vinfo[i] = 0
     i = i + 1
 
   const FBIOGET_VSCREENINFO: int32 = 0x4600
-  discard syscall3(SYS_ioctl, g_fb_fd, FBIOGET_VSCREENINFO, cast[int32](vinfo))
+  syscall3(SYS_ioctl, g_fb_fd, FBIOGET_VSCREENINFO, cast[int32](vinfo))
 
   g_xres = vinfo[0]
   g_yres = vinfo[1]
 
-  var fb_size: int32 = g_xres * g_yres * 4
-  g_fb = cast[ptr uint32](syscall6(SYS_mmap2, 0, fb_size, PROT_READ + PROT_WRITE, MAP_SHARED, g_fb_fd, 0))
+  fb_size: int32 = g_xres * g_yres * 4
+  g_fb = cast[*uint32](syscall6(SYS_mmap2, 0, fb_size, PROT_READ + PROT_WRITE, MAP_SHARED, g_fb_fd, 0))
 
   if cast[int32](g_fb) < 0:
     return 1
@@ -576,23 +576,23 @@ proc init_framebuffer(): int32 =
   g_board_y = (g_yres - BOARD_HEIGHT * CELL_SIZE) / 2
 
   # Set stdin non-blocking
-  var flags: int32 = syscall2(SYS_fcntl, STDIN, F_GETFL)
-  discard syscall3(SYS_fcntl, STDIN, F_SETFL, flags + O_NONBLOCK)
+  flags: int32 = syscall2(SYS_fcntl, STDIN, F_GETFL)
+  syscall3(SYS_fcntl, STDIN, F_SETFL, flags + O_NONBLOCK)
 
   return 0
 
 # ============ Game Logic ============
 
-proc get_piece_cell(piece: int32, rot: int32, idx: int32): int32 =
+def get_piece_cell(piece: int32, rot: int32, idx: int32) -> int32:
   # Returns x or y coordinate of piece cell
-  var base: int32 = piece * 32 + rot * 8 + idx
+  base: int32 = piece * 32 + rot * 8 + idx
   return g_pieces[base]
 
-proc check_collision(piece: int32, rot: int32, px: int32, py: int32): int32 =
-  var i: int32 = 0
+def check_collision(piece: int32, rot: int32, px: int32, py: int32) -> int32:
+  i: int32 = 0
   while i < 4:
-    var cx: int32 = px + get_piece_cell(piece, rot, i * 2)
-    var cy: int32 = py + get_piece_cell(piece, rot, i * 2 + 1)
+    cx: int32 = px + get_piece_cell(piece, rot, i * 2)
+    cy: int32 = py + get_piece_cell(piece, rot, i * 2 + 1)
 
     # Check bounds
     if cx < 0 or cx >= BOARD_WIDTH or cy >= BOARD_HEIGHT:
@@ -606,22 +606,22 @@ proc check_collision(piece: int32, rot: int32, px: int32, py: int32): int32 =
     i = i + 1
   return 0
 
-proc lock_piece() =
-  var i: int32 = 0
+def lock_piece():
+  i: int32 = 0
   while i < 4:
-    var cx: int32 = g_piece_x + get_piece_cell(g_current_piece, g_current_rot, i * 2)
-    var cy: int32 = g_piece_y + get_piece_cell(g_current_piece, g_current_rot, i * 2 + 1)
+    cx: int32 = g_piece_x + get_piece_cell(g_current_piece, g_current_rot, i * 2)
+    cy: int32 = g_piece_y + get_piece_cell(g_current_piece, g_current_rot, i * 2 + 1)
     if cy >= 0 and cy < BOARD_HEIGHT and cx >= 0 and cx < BOARD_WIDTH:
       g_board[cy * BOARD_WIDTH + cx] = g_current_piece + 1
     i = i + 1
 
-proc clear_lines() =
-  var lines_cleared: int32 = 0
-  var y: int32 = BOARD_HEIGHT - 1
+def clear_lines():
+  lines_cleared: int32 = 0
+  y: int32 = BOARD_HEIGHT - 1
   while y >= 0:
     # Check if line is full
-    var full: int32 = 1
-    var x: int32 = 0
+    full: int32 = 1
+    x: int32 = 0
     while x < BOARD_WIDTH:
       if g_board[y * BOARD_WIDTH + x] == 0:
         full = 0
@@ -629,7 +629,7 @@ proc clear_lines() =
 
     if full != 0:
       # Shift everything down
-      var ty: int32 = y
+      ty: int32 = y
       while ty > 0:
         x = 0
         while x < BOARD_WIDTH:
@@ -667,7 +667,7 @@ proc clear_lines() =
   if g_drop_delay < 50:
     g_drop_delay = 50
 
-proc spawn_piece() =
+def spawn_piece():
   g_current_piece = g_next_piece
   g_next_piece = random() % 7
   g_current_rot = 0
@@ -678,9 +678,9 @@ proc spawn_piece() =
   if check_collision(g_current_piece, g_current_rot, g_piece_x, g_piece_y) != 0:
     g_game_over = 1
 
-proc init_game() =
+def init_game():
   # Clear board
-  var i: int32 = 0
+  i: int32 = 0
   while i < 200:
     g_board[i] = 0
     i = i + 1
@@ -699,20 +699,20 @@ proc init_game() =
   g_next_piece = random() % 7
   spawn_piece()
 
-proc move_left() =
+def move_left():
   if check_collision(g_current_piece, g_current_rot, g_piece_x - 1, g_piece_y) == 0:
     g_piece_x = g_piece_x - 1
 
-proc move_right() =
+def move_right():
   if check_collision(g_current_piece, g_current_rot, g_piece_x + 1, g_piece_y) == 0:
     g_piece_x = g_piece_x + 1
 
-proc rotate_piece() =
-  var new_rot: int32 = (g_current_rot + 1) % 4
+def rotate_piece():
+  new_rot: int32 = (g_current_rot + 1) % 4
   if check_collision(g_current_piece, new_rot, g_piece_x, g_piece_y) == 0:
     g_current_rot = new_rot
 
-proc drop_piece() =
+def drop_piece():
   if check_collision(g_current_piece, g_current_rot, g_piece_x, g_piece_y + 1) == 0:
     g_piece_y = g_piece_y + 1
   else:
@@ -720,7 +720,7 @@ proc drop_piece() =
     clear_lines()
     spawn_piece()
 
-proc hard_drop() =
+def hard_drop():
   while check_collision(g_current_piece, g_current_rot, g_piece_x, g_piece_y + 1) == 0:
     g_piece_y = g_piece_y + 1
   lock_piece()
@@ -729,14 +729,14 @@ proc hard_drop() =
 
 # ============ Input ============
 
-proc handle_input() =
-  var buf: array[8, uint8]
-  var n: int32 = syscall3(SYS_read, STDIN, cast[int32](buf), 8)
+def handle_input():
+  buf: array[8, uint8]
+  n: int32 = syscall3(SYS_read, STDIN, cast[int32](buf), 8)
 
   if n <= 0:
     return
 
-  var c: uint8 = buf[0]
+  c: uint8 = buf[0]
 
   if g_game_over != 0:
     if c == cast[uint8](114) or c == cast[uint8](82):  # r/R - restart
@@ -780,10 +780,10 @@ proc handle_input() =
 
 # ============ Rendering ============
 
-proc render() =
+def render():
   # Clear background
-  var i: int32 = 0
-  var total: int32 = g_xres * g_yres
+  i: int32 = 0
+  total: int32 = g_xres * g_yres
   while i < total:
     g_fb[i] = cast[uint32](0x0F0F1A)
     i = i + 1
@@ -792,9 +792,9 @@ proc render() =
   fill_rect(g_board_x - 3, g_board_y - 3, BOARD_WIDTH * CELL_SIZE + 6, BOARD_HEIGHT * CELL_SIZE + 6, 0x303050)
 
   # Draw board cells
-  var y: int32 = 0
+  y: int32 = 0
   while y < BOARD_HEIGHT:
-    var x: int32 = 0
+    x: int32 = 0
     while x < BOARD_WIDTH:
       draw_cell(x, y, g_board[y * BOARD_WIDTH + x])
       x = x + 1
@@ -804,34 +804,34 @@ proc render() =
   if g_game_over == 0:
     i = 0
     while i < 4:
-      var cx: int32 = g_piece_x + get_piece_cell(g_current_piece, g_current_rot, i * 2)
-      var cy: int32 = g_piece_y + get_piece_cell(g_current_piece, g_current_rot, i * 2 + 1)
+      cx: int32 = g_piece_x + get_piece_cell(g_current_piece, g_current_rot, i * 2)
+      cy: int32 = g_piece_y + get_piece_cell(g_current_piece, g_current_rot, i * 2 + 1)
       if cy >= 0:
         draw_cell(cx, cy, g_current_piece + 1)
       i = i + 1
 
   # Draw score
-  var score_x: int32 = g_board_x + BOARD_WIDTH * CELL_SIZE + 20
+  score_x: int32 = g_board_x + BOARD_WIDTH * CELL_SIZE + 20
   draw_number(score_x, g_board_y + 10, g_score, 0xFFFFFF)
   draw_number(score_x, g_board_y + 30, g_lines, 0xCCCCCC)
   draw_number(score_x, g_board_y + 50, g_level, 0xAAAAFF)
 
   # Draw next piece preview
-  var next_x: int32 = score_x
-  var next_y: int32 = g_board_y + 80
+  next_x: int32 = score_x
+  next_y: int32 = g_board_y + 80
   i = 0
   while i < 4:
-    var cx: int32 = get_piece_cell(g_next_piece, 0, i * 2)
-    var cy: int32 = get_piece_cell(g_next_piece, 0, i * 2 + 1)
-    var px: int32 = next_x + cx * 15
-    var py: int32 = next_y + cy * 15
+    cx: int32 = get_piece_cell(g_next_piece, 0, i * 2)
+    cy: int32 = get_piece_cell(g_next_piece, 0, i * 2 + 1)
+    px: int32 = next_x + cx * 15
+    py: int32 = next_y + cy * 15
     fill_rect(px, py, 14, 14, g_colors[g_next_piece + 1])
     i = i + 1
 
 # ============ Main ============
 
-proc main(): int32 =
-  print_str(cast[ptr uint8]("Tetris - A/D or arrows to move, W/Up to rotate, S/Down to drop, Space for hard drop, Q to quit\n"))
+def main() -> int32:
+  print_str(cast[*uint8]("Tetris - A/D or arrows to move, W/Up to rotate, S/Down to drop, Space for hard drop, Q to quit\n"))
 
   if init_framebuffer() != 0:
     return 1
@@ -841,7 +841,7 @@ proc main(): int32 =
   init_pieces()
   init_game()
 
-  var last_time: int32 = 0
+  last_time: int32 = 0
 
   while g_running != 0:
     handle_input()
@@ -857,16 +857,16 @@ proc main(): int32 =
     sleep_ms(16)
 
   # Clear screen
-  var i: int32 = 0
-  var total: int32 = g_xres * g_yres
+  i: int32 = 0
+  total: int32 = g_xres * g_yres
   while i < total:
     g_fb[i] = cast[uint32](0)
     i = i + 1
 
-  discard syscall1(SYS_close, g_fb_fd)
-  print_str(cast[ptr uint8]("Final Score: "))
+  syscall1(SYS_close, g_fb_fd)
+  print_str(cast[*uint8]("Final Score: "))
   print_num(g_score)
-  print_str(cast[ptr uint8]("\n"))
+  print_str(cast[*uint8]("\n"))
 
   return 0
 

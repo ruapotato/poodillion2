@@ -1,33 +1,33 @@
 # id - Print user and group IDs
 # Uses getuid, getgid, geteuid, getegid syscalls
 
-import "lib/syscalls"
+from lib.syscalls import *
 
-proc main(): int32 =
-  # Get all user/group IDs
-  var uid: int32 = getuid()
-  var gid: int32 = getgid()
-  var euid: int32 = geteuid()
-  var egid: int32 = getegid()
+def main() -> int32:
+    # Get all user/group IDs
+    uid: int32 = getuid()
+    gid: int32 = getgid()
+    euid: int32 = geteuid()
+    egid: int32 = getegid()
 
-  # Print uid
-  print("uid=")
-  print_int(uid)
+    # Print uid
+    print("uid=")
+    print_int(uid)
 
-  # Print gid
-  print(" gid=")
-  print_int(gid)
+    # Print gid
+    print(" gid=")
+    print_int(gid)
 
-  # Print euid if different from uid
-  if euid != uid:
-    print(" euid=")
-    print_int(euid)
+    # Print euid if different from uid
+    if euid != uid:
+        print(" euid=")
+        print_int(euid)
 
-  # Print egid if different from gid
-  if egid != gid:
-    print(" egid=")
-    print_int(egid)
+    # Print egid if different from gid
+    if egid != gid:
+        print(" egid=")
+        print_int(egid)
 
-  newline()
+    newline()
 
-  return 0
+    return 0

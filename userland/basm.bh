@@ -10,31 +10,31 @@
 #   xor, and, or, cmp, test, jmp, je, jne, jl, jg, jle, jge
 #   inc, dec, neg, not, shl, shr, sar, imul, idiv
 
-import "lib/syscalls"
+from lib.syscalls import *
 
-extern get_argc(): int32
-extern get_argv(idx: int32): ptr uint8
+extern def get_argc() -> int32
+extern def get_argv(idx: int32) -> *uint8
 
 # ============================================================================
 # Utility Functions
 # ============================================================================
 
-proc print_err(msg: ptr uint8) =
-  var len: int32 = 0
+def print_err(msg: *uint8):
+  len: int32 = 0
   while msg[len] != cast[uint8](0):
     len = len + 1
-  discard syscall3(SYS_write, STDERR, cast[int32](msg), len)
+  _ = syscall3(SYS_write, STDERR, cast[int32](msg), len)
 
-proc print_num(n: int32) =
-  var buf: array[12, uint8]
-  var i: int32 = 10
+def print_num(n: int32):
+  buf: array[12, uint8]
+  i: int32 = 10
   buf[11] = cast[uint8](0)
   if n == 0:
     buf[10] = cast[uint8](48)
     i = 10
   else:
-    var num: int32 = n
-    var neg: int32 = 0
+    num: int32 = n
+    neg: int32 = 0
     if num < 0:
       neg = 1
       num = 0 - num
@@ -46,7 +46,7 @@ proc print_num(n: int32) =
       buf[i] = cast[uint8](45)
       i = i - 1
     i = i + 1
-  print(cast[ptr uint8](cast[int32](addr(buf)) + i))
+  print(cast[*uint8](cast[int32](addr(buf)) + i))
 
 # ============================================================================
 # Register Encoding
@@ -63,48 +63,48 @@ const REG_ESI: int32 = 6
 const REG_EDI: int32 = 7
 
 # Parse register name, returns register code or -1 if not a register
-proc parse_register(name: ptr uint8): int32 =
-  if strcmp(name, cast[ptr uint8]("eax")) == 0:
+def parse_register(name: *uint8) -> int32:
+  if strcmp(name, cast[*uint8]("eax")) == 0:
     return REG_EAX
-  if strcmp(name, cast[ptr uint8]("ecx")) == 0:
+  if strcmp(name, cast[*uint8]("ecx")) == 0:
     return REG_ECX
-  if strcmp(name, cast[ptr uint8]("edx")) == 0:
+  if strcmp(name, cast[*uint8]("edx")) == 0:
     return REG_EDX
-  if strcmp(name, cast[ptr uint8]("ebx")) == 0:
+  if strcmp(name, cast[*uint8]("ebx")) == 0:
     return REG_EBX
-  if strcmp(name, cast[ptr uint8]("esp")) == 0:
+  if strcmp(name, cast[*uint8]("esp")) == 0:
     return REG_ESP
-  if strcmp(name, cast[ptr uint8]("ebp")) == 0:
+  if strcmp(name, cast[*uint8]("ebp")) == 0:
     return REG_EBP
-  if strcmp(name, cast[ptr uint8]("esi")) == 0:
+  if strcmp(name, cast[*uint8]("esi")) == 0:
     return REG_ESI
-  if strcmp(name, cast[ptr uint8]("edi")) == 0:
+  if strcmp(name, cast[*uint8]("edi")) == 0:
     return REG_EDI
   # 16-bit registers (use same numbers, instruction encoders know the size)
-  if strcmp(name, cast[ptr uint8]("ax")) == 0:
+  if strcmp(name, cast[*uint8]("ax")) == 0:
     return REG_EAX
-  if strcmp(name, cast[ptr uint8]("cx")) == 0:
+  if strcmp(name, cast[*uint8]("cx")) == 0:
     return REG_ECX
-  if strcmp(name, cast[ptr uint8]("dx")) == 0:
+  if strcmp(name, cast[*uint8]("dx")) == 0:
     return REG_EDX
-  if strcmp(name, cast[ptr uint8]("bx")) == 0:
+  if strcmp(name, cast[*uint8]("bx")) == 0:
     return REG_EBX
-  if strcmp(name, cast[ptr uint8]("sp")) == 0:
+  if strcmp(name, cast[*uint8]("sp")) == 0:
     return REG_ESP
-  if strcmp(name, cast[ptr uint8]("bp")) == 0:
+  if strcmp(name, cast[*uint8]("bp")) == 0:
     return REG_EBP
-  if strcmp(name, cast[ptr uint8]("si")) == 0:
+  if strcmp(name, cast[*uint8]("si")) == 0:
     return REG_ESI
-  if strcmp(name, cast[ptr uint8]("di")) == 0:
+  if strcmp(name, cast[*uint8]("di")) == 0:
     return REG_EDI
   # 8-bit registers (use same numbers, instruction encoders know the size)
-  if strcmp(name, cast[ptr uint8]("al")) == 0:
+  if strcmp(name, cast[*uint8]("al")) == 0:
     return REG_EAX
-  if strcmp(name, cast[ptr uint8]("cl")) == 0:
+  if strcmp(name, cast[*uint8]("cl")) == 0:
     return REG_ECX
-  if strcmp(name, cast[ptr uint8]("dl")) == 0:
+  if strcmp(name, cast[*uint8]("dl")) == 0:
     return REG_EDX
-  if strcmp(name, cast[ptr uint8]("bl")) == 0:
+  if strcmp(name, cast[*uint8]("bl")) == 0:
     return REG_EBX
   return -1
 
@@ -138,39 +138,39 @@ const R_386_32: int32 = 1
 const R_386_PC32: int32 = 2
 
 # Global assembler state
-var g_source: ptr uint8      # Source buffer
-var g_source_len: int32      # Source length
-var g_pos: int32             # Current position in source
-var g_line: int32            # Current line number
+g_source: *uint8      # Source buffer
+g_source_len: int32      # Source length
+g_pos: int32             # Current position in source
+g_line: int32            # Current line number
 
-var g_text: ptr uint8        # .text section buffer
-var g_text_len: int32        # .text section length
-var g_text_cap: int32        # .text section capacity
+g_text: *uint8        # .text section buffer
+g_text_len: int32        # .text section length
+g_text_cap: int32        # .text section capacity
 
-var g_data: ptr uint8        # .data section buffer
-var g_data_len: int32        # .data section length
-var g_data_cap: int32        # .data section capacity
+g_data: *uint8        # .data section buffer
+g_data_len: int32        # .data section length
+g_data_cap: int32        # .data section capacity
 
-var g_bss_len: int32         # .bss section size (no actual data)
+g_bss_len: int32         # .bss section size (no actual data)
 
-var g_symbols: ptr uint8     # Symbol table
-var g_sym_count: int32       # Number of symbols
-var g_sym_cap: int32         # Symbol table capacity
+g_symbols: *uint8     # Symbol table
+g_sym_count: int32       # Number of symbols
+g_sym_cap: int32         # Symbol table capacity
 
-var g_relocs: ptr uint8      # Relocation table
-var g_reloc_count: int32     # Number of relocations
-var g_reloc_cap: int32       # Relocation table capacity
+g_relocs: *uint8      # Relocation table
+g_reloc_count: int32     # Number of relocations
+g_reloc_cap: int32       # Relocation table capacity
 
-var g_current_section: int32 # Current section (1=text, 2=data, 3=bss)
+g_current_section: int32 # Current section (1=text, 2=data, 3=bss)
 
-var g_token_buf: ptr uint8   # Buffer for current token
-var g_error: int32           # Error flag
+g_token_buf: *uint8   # Buffer for current token
+g_error: int32           # Error flag
 
 # ============================================================================
 # Lexer
 # ============================================================================
 
-proc is_alpha(c: uint8): int32 =
+def is_alpha(c: uint8) -> int32:
   if c >= cast[uint8](65) and c <= cast[uint8](90):
     return 1
   if c >= cast[uint8](97) and c <= cast[uint8](122):
@@ -179,12 +179,12 @@ proc is_alpha(c: uint8): int32 =
     return 1
   return 0
 
-proc is_digit(c: uint8): int32 =
+def is_digit(c: uint8) -> int32:
   if c >= cast[uint8](48) and c <= cast[uint8](57):
     return 1
   return 0
 
-proc is_hex(c: uint8): int32 =
+def is_hex(c: uint8) -> int32:
   if is_digit(c) == 1:
     return 1
   if c >= cast[uint8](65) and c <= cast[uint8](70):
@@ -193,19 +193,19 @@ proc is_hex(c: uint8): int32 =
     return 1
   return 0
 
-proc is_whitespace(c: uint8): int32 =
+def is_whitespace(c: uint8) -> int32:
   if c == cast[uint8](32) or c == cast[uint8](9):
     return 1
   return 0
 
-proc skip_whitespace() =
+def skip_whitespace():
   while g_pos < g_source_len:
-    var c: uint8 = g_source[g_pos]
+    c: uint8 = g_source[g_pos]
     if is_whitespace(c) == 0:
       break
     g_pos = g_pos + 1
 
-proc skip_line() =
+def skip_line():
   while g_pos < g_source_len:
     if g_source[g_pos] == cast[uint8](10):
       g_pos = g_pos + 1
@@ -214,10 +214,10 @@ proc skip_line() =
     g_pos = g_pos + 1
 
 # Read identifier or keyword into g_token_buf
-proc read_ident() =
-  var i: int32 = 0
+def read_ident():
+  i: int32 = 0
   while g_pos < g_source_len and i < 255:
-    var c: uint8 = g_source[g_pos]
+    c: uint8 = g_source[g_pos]
     if is_alpha(c) == 1 or is_digit(c) == 1 or c == cast[uint8](46) or c == cast[uint8](36):
       g_token_buf[i] = c
       i = i + 1
@@ -227,9 +227,9 @@ proc read_ident() =
   g_token_buf[i] = cast[uint8](0)
 
 # Read number into g_token_buf, returns the value
-proc read_number(): int32 =
-  var value: int32 = 0
-  var neg: int32 = 0
+def read_number() -> int32:
+  value: int32 = 0
+  neg: int32 = 0
 
   if g_source[g_pos] == cast[uint8](45):  # '-'
     neg = 1
@@ -241,8 +241,8 @@ proc read_number(): int32 =
       if g_source[g_pos + 1] == cast[uint8](120) or g_source[g_pos + 1] == cast[uint8](88):
         g_pos = g_pos + 2
         while g_pos < g_source_len and is_hex(g_source[g_pos]) == 1:
-          var c: uint8 = g_source[g_pos]
-          var digit: int32 = 0
+          c: uint8 = g_source[g_pos]
+          digit: int32 = 0
           if c >= cast[uint8](48) and c <= cast[uint8](57):
             digit = cast[int32](c) - 48
           else:
@@ -269,77 +269,77 @@ proc read_number(): int32 =
 # Symbol Table
 # ============================================================================
 
-proc add_symbol(name: ptr uint8, value: int32, section: int32, sym_type: int32): int32 =
+def add_symbol(name: *uint8, value: int32, section: int32, sym_type: int32) -> int32:
   if g_sym_count >= g_sym_cap:
-    print_err(cast[ptr uint8]("Error: symbol table full\n"))
+    print_err(cast[*uint8]("Error: symbol table full\n"))
     g_error = 1
     return -1
 
-  var entry: ptr uint8 = cast[ptr uint8](cast[int32](g_symbols) + g_sym_count * 32)
+  entry: *uint8 = cast[*uint8](cast[int32](g_symbols) + g_sym_count * 32)
 
   # Store name pointer
-  var name_ptr: ptr int32 = cast[ptr int32](entry)
+  name_ptr: *int32 = cast[*int32](entry)
   name_ptr[0] = cast[int32](name)
 
   # Store value
-  var value_ptr: ptr int32 = cast[ptr int32](cast[int32](entry) + 4)
+  value_ptr: *int32 = cast[*int32](cast[int32](entry) + 4)
   value_ptr[0] = value
 
   # Store section
-  var section_ptr: ptr int32 = cast[ptr int32](cast[int32](entry) + 8)
+  section_ptr: *int32 = cast[*int32](cast[int32](entry) + 8)
   section_ptr[0] = section
 
   # Store type
-  var type_ptr: ptr int32 = cast[ptr int32](cast[int32](entry) + 12)
+  type_ptr: *int32 = cast[*int32](cast[int32](entry) + 12)
   type_ptr[0] = sym_type
 
-  var idx: int32 = g_sym_count
+  idx: int32 = g_sym_count
   g_sym_count = g_sym_count + 1
   return idx
 
-proc find_symbol(name: ptr uint8): int32 =
-  var i: int32 = 0
+def find_symbol(name: *uint8) -> int32:
+  i: int32 = 0
   while i < g_sym_count:
-    var entry: ptr uint8 = cast[ptr uint8](cast[int32](g_symbols) + i * 32)
-    var name_ptr: ptr int32 = cast[ptr int32](entry)
-    var sym_name: ptr uint8 = cast[ptr uint8](name_ptr[0])
+    entry: *uint8 = cast[*uint8](cast[int32](g_symbols) + i * 32)
+    name_ptr: *int32 = cast[*int32](entry)
+    sym_name: *uint8 = cast[*uint8](name_ptr[0])
     if strcmp(sym_name, name) == 0:
       return i
     i = i + 1
   return -1
 
-proc get_symbol_value(idx: int32): int32 =
-  var entry: ptr uint8 = cast[ptr uint8](cast[int32](g_symbols) + idx * 32)
-  var value_ptr: ptr int32 = cast[ptr int32](cast[int32](entry) + 4)
+def get_symbol_value(idx: int32) -> int32:
+  entry: *uint8 = cast[*uint8](cast[int32](g_symbols) + idx * 32)
+  value_ptr: *int32 = cast[*int32](cast[int32](entry) + 4)
   return value_ptr[0]
 
-proc set_symbol_value(idx: int32, value: int32) =
-  var entry: ptr uint8 = cast[ptr uint8](cast[int32](g_symbols) + idx * 32)
-  var value_ptr: ptr int32 = cast[ptr int32](cast[int32](entry) + 4)
+def set_symbol_value(idx: int32, value: int32):
+  entry: *uint8 = cast[*uint8](cast[int32](g_symbols) + idx * 32)
+  value_ptr: *int32 = cast[*int32](cast[int32](entry) + 4)
   value_ptr[0] = value
 
-proc get_symbol_section(idx: int32): int32 =
-  var entry: ptr uint8 = cast[ptr uint8](cast[int32](g_symbols) + idx * 32)
-  var section_ptr: ptr int32 = cast[ptr int32](cast[int32](entry) + 8)
+def get_symbol_section(idx: int32) -> int32:
+  entry: *uint8 = cast[*uint8](cast[int32](g_symbols) + idx * 32)
+  section_ptr: *int32 = cast[*int32](cast[int32](entry) + 8)
   return section_ptr[0]
 
-proc set_symbol_section(idx: int32, section: int32) =
-  var entry: ptr uint8 = cast[ptr uint8](cast[int32](g_symbols) + idx * 32)
-  var section_ptr: ptr int32 = cast[ptr int32](cast[int32](entry) + 8)
+def set_symbol_section(idx: int32, section: int32):
+  entry: *uint8 = cast[*uint8](cast[int32](g_symbols) + idx * 32)
+  section_ptr: *int32 = cast[*int32](cast[int32](entry) + 8)
   section_ptr[0] = section
 
-proc get_symbol_pass2_defined(idx: int32): int32 =
-  var entry: ptr uint8 = cast[ptr uint8](cast[int32](g_symbols) + idx * 32)
-  var flag_ptr: ptr int32 = cast[ptr int32](cast[int32](entry) + 16)
+def get_symbol_pass2_defined(idx: int32) -> int32:
+  entry: *uint8 = cast[*uint8](cast[int32](g_symbols) + idx * 32)
+  flag_ptr: *int32 = cast[*int32](cast[int32](entry) + 16)
   return flag_ptr[0]
 
-proc set_symbol_pass2_defined(idx: int32, defined: int32) =
-  var entry: ptr uint8 = cast[ptr uint8](cast[int32](g_symbols) + idx * 32)
-  var flag_ptr: ptr int32 = cast[ptr int32](cast[int32](entry) + 16)
+def set_symbol_pass2_defined(idx: int32, defined: int32):
+  entry: *uint8 = cast[*uint8](cast[int32](g_symbols) + idx * 32)
+  flag_ptr: *int32 = cast[*int32](cast[int32](entry) + 16)
   flag_ptr[0] = defined
 
-proc clear_all_pass2_flags() =
-  var i: int32 = 0
+def clear_all_pass2_flags():
+  i: int32 = 0
   while i < g_sym_count:
     set_symbol_pass2_defined(i, 0)
     i = i + 1
@@ -348,10 +348,10 @@ proc clear_all_pass2_flags() =
 # Code Emission
 # ============================================================================
 
-proc emit_byte(b: uint8) =
+def emit_byte(b: uint8):
   if g_current_section == SYM_TEXT:
     if g_text_len >= g_text_cap:
-      print_err(cast[ptr uint8]("Error: text section overflow\n"))
+      print_err(cast[*uint8]("Error: text section overflow\n"))
       g_error = 1
       return
     g_text[g_text_len] = b
@@ -359,23 +359,23 @@ proc emit_byte(b: uint8) =
   else:
     if g_current_section == SYM_DATA:
       if g_data_len >= g_data_cap:
-        print_err(cast[ptr uint8]("Error: data section overflow\n"))
+        print_err(cast[*uint8]("Error: data section overflow\n"))
         g_error = 1
         return
       g_data[g_data_len] = b
       g_data_len = g_data_len + 1
 
-proc emit_word(w: int32) =
+def emit_word(w: int32):
   emit_byte(cast[uint8](w & 255))
   emit_byte(cast[uint8]((w >> 8) & 255))
 
-proc emit_dword(d: int32) =
+def emit_dword(d: int32):
   emit_byte(cast[uint8](d & 255))
   emit_byte(cast[uint8]((d >> 8) & 255))
   emit_byte(cast[uint8]((d >> 16) & 255))
   emit_byte(cast[uint8]((d >> 24) & 255))
 
-proc current_offset(): int32 =
+def current_offset() -> int32:
   if g_current_section == SYM_TEXT:
     return g_text_len
   if g_current_section == SYM_DATA:
@@ -386,14 +386,14 @@ proc current_offset(): int32 =
 # Relocation
 # ============================================================================
 
-proc add_reloc(offset: int32, sym_idx: int32, rel_type: int32, addend: int32) =
+def add_reloc(offset: int32, sym_idx: int32, rel_type: int32, addend: int32):
   if g_reloc_count >= g_reloc_cap:
-    print_err(cast[ptr uint8]("Error: relocation table full\n"))
+    print_err(cast[*uint8]("Error: relocation table full\n"))
     g_error = 1
     return
 
-  var entry: ptr uint8 = cast[ptr uint8](cast[int32](g_relocs) + g_reloc_count * 16)
-  var p: ptr int32 = cast[ptr int32](entry)
+  entry: *uint8 = cast[*uint8](cast[int32](g_relocs) + g_reloc_count * 16)
+  p: *int32 = cast[*int32](entry)
   p[0] = offset
   p[1] = sym_idx
   p[2] = rel_type
@@ -405,21 +405,21 @@ proc add_reloc(offset: int32, sym_idx: int32, rel_type: int32, addend: int32) =
 # ============================================================================
 
 # ModR/M byte: mod (2 bits) | reg (3 bits) | r/m (3 bits)
-proc modrm(mod_val: int32, reg: int32, rm: int32): uint8 =
+def modrm(mod_val: int32, reg: int32, rm: int32) -> uint8:
   return cast[uint8]((mod_val << 6) | (reg << 3) | rm)
 
 # Encode mov reg, reg
-proc encode_mov_reg_reg(dst: int32, src: int32) =
+def encode_mov_reg_reg(dst: int32, src: int32):
   emit_byte(cast[uint8](0x89))  # MOV r/m32, r32
   emit_byte(modrm(3, src, dst))
 
 # Encode mov reg, imm32
-proc encode_mov_reg_imm(dst: int32, imm: int32) =
+def encode_mov_reg_imm(dst: int32, imm: int32):
   emit_byte(cast[uint8](0xB8 + dst))  # MOV r32, imm32
   emit_dword(imm)
 
 # Encode mov reg, [reg]
-proc encode_mov_reg_mem(dst: int32, base: int32) =
+def encode_mov_reg_mem(dst: int32, base: int32):
   emit_byte(cast[uint8](0x8B))  # MOV r32, r/m32
   if base == REG_EBP:
     emit_byte(modrm(1, dst, base))  # [ebp+disp8]
@@ -432,7 +432,7 @@ proc encode_mov_reg_mem(dst: int32, base: int32) =
       emit_byte(modrm(0, dst, base))
 
 # Encode mov reg, [reg+disp]
-proc encode_mov_reg_mem_disp(dst: int32, base: int32, disp: int32) =
+def encode_mov_reg_mem_disp(dst: int32, base: int32, disp: int32):
   emit_byte(cast[uint8](0x8B))  # MOV r32, r/m32
   if disp >= -128 and disp <= 127:
     if base == REG_ESP:
@@ -450,7 +450,7 @@ proc encode_mov_reg_mem_disp(dst: int32, base: int32, disp: int32) =
     emit_dword(disp)
 
 # Encode mov [reg], reg
-proc encode_mov_mem_reg(base: int32, src: int32) =
+def encode_mov_mem_reg(base: int32, src: int32):
   emit_byte(cast[uint8](0x89))  # MOV r/m32, r32
   if base == REG_EBP:
     emit_byte(modrm(1, src, base))
@@ -463,7 +463,7 @@ proc encode_mov_mem_reg(base: int32, src: int32) =
       emit_byte(modrm(0, src, base))
 
 # Encode mov byte [reg], reg8
-proc encode_mov_mem_reg8(base: int32, src: int32) =
+def encode_mov_mem_reg8(base: int32, src: int32):
   emit_byte(cast[uint8](0x88))  # MOV r/m8, r8
   if base == REG_EBP:
     emit_byte(modrm(1, src, base))
@@ -476,7 +476,7 @@ proc encode_mov_mem_reg8(base: int32, src: int32) =
       emit_byte(modrm(0, src, base))
 
 # Encode mov byte [reg+disp], reg8
-proc encode_mov_mem_disp_reg8(base: int32, disp: int32, src: int32) =
+def encode_mov_mem_disp_reg8(base: int32, disp: int32, src: int32):
   emit_byte(cast[uint8](0x88))  # MOV r/m8, r8
   if disp >= -128 and disp <= 127:
     if base == REG_ESP:
@@ -494,7 +494,7 @@ proc encode_mov_mem_disp_reg8(base: int32, disp: int32, src: int32) =
     emit_dword(disp)
 
 # Encode mov [reg+disp], reg
-proc encode_mov_mem_disp_reg(base: int32, disp: int32, src: int32) =
+def encode_mov_mem_disp_reg(base: int32, disp: int32, src: int32):
   emit_byte(cast[uint8](0x89))  # MOV r/m32, r32
   if disp >= -128 and disp <= 127:
     if base == REG_ESP:
@@ -512,7 +512,7 @@ proc encode_mov_mem_disp_reg(base: int32, disp: int32, src: int32) =
     emit_dword(disp)
 
 # Encode mov word [reg+disp], reg16 (16-bit)
-proc encode_mov_mem_disp_reg16(base: int32, disp: int32, src: int32) =
+def encode_mov_mem_disp_reg16(base: int32, disp: int32, src: int32):
   emit_byte(cast[uint8](0x66))  # Operand size override prefix
   emit_byte(cast[uint8](0x89))  # MOV r/m16, r16
   if disp >= -128 and disp <= 127:
@@ -531,35 +531,35 @@ proc encode_mov_mem_disp_reg16(base: int32, disp: int32, src: int32) =
     emit_dword(disp)
 
 # Encode push reg
-proc encode_push_reg(reg: int32) =
+def encode_push_reg(reg: int32):
   emit_byte(cast[uint8](0x50 + reg))
 
 # Encode push imm32
-proc encode_push_imm(imm: int32) =
+def encode_push_imm(imm: int32):
   emit_byte(cast[uint8](0x68))
   emit_dword(imm)
 
 # Encode pop reg
-proc encode_pop_reg(reg: int32) =
+def encode_pop_reg(reg: int32):
   emit_byte(cast[uint8](0x58 + reg))
 
 # Encode call rel32 (with relocation)
-proc encode_call_rel(sym_idx: int32) =
+def encode_call_rel(sym_idx: int32):
   emit_byte(cast[uint8](0xE8))
   add_reloc(g_text_len, sym_idx, R_386_PC32, -4)
   emit_dword(-4)  # Addend goes in instruction for REL-style relocations
 
 # Encode ret
-proc encode_ret() =
+def encode_ret():
   emit_byte(cast[uint8](0xC3))
 
 # Encode add reg, reg
-proc encode_add_reg_reg(dst: int32, src: int32) =
+def encode_add_reg_reg(dst: int32, src: int32):
   emit_byte(cast[uint8](0x01))
   emit_byte(modrm(3, src, dst))
 
 # Encode add reg, imm
-proc encode_add_reg_imm(dst: int32, imm: int32) =
+def encode_add_reg_imm(dst: int32, imm: int32):
   if imm >= -128 and imm <= 127:
     emit_byte(cast[uint8](0x83))
     emit_byte(modrm(3, 0, dst))
@@ -574,12 +574,12 @@ proc encode_add_reg_imm(dst: int32, imm: int32) =
       emit_dword(imm)
 
 # Encode sub reg, reg
-proc encode_sub_reg_reg(dst: int32, src: int32) =
+def encode_sub_reg_reg(dst: int32, src: int32):
   emit_byte(cast[uint8](0x29))
   emit_byte(modrm(3, src, dst))
 
 # Encode sub reg, imm
-proc encode_sub_reg_imm(dst: int32, imm: int32) =
+def encode_sub_reg_imm(dst: int32, imm: int32):
   if imm >= -128 and imm <= 127:
     emit_byte(cast[uint8](0x83))
     emit_byte(modrm(3, 5, dst))
@@ -594,12 +594,12 @@ proc encode_sub_reg_imm(dst: int32, imm: int32) =
       emit_dword(imm)
 
 # Encode int n
-proc encode_int(n: int32) =
+def encode_int(n: int32):
   emit_byte(cast[uint8](0xCD))
   emit_byte(cast[uint8](n))
 
 # Encode lea reg, [base+disp]
-proc encode_lea_reg_mem_disp(dst: int32, base: int32, disp: int32) =
+def encode_lea_reg_mem_disp(dst: int32, base: int32, disp: int32):
   emit_byte(cast[uint8](0x8D))
   if disp >= -128 and disp <= 127:
     if base == REG_ESP:
@@ -617,8 +617,8 @@ proc encode_lea_reg_mem_disp(dst: int32, base: int32, disp: int32) =
     emit_dword(disp)
 
 # Compute SIB byte: scale*64 + index*8 + base
-proc make_sib(scale: int32, idx: int32, base: int32): int32 =
-  var ss: int32 = 0
+def make_sib(scale: int32, idx: int32, base: int32) -> int32:
+  ss: int32 = 0
   if scale == 1:
     ss = 0
   else:
@@ -633,7 +633,7 @@ proc make_sib(scale: int32, idx: int32, base: int32): int32 =
   return (ss * 64) + (idx * 8) + base
 
 # Encode lea reg, [base + index*scale]
-proc encode_lea_reg_sib(dst: int32, base: int32, idx: int32, scale: int32) =
+def encode_lea_reg_sib(dst: int32, base: int32, idx: int32, scale: int32):
   emit_byte(cast[uint8](0x8D))
   if base == REG_EBP:
     # [ebp + index*scale] needs disp8=0
@@ -645,7 +645,7 @@ proc encode_lea_reg_sib(dst: int32, base: int32, idx: int32, scale: int32) =
     emit_byte(cast[uint8](make_sib(scale, idx, base)))
 
 # Encode lea reg, [base + index*scale + disp]
-proc encode_lea_reg_sib_disp(dst: int32, base: int32, idx: int32, scale: int32, disp: int32) =
+def encode_lea_reg_sib_disp(dst: int32, base: int32, idx: int32, scale: int32, disp: int32):
   emit_byte(cast[uint8](0x8D))
   if disp >= -128 and disp <= 127:
     emit_byte(modrm(1, dst, 4))  # mod=01, r/m=4 (SIB follows)
@@ -657,7 +657,7 @@ proc encode_lea_reg_sib_disp(dst: int32, base: int32, idx: int32, scale: int32, 
     emit_dword(disp)
 
 # Encode mov reg, [base + index*scale]
-proc encode_mov_reg_sib(dst: int32, base: int32, idx: int32, scale: int32) =
+def encode_mov_reg_sib(dst: int32, base: int32, idx: int32, scale: int32):
   emit_byte(cast[uint8](0x8B))
   if base == REG_EBP:
     emit_byte(modrm(1, dst, 4))
@@ -668,7 +668,7 @@ proc encode_mov_reg_sib(dst: int32, base: int32, idx: int32, scale: int32) =
     emit_byte(cast[uint8](make_sib(scale, idx, base)))
 
 # Encode mov reg, [base + index*scale + disp]
-proc encode_mov_reg_sib_disp(dst: int32, base: int32, idx: int32, scale: int32, disp: int32) =
+def encode_mov_reg_sib_disp(dst: int32, base: int32, idx: int32, scale: int32, disp: int32):
   emit_byte(cast[uint8](0x8B))
   if disp >= -128 and disp <= 127:
     emit_byte(modrm(1, dst, 4))
@@ -680,7 +680,7 @@ proc encode_mov_reg_sib_disp(dst: int32, base: int32, idx: int32, scale: int32, 
     emit_dword(disp)
 
 # Encode mov [base + index*scale], reg
-proc encode_mov_sib_reg(base: int32, idx: int32, scale: int32, src: int32) =
+def encode_mov_sib_reg(base: int32, idx: int32, scale: int32, src: int32):
   emit_byte(cast[uint8](0x89))
   if base == REG_EBP:
     emit_byte(modrm(1, src, 4))
@@ -691,7 +691,7 @@ proc encode_mov_sib_reg(base: int32, idx: int32, scale: int32, src: int32) =
     emit_byte(cast[uint8](make_sib(scale, idx, base)))
 
 # Encode mov [base + index*scale + disp], reg
-proc encode_mov_sib_disp_reg(base: int32, idx: int32, scale: int32, disp: int32, src: int32) =
+def encode_mov_sib_disp_reg(base: int32, idx: int32, scale: int32, disp: int32, src: int32):
   emit_byte(cast[uint8](0x89))
   if disp >= -128 and disp <= 127:
     emit_byte(modrm(1, src, 4))
@@ -703,17 +703,17 @@ proc encode_mov_sib_disp_reg(base: int32, idx: int32, scale: int32, disp: int32,
     emit_dword(disp)
 
 # Encode xor reg, reg
-proc encode_xor_reg_reg(dst: int32, src: int32) =
+def encode_xor_reg_reg(dst: int32, src: int32):
   emit_byte(cast[uint8](0x31))
   emit_byte(modrm(3, src, dst))
 
 # Encode cmp reg, reg
-proc encode_cmp_reg_reg(dst: int32, src: int32) =
+def encode_cmp_reg_reg(dst: int32, src: int32):
   emit_byte(cast[uint8](0x39))
   emit_byte(modrm(3, src, dst))
 
 # Encode cmp reg, imm
-proc encode_cmp_reg_imm(dst: int32, imm: int32) =
+def encode_cmp_reg_imm(dst: int32, imm: int32):
   if imm >= -128 and imm <= 127:
     emit_byte(cast[uint8](0x83))
     emit_byte(modrm(3, 7, dst))
@@ -731,21 +731,21 @@ proc encode_cmp_reg_imm(dst: int32, imm: int32) =
 # These functions resolve local labels at assembly time when possible,
 # using short jumps (2 bytes) when offset fits in signed byte range
 
-proc encode_jmp_rel(sym_idx: int32) =
-  var section: int32 = get_symbol_section(sym_idx)
-  var target: int32 = get_symbol_value(sym_idx)
+def encode_jmp_rel(sym_idx: int32):
+  section: int32 = get_symbol_section(sym_idx)
+  target: int32 = get_symbol_value(sym_idx)
   # Only resolve backward jumps (target already seen in pass 2)
   # Forward jumps have stale values from pass 1, use pass2_defined flag
   if section == SYM_TEXT and get_symbol_pass2_defined(sym_idx) == 1:
     # Backward jump - resolve at assembly time
     # Try short jump first (2 bytes: opcode + rel8)
-    var offset_short: int32 = target - (g_text_len + 2)
+    offset_short: int32 = target - (g_text_len + 2)
     if offset_short >= -128 and offset_short <= 127:
       emit_byte(cast[uint8](0xEB))  # JMP rel8
       emit_byte(cast[uint8](offset_short & 255))
     else:
       # Near jump (5 bytes: opcode + rel32)
-      var offset_near: int32 = target - (g_text_len + 5)
+      offset_near: int32 = target - (g_text_len + 5)
       emit_byte(cast[uint8](0xE9))  # JMP rel32
       emit_dword(offset_near)
   else:
@@ -754,16 +754,16 @@ proc encode_jmp_rel(sym_idx: int32) =
     add_reloc(g_text_len, sym_idx, R_386_PC32, -4)
     emit_dword(-4)
 
-proc encode_je_rel(sym_idx: int32) =
-  var section: int32 = get_symbol_section(sym_idx)
-  var target: int32 = get_symbol_value(sym_idx)
+def encode_je_rel(sym_idx: int32):
+  section: int32 = get_symbol_section(sym_idx)
+  target: int32 = get_symbol_value(sym_idx)
   if section == SYM_TEXT and get_symbol_pass2_defined(sym_idx) == 1:
-    var offset_short: int32 = target - (g_text_len + 2)
+    offset_short: int32 = target - (g_text_len + 2)
     if offset_short >= -128 and offset_short <= 127:
       emit_byte(cast[uint8](0x74))  # JE rel8
       emit_byte(cast[uint8](offset_short & 255))
     else:
-      var offset_near: int32 = target - (g_text_len + 6)
+      offset_near: int32 = target - (g_text_len + 6)
       emit_byte(cast[uint8](0x0F))
       emit_byte(cast[uint8](0x84))  # JE rel32
       emit_dword(offset_near)
@@ -773,16 +773,16 @@ proc encode_je_rel(sym_idx: int32) =
     add_reloc(g_text_len, sym_idx, R_386_PC32, -4)
     emit_dword(-4)
 
-proc encode_jne_rel(sym_idx: int32) =
-  var section: int32 = get_symbol_section(sym_idx)
-  var target: int32 = get_symbol_value(sym_idx)
+def encode_jne_rel(sym_idx: int32):
+  section: int32 = get_symbol_section(sym_idx)
+  target: int32 = get_symbol_value(sym_idx)
   if section == SYM_TEXT and get_symbol_pass2_defined(sym_idx) == 1:
-    var offset_short: int32 = target - (g_text_len + 2)
+    offset_short: int32 = target - (g_text_len + 2)
     if offset_short >= -128 and offset_short <= 127:
       emit_byte(cast[uint8](0x75))  # JNE rel8
       emit_byte(cast[uint8](offset_short & 255))
     else:
-      var offset_near: int32 = target - (g_text_len + 6)
+      offset_near: int32 = target - (g_text_len + 6)
       emit_byte(cast[uint8](0x0F))
       emit_byte(cast[uint8](0x85))  # JNE rel32
       emit_dword(offset_near)
@@ -792,16 +792,16 @@ proc encode_jne_rel(sym_idx: int32) =
     add_reloc(g_text_len, sym_idx, R_386_PC32, -4)
     emit_dword(-4)
 
-proc encode_jl_rel(sym_idx: int32) =
-  var section: int32 = get_symbol_section(sym_idx)
-  var target: int32 = get_symbol_value(sym_idx)
+def encode_jl_rel(sym_idx: int32):
+  section: int32 = get_symbol_section(sym_idx)
+  target: int32 = get_symbol_value(sym_idx)
   if section == SYM_TEXT and get_symbol_pass2_defined(sym_idx) == 1:
-    var offset_short: int32 = target - (g_text_len + 2)
+    offset_short: int32 = target - (g_text_len + 2)
     if offset_short >= -128 and offset_short <= 127:
       emit_byte(cast[uint8](0x7C))  # JL rel8
       emit_byte(cast[uint8](offset_short & 255))
     else:
-      var offset_near: int32 = target - (g_text_len + 6)
+      offset_near: int32 = target - (g_text_len + 6)
       emit_byte(cast[uint8](0x0F))
       emit_byte(cast[uint8](0x8C))  # JL rel32
       emit_dword(offset_near)
@@ -811,16 +811,16 @@ proc encode_jl_rel(sym_idx: int32) =
     add_reloc(g_text_len, sym_idx, R_386_PC32, -4)
     emit_dword(-4)
 
-proc encode_jg_rel(sym_idx: int32) =
-  var section: int32 = get_symbol_section(sym_idx)
-  var target: int32 = get_symbol_value(sym_idx)
+def encode_jg_rel(sym_idx: int32):
+  section: int32 = get_symbol_section(sym_idx)
+  target: int32 = get_symbol_value(sym_idx)
   if section == SYM_TEXT and get_symbol_pass2_defined(sym_idx) == 1:
-    var offset_short: int32 = target - (g_text_len + 2)
+    offset_short: int32 = target - (g_text_len + 2)
     if offset_short >= -128 and offset_short <= 127:
       emit_byte(cast[uint8](0x7F))  # JG rel8
       emit_byte(cast[uint8](offset_short & 255))
     else:
-      var offset_near: int32 = target - (g_text_len + 6)
+      offset_near: int32 = target - (g_text_len + 6)
       emit_byte(cast[uint8](0x0F))
       emit_byte(cast[uint8](0x8F))  # JG rel32
       emit_dword(offset_near)
@@ -830,16 +830,16 @@ proc encode_jg_rel(sym_idx: int32) =
     add_reloc(g_text_len, sym_idx, R_386_PC32, -4)
     emit_dword(-4)
 
-proc encode_jle_rel(sym_idx: int32) =
-  var section: int32 = get_symbol_section(sym_idx)
-  var target: int32 = get_symbol_value(sym_idx)
+def encode_jle_rel(sym_idx: int32):
+  section: int32 = get_symbol_section(sym_idx)
+  target: int32 = get_symbol_value(sym_idx)
   if section == SYM_TEXT and get_symbol_pass2_defined(sym_idx) == 1:
-    var offset_short: int32 = target - (g_text_len + 2)
+    offset_short: int32 = target - (g_text_len + 2)
     if offset_short >= -128 and offset_short <= 127:
       emit_byte(cast[uint8](0x7E))  # JLE rel8
       emit_byte(cast[uint8](offset_short & 255))
     else:
-      var offset_near: int32 = target - (g_text_len + 6)
+      offset_near: int32 = target - (g_text_len + 6)
       emit_byte(cast[uint8](0x0F))
       emit_byte(cast[uint8](0x8E))  # JLE rel32
       emit_dword(offset_near)
@@ -849,16 +849,16 @@ proc encode_jle_rel(sym_idx: int32) =
     add_reloc(g_text_len, sym_idx, R_386_PC32, -4)
     emit_dword(-4)
 
-proc encode_jge_rel(sym_idx: int32) =
-  var section: int32 = get_symbol_section(sym_idx)
-  var target: int32 = get_symbol_value(sym_idx)
+def encode_jge_rel(sym_idx: int32):
+  section: int32 = get_symbol_section(sym_idx)
+  target: int32 = get_symbol_value(sym_idx)
   if section == SYM_TEXT and get_symbol_pass2_defined(sym_idx) == 1:
-    var offset_short: int32 = target - (g_text_len + 2)
+    offset_short: int32 = target - (g_text_len + 2)
     if offset_short >= -128 and offset_short <= 127:
       emit_byte(cast[uint8](0x7D))  # JGE rel8
       emit_byte(cast[uint8](offset_short & 255))
     else:
-      var offset_near: int32 = target - (g_text_len + 6)
+      offset_near: int32 = target - (g_text_len + 6)
       emit_byte(cast[uint8](0x0F))
       emit_byte(cast[uint8](0x8D))  # JGE rel32
       emit_dword(offset_near)
@@ -868,58 +868,58 @@ proc encode_jge_rel(sym_idx: int32) =
     add_reloc(g_text_len, sym_idx, R_386_PC32, -4)
     emit_dword(-4)
 
-proc encode_jz_rel(sym_idx: int32) =
+def encode_jz_rel(sym_idx: int32):
   encode_je_rel(sym_idx)
 
-proc encode_jnz_rel(sym_idx: int32) =
+def encode_jnz_rel(sym_idx: int32):
   encode_jne_rel(sym_idx)
 
 # Encode test reg, reg
-proc encode_test_reg_reg(dst: int32, src: int32) =
+def encode_test_reg_reg(dst: int32, src: int32):
   emit_byte(cast[uint8](0x85))
   emit_byte(modrm(3, src, dst))
 
 # Encode and reg, reg
-proc encode_and_reg_reg(dst: int32, src: int32) =
+def encode_and_reg_reg(dst: int32, src: int32):
   emit_byte(cast[uint8](0x21))
   emit_byte(modrm(3, src, dst))
 
 # Encode or reg, reg
-proc encode_or_reg_reg(dst: int32, src: int32) =
+def encode_or_reg_reg(dst: int32, src: int32):
   emit_byte(cast[uint8](0x09))
   emit_byte(modrm(3, src, dst))
 
 # Encode inc reg
-proc encode_inc_reg(reg: int32) =
+def encode_inc_reg(reg: int32):
   emit_byte(cast[uint8](0x40 + reg))
 
 # Encode dec reg
-proc encode_dec_reg(reg: int32) =
+def encode_dec_reg(reg: int32):
   emit_byte(cast[uint8](0x48 + reg))
 
 # Encode neg reg
-proc encode_neg_reg(reg: int32) =
+def encode_neg_reg(reg: int32):
   emit_byte(cast[uint8](0xF7))
   emit_byte(modrm(3, 3, reg))
 
 # Encode not reg
-proc encode_not_reg(reg: int32) =
+def encode_not_reg(reg: int32):
   emit_byte(cast[uint8](0xF7))
   emit_byte(modrm(3, 2, reg))
 
 # Encode imul reg, reg
-proc encode_imul_reg_reg(dst: int32, src: int32) =
+def encode_imul_reg_reg(dst: int32, src: int32):
   emit_byte(cast[uint8](0x0F))
   emit_byte(cast[uint8](0xAF))
   emit_byte(modrm(3, dst, src))
 
 # Encode idiv reg (EAX = EDX:EAX / reg)
-proc encode_idiv_reg(reg: int32) =
+def encode_idiv_reg(reg: int32):
   emit_byte(cast[uint8](0xF7))
   emit_byte(modrm(3, 7, reg))
 
 # Encode shl reg, imm
-proc encode_shl_reg_imm(reg: int32, imm: int32) =
+def encode_shl_reg_imm(reg: int32, imm: int32):
   if imm == 1:
     emit_byte(cast[uint8](0xD1))
     emit_byte(modrm(3, 4, reg))
@@ -929,7 +929,7 @@ proc encode_shl_reg_imm(reg: int32, imm: int32) =
     emit_byte(cast[uint8](imm))
 
 # Encode shr reg, imm
-proc encode_shr_reg_imm(reg: int32, imm: int32) =
+def encode_shr_reg_imm(reg: int32, imm: int32):
   if imm == 1:
     emit_byte(cast[uint8](0xD1))
     emit_byte(modrm(3, 5, reg))
@@ -939,19 +939,19 @@ proc encode_shr_reg_imm(reg: int32, imm: int32) =
     emit_byte(cast[uint8](imm))
 
 # Encode movzx reg32, reg8 (e.g., movzx eax, al)
-proc encode_movzx_reg_reg8(dst: int32, src: int32) =
+def encode_movzx_reg_reg8(dst: int32, src: int32):
   emit_byte(cast[uint8](0x0F))
   emit_byte(cast[uint8](0xB6))
   emit_byte(modrm(3, dst, src))  # mod=3 for register
 
 # Encode movzx reg, [reg] (byte memory)
-proc encode_movzx_reg_byte(dst: int32, base: int32) =
+def encode_movzx_reg_byte(dst: int32, base: int32):
   emit_byte(cast[uint8](0x0F))
   emit_byte(cast[uint8](0xB6))
   emit_byte(modrm(0, dst, base))
 
 # Encode movzx reg, byte [base+disp]
-proc encode_movzx_reg_byte_disp(dst: int32, base: int32, disp: int32) =
+def encode_movzx_reg_byte_disp(dst: int32, base: int32, disp: int32):
   emit_byte(cast[uint8](0x0F))
   emit_byte(cast[uint8](0xB6))
   if disp >= -128 and disp <= 127:
@@ -962,51 +962,51 @@ proc encode_movzx_reg_byte_disp(dst: int32, base: int32, disp: int32) =
     emit_dword(disp)
 
 # Encode setne al
-proc encode_setne_al() =
+def encode_setne_al():
   emit_byte(cast[uint8](0x0F))
   emit_byte(cast[uint8](0x95))
   emit_byte(modrm(3, 0, 0))  # r/m = AL
 
 # Encode sete al
-proc encode_sete_al() =
+def encode_sete_al():
   emit_byte(cast[uint8](0x0F))
   emit_byte(cast[uint8](0x94))
   emit_byte(modrm(3, 0, 0))
 
 # Encode setl al
-proc encode_setl_al() =
+def encode_setl_al():
   emit_byte(cast[uint8](0x0F))
   emit_byte(cast[uint8](0x9C))
   emit_byte(modrm(3, 0, 0))
 
 # Encode setg al
-proc encode_setg_al() =
+def encode_setg_al():
   emit_byte(cast[uint8](0x0F))
   emit_byte(cast[uint8](0x9F))
   emit_byte(modrm(3, 0, 0))
 
 # Encode setle al
-proc encode_setle_al() =
+def encode_setle_al():
   emit_byte(cast[uint8](0x0F))
   emit_byte(cast[uint8](0x9E))
   emit_byte(modrm(3, 0, 0))
 
 # Encode setge al
-proc encode_setge_al() =
+def encode_setge_al():
   emit_byte(cast[uint8](0x0F))
   emit_byte(cast[uint8](0x9D))
   emit_byte(modrm(3, 0, 0))
 
 # Encode cdq (sign-extend EAX into EDX:EAX)
-proc encode_cdq() =
+def encode_cdq():
   emit_byte(cast[uint8](0x99))
 
 # Encode nop
-proc encode_nop() =
+def encode_nop():
   emit_byte(cast[uint8](0x90))
 
 # Encode lea with symbol reference (for [rel sym])
-proc encode_lea_reg_sym(dst: int32, sym_idx: int32) =
+def encode_lea_reg_sym(dst: int32, sym_idx: int32):
   # lea eax, [disp32] - use direct addressing mode
   emit_byte(cast[uint8](0x8D))
   emit_byte(modrm(0, dst, 5))  # mod=00, r/m=5 means disp32
@@ -1014,34 +1014,34 @@ proc encode_lea_reg_sym(dst: int32, sym_idx: int32) =
   emit_dword(0)
 
 # Encode mov reg, [sym] (memory access via symbol)
-proc encode_mov_reg_mem_sym(dst: int32, sym_idx: int32) =
+def encode_mov_reg_mem_sym(dst: int32, sym_idx: int32):
   emit_byte(cast[uint8](0x8B))
   emit_byte(modrm(0, dst, 5))
   add_reloc(g_text_len, sym_idx, R_386_32, 0)
   emit_dword(0)
 
 # Encode mov reg, sym (load symbol address as immediate)
-proc encode_mov_reg_imm_sym(dst: int32, sym_idx: int32) =
+def encode_mov_reg_imm_sym(dst: int32, sym_idx: int32):
   emit_byte(cast[uint8](0xB8 + dst))  # B8+reg for mov reg, imm32
   add_reloc(g_text_len, sym_idx, R_386_32, 0)
   emit_dword(0)
 
 # Encode mov [sym], reg
-proc encode_mov_sym_reg(sym_idx: int32, src: int32) =
+def encode_mov_sym_reg(sym_idx: int32, src: int32):
   emit_byte(cast[uint8](0x89))
   emit_byte(modrm(0, src, 5))
   add_reloc(g_text_len, sym_idx, R_386_32, 0)
   emit_dword(0)
 
 # Encode push [sym] (push value from memory)
-proc encode_push_sym(sym_idx: int32) =
+def encode_push_sym(sym_idx: int32):
   emit_byte(cast[uint8](0xFF))
   emit_byte(modrm(0, 6, 5))  # /6 for push
   add_reloc(g_text_len, sym_idx, R_386_32, 0)
   emit_dword(0)
 
 # Encode push sym (push symbol address as immediate)
-proc encode_push_imm_sym(sym_idx: int32) =
+def encode_push_imm_sym(sym_idx: int32):
   emit_byte(cast[uint8](0x68))  # push imm32
   add_reloc(g_text_len, sym_idx, R_386_32, 0)
   emit_dword(0)
@@ -1050,7 +1050,7 @@ proc encode_push_imm_sym(sym_idx: int32) =
 # Parser - First Pass (Collect Labels)
 # ============================================================================
 
-proc parse_line_pass1() =
+def parse_line_pass1():
   skip_whitespace()
 
   if g_pos >= g_source_len:
@@ -1064,17 +1064,17 @@ proc parse_line_pass1() =
     return
 
   # Check for label (ends with ':')
-  var start: int32 = g_pos
+  start: int32 = g_pos
   read_ident()
   skip_whitespace()
 
   if g_source[g_pos] == cast[uint8](58):  # ':'
     # This is a label
-    var sym_idx: int32 = find_symbol(g_token_buf)
+    sym_idx: int32 = find_symbol(g_token_buf)
     if sym_idx < 0:
       # Allocate name storage
-      var name_len: int32 = strlen(g_token_buf)
-      var name: ptr uint8 = cast[ptr uint8](cast[int32](g_data) + g_data_cap - 1024 - g_sym_count * 64)
+      name_len: int32 = strlen(g_token_buf)
+      name: *uint8 = cast[*uint8](cast[int32](g_data) + g_data_cap - 1024 - g_sym_count * 64)
       strcpy(name, g_token_buf)
       sym_idx = add_symbol(name, current_offset(), g_current_section, SYM_LOCAL)
     else:
@@ -1089,49 +1089,49 @@ proc parse_line_pass1() =
       return
 
   # Check for directives
-  if strcmp(g_token_buf, cast[ptr uint8]("section")) == 0:
+  if strcmp(g_token_buf, cast[*uint8]("section")) == 0:
     skip_whitespace()
     read_ident()
-    if strcmp(g_token_buf, cast[ptr uint8](".text")) == 0:
+    if strcmp(g_token_buf, cast[*uint8](".text")) == 0:
       g_current_section = SYM_TEXT
     else:
-      if strcmp(g_token_buf, cast[ptr uint8](".data")) == 0:
+      if strcmp(g_token_buf, cast[*uint8](".data")) == 0:
         g_current_section = SYM_DATA
       else:
-        if strcmp(g_token_buf, cast[ptr uint8](".bss")) == 0:
+        if strcmp(g_token_buf, cast[*uint8](".bss")) == 0:
           g_current_section = SYM_BSS
     skip_line()
     return
 
-  if strcmp(g_token_buf, cast[ptr uint8]("global")) == 0:
+  if strcmp(g_token_buf, cast[*uint8]("global")) == 0:
     skip_whitespace()
     read_ident()
-    var sym_idx: int32 = find_symbol(g_token_buf)
+    sym_idx: int32 = find_symbol(g_token_buf)
     if sym_idx < 0:
-      var name_len: int32 = strlen(g_token_buf)
-      var name: ptr uint8 = cast[ptr uint8](cast[int32](g_data) + g_data_cap - 1024 - g_sym_count * 64)
+      name_len: int32 = strlen(g_token_buf)
+      name: *uint8 = cast[*uint8](cast[int32](g_data) + g_data_cap - 1024 - g_sym_count * 64)
       strcpy(name, g_token_buf)
       sym_idx = add_symbol(name, 0, SYM_UNDEFINED, SYM_GLOBAL)
     else:
       # Mark as global
-      var entry: ptr uint8 = cast[ptr uint8](cast[int32](g_symbols) + sym_idx * 32)
-      var type_ptr: ptr int32 = cast[ptr int32](cast[int32](entry) + 12)
+      entry: *uint8 = cast[*uint8](cast[int32](g_symbols) + sym_idx * 32)
+      type_ptr: *int32 = cast[*int32](cast[int32](entry) + 12)
       type_ptr[0] = SYM_GLOBAL
     skip_line()
     return
 
-  if strcmp(g_token_buf, cast[ptr uint8]("extern")) == 0:
+  if strcmp(g_token_buf, cast[*uint8]("extern")) == 0:
     skip_whitespace()
     read_ident()
-    var sym_idx: int32 = find_symbol(g_token_buf)
+    sym_idx: int32 = find_symbol(g_token_buf)
     if sym_idx < 0:
-      var name: ptr uint8 = cast[ptr uint8](cast[int32](g_data) + g_data_cap - 1024 - g_sym_count * 64)
+      name: *uint8 = cast[*uint8](cast[int32](g_data) + g_data_cap - 1024 - g_sym_count * 64)
       strcpy(name, g_token_buf)
-      discard add_symbol(name, 0, SYM_UNDEFINED, SYM_EXTERN)
+      _ = add_symbol(name, 0, SYM_UNDEFINED, SYM_EXTERN)
     skip_line()
     return
 
-  if strcmp(g_token_buf, cast[ptr uint8]("bits")) == 0:
+  if strcmp(g_token_buf, cast[*uint8]("bits")) == 0:
     skip_line()
     return
 
@@ -1145,15 +1145,15 @@ proc parse_line_pass1() =
 # Parse operand - returns type and value
 # Type: 0=register, 1=immediate, 2=memory [reg], 3=memory [reg+disp], 4=symbol
 #       5=memory [base+index*scale], 6=memory [base+index*scale+disp]
-var g_op_type: int32
-var g_op_reg: int32
-var g_op_disp: int32
-var g_op_sym: int32
-var g_op_index: int32   # index register for SIB addressing
-var g_op_scale: int32   # scale factor (1, 2, 4, 8) for SIB addressing
-var g_op_size: int32    # size prefix: 0=default, 1=byte, 2=word, 4=dword
+g_op_type: int32
+g_op_reg: int32
+g_op_disp: int32
+g_op_sym: int32
+g_op_index: int32   # index register for SIB addressing
+g_op_scale: int32   # scale factor (1, 2, 4, 8) for SIB addressing
+g_op_size: int32    # size prefix: 0=default, 1=byte, 2=word, 4=dword
 
-proc parse_operand() =
+def parse_operand():
   skip_whitespace()
   g_op_size = 0  # Reset size prefix
 
@@ -1164,25 +1164,25 @@ proc parse_operand() =
     return
 
   # Check for size prefix before memory access (byte, word, dword)
-  var size_prefix: int32 = 0
-  var save_pos: int32 = g_pos
+  size_prefix: int32 = 0
+  save_pos: int32 = g_pos
   if is_alpha(g_source[g_pos]) == 1:
     read_ident()
-    if strcmp(g_token_buf, cast[ptr uint8]("byte")) == 0:
+    if strcmp(g_token_buf, cast[*uint8]("byte")) == 0:
       skip_whitespace()
       if g_source[g_pos] == cast[uint8](91):  # '[' follows
         size_prefix = 1
       else:
         g_pos = save_pos  # restore if no '[' follows
     else:
-      if strcmp(g_token_buf, cast[ptr uint8]("word")) == 0:
+      if strcmp(g_token_buf, cast[*uint8]("word")) == 0:
         skip_whitespace()
         if g_source[g_pos] == cast[uint8](91):  # '[' follows
           size_prefix = 2
         else:
           g_pos = save_pos
       else:
-        if strcmp(g_token_buf, cast[ptr uint8]("dword")) == 0:
+        if strcmp(g_token_buf, cast[*uint8]("dword")) == 0:
           skip_whitespace()
           if g_source[g_pos] == cast[uint8](91):  # '[' follows
             size_prefix = 4
@@ -1201,13 +1201,13 @@ proc parse_operand() =
 
     # Check for 'rel' keyword
     read_ident()
-    if strcmp(g_token_buf, cast[ptr uint8]("rel")) == 0:
+    if strcmp(g_token_buf, cast[*uint8]("rel")) == 0:
       skip_whitespace()
       read_ident()
       g_op_sym = find_symbol(g_token_buf)
       if g_op_sym < 0:
         # Create undefined symbol
-        var name: ptr uint8 = cast[ptr uint8](cast[int32](g_data) + g_data_cap - 1024 - g_sym_count * 64)
+        name: *uint8 = cast[*uint8](cast[int32](g_data) + g_data_cap - 1024 - g_sym_count * 64)
         strcpy(name, g_token_buf)
         g_op_sym = add_symbol(name, 0, SYM_UNDEFINED, SYM_EXTERN)
       g_op_type = 4
@@ -1227,7 +1227,7 @@ proc parse_operand() =
         if g_source[g_pos] == cast[uint8](93):
           g_pos = g_pos + 1
         return
-      print_err(cast[ptr uint8]("Error: invalid operand\n"))
+      print_err(cast[*uint8]("Error: invalid operand\n"))
       g_error = 1
       return
 
@@ -1238,7 +1238,7 @@ proc parse_operand() =
 
     # Check for + or - (could be index*scale or displacement)
     if g_source[g_pos] == cast[uint8](43) or g_source[g_pos] == cast[uint8](45):
-      var neg: int32 = 0
+      neg: int32 = 0
       if g_source[g_pos] == cast[uint8](45):
         neg = 1
       g_pos = g_pos + 1
@@ -1253,14 +1253,14 @@ proc parse_operand() =
         skip_whitespace()
         # Check for additional index*scale after displacement: [base + disp + index*scale]
         if g_source[g_pos] == cast[uint8](43) or g_source[g_pos] == cast[uint8](45):
-          var neg2: int32 = 0
+          neg2: int32 = 0
           if g_source[g_pos] == cast[uint8](45):
             neg2 = 1
           g_pos = g_pos + 1
           skip_whitespace()
           if is_alpha(g_source[g_pos]) == 1:
             read_ident()
-            var idx_reg: int32 = parse_register(g_token_buf)
+            idx_reg: int32 = parse_register(g_token_buf)
             if idx_reg >= 0:
               g_op_index = idx_reg
               skip_whitespace()
@@ -1274,7 +1274,7 @@ proc parse_operand() =
       else:
         # Could be index*scale pattern
         read_ident()
-        var idx_reg: int32 = parse_register(g_token_buf)
+        idx_reg: int32 = parse_register(g_token_buf)
         if idx_reg >= 0:
           g_op_index = idx_reg
           skip_whitespace()
@@ -1289,7 +1289,7 @@ proc parse_operand() =
           skip_whitespace()
           # Check for additional displacement
           if g_source[g_pos] == cast[uint8](43) or g_source[g_pos] == cast[uint8](45):
-            var neg2: int32 = 0
+            neg2: int32 = 0
             if g_source[g_pos] == cast[uint8](45):
               neg2 = 1
             g_pos = g_pos + 1
@@ -1323,17 +1323,17 @@ proc parse_operand() =
   g_op_sym = find_symbol(g_token_buf)
   if g_op_sym < 0:
     # Create undefined symbol
-    var name: ptr uint8 = cast[ptr uint8](cast[int32](g_data) + g_data_cap - 1024 - g_sym_count * 64)
+    name: *uint8 = cast[*uint8](cast[int32](g_data) + g_data_cap - 1024 - g_sym_count * 64)
     strcpy(name, g_token_buf)
     g_op_sym = add_symbol(name, 0, SYM_UNDEFINED, SYM_EXTERN)
   g_op_type = 8  # symbol address (bare symbol, load address as imm32)
 
-proc expect_comma() =
+def expect_comma():
   skip_whitespace()
   if g_source[g_pos] == cast[uint8](44):  # ','
     g_pos = g_pos + 1
 
-proc parse_line_pass2() =
+def parse_line_pass2():
   skip_whitespace()
 
   if g_pos >= g_source_len:
@@ -1353,7 +1353,7 @@ proc parse_line_pass2() =
   # Handle labels - update symbol value with current offset
   if g_source[g_pos] == cast[uint8](58):  # ':'
     # Update symbol's value to current offset
-    var sym_idx: int32 = find_symbol(g_token_buf)
+    sym_idx: int32 = find_symbol(g_token_buf)
     if sym_idx >= 0:
       set_symbol_value(sym_idx, current_offset())
       set_symbol_section(sym_idx, g_current_section)
@@ -1369,41 +1369,41 @@ proc parse_line_pass2() =
     skip_whitespace()
 
   # Handle directives
-  if strcmp(g_token_buf, cast[ptr uint8]("section")) == 0:
+  if strcmp(g_token_buf, cast[*uint8]("section")) == 0:
     skip_whitespace()
     read_ident()
-    if strcmp(g_token_buf, cast[ptr uint8](".text")) == 0:
+    if strcmp(g_token_buf, cast[*uint8](".text")) == 0:
       g_current_section = SYM_TEXT
     else:
-      if strcmp(g_token_buf, cast[ptr uint8](".data")) == 0:
+      if strcmp(g_token_buf, cast[*uint8](".data")) == 0:
         g_current_section = SYM_DATA
       else:
-        if strcmp(g_token_buf, cast[ptr uint8](".bss")) == 0:
+        if strcmp(g_token_buf, cast[*uint8](".bss")) == 0:
           g_current_section = SYM_BSS
     skip_line()
     return
 
-  if strcmp(g_token_buf, cast[ptr uint8]("global")) == 0:
+  if strcmp(g_token_buf, cast[*uint8]("global")) == 0:
     skip_line()
     return
 
-  if strcmp(g_token_buf, cast[ptr uint8]("extern")) == 0:
+  if strcmp(g_token_buf, cast[*uint8]("extern")) == 0:
     skip_line()
     return
 
-  if strcmp(g_token_buf, cast[ptr uint8]("bits")) == 0:
+  if strcmp(g_token_buf, cast[*uint8]("bits")) == 0:
     skip_line()
     return
 
   # Data directives
-  if strcmp(g_token_buf, cast[ptr uint8]("db")) == 0:
+  if strcmp(g_token_buf, cast[*uint8]("db")) == 0:
     skip_whitespace()
     while g_pos < g_source_len and g_source[g_pos] != cast[uint8](10):
       skip_whitespace()
       if g_source[g_pos] == cast[uint8](34):  # '"' string
         g_pos = g_pos + 1
         while g_pos < g_source_len and g_source[g_pos] != cast[uint8](34):
-          var c: uint8 = g_source[g_pos]
+          c: uint8 = g_source[g_pos]
           if c == cast[uint8](92):  # backslash
             g_pos = g_pos + 1
             c = g_source[g_pos]
@@ -1424,7 +1424,7 @@ proc parse_line_pass2() =
           g_pos = g_pos + 1
       else:
         if is_digit(g_source[g_pos]) == 1 or g_source[g_pos] == cast[uint8](45):
-          var val: int32 = read_number()
+          val: int32 = read_number()
           emit_byte(cast[uint8](val))
       skip_whitespace()
       if g_source[g_pos] == cast[uint8](44):
@@ -1432,11 +1432,11 @@ proc parse_line_pass2() =
     skip_line()
     return
 
-  if strcmp(g_token_buf, cast[ptr uint8]("dd")) == 0:
+  if strcmp(g_token_buf, cast[*uint8]("dd")) == 0:
     skip_whitespace()
     while g_pos < g_source_len and g_source[g_pos] != cast[uint8](10):
       skip_whitespace()
-      var val: int32 = read_number()
+      val: int32 = read_number()
       emit_dword(val)
       skip_whitespace()
       if g_source[g_pos] == cast[uint8](44):
@@ -1444,30 +1444,30 @@ proc parse_line_pass2() =
     skip_line()
     return
 
-  if strcmp(g_token_buf, cast[ptr uint8]("resd")) == 0:
+  if strcmp(g_token_buf, cast[*uint8]("resd")) == 0:
     skip_whitespace()
-    var count: int32 = read_number()
+    count: int32 = read_number()
     g_bss_len = g_bss_len + count * 4
     skip_line()
     return
 
-  if strcmp(g_token_buf, cast[ptr uint8]("resb")) == 0:
+  if strcmp(g_token_buf, cast[*uint8]("resb")) == 0:
     skip_whitespace()
-    var count: int32 = read_number()
+    count: int32 = read_number()
     g_bss_len = g_bss_len + count
     skip_line()
     return
 
   # Instructions
-  if strcmp(g_token_buf, cast[ptr uint8]("mov")) == 0:
+  if strcmp(g_token_buf, cast[*uint8]("mov")) == 0:
     parse_operand()
-    var dst_type: int32 = g_op_type
-    var dst_reg: int32 = g_op_reg
-    var dst_disp: int32 = g_op_disp
-    var dst_sym: int32 = g_op_sym
-    var dst_index: int32 = g_op_index
-    var dst_scale: int32 = g_op_scale
-    var dst_size: int32 = g_op_size
+    dst_type: int32 = g_op_type
+    dst_reg: int32 = g_op_reg
+    dst_disp: int32 = g_op_disp
+    dst_sym: int32 = g_op_sym
+    dst_index: int32 = g_op_index
+    dst_scale: int32 = g_op_scale
+    dst_size: int32 = g_op_size
     expect_comma()
     parse_operand()
 
@@ -1522,7 +1522,7 @@ proc parse_line_pass2() =
     skip_line()
     return
 
-  if strcmp(g_token_buf, cast[ptr uint8]("push")) == 0:
+  if strcmp(g_token_buf, cast[*uint8]("push")) == 0:
     parse_operand()
     if g_op_type == 0:
       encode_push_reg(g_op_reg)
@@ -1539,27 +1539,27 @@ proc parse_line_pass2() =
     skip_line()
     return
 
-  if strcmp(g_token_buf, cast[ptr uint8]("pop")) == 0:
+  if strcmp(g_token_buf, cast[*uint8]("pop")) == 0:
     parse_operand()
     encode_pop_reg(g_op_reg)
     skip_line()
     return
 
-  if strcmp(g_token_buf, cast[ptr uint8]("call")) == 0:
+  if strcmp(g_token_buf, cast[*uint8]("call")) == 0:
     parse_operand()
     if g_op_type == 4 or g_op_type == 8:
       encode_call_rel(g_op_sym)
     skip_line()
     return
 
-  if strcmp(g_token_buf, cast[ptr uint8]("ret")) == 0:
+  if strcmp(g_token_buf, cast[*uint8]("ret")) == 0:
     encode_ret()
     skip_line()
     return
 
-  if strcmp(g_token_buf, cast[ptr uint8]("add")) == 0:
+  if strcmp(g_token_buf, cast[*uint8]("add")) == 0:
     parse_operand()
-    var dst_reg: int32 = g_op_reg
+    dst_reg: int32 = g_op_reg
     expect_comma()
     parse_operand()
     if g_op_type == 0:
@@ -1569,9 +1569,9 @@ proc parse_line_pass2() =
     skip_line()
     return
 
-  if strcmp(g_token_buf, cast[ptr uint8]("sub")) == 0:
+  if strcmp(g_token_buf, cast[*uint8]("sub")) == 0:
     parse_operand()
-    var dst_reg: int32 = g_op_reg
+    dst_reg: int32 = g_op_reg
     expect_comma()
     parse_operand()
     if g_op_type == 0:
@@ -1581,36 +1581,36 @@ proc parse_line_pass2() =
     skip_line()
     return
 
-  if strcmp(g_token_buf, cast[ptr uint8]("xor")) == 0:
+  if strcmp(g_token_buf, cast[*uint8]("xor")) == 0:
     parse_operand()
-    var dst_reg: int32 = g_op_reg
+    dst_reg: int32 = g_op_reg
     expect_comma()
     parse_operand()
     encode_xor_reg_reg(dst_reg, g_op_reg)
     skip_line()
     return
 
-  if strcmp(g_token_buf, cast[ptr uint8]("and")) == 0:
+  if strcmp(g_token_buf, cast[*uint8]("and")) == 0:
     parse_operand()
-    var dst_reg: int32 = g_op_reg
+    dst_reg: int32 = g_op_reg
     expect_comma()
     parse_operand()
     encode_and_reg_reg(dst_reg, g_op_reg)
     skip_line()
     return
 
-  if strcmp(g_token_buf, cast[ptr uint8]("or")) == 0:
+  if strcmp(g_token_buf, cast[*uint8]("or")) == 0:
     parse_operand()
-    var dst_reg: int32 = g_op_reg
+    dst_reg: int32 = g_op_reg
     expect_comma()
     parse_operand()
     encode_or_reg_reg(dst_reg, g_op_reg)
     skip_line()
     return
 
-  if strcmp(g_token_buf, cast[ptr uint8]("cmp")) == 0:
+  if strcmp(g_token_buf, cast[*uint8]("cmp")) == 0:
     parse_operand()
-    var dst_reg: int32 = g_op_reg
+    dst_reg: int32 = g_op_reg
     expect_comma()
     parse_operand()
     if g_op_type == 0:
@@ -1620,18 +1620,18 @@ proc parse_line_pass2() =
     skip_line()
     return
 
-  if strcmp(g_token_buf, cast[ptr uint8]("test")) == 0:
+  if strcmp(g_token_buf, cast[*uint8]("test")) == 0:
     parse_operand()
-    var dst_reg: int32 = g_op_reg
+    dst_reg: int32 = g_op_reg
     expect_comma()
     parse_operand()
     encode_test_reg_reg(dst_reg, g_op_reg)
     skip_line()
     return
 
-  if strcmp(g_token_buf, cast[ptr uint8]("lea")) == 0:
+  if strcmp(g_token_buf, cast[*uint8]("lea")) == 0:
     parse_operand()
-    var dst_reg: int32 = g_op_reg
+    dst_reg: int32 = g_op_reg
     expect_comma()
     parse_operand()
     if g_op_type == 2:
@@ -1652,161 +1652,161 @@ proc parse_line_pass2() =
     skip_line()
     return
 
-  if strcmp(g_token_buf, cast[ptr uint8]("int")) == 0:
+  if strcmp(g_token_buf, cast[*uint8]("int")) == 0:
     skip_whitespace()
-    var n: int32 = read_number()
+    n: int32 = read_number()
     encode_int(n)
     skip_line()
     return
 
-  if strcmp(g_token_buf, cast[ptr uint8]("jmp")) == 0:
+  if strcmp(g_token_buf, cast[*uint8]("jmp")) == 0:
     parse_operand()
     encode_jmp_rel(g_op_sym)
     skip_line()
     return
 
-  if strcmp(g_token_buf, cast[ptr uint8]("je")) == 0:
+  if strcmp(g_token_buf, cast[*uint8]("je")) == 0:
     parse_operand()
     encode_je_rel(g_op_sym)
     skip_line()
     return
 
-  if strcmp(g_token_buf, cast[ptr uint8]("jz")) == 0:
+  if strcmp(g_token_buf, cast[*uint8]("jz")) == 0:
     parse_operand()
     encode_jz_rel(g_op_sym)
     skip_line()
     return
 
-  if strcmp(g_token_buf, cast[ptr uint8]("jne")) == 0:
+  if strcmp(g_token_buf, cast[*uint8]("jne")) == 0:
     parse_operand()
     encode_jne_rel(g_op_sym)
     skip_line()
     return
 
-  if strcmp(g_token_buf, cast[ptr uint8]("jnz")) == 0:
+  if strcmp(g_token_buf, cast[*uint8]("jnz")) == 0:
     parse_operand()
     encode_jnz_rel(g_op_sym)
     skip_line()
     return
 
-  if strcmp(g_token_buf, cast[ptr uint8]("jl")) == 0:
+  if strcmp(g_token_buf, cast[*uint8]("jl")) == 0:
     parse_operand()
     encode_jl_rel(g_op_sym)
     skip_line()
     return
 
-  if strcmp(g_token_buf, cast[ptr uint8]("jg")) == 0:
+  if strcmp(g_token_buf, cast[*uint8]("jg")) == 0:
     parse_operand()
     encode_jg_rel(g_op_sym)
     skip_line()
     return
 
-  if strcmp(g_token_buf, cast[ptr uint8]("jle")) == 0:
+  if strcmp(g_token_buf, cast[*uint8]("jle")) == 0:
     parse_operand()
     encode_jle_rel(g_op_sym)
     skip_line()
     return
 
-  if strcmp(g_token_buf, cast[ptr uint8]("jge")) == 0:
+  if strcmp(g_token_buf, cast[*uint8]("jge")) == 0:
     parse_operand()
     encode_jge_rel(g_op_sym)
     skip_line()
     return
 
-  if strcmp(g_token_buf, cast[ptr uint8]("inc")) == 0:
+  if strcmp(g_token_buf, cast[*uint8]("inc")) == 0:
     parse_operand()
     encode_inc_reg(g_op_reg)
     skip_line()
     return
 
-  if strcmp(g_token_buf, cast[ptr uint8]("dec")) == 0:
+  if strcmp(g_token_buf, cast[*uint8]("dec")) == 0:
     parse_operand()
     encode_dec_reg(g_op_reg)
     skip_line()
     return
 
-  if strcmp(g_token_buf, cast[ptr uint8]("neg")) == 0:
+  if strcmp(g_token_buf, cast[*uint8]("neg")) == 0:
     parse_operand()
     encode_neg_reg(g_op_reg)
     skip_line()
     return
 
-  if strcmp(g_token_buf, cast[ptr uint8]("not")) == 0:
+  if strcmp(g_token_buf, cast[*uint8]("not")) == 0:
     parse_operand()
     encode_not_reg(g_op_reg)
     skip_line()
     return
 
-  if strcmp(g_token_buf, cast[ptr uint8]("imul")) == 0:
+  if strcmp(g_token_buf, cast[*uint8]("imul")) == 0:
     parse_operand()
-    var dst_reg: int32 = g_op_reg
+    dst_reg: int32 = g_op_reg
     expect_comma()
     parse_operand()
     encode_imul_reg_reg(dst_reg, g_op_reg)
     skip_line()
     return
 
-  if strcmp(g_token_buf, cast[ptr uint8]("idiv")) == 0:
+  if strcmp(g_token_buf, cast[*uint8]("idiv")) == 0:
     parse_operand()
     encode_idiv_reg(g_op_reg)
     skip_line()
     return
 
-  if strcmp(g_token_buf, cast[ptr uint8]("cdq")) == 0:
+  if strcmp(g_token_buf, cast[*uint8]("cdq")) == 0:
     encode_cdq()
     skip_line()
     return
 
-  if strcmp(g_token_buf, cast[ptr uint8]("nop")) == 0:
+  if strcmp(g_token_buf, cast[*uint8]("nop")) == 0:
     encode_nop()
     skip_line()
     return
 
-  if strcmp(g_token_buf, cast[ptr uint8]("setne")) == 0:
+  if strcmp(g_token_buf, cast[*uint8]("setne")) == 0:
     encode_setne_al()
     skip_whitespace()
     read_ident()  # consume 'al'
     skip_line()
     return
 
-  if strcmp(g_token_buf, cast[ptr uint8]("sete")) == 0:
+  if strcmp(g_token_buf, cast[*uint8]("sete")) == 0:
     encode_sete_al()
     skip_whitespace()
     read_ident()
     skip_line()
     return
 
-  if strcmp(g_token_buf, cast[ptr uint8]("setl")) == 0:
+  if strcmp(g_token_buf, cast[*uint8]("setl")) == 0:
     encode_setl_al()
     skip_whitespace()
     read_ident()
     skip_line()
     return
 
-  if strcmp(g_token_buf, cast[ptr uint8]("setg")) == 0:
+  if strcmp(g_token_buf, cast[*uint8]("setg")) == 0:
     encode_setg_al()
     skip_whitespace()
     read_ident()
     skip_line()
     return
 
-  if strcmp(g_token_buf, cast[ptr uint8]("setle")) == 0:
+  if strcmp(g_token_buf, cast[*uint8]("setle")) == 0:
     encode_setle_al()
     skip_whitespace()
     read_ident()
     skip_line()
     return
 
-  if strcmp(g_token_buf, cast[ptr uint8]("setge")) == 0:
+  if strcmp(g_token_buf, cast[*uint8]("setge")) == 0:
     encode_setge_al()
     skip_whitespace()
     read_ident()
     skip_line()
     return
 
-  if strcmp(g_token_buf, cast[ptr uint8]("movzx")) == 0:
+  if strcmp(g_token_buf, cast[*uint8]("movzx")) == 0:
     parse_operand()
-    var dst_reg: int32 = g_op_reg
+    dst_reg: int32 = g_op_reg
     expect_comma()
     skip_whitespace()
     # Skip 'byte' keyword if present
@@ -1825,18 +1825,18 @@ proc parse_line_pass2() =
     skip_line()
     return
 
-  if strcmp(g_token_buf, cast[ptr uint8]("shl")) == 0:
+  if strcmp(g_token_buf, cast[*uint8]("shl")) == 0:
     parse_operand()
-    var dst_reg: int32 = g_op_reg
+    dst_reg: int32 = g_op_reg
     expect_comma()
     parse_operand()
     encode_shl_reg_imm(dst_reg, g_op_disp)
     skip_line()
     return
 
-  if strcmp(g_token_buf, cast[ptr uint8]("shr")) == 0:
+  if strcmp(g_token_buf, cast[*uint8]("shr")) == 0:
     parse_operand()
-    var dst_reg: int32 = g_op_reg
+    dst_reg: int32 = g_op_reg
     expect_comma()
     parse_operand()
     encode_shr_reg_imm(dst_reg, g_op_disp)
@@ -1869,54 +1869,54 @@ const SHF_WRITE: int32 = 1
 const SHF_ALLOC: int32 = 2
 const SHF_EXECINSTR: int32 = 4
 
-proc write_elf_object(filename: ptr uint8): int32 =
+def write_elf_object(filename: *uint8) -> int32:
   # Open output file
-  var fd: int32 = syscall3(SYS_open, cast[int32](filename), O_WRONLY + O_CREAT + O_TRUNC, 420)  # 0644
+  fd: int32 = syscall3(SYS_open, cast[int32](filename), O_WRONLY + O_CREAT + O_TRUNC, 420)  # 0644
   if fd < 0:
     return -1
 
   # Calculate sizes
   # Section name string table (54 bytes total)
-  var shstrtab_size: int32 = 54  # .shstrtab, .text, .data, .bss, .symtab, .strtab, .rel.text
+  shstrtab_size: int32 = 54  # .shstrtab, .text, .data, .bss, .symtab, .strtab, .rel.text
 
   # String table for symbols
-  var strtab_size: int32 = 1  # Start with null byte
-  var i: int32 = 0
+  strtab_size: int32 = 1  # Start with null byte
+  i: int32 = 0
   while i < g_sym_count:
-    var entry: ptr uint8 = cast[ptr uint8](cast[int32](g_symbols) + i * 32)
-    var name_ptr: ptr int32 = cast[ptr int32](entry)
-    var name: ptr uint8 = cast[ptr uint8](name_ptr[0])
+    entry: *uint8 = cast[*uint8](cast[int32](g_symbols) + i * 32)
+    name_ptr: *int32 = cast[*int32](entry)
+    name: *uint8 = cast[*uint8](name_ptr[0])
     strtab_size = strtab_size + strlen(name) + 1
     i = i + 1
 
   # Symbol table size
-  var symtab_size: int32 = (g_sym_count + 1) * 16  # +1 for null entry
+  symtab_size: int32 = (g_sym_count + 1) * 16  # +1 for null entry
 
   # Relocation table size
-  var rel_size: int32 = g_reloc_count * 8
+  rel_size: int32 = g_reloc_count * 8
 
   # Calculate offsets
-  var ehdr_size: int32 = 52
-  var shdr_size: int32 = 40
-  var num_sections: int32 = 7  # null, .text, .data, .bss, .symtab, .strtab, .shstrtab
+  ehdr_size: int32 = 52
+  shdr_size: int32 = 40
+  num_sections: int32 = 7  # null, .text, .data, .bss, .symtab, .strtab, .shstrtab
 
   if g_reloc_count > 0:
     num_sections = 8  # add .rel.text
 
-  var text_offset: int32 = ehdr_size
-  var data_offset: int32 = text_offset + g_text_len
-  var strtab_offset: int32 = data_offset + g_data_len
-  var symtab_offset: int32 = strtab_offset + strtab_size
-  var shstrtab_offset: int32 = symtab_offset + symtab_size
-  var rel_offset: int32 = shstrtab_offset + shstrtab_size
-  var shdr_offset: int32 = rel_offset + rel_size
+  text_offset: int32 = ehdr_size
+  data_offset: int32 = text_offset + g_text_len
+  strtab_offset: int32 = data_offset + g_data_len
+  symtab_offset: int32 = strtab_offset + strtab_size
+  shstrtab_offset: int32 = symtab_offset + symtab_size
+  rel_offset: int32 = shstrtab_offset + shstrtab_size
+  shdr_offset: int32 = rel_offset + rel_size
 
   # Align section header to 4 bytes
   shdr_offset = (shdr_offset + 3) & (0 - 4)
 
   # Write ELF header
-  var ehdr: array[52, uint8]
-  memset(cast[ptr uint8](addr(ehdr)), cast[uint8](0), 52)
+  ehdr: array[52, uint8]
+  memset(cast[*uint8](addr(ehdr)), cast[uint8](0), 52)
 
   # Magic number
   ehdr[0] = cast[uint8](0x7F)
@@ -1955,71 +1955,71 @@ proc write_elf_object(filename: ptr uint8): int32 =
   ehdr[51] = cast[uint8](0)
 
   # e_shoff
-  var shoff_ptr: ptr int32 = cast[ptr int32](cast[int32](addr(ehdr)) + 32)
+  shoff_ptr: *int32 = cast[*int32](cast[int32](addr(ehdr)) + 32)
   shoff_ptr[0] = shdr_offset
 
-  discard syscall3(SYS_write, fd, cast[int32](addr(ehdr)), 52)
+  _ = syscall3(SYS_write, fd, cast[int32](addr(ehdr)), 52)
 
   # Write .text section
   if g_text_len > 0:
-    discard syscall3(SYS_write, fd, cast[int32](g_text), g_text_len)
+    _ = syscall3(SYS_write, fd, cast[int32](g_text), g_text_len)
 
   # Write .data section
   if g_data_len > 0:
-    discard syscall3(SYS_write, fd, cast[int32](g_data), g_data_len)
+    _ = syscall3(SYS_write, fd, cast[int32](g_data), g_data_len)
 
   # Write string table (increased from 4096 to handle large programs)
-  var strtab: array[65536, uint8]
+  strtab: array[65536, uint8]
   strtab[0] = cast[uint8](0)  # Null string
-  var str_pos: int32 = 1
+  str_pos: int32 = 1
   i = 0
   while i < g_sym_count:
-    var entry: ptr uint8 = cast[ptr uint8](cast[int32](g_symbols) + i * 32)
-    var name_ptr: ptr int32 = cast[ptr int32](entry)
-    var name: ptr uint8 = cast[ptr uint8](name_ptr[0])
+    entry: *uint8 = cast[*uint8](cast[int32](g_symbols) + i * 32)
+    name_ptr: *int32 = cast[*int32](entry)
+    name: *uint8 = cast[*uint8](name_ptr[0])
 
     # Store string offset in symbol entry (reuse offset 16)
-    var stroff_ptr: ptr int32 = cast[ptr int32](cast[int32](entry) + 16)
+    stroff_ptr: *int32 = cast[*int32](cast[int32](entry) + 16)
     stroff_ptr[0] = str_pos
 
-    var nlen: int32 = strlen(name)
-    memcpy(cast[ptr uint8](cast[int32](addr(strtab)) + str_pos), name, nlen + 1)
+    nlen: int32 = strlen(name)
+    memcpy(cast[*uint8](cast[int32](addr(strtab)) + str_pos), name, nlen + 1)
     str_pos = str_pos + nlen + 1
     i = i + 1
 
-  discard syscall3(SYS_write, fd, cast[int32](addr(strtab)), str_pos)
+  _ = syscall3(SYS_write, fd, cast[int32](addr(strtab)), str_pos)
 
   # Write symbol table (local symbols first, then global)
-  var symtab: array[32768, uint8]
-  memset(cast[ptr uint8](addr(symtab)), cast[uint8](0), symtab_size)
+  symtab: array[32768, uint8]
+  memset(cast[*uint8](addr(symtab)), cast[uint8](0), symtab_size)
 
   # First entry is null
-  var sym_pos: int32 = 16
-  var num_local: int32 = 1  # Count null entry as local
+  sym_pos: int32 = 16
+  num_local: int32 = 1  # Count null entry as local
 
   # First pass: write local symbols and record new indices
-  var new_sym_idx: int32 = 1  # Start after null entry
+  new_sym_idx: int32 = 1  # Start after null entry
   i = 0
   while i < g_sym_count:
-    var entry: ptr uint8 = cast[ptr uint8](cast[int32](g_symbols) + i * 32)
-    var type_ptr: ptr int32 = cast[ptr int32](cast[int32](entry) + 12)
-    var sym_type: int32 = type_ptr[0]
+    entry: *uint8 = cast[*uint8](cast[int32](g_symbols) + i * 32)
+    type_ptr: *int32 = cast[*int32](cast[int32](entry) + 12)
+    sym_type: int32 = type_ptr[0]
 
     if sym_type == SYM_LOCAL:
-      var stroff_ptr: ptr int32 = cast[ptr int32](cast[int32](entry) + 16)
-      var str_offset: int32 = stroff_ptr[0]
-      var value_ptr: ptr int32 = cast[ptr int32](cast[int32](entry) + 4)
-      var sym_value: int32 = value_ptr[0]
-      var section_ptr: ptr int32 = cast[ptr int32](cast[int32](entry) + 8)
-      var sym_section: int32 = section_ptr[0]
+      stroff_ptr: *int32 = cast[*int32](cast[int32](entry) + 16)
+      str_offset: int32 = stroff_ptr[0]
+      value_ptr: *int32 = cast[*int32](cast[int32](entry) + 4)
+      sym_value: int32 = value_ptr[0]
+      section_ptr: *int32 = cast[*int32](cast[int32](entry) + 8)
+      sym_section: int32 = section_ptr[0]
 
-      var st_name: ptr int32 = cast[ptr int32](cast[int32](addr(symtab)) + sym_pos)
+      st_name: *int32 = cast[*int32](cast[int32](addr(symtab)) + sym_pos)
       st_name[0] = str_offset
-      var st_value: ptr int32 = cast[ptr int32](cast[int32](addr(symtab)) + sym_pos + 4)
+      st_value: *int32 = cast[*int32](cast[int32](addr(symtab)) + sym_pos + 4)
       st_value[0] = sym_value
       symtab[sym_pos + 12] = cast[uint8](0)  # STB_LOCAL
 
-      var shndx: int32 = 0
+      shndx: int32 = 0
       if sym_section == SYM_TEXT:
         shndx = 1
       else:
@@ -2032,7 +2032,7 @@ proc write_elf_object(filename: ptr uint8): int32 =
       symtab[sym_pos + 15] = cast[uint8]((shndx >> 8) & 255)
 
       # Store new symbol index at offset 20 in entry
-      var new_idx_ptr: ptr int32 = cast[ptr int32](cast[int32](entry) + 20)
+      new_idx_ptr: *int32 = cast[*int32](cast[int32](entry) + 20)
       new_idx_ptr[0] = new_sym_idx
 
       sym_pos = sym_pos + 16
@@ -2043,25 +2043,25 @@ proc write_elf_object(filename: ptr uint8): int32 =
   # Second pass: write global/extern symbols and record new indices
   i = 0
   while i < g_sym_count:
-    var entry: ptr uint8 = cast[ptr uint8](cast[int32](g_symbols) + i * 32)
-    var type_ptr: ptr int32 = cast[ptr int32](cast[int32](entry) + 12)
-    var sym_type: int32 = type_ptr[0]
+    entry: *uint8 = cast[*uint8](cast[int32](g_symbols) + i * 32)
+    type_ptr: *int32 = cast[*int32](cast[int32](entry) + 12)
+    sym_type: int32 = type_ptr[0]
 
     if sym_type == SYM_GLOBAL or sym_type == SYM_EXTERN:
-      var stroff_ptr: ptr int32 = cast[ptr int32](cast[int32](entry) + 16)
-      var str_offset: int32 = stroff_ptr[0]
-      var value_ptr: ptr int32 = cast[ptr int32](cast[int32](entry) + 4)
-      var sym_value: int32 = value_ptr[0]
-      var section_ptr: ptr int32 = cast[ptr int32](cast[int32](entry) + 8)
-      var sym_section: int32 = section_ptr[0]
+      stroff_ptr: *int32 = cast[*int32](cast[int32](entry) + 16)
+      str_offset: int32 = stroff_ptr[0]
+      value_ptr: *int32 = cast[*int32](cast[int32](entry) + 4)
+      sym_value: int32 = value_ptr[0]
+      section_ptr: *int32 = cast[*int32](cast[int32](entry) + 8)
+      sym_section: int32 = section_ptr[0]
 
-      var st_name: ptr int32 = cast[ptr int32](cast[int32](addr(symtab)) + sym_pos)
+      st_name: *int32 = cast[*int32](cast[int32](addr(symtab)) + sym_pos)
       st_name[0] = str_offset
-      var st_value: ptr int32 = cast[ptr int32](cast[int32](addr(symtab)) + sym_pos + 4)
+      st_value: *int32 = cast[*int32](cast[int32](addr(symtab)) + sym_pos + 4)
       st_value[0] = sym_value
       symtab[sym_pos + 12] = cast[uint8](16)  # STB_GLOBAL << 4
 
-      var shndx: int32 = 0
+      shndx: int32 = 0
       if sym_section == SYM_TEXT:
         shndx = 1
       else:
@@ -2074,7 +2074,7 @@ proc write_elf_object(filename: ptr uint8): int32 =
       symtab[sym_pos + 15] = cast[uint8]((shndx >> 8) & 255)
 
       # Store new symbol index at offset 20 in entry
-      var new_idx_ptr: ptr int32 = cast[ptr int32](cast[int32](entry) + 20)
+      new_idx_ptr: *int32 = cast[*int32](cast[int32](entry) + 20)
       new_idx_ptr[0] = new_sym_idx
 
       sym_pos = sym_pos + 16
@@ -2082,12 +2082,12 @@ proc write_elf_object(filename: ptr uint8): int32 =
     i = i + 1
 
   # Store num_local for sh_info
-  var g_num_local: int32 = num_local
+  g_num_local: int32 = num_local
 
-  discard syscall3(SYS_write, fd, cast[int32](addr(symtab)), symtab_size)
+  _ = syscall3(SYS_write, fd, cast[int32](addr(symtab)), symtab_size)
 
   # Write section header string table
-  var shstrtab: array[64, uint8]
+  shstrtab: array[64, uint8]
   # 0: ""
   shstrtab[0] = cast[uint8](0)
   # 1: ".text"
@@ -2151,55 +2151,55 @@ proc write_elf_object(filename: ptr uint8): int32 =
   shstrtab[52] = cast[uint8](116)
   shstrtab[53] = cast[uint8](0)
 
-  discard syscall3(SYS_write, fd, cast[int32](addr(shstrtab)), 54)
+  _ = syscall3(SYS_write, fd, cast[int32](addr(shstrtab)), 54)
 
   # Write relocations
   if g_reloc_count > 0:
-    var rel: array[8192, uint8]
-    var rel_pos: int32 = 0
+    rel: array[8192, uint8]
+    rel_pos: int32 = 0
     i = 0
     while i < g_reloc_count:
-      var reloc_entry: ptr uint8 = cast[ptr uint8](cast[int32](g_relocs) + i * 16)
-      var p: ptr int32 = cast[ptr int32](reloc_entry)
+      reloc_entry: *uint8 = cast[*uint8](cast[int32](g_relocs) + i * 16)
+      p: *int32 = cast[*int32](reloc_entry)
 
-      var r_offset: int32 = p[0]
-      var r_sym: int32 = p[1]
-      var r_type: int32 = p[2]
+      r_offset: int32 = p[0]
+      r_sym: int32 = p[1]
+      r_type: int32 = p[2]
 
       # r_offset
-      var rel_p: ptr int32 = cast[ptr int32](cast[int32](addr(rel)) + rel_pos)
+      rel_p: *int32 = cast[*int32](cast[int32](addr(rel)) + rel_pos)
       rel_p[0] = r_offset
 
       # Get the new symbol index from the symbol entry (stored at offset 20)
-      var sym_entry: ptr uint8 = cast[ptr uint8](cast[int32](g_symbols) + r_sym * 32)
-      var new_idx_ptr: ptr int32 = cast[ptr int32](cast[int32](sym_entry) + 20)
-      var new_sym_idx: int32 = new_idx_ptr[0]
+      sym_entry: *uint8 = cast[*uint8](cast[int32](g_symbols) + r_sym * 32)
+      new_idx_ptr: *int32 = cast[*int32](cast[int32](sym_entry) + 20)
+      new_sym_idx: int32 = new_idx_ptr[0]
 
       # r_info = (sym << 8) | type
-      var rel_info: ptr int32 = cast[ptr int32](cast[int32](addr(rel)) + rel_pos + 4)
+      rel_info: *int32 = cast[*int32](cast[int32](addr(rel)) + rel_pos + 4)
       rel_info[0] = (new_sym_idx << 8) | r_type
 
       rel_pos = rel_pos + 8
       i = i + 1
 
-    discard syscall3(SYS_write, fd, cast[int32](addr(rel)), rel_pos)
+    _ = syscall3(SYS_write, fd, cast[int32](addr(rel)), rel_pos)
 
   # Pad to alignment
-  var padding: int32 = shdr_offset - (rel_offset + rel_size)
+  padding: int32 = shdr_offset - (rel_offset + rel_size)
   if padding > 0:
-    var pad: array[4, uint8]
-    memset(cast[ptr uint8](addr(pad)), cast[uint8](0), 4)
-    discard syscall3(SYS_write, fd, cast[int32](addr(pad)), padding)
+    pad: array[4, uint8]
+    memset(cast[*uint8](addr(pad)), cast[uint8](0), 4)
+    _ = syscall3(SYS_write, fd, cast[int32](addr(pad)), padding)
 
   # Write section headers
-  var shdr: array[320, uint8]  # 8 * 40
-  memset(cast[ptr uint8](addr(shdr)), cast[uint8](0), 320)
+  shdr: array[320, uint8]  # 8 * 40
+  memset(cast[*uint8](addr(shdr)), cast[uint8](0), 320)
 
   # Section 0: NULL
   # (already zeroed)
 
   # Section 1: .text
-  var sh: ptr int32 = cast[ptr int32](cast[int32](addr(shdr)) + 40)
+  sh: *int32 = cast[*int32](cast[int32](addr(shdr)) + 40)
   sh[0] = 1  # sh_name
   sh[1] = SHT_PROGBITS
   sh[2] = SHF_ALLOC + SHF_EXECINSTR
@@ -2212,7 +2212,7 @@ proc write_elf_object(filename: ptr uint8): int32 =
   sh[9] = 0  # sh_entsize
 
   # Section 2: .data
-  sh = cast[ptr int32](cast[int32](addr(shdr)) + 80)
+  sh = cast[*int32](cast[int32](addr(shdr)) + 80)
   sh[0] = 7  # sh_name
   sh[1] = SHT_PROGBITS
   sh[2] = SHF_ALLOC + SHF_WRITE
@@ -2225,7 +2225,7 @@ proc write_elf_object(filename: ptr uint8): int32 =
   sh[9] = 0
 
   # Section 3: .bss
-  sh = cast[ptr int32](cast[int32](addr(shdr)) + 120)
+  sh = cast[*int32](cast[int32](addr(shdr)) + 120)
   sh[0] = 13  # sh_name
   sh[1] = SHT_NOBITS
   sh[2] = SHF_ALLOC + SHF_WRITE
@@ -2238,7 +2238,7 @@ proc write_elf_object(filename: ptr uint8): int32 =
   sh[9] = 0
 
   # Section 4: .symtab
-  sh = cast[ptr int32](cast[int32](addr(shdr)) + 160)
+  sh = cast[*int32](cast[int32](addr(shdr)) + 160)
   sh[0] = 18  # sh_name
   sh[1] = SHT_SYMTAB
   sh[2] = 0
@@ -2251,7 +2251,7 @@ proc write_elf_object(filename: ptr uint8): int32 =
   sh[9] = 16  # sh_entsize
 
   # Section 5: .strtab
-  sh = cast[ptr int32](cast[int32](addr(shdr)) + 200)
+  sh = cast[*int32](cast[int32](addr(shdr)) + 200)
   sh[0] = 26  # sh_name
   sh[1] = SHT_STRTAB
   sh[2] = 0
@@ -2264,7 +2264,7 @@ proc write_elf_object(filename: ptr uint8): int32 =
   sh[9] = 0
 
   # Section 6: .shstrtab
-  sh = cast[ptr int32](cast[int32](addr(shdr)) + 240)
+  sh = cast[*int32](cast[int32](addr(shdr)) + 240)
   sh[0] = 34  # sh_name
   sh[1] = SHT_STRTAB
   sh[2] = 0
@@ -2278,7 +2278,7 @@ proc write_elf_object(filename: ptr uint8): int32 =
 
   # Section 7: .rel.text (if any relocations)
   if g_reloc_count > 0:
-    sh = cast[ptr int32](cast[int32](addr(shdr)) + 280)
+    sh = cast[*int32](cast[int32](addr(shdr)) + 280)
     sh[0] = 44  # sh_name
     sh[1] = SHT_REL
     sh[2] = 0
@@ -2290,31 +2290,31 @@ proc write_elf_object(filename: ptr uint8): int32 =
     sh[8] = 4
     sh[9] = 8  # sh_entsize
 
-  discard syscall3(SYS_write, fd, cast[int32](addr(shdr)), num_sections * 40)
+  _ = syscall3(SYS_write, fd, cast[int32](addr(shdr)), num_sections * 40)
 
-  discard syscall1(SYS_close, fd)
+  _ = syscall1(SYS_close, fd)
   return 0
 
 # ============================================================================
 # Main
 # ============================================================================
 
-proc main(): int32 =
-  var argc: int32 = get_argc()
+def main() -> int32:
+  argc: int32 = get_argc()
 
-  println(cast[ptr uint8]("basm - Brainhair Assembler v0.1"))
+  println(cast[*uint8]("basm - Brainhair Assembler v0.1"))
 
   if argc < 3:
-    println(cast[ptr uint8]("Usage: basm <input.asm> <output.o>"))
+    println(cast[*uint8]("Usage: basm <input.asm> <output.o>"))
     return 1
 
-  var input_file: ptr uint8 = get_argv(1)
-  var output_file: ptr uint8 = get_argv(2)
+  input_file: *uint8 = get_argv(1)
+  output_file: *uint8 = get_argv(2)
 
   # Allocate memory
-  var old_brk: int32 = syscall1(SYS_brk, 0)
-  var new_brk: int32 = old_brk + 1048576  # 1MB
-  discard syscall1(SYS_brk, new_brk)
+  old_brk: int32 = syscall1(SYS_brk, 0)
+  new_brk: int32 = old_brk + 1048576  # 1MB
+  _ = syscall1(SYS_brk, new_brk)
 
   # Layout:
   # 0-256KB: source buffer
@@ -2325,16 +2325,16 @@ proc main(): int32 =
   # 896KB-900KB: token buffer
   # 900KB onwards: name storage (interleaved with data section end)
 
-  g_source = cast[ptr uint8](old_brk)
-  g_text = cast[ptr uint8](old_brk + 262144)
+  g_source = cast[*uint8](old_brk)
+  g_text = cast[*uint8](old_brk + 262144)
   g_text_cap = 262144
-  g_data = cast[ptr uint8](old_brk + 524288)
+  g_data = cast[*uint8](old_brk + 524288)
   g_data_cap = 262144
-  g_symbols = cast[ptr uint8](old_brk + 786432)
+  g_symbols = cast[*uint8](old_brk + 786432)
   g_sym_cap = 2048
-  g_relocs = cast[ptr uint8](old_brk + 851968)
+  g_relocs = cast[*uint8](old_brk + 851968)
   g_reloc_cap = 4096
-  g_token_buf = cast[ptr uint8](old_brk + 917504)
+  g_token_buf = cast[*uint8](old_brk + 917504)
 
   g_text_len = 0
   g_data_len = 0
@@ -2346,34 +2346,34 @@ proc main(): int32 =
   g_line = 1
 
   # Read input file
-  print(cast[ptr uint8]("  Reading "))
+  print(cast[*uint8]("  Reading "))
   println(input_file)
 
-  var fd: int32 = syscall3(SYS_open, cast[int32](input_file), O_RDONLY, 0)
+  fd: int32 = syscall3(SYS_open, cast[int32](input_file), O_RDONLY, 0)
   if fd < 0:
-    print_err(cast[ptr uint8]("Error: cannot open input file\n"))
+    print_err(cast[*uint8]("Error: cannot open input file\n"))
     return 1
 
   g_source_len = 0
-  var n: int32 = syscall3(SYS_read, fd, cast[int32](g_source), 262144)
+  n: int32 = syscall3(SYS_read, fd, cast[int32](g_source), 262144)
   while n > 0:
     g_source_len = g_source_len + n
     n = syscall3(SYS_read, fd, cast[int32](g_source) + g_source_len, 262144 - g_source_len)
-  discard syscall1(SYS_close, fd)
+  _ = syscall1(SYS_close, fd)
 
-  print(cast[ptr uint8]("  Source: "))
+  print(cast[*uint8]("  Source: "))
   print_num(g_source_len)
-  println(cast[ptr uint8](" bytes"))
+  println(cast[*uint8](" bytes"))
 
   # Pass 1: Collect labels
-  println(cast[ptr uint8]("  Pass 1: Collecting symbols..."))
+  println(cast[*uint8]("  Pass 1: Collecting symbols..."))
   g_pos = 0
   while g_pos < g_source_len and g_error == 0:
     parse_line_pass1()
 
-  print(cast[ptr uint8]("  Symbols: "))
+  print(cast[*uint8]("  Symbols: "))
   print_num(g_sym_count)
-  println(cast[ptr uint8](""))
+  println(cast[*uint8](""))
 
   if g_error != 0:
     return 1
@@ -2388,34 +2388,34 @@ proc main(): int32 =
   clear_all_pass2_flags()
 
   # Pass 2: Generate code
-  println(cast[ptr uint8]("  Pass 2: Generating code..."))
+  println(cast[*uint8]("  Pass 2: Generating code..."))
   while g_pos < g_source_len and g_error == 0:
     parse_line_pass2()
 
   if g_error != 0:
     return 1
 
-  print(cast[ptr uint8]("  Text: "))
+  print(cast[*uint8]("  Text: "))
   print_num(g_text_len)
-  println(cast[ptr uint8](" bytes"))
+  println(cast[*uint8](" bytes"))
 
-  print(cast[ptr uint8]("  Data: "))
+  print(cast[*uint8]("  Data: "))
   print_num(g_data_len)
-  println(cast[ptr uint8](" bytes"))
+  println(cast[*uint8](" bytes"))
 
-  print(cast[ptr uint8]("  Relocations: "))
+  print(cast[*uint8]("  Relocations: "))
   print_num(g_reloc_count)
-  println(cast[ptr uint8](""))
+  println(cast[*uint8](""))
 
   # Write output ELF object file
-  println(cast[ptr uint8]("  Writing ELF object file..."))
-  var result: int32 = write_elf_object(output_file)
+  println(cast[*uint8]("  Writing ELF object file..."))
+  result: int32 = write_elf_object(output_file)
   if result != 0:
-    print_err(cast[ptr uint8]("Error: failed to write output file\n"))
+    print_err(cast[*uint8]("Error: failed to write output file\n"))
     return 1
 
-  print(cast[ptr uint8]("  Output: "))
+  print(cast[*uint8]("  Output: "))
   println(output_file)
-  println(cast[ptr uint8]("Done."))
+  println(cast[*uint8]("Done."))
 
   return 0

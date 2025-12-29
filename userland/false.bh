@@ -1,7 +1,7 @@
 # false - do nothing, unsuccessfully
 # Part of BrainhairOS coreutils
 
-import "lib/syscalls"
+from lib.syscalls import *
 
-proc main(): int32 =
+def main() -> int32:
     return 1

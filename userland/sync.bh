@@ -2,12 +2,12 @@
 # Usage: sync
 # Ensures all cached filesystem changes are written to disk
 
-import "lib/syscalls"
+from lib.syscalls import *
 
-proc main() =
+def main():
   # Call sync syscall - no arguments needed
-  discard syscall1(SYS_sync, 0)
+  syscall1(SYS_sync, 0)
 
-  print(cast[ptr uint8]("sync: filesystem buffers synchronized\n"))
+  print(cast[*uint8]("sync: filesystem buffers synchronized\n"))
 
-  discard syscall1(SYS_exit, 0)
+  syscall1(SYS_exit, 0)

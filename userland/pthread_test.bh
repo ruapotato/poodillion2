@@ -1,62 +1,62 @@
 # pthread_test.bh - Test program for pthread implementation
 # Tests thread creation, joining, detaching, and synchronization
 
-import "lib/syscalls"
-import "lib/pthread"
+from lib.syscalls import *
+from lib.pthread import *
 
 # ============================================================================
 # Test 1: Basic thread creation and join
 # ============================================================================
 
-proc simple_worker(arg: int32): int32 =
-  print(cast[ptr uint8]("  [Thread "))
+def simple_worker(arg: int32) -> int32:
+  print(cast[*uint8]("  [Thread "))
   print_int(pthread_self())
-  print(cast[ptr uint8]("] Hello from simple worker thread! arg="))
+  print(cast[*uint8]("] Hello from simple worker thread! arg="))
   print_int(arg)
   newline()
 
   # Do some work
-  var i: int32 = 0
+  i: int32 = 0
   while i < 3:
-    print(cast[ptr uint8]("  [Thread "))
+    print(cast[*uint8]("  [Thread "))
     print_int(pthread_self())
-    print(cast[ptr uint8]("] Working... "))
+    print(cast[*uint8]("] Working... "))
     print_int(i)
     newline()
     thread_yield()
     i = i + 1
 
-  print(cast[ptr uint8]("  [Thread "))
+  print(cast[*uint8]("  [Thread "))
   print_int(pthread_self())
-  print(cast[ptr uint8]("] Worker done, returning "))
+  print(cast[*uint8]("] Worker done, returning "))
   print_int(arg * 2)
   newline()
 
   return arg * 2
 
-proc test_basic_thread_join() =
-  print(cast[ptr uint8]("\n=== Test 1: Basic Thread Creation and Join ===\n"))
+def test_basic_thread_join():
+  print(cast[*uint8]("\n=== Test 1: Basic Thread Creation and Join ===\n"))
 
-  var thread: pthread_t = 0
-  var result: int32 = 0
+  thread: pthread_t = 0
+  result: int32 = 0
 
-  print(cast[ptr uint8]("[Main] Creating thread...\n"))
-  if pthread_create(addr(thread), cast[ptr pthread_attr_t](0),
+  print(cast[*uint8]("[Main] Creating thread...\n"))
+  if pthread_create(addr(thread), cast[*pthread_attr_t](0),
                    cast[int32](addr(simple_worker)), 42) != 0:
-    print(cast[ptr uint8]("[Main] ERROR: Failed to create thread\n"))
+    print(cast[*uint8]("[Main] ERROR: Failed to create thread\n"))
     return
 
-  print(cast[ptr uint8]("[Main] Thread created with TID="))
+  print(cast[*uint8]("[Main] Thread created with TID="))
   print_int(thread)
   newline()
 
-  print(cast[ptr uint8]("[Main] Waiting for thread to finish...\n"))
+  print(cast[*uint8]("[Main] Waiting for thread to finish...\n"))
   if pthread_join(thread, addr(result)) != 0:
-    print(cast[ptr uint8]("[Main] ERROR: Failed to join thread\n"))
+    print(cast[*uint8]("[Main] ERROR: Failed to join thread\n"))
     return
 
-  print(cast[ptr uint8]("[Main] Thread joined successfully!\n"))
-  print(cast[ptr uint8]("[Main] Thread returned: "))
+  print(cast[*uint8]("[Main] Thread joined successfully!\n"))
+  print(cast[*uint8]("[Main] Thread returned: "))
   print_int(result)
   newline()
 
@@ -64,83 +64,83 @@ proc test_basic_thread_join() =
 # Test 2: Multiple threads
 # ============================================================================
 
-proc multi_worker(arg: int32): int32 =
-  var my_id: int32 = pthread_self()
+def multi_worker(arg: int32) -> int32:
+  my_id: int32 = pthread_self()
 
-  print(cast[ptr uint8]("  [Thread "))
+  print(cast[*uint8]("  [Thread "))
   print_int(my_id)
-  print(cast[ptr uint8]("] Started with arg="))
+  print(cast[*uint8]("] Started with arg="))
   print_int(arg)
   newline()
 
   # Do some iterations
-  var i: int32 = 0
+  i: int32 = 0
   while i < 2:
-    print(cast[ptr uint8]("  [Thread "))
+    print(cast[*uint8]("  [Thread "))
     print_int(my_id)
-    print(cast[ptr uint8]("] Iteration "))
+    print(cast[*uint8]("] Iteration "))
     print_int(i)
     newline()
     thread_yield()
     i = i + 1
 
-  print(cast[ptr uint8]("  [Thread "))
+  print(cast[*uint8]("  [Thread "))
   print_int(my_id)
-  print(cast[ptr uint8]("] Exiting\n"))
+  print(cast[*uint8]("] Exiting\n"))
 
   return arg + 100
 
-proc test_multiple_threads() =
-  print(cast[ptr uint8]("\n=== Test 2: Multiple Threads ===\n"))
+def test_multiple_threads():
+  print(cast[*uint8]("\n=== Test 2: Multiple Threads ===\n"))
 
-  var thread1: pthread_t = 0
-  var thread2: pthread_t = 0
-  var thread3: pthread_t = 0
-  var result1: int32 = 0
-  var result2: int32 = 0
-  var result3: int32 = 0
+  thread1: pthread_t = 0
+  thread2: pthread_t = 0
+  thread3: pthread_t = 0
+  result1: int32 = 0
+  result2: int32 = 0
+  result3: int32 = 0
 
-  print(cast[ptr uint8]("[Main] Creating 3 threads...\n"))
+  print(cast[*uint8]("[Main] Creating 3 threads...\n"))
 
-  if pthread_create(addr(thread1), cast[ptr pthread_attr_t](0),
+  if pthread_create(addr(thread1), cast[*pthread_attr_t](0),
                    cast[int32](addr(multi_worker)), 1) != 0:
-    print(cast[ptr uint8]("[Main] ERROR: Failed to create thread 1\n"))
+    print(cast[*uint8]("[Main] ERROR: Failed to create thread 1\n"))
     return
 
-  if pthread_create(addr(thread2), cast[ptr pthread_attr_t](0),
+  if pthread_create(addr(thread2), cast[*pthread_attr_t](0),
                    cast[int32](addr(multi_worker)), 2) != 0:
-    print(cast[ptr uint8]("[Main] ERROR: Failed to create thread 2\n"))
+    print(cast[*uint8]("[Main] ERROR: Failed to create thread 2\n"))
     return
 
-  if pthread_create(addr(thread3), cast[ptr pthread_attr_t](0),
+  if pthread_create(addr(thread3), cast[*pthread_attr_t](0),
                    cast[int32](addr(multi_worker)), 3) != 0:
-    print(cast[ptr uint8]("[Main] ERROR: Failed to create thread 3\n"))
+    print(cast[*uint8]("[Main] ERROR: Failed to create thread 3\n"))
     return
 
-  print(cast[ptr uint8]("[Main] All threads created. TIDs: "))
+  print(cast[*uint8]("[Main] All threads created. TIDs: "))
   print_int(thread1)
-  print(cast[ptr uint8](", "))
+  print(cast[*uint8](", "))
   print_int(thread2)
-  print(cast[ptr uint8](", "))
+  print(cast[*uint8](", "))
   print_int(thread3)
   newline()
 
   # Join all threads
-  print(cast[ptr uint8]("[Main] Joining threads...\n"))
+  print(cast[*uint8]("[Main] Joining threads...\n"))
 
   if pthread_join(thread1, addr(result1)) != 0:
-    print(cast[ptr uint8]("[Main] ERROR: Failed to join thread 1\n"))
+    print(cast[*uint8]("[Main] ERROR: Failed to join thread 1\n"))
   if pthread_join(thread2, addr(result2)) != 0:
-    print(cast[ptr uint8]("[Main] ERROR: Failed to join thread 2\n"))
+    print(cast[*uint8]("[Main] ERROR: Failed to join thread 2\n"))
   if pthread_join(thread3, addr(result3)) != 0:
-    print(cast[ptr uint8]("[Main] ERROR: Failed to join thread 3\n"))
+    print(cast[*uint8]("[Main] ERROR: Failed to join thread 3\n"))
 
-  print(cast[ptr uint8]("[Main] All threads joined!\n"))
-  print(cast[ptr uint8]("[Main] Results: "))
+  print(cast[*uint8]("[Main] All threads joined!\n"))
+  print(cast[*uint8]("[Main] Results: "))
   print_int(result1)
-  print(cast[ptr uint8](", "))
+  print(cast[*uint8](", "))
   print_int(result2)
-  print(cast[ptr uint8](", "))
+  print(cast[*uint8](", "))
   print_int(result3)
   newline()
 
@@ -148,143 +148,143 @@ proc test_multiple_threads() =
 # Test 3: Detached threads
 # ============================================================================
 
-proc detached_worker(arg: int32): int32 =
-  print(cast[ptr uint8]("  [Detached Thread "))
+def detached_worker(arg: int32) -> int32:
+  print(cast[*uint8]("  [Detached Thread "))
   print_int(pthread_self())
-  print(cast[ptr uint8]("] Running and will auto-cleanup...\n"))
+  print(cast[*uint8]("] Running and will auto-cleanup...\n"))
 
-  var i: int32 = 0
+  i: int32 = 0
   while i < 2:
     thread_yield()
     i = i + 1
 
-  print(cast[ptr uint8]("  [Detached Thread "))
+  print(cast[*uint8]("  [Detached Thread "))
   print_int(pthread_self())
-  print(cast[ptr uint8]("] Exiting (no join needed)\n"))
+  print(cast[*uint8]("] Exiting (no join needed)\n"))
 
   return 0
 
-proc test_detached_thread() =
-  print(cast[ptr uint8]("\n=== Test 3: Detached Thread ===\n"))
+def test_detached_thread():
+  print(cast[*uint8]("\n=== Test 3: Detached Thread ===\n"))
 
-  var attr: pthread_attr_t
-  var thread: pthread_t = 0
+  attr: pthread_attr_t
+  thread: pthread_t = 0
 
   # Initialize attributes
-  discard pthread_attr_init(addr(attr))
+  _ = pthread_attr_init(addr(attr))
 
   # Set to detached
-  discard pthread_attr_setdetachstate(addr(attr), PTHREAD_CREATE_DETACHED)
+  _ = pthread_attr_setdetachstate(addr(attr), PTHREAD_CREATE_DETACHED)
 
-  print(cast[ptr uint8]("[Main] Creating detached thread...\n"))
+  print(cast[*uint8]("[Main] Creating detached thread...\n"))
   if pthread_create(addr(thread), addr(attr),
                    cast[int32](addr(detached_worker)), 99) != 0:
-    print(cast[ptr uint8]("[Main] ERROR: Failed to create detached thread\n"))
+    print(cast[*uint8]("[Main] ERROR: Failed to create detached thread\n"))
     return
 
-  print(cast[ptr uint8]("[Main] Detached thread created with TID="))
+  print(cast[*uint8]("[Main] Detached thread created with TID="))
   print_int(thread)
   newline()
-  print(cast[ptr uint8]("[Main] Not joining (detached threads clean up automatically)\n"))
+  print(cast[*uint8]("[Main] Not joining (detached threads clean up automatically)\n"))
 
   # Give detached thread time to run
-  var i: int32 = 0
+  i: int32 = 0
   while i < 5:
     thread_yield()
     i = i + 1
 
-  discard pthread_attr_destroy(addr(attr))
+  _ = pthread_attr_destroy(addr(attr))
 
 # ============================================================================
 # Test 4: pthread_self and pthread_equal
 # ============================================================================
 
-proc identity_worker(arg: int32): int32 =
-  var my_tid: pthread_t = pthread_self()
+def identity_worker(arg: int32) -> int32:
+  my_tid: pthread_t = pthread_self()
 
-  print(cast[ptr uint8]("  [Thread] My TID from pthread_self: "))
+  print(cast[*uint8]("  [Thread] My TID from pthread_self: "))
   print_int(my_tid)
   newline()
 
   # Test pthread_equal with ourselves
   if pthread_equal(my_tid, my_tid) != 0:
-    print(cast[ptr uint8]("  [Thread] pthread_equal(self, self) = TRUE (correct)\n"))
+    print(cast[*uint8]("  [Thread] pthread_equal(self, self) = TRUE (correct)\n"))
   else:
-    print(cast[ptr uint8]("  [Thread] ERROR: pthread_equal(self, self) = FALSE\n"))
+    print(cast[*uint8]("  [Thread] ERROR: pthread_equal(self, self) = FALSE\n"))
 
   return my_tid
 
-proc test_thread_identity() =
-  print(cast[ptr uint8]("\n=== Test 4: Thread Identity (pthread_self, pthread_equal) ===\n"))
+def test_thread_identity():
+  print(cast[*uint8]("\n=== Test 4: Thread Identity (pthread_self, pthread_equal) ===\n"))
 
-  var main_tid: pthread_t = pthread_self()
-  print(cast[ptr uint8]("[Main] My TID: "))
+  main_tid: pthread_t = pthread_self()
+  print(cast[*uint8]("[Main] My TID: "))
   print_int(main_tid)
   newline()
 
-  var thread: pthread_t = 0
-  var result: int32 = 0
+  thread: pthread_t = 0
+  result: int32 = 0
 
-  if pthread_create(addr(thread), cast[ptr pthread_attr_t](0),
+  if pthread_create(addr(thread), cast[*pthread_attr_t](0),
                    cast[int32](addr(identity_worker)), 0) != 0:
-    print(cast[ptr uint8]("[Main] ERROR: Failed to create thread\n"))
+    print(cast[*uint8]("[Main] ERROR: Failed to create thread\n"))
     return
 
   if pthread_join(thread, addr(result)) != 0:
-    print(cast[ptr uint8]("[Main] ERROR: Failed to join thread\n"))
+    print(cast[*uint8]("[Main] ERROR: Failed to join thread\n"))
     return
 
-  print(cast[ptr uint8]("[Main] Thread reported TID: "))
+  print(cast[*uint8]("[Main] Thread reported TID: "))
   print_int(result)
   newline()
 
   if pthread_equal(thread, result) != 0:
-    print(cast[ptr uint8]("[Main] pthread_equal(created_tid, returned_tid) = TRUE (correct)\n"))
+    print(cast[*uint8]("[Main] pthread_equal(created_tid, returned_tid) = TRUE (correct)\n"))
   else:
-    print(cast[ptr uint8]("[Main] ERROR: Thread TIDs don't match!\n"))
+    print(cast[*uint8]("[Main] ERROR: Thread TIDs don't match!\n"))
 
   if pthread_equal(main_tid, thread) == 0:
-    print(cast[ptr uint8]("[Main] pthread_equal(main, thread) = FALSE (correct)\n"))
+    print(cast[*uint8]("[Main] pthread_equal(main, thread) = FALSE (correct)\n"))
   else:
-    print(cast[ptr uint8]("[Main] ERROR: Main and thread TIDs are equal!\n"))
+    print(cast[*uint8]("[Main] ERROR: Main and thread TIDs are equal!\n"))
 
 # ============================================================================
 # Test 5: Thread with null return value pointer
 # ============================================================================
 
-proc no_return_worker(arg: int32): int32 =
-  print(cast[ptr uint8]("  [Thread "))
+def no_return_worker(arg: int32) -> int32:
+  print(cast[*uint8]("  [Thread "))
   print_int(pthread_self())
-  print(cast[ptr uint8]("] This thread's return value will be ignored\n"))
+  print(cast[*uint8]("] This thread's return value will be ignored\n"))
   return 12345
 
-proc test_join_no_return() =
-  print(cast[ptr uint8]("\n=== Test 5: Join without return value ===\n"))
+def test_join_no_return():
+  print(cast[*uint8]("\n=== Test 5: Join without return value ===\n"))
 
-  var thread: pthread_t = 0
+  thread: pthread_t = 0
 
-  if pthread_create(addr(thread), cast[ptr pthread_attr_t](0),
+  if pthread_create(addr(thread), cast[*pthread_attr_t](0),
                    cast[int32](addr(no_return_worker)), 0) != 0:
-    print(cast[ptr uint8]("[Main] ERROR: Failed to create thread\n"))
+    print(cast[*uint8]("[Main] ERROR: Failed to create thread\n"))
     return
 
-  print(cast[ptr uint8]("[Main] Joining thread without capturing return value...\n"))
-  if pthread_join(thread, cast[ptr int32](0)) != 0:
-    print(cast[ptr uint8]("[Main] ERROR: Failed to join thread\n"))
+  print(cast[*uint8]("[Main] Joining thread without capturing return value...\n"))
+  if pthread_join(thread, cast[*int32](0)) != 0:
+    print(cast[*uint8]("[Main] ERROR: Failed to join thread\n"))
     return
 
-  print(cast[ptr uint8]("[Main] Successfully joined (return value ignored)\n"))
+  print(cast[*uint8]("[Main] Successfully joined (return value ignored)\n"))
 
 # ============================================================================
 # Main test runner
 # ============================================================================
 
-proc main() =
-  print(cast[ptr uint8]("\n"))
-  print(cast[ptr uint8]("================================================\n"))
-  print(cast[ptr uint8]("  BrainhairOS pthread Implementation Test\n"))
-  print(cast[ptr uint8]("  1:1 Threading Model (User-Kernel Threads)\n"))
-  print(cast[ptr uint8]("================================================\n"))
+def main():
+  print(cast[*uint8]("\n"))
+  print(cast[*uint8]("================================================\n"))
+  print(cast[*uint8]("  BrainhairOS pthread Implementation Test\n"))
+  print(cast[*uint8]("  1:1 Threading Model (User-Kernel Threads)\n"))
+  print(cast[*uint8]("================================================\n"))
 
   # Run all tests
   test_basic_thread_join()
@@ -293,10 +293,10 @@ proc main() =
   test_thread_identity()
   test_join_no_return()
 
-  print(cast[ptr uint8]("\n"))
-  print(cast[ptr uint8]("================================================\n"))
-  print(cast[ptr uint8]("  All pthread tests completed!\n"))
-  print(cast[ptr uint8]("================================================\n"))
-  print(cast[ptr uint8]("\n"))
+  print(cast[*uint8]("\n"))
+  print(cast[*uint8]("================================================\n"))
+  print(cast[*uint8]("  All pthread tests completed!\n"))
+  print(cast[*uint8]("================================================\n"))
+  print(cast[*uint8]("\n"))
 
   exit(0)

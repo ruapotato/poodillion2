@@ -1,11 +1,11 @@
 # bhall - Build all Brainhair userland utilities
 # Scans userland/ directory and builds each .bh file
 
-import "lib/syscalls"
+from lib.syscalls import *
 
 # Check if filename ends with .bh
-proc ends_with_bh(name: ptr uint8): int32 =
-  var len: int32 = strlen(name)
+def ends_with_bh(name: *uint8) -> int32:
+  len: int32 = strlen(name)
   if len < 3:
     return 0
   if name[len - 3] == cast[uint8](46):  # '.'
@@ -15,47 +15,47 @@ proc ends_with_bh(name: ptr uint8): int32 =
   return 0
 
 # Get base name (remove .bh)
-proc get_basename(name: ptr uint8, out: ptr uint8) =
-  var len: int32 = strlen(name)
-  var i: int32 = 0
+def get_basename(name: *uint8, out: *uint8):
+  len: int32 = strlen(name)
+  i: int32 = 0
   while i < len - 3:
     out[i] = name[i]
     i = i + 1
   out[i] = cast[uint8](0)
 
 # Run bhbuild for a file
-proc build_file(source: ptr uint8): int32 =
-  var pid: int32 = syscall1(SYS_fork, 0)
+def build_file(source: *uint8) -> int32:
+  pid: int32 = syscall1(SYS_fork, 0)
 
   if pid == 0:
     # Child - exec bhbuild
-    var argv: array[3, int32]
+    argv: array[3, int32]
     argv[0] = cast[int32]("bin/bhbuild")
     argv[1] = cast[int32](source)
     argv[2] = 0
-    var envp: array[1, int32]
+    envp: array[1, int32]
     envp[0] = 0
-    discard syscall3(SYS_execve, cast[int32]("bin/bhbuild"), cast[int32](addr(argv)), cast[int32](addr(envp)))
-    discard syscall1(SYS_exit, 127)
+    _ = syscall3(SYS_execve, cast[int32]("bin/bhbuild"), cast[int32](addr(argv)), cast[int32](addr(envp)))
+    _ = syscall1(SYS_exit, 127)
 
   if pid < 0:
     return 1
 
-  var status: int32 = 0
-  discard syscall3(SYS_waitpid, pid, cast[int32](addr(status)), 0)
-  var exit_code: int32 = (status >> 8) & 255
+  status: int32 = 0
+  _ = syscall3(SYS_waitpid, pid, cast[int32](addr(status)), 0)
+  exit_code: int32 = (status >> 8) & 255
   return exit_code
 
-proc print_num(n: int32) =
-  var buf: array[12, uint8]
-  var i: int32 = 10
+def print_num(n: int32):
+  buf: array[12, uint8]
+  i: int32 = 10
   buf[11] = cast[uint8](0)
 
   if n == 0:
     buf[10] = cast[uint8](48)
     i = 10
   else:
-    var num: int32 = n
+    num: int32 = n
     if num < 0:
       num = 0 - num
     while num > 0 and i > 0:
@@ -64,35 +64,35 @@ proc print_num(n: int32) =
       i = i - 1
     i = i + 1
 
-  print(cast[ptr uint8](cast[int32](addr(buf)) + i))
+  print(cast[*uint8](cast[int32](addr(buf)) + i))
 
-proc main(): int32 =
-  println(cast[ptr uint8]("bhall - Build All Brainhair Utilities"))
-  println(cast[ptr uint8]("======================================"))
-  println(cast[ptr uint8](""))
+def main() -> int32:
+  println(cast[*uint8]("bhall - Build All Brainhair Utilities"))
+  println(cast[*uint8]("======================================"))
+  println(cast[*uint8](""))
 
   # Allocate working memory
-  var old_brk: int32 = syscall1(SYS_brk, 0)
-  var new_brk: int32 = old_brk + 65536
-  discard syscall1(SYS_brk, new_brk)
+  old_brk: int32 = syscall1(SYS_brk, 0)
+  new_brk: int32 = old_brk + 65536
+  _ = syscall1(SYS_brk, new_brk)
 
-  var dir_buf: ptr uint8 = cast[ptr uint8](old_brk)
-  var path_buf: ptr uint8 = cast[ptr uint8](old_brk + 32768)
-  var base_buf: ptr uint8 = cast[ptr uint8](old_brk + 33024)
+  dir_buf: *uint8 = cast[*uint8](old_brk)
+  path_buf: *uint8 = cast[*uint8](old_brk + 32768)
+  base_buf: *uint8 = cast[*uint8](old_brk + 33024)
 
   # Open userland directory
-  var fd: int32 = syscall3(SYS_open, cast[int32]("userland"), O_RDONLY | O_DIRECTORY, 0)
+  fd: int32 = syscall3(SYS_open, cast[int32]("userland"), O_RDONLY | O_DIRECTORY, 0)
   if fd < 0:
-    println(cast[ptr uint8]("Error: cannot open userland directory"))
+    println(cast[*uint8]("Error: cannot open userland directory"))
     return 1
 
-  var built: int32 = 0
-  var failed: int32 = 0
+  built: int32 = 0
+  failed: int32 = 0
 
   # Read directory entries
-  var nread: int32 = syscall3(SYS_getdents64, fd, cast[int32](dir_buf), 32000)
+  nread: int32 = syscall3(SYS_getdents64, fd, cast[int32](dir_buf), 32000)
   while nread > 0:
-    var pos: int32 = 0
+    pos: int32 = 0
     while pos < nread:
       # struct linux_dirent64:
       #   uint64 d_ino (8 bytes)
@@ -100,38 +100,38 @@ proc main(): int32 =
       #   uint16 d_reclen (2 bytes)
       #   uint8  d_type (1 byte)
       #   char   d_name[] (variable)
-      var reclen_ptr: ptr uint16 = cast[ptr uint16](cast[int32](dir_buf) + pos + 16)
-      var reclen: int32 = cast[int32](reclen_ptr[0])
-      var name: ptr uint8 = cast[ptr uint8](cast[int32](dir_buf) + pos + 19)
+      reclen_ptr: *uint16 = cast[*uint16](cast[int32](dir_buf) + pos + 16)
+      reclen: int32 = cast[int32](reclen_ptr[0])
+      name: *uint8 = cast[*uint8](cast[int32](dir_buf) + pos + 19)
 
       # Check if it's a .bh file
       if ends_with_bh(name) == 1:
         # Build path: userland/filename
-        strcpy(path_buf, cast[ptr uint8]("userland/"))
+        strcpy(path_buf, cast[*uint8]("userland/"))
         strcat(path_buf, name)
 
         # Build it
-        var result: int32 = build_file(path_buf)
+        result: int32 = build_file(path_buf)
         if result == 0:
           built = built + 1
         else:
           failed = failed + 1
-          print(cast[ptr uint8]("FAILED: "))
+          print(cast[*uint8]("FAILED: "))
           println(name)
 
       pos = pos + reclen
 
     nread = syscall3(SYS_getdents64, fd, cast[int32](dir_buf), 32000)
 
-  discard syscall1(SYS_close, fd)
+  _ = syscall1(SYS_close, fd)
 
-  println(cast[ptr uint8](""))
-  println(cast[ptr uint8]("======================================"))
-  print(cast[ptr uint8]("Built: "))
+  println(cast[*uint8](""))
+  println(cast[*uint8]("======================================"))
+  print(cast[*uint8]("Built: "))
   print_num(built)
-  print(cast[ptr uint8](" programs, Failed: "))
+  print(cast[*uint8](" programs, Failed: "))
   print_num(failed)
-  println(cast[ptr uint8](""))
+  println(cast[*uint8](""))
 
   if failed > 0:
     return 1

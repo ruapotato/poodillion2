@@ -1,15 +1,15 @@
 # Example Flask-style Web Application
 # Demonstrates the lib/flask routing API
 
-import "lib/flask"
-import "lib/syscalls"
+from lib.flask import *
+from lib.syscalls import *
 
 # =============================================================================
 # Route Handlers
 # =============================================================================
 
-proc index(sock: int32, request: ptr uint8, path: ptr uint8) =
-  html(sock, cast[ptr uint8]("
+def index(sock: int32, request: *uint8, path: *uint8):
+  html(sock, cast[*uint8]("
 <html>
 <head><title>Welcome</title></head>
 <body>
@@ -22,8 +22,8 @@ proc index(sock: int32, request: ptr uint8, path: ptr uint8) =
 </body>
 </html>"))
 
-proc about(sock: int32, request: ptr uint8, path: ptr uint8) =
-  html(sock, cast[ptr uint8]("
+def about(sock: int32, request: *uint8, path: *uint8):
+  html(sock, cast[*uint8]("
 <html>
 <head><title>About</title></head>
 <body>
@@ -38,22 +38,22 @@ proc about(sock: int32, request: ptr uint8, path: ptr uint8) =
 </body>
 </html>"))
 
-proc api_status(sock: int32, request: ptr uint8, path: ptr uint8) =
-  json(sock, cast[ptr uint8]("{\"status\": \"ok\", \"version\": \"0.1\"}"))
+def api_status(sock: int32, request: *uint8, path: *uint8):
+  json(sock, cast[*uint8]("{\"status\": \"ok\", \"version\": \"0.1\"}"))
 
-proc api_echo(sock: int32, request: ptr uint8, path: ptr uint8) =
+def api_echo(sock: int32, request: *uint8, path: *uint8):
   text(sock, request)
 
 # =============================================================================
 # Main - Register Routes and Run
 # =============================================================================
 
-proc main(): int32 =
+def main() -> int32:
   # Register routes (Flask-style!)
-  discard route(cast[ptr uint8]("/"), cast[ptr uint8](index))
-  discard route(cast[ptr uint8]("/about"), cast[ptr uint8](about))
-  discard route(cast[ptr uint8]("/api/status"), cast[ptr uint8](api_status))
-  discard post(cast[ptr uint8]("/api/echo"), cast[ptr uint8](api_echo))
+  _ = route(cast[*uint8]("/"), cast[*uint8](index))
+  _ = route(cast[*uint8]("/about"), cast[*uint8](about))
+  _ = route(cast[*uint8]("/api/status"), cast[*uint8](api_status))
+  _ = post(cast[*uint8]("/api/echo"), cast[*uint8](api_echo))
 
   # Run the app!
   return run(8080)

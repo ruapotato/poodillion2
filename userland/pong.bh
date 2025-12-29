@@ -1,7 +1,7 @@
 # pong - Classic 2-player pong game
 # Player 1: W/S keys, Player 2: Up/Down arrows, Q to quit
 
-import "lib/syscalls"
+from lib.syscalls import *
 
 const O_NONBLOCK: int32 = 2048
 const F_SETFL: int32 = 4
@@ -20,68 +20,68 @@ const BALL_SPEED: int32 = 6
 const WIN_SCORE: int32 = 10
 
 # Global framebuffer state
-var g_fb: ptr uint32 = cast[ptr uint32](0)
-var g_xres: int32 = 0
-var g_yres: int32 = 0
-var g_fb_fd: int32 = 0
+g_fb: *uint32 = cast[*uint32](0)
+g_xres: int32 = 0
+g_yres: int32 = 0
+g_fb_fd: int32 = 0
 
 # Game area
-var g_area_x: int32 = 0
-var g_area_y: int32 = 0
-var g_area_w: int32 = 0
-var g_area_h: int32 = 0
+g_area_x: int32 = 0
+g_area_y: int32 = 0
+g_area_w: int32 = 0
+g_area_h: int32 = 0
 
 # Paddle state
-var g_paddle1_y: int32 = 0  # Left paddle
-var g_paddle2_y: int32 = 0  # Right paddle
+g_paddle1_y: int32 = 0  # Left paddle
+g_paddle2_y: int32 = 0  # Right paddle
 
 # Ball state
-var g_ball_x: int32 = 0
-var g_ball_y: int32 = 0
-var g_ball_dx: int32 = 5
-var g_ball_dy: int32 = 3
+g_ball_x: int32 = 0
+g_ball_y: int32 = 0
+g_ball_dx: int32 = 5
+g_ball_dy: int32 = 3
 
 # Scores
-var g_score1: int32 = 0
-var g_score2: int32 = 0
+g_score1: int32 = 0
+g_score2: int32 = 0
 
 # Game state
-var g_running: int32 = 1
-var g_paused: int32 = 1  # Start paused
-var g_game_over: int32 = 0
-var g_winner: int32 = 0  # 1 or 2
+g_running: int32 = 1
+g_paused: int32 = 1  # Start paused
+g_game_over: int32 = 0
+g_winner: int32 = 0  # 1 or 2
 
-proc print_str(s: ptr uint8) =
-  var len: int32 = 0
+def print_str(s: *uint8):
+  len: int32 = 0
   while s[len] != cast[uint8](0):
     len = len + 1
-  discard syscall3(SYS_write, STDOUT, cast[int32](s), len)
+  _ = syscall3(SYS_write, STDOUT, cast[int32](s), len)
 
-proc sleep_ms(ms: int32) =
-  var old_brk: int32 = syscall1(SYS_brk, 0)
-  discard syscall1(SYS_brk, old_brk + 16)
-  var ts: ptr int32 = cast[ptr int32](old_brk)
+def sleep_ms(ms: int32):
+  old_brk: int32 = syscall1(SYS_brk, 0)
+  _ = syscall1(SYS_brk, old_brk + 16)
+  ts: *int32 = cast[*int32](old_brk)
   ts[0] = 0
   ts[1] = ms * 1000000
-  discard syscall2(SYS_nanosleep, cast[int32](ts), 0)
+  _ = syscall2(SYS_nanosleep, cast[int32](ts), 0)
 
-proc random_seed(seed: int32): int32 =
+def random_seed(seed: int32) -> int32:
   return seed * 1103515245 + 12345
 
 # ============ Graphics ============
 
-proc fill_rect(x: int32, y: int32, w: int32, h: int32, color: int32) =
-  var py: int32 = y
+def fill_rect(x: int32, y: int32, w: int32, h: int32, color: int32):
+  py: int32 = y
   while py < y + h:
     if py >= 0 and py < g_yres:
-      var px: int32 = x
+      px: int32 = x
       while px < x + w:
         if px >= 0 and px < g_xres:
           g_fb[py * g_xres + px] = cast[uint32](color)
         px = px + 1
     py = py + 1
 
-proc draw_digit(d: int32, x: int32, y: int32, color: int32, scale: int32) =
+def draw_digit(d: int32, x: int32, y: int32, color: int32, scale: int32):
   if d == 0:
     fill_rect(x + scale, y, scale * 3, scale, color)
     fill_rect(x, y + scale, scale, scale * 5, color)
@@ -135,21 +135,21 @@ proc draw_digit(d: int32, x: int32, y: int32, color: int32, scale: int32) =
     fill_rect(x + scale, y + scale * 3, scale * 3, scale, color)
     fill_rect(x + scale, y + scale * 6, scale * 3, scale, color)
 
-proc draw_number(num: int32, x: int32, y: int32, color: int32, scale: int32) =
+def draw_number(num: int32, x: int32, y: int32, color: int32, scale: int32):
   if num < 0:
     return
   if num < 10:
     draw_digit(num, x, y, color, scale)
     return
 
-  var tens: int32 = num / 10
-  var ones: int32 = num - tens * 10
+  tens: int32 = num / 10
+  ones: int32 = num - tens * 10
   draw_digit(tens, x, y, color, scale)
   draw_digit(ones, x + scale * 6, y, color, scale)
 
 # ============ Game Logic ============
 
-proc init_game() =
+def init_game():
   g_score1 = 0
   g_score2 = 0
   g_game_over = 0
@@ -166,7 +166,7 @@ proc init_game() =
   g_ball_dx = 5
   g_ball_dy = 3
 
-proc reset_ball(direction: int32) =
+def reset_ball(direction: int32):
   g_ball_x = g_area_x + g_area_w / 2 - BALL_SIZE / 2
   g_ball_y = g_area_y + g_area_h / 2 - BALL_SIZE / 2
 
@@ -176,7 +176,7 @@ proc reset_ball(direction: int32) =
     g_ball_dx = 0 - BALL_SPEED
 
   # Random vertical direction based on time
-  var t: int32 = syscall1(SYS_time, 0)
+  t: int32 = syscall1(SYS_time, 0)
   if (t - (t / 2) * 2) != 0:
     g_ball_dy = 3
   else:
@@ -184,7 +184,7 @@ proc reset_ball(direction: int32) =
 
   g_paused = 1
 
-proc update_ball() =
+def update_ball():
   if g_paused != 0:
     return
 
@@ -201,7 +201,7 @@ proc update_ball() =
     g_ball_dy = 0 - g_ball_dy
 
   # Left paddle collision (paddle 1)
-  var paddle1_x: int32 = g_area_x + 20
+  paddle1_x: int32 = g_area_x + 20
   if g_ball_dx < 0:
     if g_ball_x <= paddle1_x + PADDLE_WIDTH:
       if g_ball_y + BALL_SIZE >= g_paddle1_y and g_ball_y <= g_paddle1_y + PADDLE_HEIGHT:
@@ -209,23 +209,27 @@ proc update_ball() =
         g_ball_dx = 0 - g_ball_dx
 
         # Adjust angle based on hit position
-        var hit_offset: int32 = (g_ball_y + BALL_SIZE / 2) - (g_paddle1_y + PADDLE_HEIGHT / 2)
+        hit_offset: int32 = (g_ball_y + BALL_SIZE / 2) - (g_paddle1_y + PADDLE_HEIGHT / 2)
         g_ball_dy = hit_offset / 8
-        if g_ball_dy > 7: g_ball_dy = 7
-        if g_ball_dy < 0 - 7: g_ball_dy = 0 - 7
+        if g_ball_dy > 7:
+          g_ball_dy = 7
+        if g_ball_dy < 0 - 7:
+          g_ball_dy = 0 - 7
 
   # Right paddle collision (paddle 2)
-  var paddle2_x: int32 = g_area_x + g_area_w - 20 - PADDLE_WIDTH
+  paddle2_x: int32 = g_area_x + g_area_w - 20 - PADDLE_WIDTH
   if g_ball_dx > 0:
     if g_ball_x + BALL_SIZE >= paddle2_x:
       if g_ball_y + BALL_SIZE >= g_paddle2_y and g_ball_y <= g_paddle2_y + PADDLE_HEIGHT:
         g_ball_x = paddle2_x - BALL_SIZE
         g_ball_dx = 0 - g_ball_dx
 
-        var hit_offset: int32 = (g_ball_y + BALL_SIZE / 2) - (g_paddle2_y + PADDLE_HEIGHT / 2)
+        hit_offset: int32 = (g_ball_y + BALL_SIZE / 2) - (g_paddle2_y + PADDLE_HEIGHT / 2)
         g_ball_dy = hit_offset / 8
-        if g_ball_dy > 7: g_ball_dy = 7
-        if g_ball_dy < 0 - 7: g_ball_dy = 0 - 7
+        if g_ball_dy > 7:
+          g_ball_dy = 7
+        if g_ball_dy < 0 - 7:
+          g_ball_dy = 0 - 7
 
   # Scoring
   if g_ball_x <= g_area_x:
@@ -248,50 +252,50 @@ proc update_ball() =
 
 # ============ Drawing ============
 
-proc draw_center_line() =
-  var y: int32 = g_area_y + 10
-  var center_x: int32 = g_area_x + g_area_w / 2 - 2
+def draw_center_line():
+  y: int32 = g_area_y + 10
+  center_x: int32 = g_area_x + g_area_w / 2 - 2
   while y < g_area_y + g_area_h - 10:
     fill_rect(center_x, y, 4, 15, 0x444444)
     y = y + 30
 
-proc draw_scores() =
+def draw_scores():
   # Player 1 score (left side)
-  var score1_x: int32 = g_area_x + g_area_w / 4 - 20
+  score1_x: int32 = g_area_x + g_area_w / 4 - 20
   draw_number(g_score1, score1_x, g_area_y + 20, 0x666666, 8)
 
   # Player 2 score (right side)
-  var score2_x: int32 = g_area_x + g_area_w * 3 / 4 - 20
+  score2_x: int32 = g_area_x + g_area_w * 3 / 4 - 20
   draw_number(g_score2, score2_x, g_area_y + 20, 0x666666, 8)
 
-proc draw_paddles() =
-  var paddle1_x: int32 = g_area_x + 20
-  var paddle2_x: int32 = g_area_x + g_area_w - 20 - PADDLE_WIDTH
+def draw_paddles():
+  paddle1_x: int32 = g_area_x + 20
+  paddle2_x: int32 = g_area_x + g_area_w - 20 - PADDLE_WIDTH
 
   fill_rect(paddle1_x, g_paddle1_y, PADDLE_WIDTH, PADDLE_HEIGHT, 0xFFFFFF)
   fill_rect(paddle2_x, g_paddle2_y, PADDLE_WIDTH, PADDLE_HEIGHT, 0xFFFFFF)
 
-proc draw_ball() =
+def draw_ball():
   fill_rect(g_ball_x, g_ball_y, BALL_SIZE, BALL_SIZE, 0xFFFFFF)
 
-proc draw_game_over_screen() =
+def draw_game_over_screen():
   # Winner display
-  var msg_y: int32 = g_area_y + g_area_h / 2 - 30
-  var msg_x: int32 = g_area_x + g_area_w / 2 - 50
+  msg_y: int32 = g_area_y + g_area_h / 2 - 30
+  msg_x: int32 = g_area_x + g_area_w / 2 - 50
 
   fill_rect(msg_x - 20, msg_y - 20, 140, 80, 0x004400)
 
   # Show winner number
   draw_number(g_winner, msg_x + 30, msg_y, 0x00FF00, 10)
 
-proc draw_paused_indicator() =
+def draw_paused_indicator():
   if g_paused != 0 and g_game_over == 0:
     # Simple "SPACE" prompt - draw as a small indicator
-    var cx: int32 = g_area_x + g_area_w / 2
-    var cy: int32 = g_area_y + g_area_h - 40
+    cx: int32 = g_area_x + g_area_w / 2
+    cy: int32 = g_area_y + g_area_h - 40
     fill_rect(cx - 30, cy, 60, 20, 0x333333)
 
-proc draw_screen() =
+def draw_screen():
   # Clear screen
   fill_rect(0, 0, g_xres, g_yres, 0x000000)
 
@@ -310,14 +314,14 @@ proc draw_screen() =
 
 # ============ Input ============
 
-proc handle_input() =
-  var buf: array[8, uint8]
-  var n: int32 = syscall3(SYS_read, STDIN, cast[int32](buf), 8)
+def handle_input():
+  buf: array[8, uint8]
+  n: int32 = syscall3(SYS_read, STDIN, cast[int32](buf), 8)
 
   if n <= 0:
     return
 
-  var c: int32 = cast[int32](buf[0])
+  c: int32 = cast[int32](buf[0])
 
   # Arrow keys for player 2
   if c == 27 and n >= 3:
@@ -348,45 +352,45 @@ proc handle_input() =
 
 # ============ Framebuffer Setup ============
 
-proc init_framebuffer(): int32 =
-  var old_brk: int32 = syscall1(SYS_brk, 0)
-  discard syscall1(SYS_brk, old_brk + 256)
+def init_framebuffer() -> int32:
+  old_brk: int32 = syscall1(SYS_brk, 0)
+  _ = syscall1(SYS_brk, old_brk + 256)
 
-  var path: ptr uint8 = cast[ptr uint8]("/dev/fb0")
+  path: *uint8 = cast[*uint8]("/dev/fb0")
   g_fb_fd = syscall3(SYS_open, cast[int32](path), O_RDWR, 0)
   if g_fb_fd < 0:
-    print_str(cast[ptr uint8]("Error: cannot open /dev/fb0\n"))
+    print_str(cast[*uint8]("Error: cannot open /dev/fb0\n"))
     return 1
 
-  var vinfo: ptr int32 = cast[ptr int32](old_brk + 32)
-  var i: int32 = 0
+  vinfo: *int32 = cast[*int32](old_brk + 32)
+  i: int32 = 0
   while i < 40:
     vinfo[i] = 0
     i = i + 1
 
   const FBIOGET_VSCREENINFO: int32 = 0x4600
-  discard syscall3(SYS_ioctl, g_fb_fd, FBIOGET_VSCREENINFO, cast[int32](vinfo))
+  _ = syscall3(SYS_ioctl, g_fb_fd, FBIOGET_VSCREENINFO, cast[int32](vinfo))
 
   g_xres = vinfo[0]
   g_yres = vinfo[1]
 
-  var fb_size: int32 = g_xres * g_yres * 4
-  var fb_addr: int32 = syscall6(SYS_mmap2, 0, fb_size, PROT_READ | PROT_WRITE, MAP_SHARED, g_fb_fd, 0)
+  fb_size: int32 = g_xres * g_yres * 4
+  fb_addr: int32 = syscall6(SYS_mmap2, 0, fb_size, PROT_READ | PROT_WRITE, MAP_SHARED, g_fb_fd, 0)
   if fb_addr < 0:
     return 1
 
-  g_fb = cast[ptr uint32](fb_addr)
+  g_fb = cast[*uint32](fb_addr)
   return 0
 
 # ============ Main ============
 
-proc main(): int32 =
+def main() -> int32:
   if init_framebuffer() != 0:
     return 1
 
   # Set stdin to non-blocking
-  var flags: int32 = syscall2(SYS_fcntl, STDIN, F_GETFL)
-  discard syscall3(SYS_fcntl, STDIN, F_SETFL, flags | O_NONBLOCK)
+  flags: int32 = syscall2(SYS_fcntl, STDIN, F_GETFL)
+  _ = syscall3(SYS_fcntl, STDIN, F_SETFL, flags | O_NONBLOCK)
 
   # Calculate game area (centered, 4:3 aspect)
   g_area_w = 800
@@ -407,7 +411,7 @@ proc main(): int32 =
     sleep_ms(16)  # ~60 FPS
 
   # Restore stdin
-  discard syscall3(SYS_fcntl, STDIN, F_SETFL, flags)
+  _ = syscall3(SYS_fcntl, STDIN, F_SETFL, flags)
 
   # Clear screen
   fill_rect(0, 0, g_xres, g_yres, 0)

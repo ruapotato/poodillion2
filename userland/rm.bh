@@ -1,20 +1,20 @@
 # rm - remove files
 # Usage: rm filename
 
-import "lib/syscalls"
+from lib.syscalls import *
 
-extern get_argc(): int32
-extern get_argv(index: int32): ptr uint8
+extern def get_argc() -> int32
+extern def get_argv(index: int32) -> *uint8
 
-proc main(): int32 =
-  var argc: int32 = get_argc()
+def main() -> int32:
+  argc: int32 = get_argc()
 
   if argc < 2:
     perror("Usage: rm filename")
     return 1
 
-  var filename: ptr uint8 = get_argv(1)
-  var result: int32 = unlink(filename)
+  filename: *uint8 = get_argv(1)
+  result: int32 = unlink(filename)
 
   if result < 0:
     perror("rm: cannot remove file")

@@ -8,32 +8,32 @@
 #   2. nasm -f elf32 source.asm -o source.o
 #   3. ld -m elf_i386 -o output source.o lib/syscalls.o
 
-import "lib/syscalls"
+from lib.syscalls import *
 
-extern get_argc(): int32
-extern get_argv(idx: int32): ptr uint8
+extern def get_argc() -> int32
+extern def get_argv(idx: int32) -> *uint8
 
-proc print_err(msg: ptr uint8) =
-  var len: int32 = 0
+def print_err(msg: *uint8):
+  len: int32 = 0
   while msg[len] != cast[uint8](0):
     len = len + 1
-  discard syscall3(SYS_write, STDERR, cast[int32](msg), len)
+  _ = syscall3(SYS_write, STDERR, cast[int32](msg), len)
 
 # Extract base name from path (remove directory and .bh extension)
-proc get_basename(path: ptr uint8, out: ptr uint8) =
-  var len: int32 = strlen(path)
+def get_basename(path: *uint8, out: *uint8):
+  len: int32 = strlen(path)
 
   # Find last /
-  var last_slash: int32 = -1
-  var i: int32 = 0
+  last_slash: int32 = -1
+  i: int32 = 0
   while i < len:
     if path[i] == cast[uint8](47):  # '/'
       last_slash = i
     i = i + 1
 
   # Copy from after last slash
-  var start: int32 = last_slash + 1
-  var j: int32 = 0
+  start: int32 = last_slash + 1
+  j: int32 = 0
   while path[start] != cast[uint8](0):
     # Stop at .bh
     if path[start] == cast[uint8](46):  # '.'
@@ -45,181 +45,181 @@ proc get_basename(path: ptr uint8, out: ptr uint8) =
   out[j] = cast[uint8](0)
 
 # Run a command and wait for it to complete
-proc run_cmd(argv: ptr int32): int32 =
-  var pid: int32 = syscall1(SYS_fork, 0)
+def run_cmd(argv: *int32) -> int32:
+  pid: int32 = syscall1(SYS_fork, 0)
 
   if pid == 0:
     # Child - exec the command
-    var envp: array[1, int32]
+    envp: array[1, int32]
     envp[0] = 0
-    discard syscall3(SYS_execve, argv[0], cast[int32](argv), cast[int32](addr(envp)))
+    _ = syscall3(SYS_execve, argv[0], cast[int32](argv), cast[int32](addr(envp)))
     # If exec fails
-    print_err(cast[ptr uint8]("bhbuild: exec failed: "))
-    print_err(cast[ptr uint8](argv[0]))
-    print_err(cast[ptr uint8]("\n"))
-    discard syscall1(SYS_exit, 127)
+    print_err(cast[*uint8]("bhbuild: exec failed: "))
+    print_err(cast[*uint8](argv[0]))
+    print_err(cast[*uint8]("\n"))
+    _ = syscall1(SYS_exit, 127)
 
   if pid < 0:
-    print_err(cast[ptr uint8]("bhbuild: fork failed\n"))
+    print_err(cast[*uint8]("bhbuild: fork failed\n"))
     return 1
 
   # Parent - wait for child
-  var status: int32 = 0
-  discard syscall3(SYS_waitpid, pid, cast[int32](addr(status)), 0)
+  status: int32 = 0
+  _ = syscall3(SYS_waitpid, pid, cast[int32](addr(status)), 0)
 
   # Extract exit code (bits 8-15)
-  var exit_code: int32 = (status >> 8) & 255
+  exit_code: int32 = (status >> 8) & 255
   return exit_code
 
 # Run command with stdout redirected to a file
-proc run_cmd_stdout(argv: ptr int32, outfile: ptr uint8): int32 =
-  var pid: int32 = syscall1(SYS_fork, 0)
+def run_cmd_stdout(argv: *int32, outfile: *uint8) -> int32:
+  pid: int32 = syscall1(SYS_fork, 0)
 
   if pid == 0:
     # Child - redirect stdout and exec
-    var fd: int32 = syscall3(SYS_open, cast[int32](outfile), O_WRONLY | O_CREAT | O_TRUNC, 420)
+    fd: int32 = syscall3(SYS_open, cast[int32](outfile), O_WRONLY | O_CREAT | O_TRUNC, 420)
     if fd < 0:
-      print_err(cast[ptr uint8]("bhbuild: cannot create output file\n"))
-      discard syscall1(SYS_exit, 1)
+      print_err(cast[*uint8]("bhbuild: cannot create output file\n"))
+      _ = syscall1(SYS_exit, 1)
 
-    discard syscall2(SYS_dup2, fd, STDOUT)
-    discard syscall1(SYS_close, fd)
+    _ = syscall2(SYS_dup2, fd, STDOUT)
+    _ = syscall1(SYS_close, fd)
 
-    var envp: array[1, int32]
+    envp: array[1, int32]
     envp[0] = 0
-    discard syscall3(SYS_execve, argv[0], cast[int32](argv), cast[int32](addr(envp)))
-    print_err(cast[ptr uint8]("bhbuild: exec failed\n"))
-    discard syscall1(SYS_exit, 127)
+    _ = syscall3(SYS_execve, argv[0], cast[int32](argv), cast[int32](addr(envp)))
+    print_err(cast[*uint8]("bhbuild: exec failed\n"))
+    _ = syscall1(SYS_exit, 127)
 
   if pid < 0:
     return 1
 
-  var status: int32 = 0
-  discard syscall3(SYS_waitpid, pid, cast[int32](addr(status)), 0)
-  var exit_code: int32 = (status >> 8) & 255
+  status: int32 = 0
+  _ = syscall3(SYS_waitpid, pid, cast[int32](addr(status)), 0)
+  exit_code: int32 = (status >> 8) & 255
   return exit_code
 
-proc main(): int32 =
-  var argc: int32 = get_argc()
+def main() -> int32:
+  argc: int32 = get_argc()
 
-  println(cast[ptr uint8]("bhbuild - Brainhair Build Tool v1.0"))
+  println(cast[*uint8]("bhbuild - Brainhair Build Tool v1.0"))
 
   if argc < 2:
-    println(cast[ptr uint8]("Usage: bhbuild <source.bh> [output]"))
-    println(cast[ptr uint8](""))
-    println(cast[ptr uint8]("Compiles a Brainhair source file to a native executable."))
+    println(cast[*uint8]("Usage: bhbuild <source.bh> [output]"))
+    println(cast[*uint8](""))
+    println(cast[*uint8]("Compiles a Brainhair source file to a native executable."))
     return 1
 
-  var source: ptr uint8 = get_argv(1)
+  source: *uint8 = get_argv(1)
 
   # Allocate working memory
-  var old_brk: int32 = syscall1(SYS_brk, 0)
-  var new_brk: int32 = old_brk + 8192
-  discard syscall1(SYS_brk, new_brk)
+  old_brk: int32 = syscall1(SYS_brk, 0)
+  new_brk: int32 = old_brk + 8192
+  _ = syscall1(SYS_brk, new_brk)
 
-  var basename: ptr uint8 = cast[ptr uint8](old_brk)
-  var asm_file: ptr uint8 = cast[ptr uint8](old_brk + 256)
-  var obj_file: ptr uint8 = cast[ptr uint8](old_brk + 512)
-  var out_file: ptr uint8 = cast[ptr uint8](old_brk + 768)
-  var argv_buf: ptr int32 = cast[ptr int32](old_brk + 1024)
-  var str_buf: ptr uint8 = cast[ptr uint8](old_brk + 2048)
+  basename: *uint8 = cast[*uint8](old_brk)
+  asm_file: *uint8 = cast[*uint8](old_brk + 256)
+  obj_file: *uint8 = cast[*uint8](old_brk + 512)
+  out_file: *uint8 = cast[*uint8](old_brk + 768)
+  argv_buf: *int32 = cast[*int32](old_brk + 1024)
+  str_buf: *uint8 = cast[*uint8](old_brk + 2048)
 
   # Get base name
   get_basename(source, basename)
 
   # Build file names
-  strcpy(asm_file, cast[ptr uint8]("compiler/"))
+  strcpy(asm_file, cast[*uint8]("compiler/"))
   strcat(asm_file, basename)
-  strcat(asm_file, cast[ptr uint8](".asm"))
+  strcat(asm_file, cast[*uint8](".asm"))
 
-  strcpy(obj_file, cast[ptr uint8]("compiler/"))
+  strcpy(obj_file, cast[*uint8]("compiler/"))
   strcat(obj_file, basename)
-  strcat(obj_file, cast[ptr uint8](".o"))
+  strcat(obj_file, cast[*uint8](".o"))
 
   # Output file - use arg2 or default to bin/basename
   if argc >= 3:
     strcpy(out_file, get_argv(2))
   else:
-    strcpy(out_file, cast[ptr uint8]("bin/"))
+    strcpy(out_file, cast[*uint8]("bin/"))
     strcat(out_file, basename)
 
   # Step 1: Run brainhair compiler
-  print(cast[ptr uint8]("  [1/3] Compiling "))
+  print(cast[*uint8]("  [1/3] Compiling "))
   print(source)
-  println(cast[ptr uint8]("..."))
+  println(cast[*uint8]("..."))
 
   # argv: python3 compiler/brainhair.py source --asm-only
-  var p: int32 = 0
-  strcpy(str_buf, cast[ptr uint8]("/usr/bin/python3"))
+  p: int32 = 0
+  strcpy(str_buf, cast[*uint8]("/usr/bin/python3"))
   argv_buf[0] = cast[int32](str_buf)
   p = p + 20
-  strcpy(cast[ptr uint8](cast[int32](str_buf) + p), cast[ptr uint8]("compiler/brainhair.py"))
+  strcpy(cast[*uint8](cast[int32](str_buf) + p), cast[*uint8]("compiler/brainhair.py"))
   argv_buf[1] = cast[int32](str_buf) + p
   p = p + 24
-  strcpy(cast[ptr uint8](cast[int32](str_buf) + p), source)
+  strcpy(cast[*uint8](cast[int32](str_buf) + p), source)
   argv_buf[2] = cast[int32](str_buf) + p
   p = p + strlen(source) + 1
-  strcpy(cast[ptr uint8](cast[int32](str_buf) + p), cast[ptr uint8]("--asm-only"))
+  strcpy(cast[*uint8](cast[int32](str_buf) + p), cast[*uint8]("--asm-only"))
   argv_buf[3] = cast[int32](str_buf) + p
   argv_buf[4] = 0
 
-  var result: int32 = run_cmd_stdout(argv_buf, asm_file)
+  result: int32 = run_cmd_stdout(argv_buf, asm_file)
   if result != 0:
-    print_err(cast[ptr uint8]("bhbuild: compilation failed\n"))
+    print_err(cast[*uint8]("bhbuild: compilation failed\n"))
     return 1
 
   # Step 2: Assemble with basm (native Brainhair assembler)
-  print(cast[ptr uint8]("  [2/3] Assembling "))
+  print(cast[*uint8]("  [2/3] Assembling "))
   print(asm_file)
-  println(cast[ptr uint8]("..."))
+  println(cast[*uint8]("..."))
 
   # argv: bin/basm asm_file obj_file
   p = 0
-  strcpy(str_buf, cast[ptr uint8]("bin/basm"))
+  strcpy(str_buf, cast[*uint8]("bin/basm"))
   argv_buf[0] = cast[int32](str_buf)
   p = p + 12
-  strcpy(cast[ptr uint8](cast[int32](str_buf) + p), asm_file)
+  strcpy(cast[*uint8](cast[int32](str_buf) + p), asm_file)
   argv_buf[1] = cast[int32](str_buf) + p
   p = p + strlen(asm_file) + 1
-  strcpy(cast[ptr uint8](cast[int32](str_buf) + p), obj_file)
+  strcpy(cast[*uint8](cast[int32](str_buf) + p), obj_file)
   argv_buf[2] = cast[int32](str_buf) + p
   argv_buf[3] = 0
 
   result = run_cmd(argv_buf)
   if result != 0:
-    print_err(cast[ptr uint8]("bhbuild: assembly failed\n"))
+    print_err(cast[*uint8]("bhbuild: assembly failed\n"))
     return 1
 
   # Step 3: Link with bhlink (native Brainhair linker)
-  print(cast[ptr uint8]("  [3/3] Linking "))
+  print(cast[*uint8]("  [3/3] Linking "))
   print(out_file)
-  println(cast[ptr uint8]("..."))
+  println(cast[*uint8]("..."))
 
   # argv: bin/bhlink obj_file lib/syscalls.o -o out_file
   p = 0
-  strcpy(str_buf, cast[ptr uint8]("bin/bhlink"))
+  strcpy(str_buf, cast[*uint8]("bin/bhlink"))
   argv_buf[0] = cast[int32](str_buf)
   p = p + 12
-  strcpy(cast[ptr uint8](cast[int32](str_buf) + p), obj_file)
+  strcpy(cast[*uint8](cast[int32](str_buf) + p), obj_file)
   argv_buf[1] = cast[int32](str_buf) + p
   p = p + strlen(obj_file) + 1
-  strcpy(cast[ptr uint8](cast[int32](str_buf) + p), cast[ptr uint8]("lib/syscalls.o"))
+  strcpy(cast[*uint8](cast[int32](str_buf) + p), cast[*uint8]("lib/syscalls.o"))
   argv_buf[2] = cast[int32](str_buf) + p
   p = p + 16
-  strcpy(cast[ptr uint8](cast[int32](str_buf) + p), cast[ptr uint8]("-o"))
+  strcpy(cast[*uint8](cast[int32](str_buf) + p), cast[*uint8]("-o"))
   argv_buf[3] = cast[int32](str_buf) + p
   p = p + 4
-  strcpy(cast[ptr uint8](cast[int32](str_buf) + p), out_file)
+  strcpy(cast[*uint8](cast[int32](str_buf) + p), out_file)
   argv_buf[4] = cast[int32](str_buf) + p
   argv_buf[5] = 0
 
   result = run_cmd(argv_buf)
   if result != 0:
-    print_err(cast[ptr uint8]("bhbuild: linking failed\n"))
+    print_err(cast[*uint8]("bhbuild: linking failed\n"))
     return 1
 
-  println(cast[ptr uint8](""))
-  print(cast[ptr uint8]("Build successful: "))
+  println(cast[*uint8](""))
+  print(cast[*uint8]("Build successful: "))
   println(out_file)
 
   return 0

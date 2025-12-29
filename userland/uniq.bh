@@ -2,69 +2,69 @@
 # Usage: uniq [-c] [-d] [-u] [file]
 # Part of BrainhairOS text utilities
 
-import "lib/syscalls"
+from lib.syscalls import *
 
-extern get_argc(): int32
-extern get_argv(index: int32): ptr uint8
+extern def get_argc() -> int32
+extern def get_argv(index: int32) -> *uint8
 
-proc print_err(msg: ptr uint8) =
-  var len: int32 = strlen(msg)
-  discard syscall3(SYS_write, STDERR, cast[int32](msg), len)
+def print_err(msg: *uint8):
+  len: int32 = strlen(msg)
+  syscall3(SYS_write, STDERR, cast[int32](msg), len)
 
-proc lines_equal(line1: ptr uint8, len1: int32, line2: ptr uint8, len2: int32): int32 =
+def lines_equal(line1: *uint8, len1: int32, line2: *uint8, len2: int32) -> int32:
   if len1 != len2:
     return 0
-  var i: int32 = 0
+  i: int32 = 0
   while i < len1:
     if line1[i] != line2[i]:
       return 0
     i = i + 1
   return 1
 
-proc main() =
-  var argc: int32 = get_argc()
+def main():
+  argc: int32 = get_argc()
 
   # Allocate buffers
-  var old_brk: int32 = syscall1(SYS_brk, 0)
-  var new_brk: int32 = old_brk + 24576
-  discard syscall1(SYS_brk, new_brk)
+  old_brk: int32 = syscall1(SYS_brk, 0)
+  new_brk: int32 = old_brk + 24576
+  syscall1(SYS_brk, new_brk)
 
-  var current_line: ptr uint8 = cast[ptr uint8](old_brk)
-  var prev_line: ptr uint8 = cast[ptr uint8](old_brk + 8192)
-  var temp_line: ptr uint8 = cast[ptr uint8](old_brk + 16384)
+  current_line: *uint8 = cast[*uint8](old_brk)
+  prev_line: *uint8 = cast[*uint8](old_brk + 8192)
+  temp_line: *uint8 = cast[*uint8](old_brk + 16384)
 
   # Parse arguments
-  var count_mode: int32 = 0
-  var dup_only: int32 = 0
-  var unique_only: int32 = 0
-  var input_fd: int32 = STDIN
+  count_mode: int32 = 0
+  dup_only: int32 = 0
+  unique_only: int32 = 0
+  input_fd: int32 = STDIN
 
-  var i: int32 = 1
+  i: int32 = 1
   while i < argc:
-    var arg: ptr uint8 = get_argv(i)
-    if strcmp(arg, cast[ptr uint8]("-c")) == 0:
+    arg: *uint8 = get_argv(i)
+    if strcmp(arg, cast[*uint8]("-c")) == 0:
       count_mode = 1
-    if strcmp(arg, cast[ptr uint8]("-d")) == 0:
+    if strcmp(arg, cast[*uint8]("-d")) == 0:
       dup_only = 1
-    if strcmp(arg, cast[ptr uint8]("-u")) == 0:
+    if strcmp(arg, cast[*uint8]("-u")) == 0:
       unique_only = 1
     if arg[0] != cast[uint8](45):  # not a flag
       input_fd = syscall2(SYS_open, cast[int32](arg), O_RDONLY)
       if input_fd < 0:
-        print_err(cast[ptr uint8]("uniq: cannot open file\n"))
-        discard syscall1(SYS_exit, 1)
+        print_err(cast[*uint8]("uniq: cannot open file\n"))
+        syscall1(SYS_exit, 1)
     i = i + 1
 
   # Process input
-  var current_len: int32 = 0
-  var prev_len: int32 = 0
-  var line_count: int32 = 0
-  var running: int32 = 1
-  var first_line: int32 = 1
+  current_len: int32 = 0
+  prev_len: int32 = 0
+  line_count: int32 = 0
+  running: int32 = 1
+  first_line: int32 = 1
 
   while running != 0:
-    var c: uint8 = 0
-    var n: int32 = syscall3(SYS_read, input_fd, cast[int32](addr(c)), 1)
+    c: uint8 = 0
+    n: int32 = syscall3(SYS_read, input_fd, cast[int32](addr(c)), 1)
 
     if n <= 0:
       # Handle last line
@@ -76,45 +76,45 @@ proc main() =
             if line_count > 1:
               if count_mode != 0:
                 print_int(line_count)
-                discard syscall3(SYS_write, STDOUT, cast[int32](" "), 1)
-              discard syscall3(SYS_write, STDOUT, cast[int32](prev_line), prev_len)
-              discard syscall3(SYS_write, STDOUT, cast[int32]("\n"), 1)
+                syscall3(SYS_write, STDOUT, cast[int32](" "), 1)
+              syscall3(SYS_write, STDOUT, cast[int32](prev_line), prev_len)
+              syscall3(SYS_write, STDOUT, cast[int32]("\n"), 1)
           if unique_only != 0:
             if line_count == 1:
               if count_mode != 0:
                 print_int(line_count)
-                discard syscall3(SYS_write, STDOUT, cast[int32](" "), 1)
-              discard syscall3(SYS_write, STDOUT, cast[int32](prev_line), prev_len)
-              discard syscall3(SYS_write, STDOUT, cast[int32]("\n"), 1)
+                syscall3(SYS_write, STDOUT, cast[int32](" "), 1)
+              syscall3(SYS_write, STDOUT, cast[int32](prev_line), prev_len)
+              syscall3(SYS_write, STDOUT, cast[int32]("\n"), 1)
           if dup_only == 0:
             if unique_only == 0:
               if count_mode != 0:
                 print_int(line_count)
-                discard syscall3(SYS_write, STDOUT, cast[int32](" "), 1)
-              discard syscall3(SYS_write, STDOUT, cast[int32](prev_line), prev_len)
-              discard syscall3(SYS_write, STDOUT, cast[int32]("\n"), 1)
+                syscall3(SYS_write, STDOUT, cast[int32](" "), 1)
+              syscall3(SYS_write, STDOUT, cast[int32](prev_line), prev_len)
+              syscall3(SYS_write, STDOUT, cast[int32]("\n"), 1)
         # Output current line
         line_count = 1
         if dup_only == 0:
           if unique_only == 0:
             if count_mode != 0:
               print_int(1)
-              discard syscall3(SYS_write, STDOUT, cast[int32](" "), 1)
-            discard syscall3(SYS_write, STDOUT, cast[int32](current_line), current_len)
-            discard syscall3(SYS_write, STDOUT, cast[int32]("\n"), 1)
+              syscall3(SYS_write, STDOUT, cast[int32](" "), 1)
+            syscall3(SYS_write, STDOUT, cast[int32](current_line), current_len)
+            syscall3(SYS_write, STDOUT, cast[int32]("\n"), 1)
         if unique_only != 0:
           if count_mode != 0:
             print_int(1)
-            discard syscall3(SYS_write, STDOUT, cast[int32](" "), 1)
-          discard syscall3(SYS_write, STDOUT, cast[int32](current_line), current_len)
-          discard syscall3(SYS_write, STDOUT, cast[int32]("\n"), 1)
+            syscall3(SYS_write, STDOUT, cast[int32](" "), 1)
+          syscall3(SYS_write, STDOUT, cast[int32](current_line), current_len)
+          syscall3(SYS_write, STDOUT, cast[int32]("\n"), 1)
       running = 0
       break
 
     if c == cast[uint8](10):  # newline
       if first_line != 0:
         # First line - save it
-        var k: int32 = 0
+        k: int32 = 0
         while k < current_len:
           prev_line[k] = current_line[k]
           k = k + 1
@@ -131,26 +131,26 @@ proc main() =
             if line_count > 1:
               if count_mode != 0:
                 print_int(line_count)
-                discard syscall3(SYS_write, STDOUT, cast[int32](" "), 1)
-              discard syscall3(SYS_write, STDOUT, cast[int32](prev_line), prev_len)
-              discard syscall3(SYS_write, STDOUT, cast[int32]("\n"), 1)
+                syscall3(SYS_write, STDOUT, cast[int32](" "), 1)
+              syscall3(SYS_write, STDOUT, cast[int32](prev_line), prev_len)
+              syscall3(SYS_write, STDOUT, cast[int32]("\n"), 1)
           if unique_only != 0:
             if line_count == 1:
               if count_mode != 0:
                 print_int(line_count)
-                discard syscall3(SYS_write, STDOUT, cast[int32](" "), 1)
-              discard syscall3(SYS_write, STDOUT, cast[int32](prev_line), prev_len)
-              discard syscall3(SYS_write, STDOUT, cast[int32]("\n"), 1)
+                syscall3(SYS_write, STDOUT, cast[int32](" "), 1)
+              syscall3(SYS_write, STDOUT, cast[int32](prev_line), prev_len)
+              syscall3(SYS_write, STDOUT, cast[int32]("\n"), 1)
           if dup_only == 0:
             if unique_only == 0:
               if count_mode != 0:
                 print_int(line_count)
-                discard syscall3(SYS_write, STDOUT, cast[int32](" "), 1)
-              discard syscall3(SYS_write, STDOUT, cast[int32](prev_line), prev_len)
-              discard syscall3(SYS_write, STDOUT, cast[int32]("\n"), 1)
+                syscall3(SYS_write, STDOUT, cast[int32](" "), 1)
+              syscall3(SYS_write, STDOUT, cast[int32](prev_line), prev_len)
+              syscall3(SYS_write, STDOUT, cast[int32]("\n"), 1)
 
           # Save current as previous
-          var k: int32 = 0
+          k: int32 = 0
           while k < current_len:
             prev_line[k] = current_line[k]
             k = k + 1
@@ -165,6 +165,6 @@ proc main() =
         current_len = current_len + 1
 
   if input_fd != STDIN:
-    discard syscall1(SYS_close, input_fd)
+    syscall1(SYS_close, input_fd)
 
-  discard syscall1(SYS_exit, 0)
+  syscall1(SYS_exit, 0)

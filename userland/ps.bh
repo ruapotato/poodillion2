@@ -3,16 +3,16 @@
 # -b flag: binary PSCH format for pipelines
 # Schema: pid(4) + ppid(4) + state(1) + pad(3) + rss(4) + name(32) = 48 bytes/record
 
-import "lib/syscalls"
+from lib.syscalls import *
 
-extern get_argc(): int32
-extern get_argv(index: int32): ptr uint8
+extern def get_argc() -> int32
+extern def get_argv(index: int32) -> *uint8
 
 # Print number with padding
-proc print_num_pad(n: int32, width: int32) =
+def print_num_pad(n: int32, width: int32):
   # First calculate number of digits
-  var temp: int32 = n
-  var digits: int32 = 0
+  temp: int32 = n
+  digits: int32 = 0
   if n == 0:
     digits = 1
   else:
@@ -23,7 +23,7 @@ proc print_num_pad(n: int32, width: int32) =
       temp = temp / 10
 
   # Print padding spaces
-  var pad: int32 = width - digits
+  pad: int32 = width - digits
   if n < 0:
     pad = pad - 1
   while pad > 0:
@@ -33,8 +33,8 @@ proc print_num_pad(n: int32, width: int32) =
   # Print the number
   print_int(n)
 
-proc is_numeric(s: ptr uint8): int32 =
-  var i: int32 = 0
+def is_numeric(s: *uint8) -> int32:
+  i: int32 = 0
   if s[0] == cast[uint8](0):
     return 0
   while s[i] != cast[uint8](0):
@@ -45,12 +45,12 @@ proc is_numeric(s: ptr uint8): int32 =
     i = i + 1
   return 1
 
-proc parse_int(s: ptr uint8): int32 =
-  var result: int32 = 0
-  var i: int32 = 0
+def parse_int(s: *uint8) -> int32:
+  result: int32 = 0
+  i: int32 = 0
   while s[i] == cast[uint8](32):
     i = i + 1
-  var neg: int32 = 0
+  neg: int32 = 0
   if s[i] == cast[uint8](45):
     neg = 1
     i = i + 1
@@ -63,7 +63,7 @@ proc parse_int(s: ptr uint8): int32 =
     result = 0 - result
   return result
 
-proc build_stat_path(path: ptr uint8, pid_str: ptr uint8) =
+def build_stat_path(path: *uint8, pid_str: *uint8):
   # Build "/proc/{pid}/stat"
   path[0] = cast[uint8](47)   # /
   path[1] = cast[uint8](112)  # p
@@ -71,8 +71,8 @@ proc build_stat_path(path: ptr uint8, pid_str: ptr uint8) =
   path[3] = cast[uint8](111)  # o
   path[4] = cast[uint8](99)   # c
   path[5] = cast[uint8](47)   # /
-  var pos: int32 = 6
-  var i: int32 = 0
+  pos: int32 = 6
+  i: int32 = 0
   while pid_str[i] != cast[uint8](0):
     path[pos] = pid_str[i]
     pos = pos + 1
@@ -87,36 +87,36 @@ proc build_stat_path(path: ptr uint8, pid_str: ptr uint8) =
 const RECORD_SIZE: int32 = 48
 const NAME_SIZE: int32 = 32
 
-proc main(): int32 =
-  var argc: int32 = get_argc()
-  var binary_mode: int32 = 0
+def main() -> int32:
+  argc: int32 = get_argc()
+  binary_mode: int32 = 0
 
-  var i: int32 = 1
+  i: int32 = 1
   while i < argc:
-    var arg: ptr uint8 = get_argv(i)
+    arg: *uint8 = get_argv(i)
     if arg[0] == cast[uint8](45):
-      var j: int32 = 1
+      j: int32 = 1
       while arg[j] != cast[uint8](0):
         if arg[j] == cast[uint8](98):
           binary_mode = 1
         j = j + 1
     i = i + 1
 
-  var old_brk: int32 = syscall1(SYS_brk, 0)
-  var new_brk: int32 = old_brk + 131072
-  discard syscall1(SYS_brk, new_brk)
+  old_brk: int32 = syscall1(SYS_brk, 0)
+  new_brk: int32 = old_brk + 131072
+  _ = syscall1(SYS_brk, new_brk)
 
-  var dent_buf: ptr uint8 = cast[ptr uint8](old_brk)
-  var out_buf: ptr uint8 = cast[ptr uint8](old_brk + 8192)
-  var stat_buf: ptr uint8 = cast[ptr uint8](old_brk + 73728)
-  var path_buf: ptr uint8 = cast[ptr uint8](old_brk + 77824)
+  dent_buf: *uint8 = cast[*uint8](old_brk)
+  out_buf: *uint8 = cast[*uint8](old_brk + 8192)
+  stat_buf: *uint8 = cast[*uint8](old_brk + 73728)
+  path_buf: *uint8 = cast[*uint8](old_brk + 77824)
 
   # For text mode, store process info
-  var pids: ptr int32 = cast[ptr int32](old_brk + 78080)
-  var ppids: ptr int32 = cast[ptr int32](old_brk + 82176)
-  var states: ptr uint8 = cast[ptr uint8](old_brk + 86272)
-  var rsss: ptr int32 = cast[ptr int32](old_brk + 90368)
-  var names: ptr uint8 = cast[ptr uint8](old_brk + 94464)
+  pids: *int32 = cast[*int32](old_brk + 78080)
+  ppids: *int32 = cast[*int32](old_brk + 82176)
+  states: *uint8 = cast[*uint8](old_brk + 86272)
+  rsss: *int32 = cast[*int32](old_brk + 90368)
+  names: *uint8 = cast[*uint8](old_brk + 94464)
 
   # Build "/proc"
   path_buf[0] = cast[uint8](47)
@@ -126,38 +126,38 @@ proc main(): int32 =
   path_buf[4] = cast[uint8](99)
   path_buf[5] = cast[uint8](0)
 
-  var proc_fd: int32 = open(path_buf, O_RDONLY | O_DIRECTORY, 0)
+  proc_fd: int32 = open(path_buf, O_RDONLY | O_DIRECTORY, 0)
   if proc_fd < 0:
     perror("ps: cannot open /proc")
     return 1
 
-  var record_count: int32 = 0
-  var out_pos: int32 = 0
-  var names_pos: int32 = 0
+  record_count: int32 = 0
+  out_pos: int32 = 0
+  names_pos: int32 = 0
 
-  var nread: int32 = syscall3(SYS_getdents64, proc_fd, cast[int32](dent_buf), 8192)
+  nread: int32 = syscall3(SYS_getdents64, proc_fd, cast[int32](dent_buf), 8192)
 
   while nread > 0:
-    var pos: int32 = 0
+    pos: int32 = 0
     while pos < nread:
-      var reclen_ptr: ptr uint16 = cast[ptr uint16](cast[int32](dent_buf) + pos + 16)
-      var reclen: int32 = cast[int32](reclen_ptr[0])
-      var d_name: ptr uint8 = cast[ptr uint8](cast[int32](dent_buf) + pos + 19)
+      reclen_ptr: *uint16 = cast[*uint16](cast[int32](dent_buf) + pos + 16)
+      reclen: int32 = cast[int32](reclen_ptr[0])
+      d_name: *uint8 = cast[*uint8](cast[int32](dent_buf) + pos + 19)
 
       if is_numeric(d_name) == 1:
         build_stat_path(path_buf, d_name)
 
-        var stat_fd: int32 = open(path_buf, O_RDONLY, 0)
+        stat_fd: int32 = open(path_buf, O_RDONLY, 0)
         if stat_fd >= 0:
-          var stat_len: int32 = read(stat_fd, stat_buf, 4095)
-          discard close(stat_fd)
+          stat_len: int32 = read(stat_fd, stat_buf, 4095)
+          _ = close(stat_fd)
 
           if stat_len > 0:
             stat_buf[stat_len] = cast[uint8](0)
 
-            var pid: int32 = parse_int(stat_buf)
+            pid: int32 = parse_int(stat_buf)
 
-            var comm_start: int32 = 0
+            comm_start: int32 = 0
             i = 0
             while stat_buf[i] != cast[uint8](0):
               if stat_buf[i] == cast[uint8](40):
@@ -165,21 +165,21 @@ proc main(): int32 =
                 break
               i = i + 1
 
-            var comm_end: int32 = comm_start
-            var last_paren: int32 = comm_start
+            comm_end: int32 = comm_start
+            last_paren: int32 = comm_start
             while stat_buf[comm_end] != cast[uint8](0):
               if stat_buf[comm_end] == cast[uint8](41):
                 last_paren = comm_end
               comm_end = comm_end + 1
             comm_end = last_paren
 
-            var state_pos: int32 = comm_end + 2
-            var state: uint8 = stat_buf[state_pos]
+            state_pos: int32 = comm_end + 2
+            state: uint8 = stat_buf[state_pos]
 
-            var field_pos: int32 = state_pos + 2
-            var ppid: int32 = parse_int(cast[ptr uint8](cast[int32](stat_buf) + field_pos))
+            field_pos: int32 = state_pos + 2
+            ppid: int32 = parse_int(cast[*uint8](cast[int32](stat_buf) + field_pos))
 
-            var field_num: int32 = 4
+            field_num: int32 = 4
             i = field_pos
             while field_num < 24:
               if stat_buf[i] == cast[uint8](32):
@@ -187,23 +187,23 @@ proc main(): int32 =
               i = i + 1
               if stat_buf[i] == cast[uint8](0):
                 break
-            var rss: int32 = parse_int(cast[ptr uint8](cast[int32](stat_buf) + i))
+            rss: int32 = parse_int(cast[*uint8](cast[int32](stat_buf) + i))
             rss = rss * 4
 
             if binary_mode != 0:
-              var rec: ptr uint8 = cast[ptr uint8](cast[int32](out_buf) + out_pos)
-              var j: int32 = 0
+              rec: *uint8 = cast[*uint8](cast[int32](out_buf) + out_pos)
+              j: int32 = 0
               while j < RECORD_SIZE:
                 rec[j] = cast[uint8](0)
                 j = j + 1
-              var pid_ptr: ptr int32 = cast[ptr int32](rec)
+              pid_ptr: *int32 = cast[*int32](rec)
               pid_ptr[0] = pid
-              var ppid_ptr: ptr int32 = cast[ptr int32](cast[int32](rec) + 4)
+              ppid_ptr: *int32 = cast[*int32](cast[int32](rec) + 4)
               ppid_ptr[0] = ppid
               rec[8] = state
-              var rss_ptr: ptr int32 = cast[ptr int32](cast[int32](rec) + 12)
+              rss_ptr: *int32 = cast[*int32](cast[int32](rec) + 12)
               rss_ptr[0] = rss
-              var name_len: int32 = comm_end - comm_start
+              name_len: int32 = comm_end - comm_start
               if name_len > NAME_SIZE - 1:
                 name_len = NAME_SIZE - 1
               j = 0
@@ -219,10 +219,10 @@ proc main(): int32 =
               rsss[record_count] = rss
 
               # Copy name
-              var name_len: int32 = comm_end - comm_start
+              name_len: int32 = comm_end - comm_start
               if name_len > NAME_SIZE - 1:
                 name_len = NAME_SIZE - 1
-              var j: int32 = 0
+              j: int32 = 0
               while j < name_len:
                 names[names_pos + j] = stat_buf[comm_start + j]
                 j = j + 1
@@ -235,18 +235,18 @@ proc main(): int32 =
 
     nread = syscall3(SYS_getdents64, proc_fd, cast[int32](dent_buf), 8192)
 
-  discard close(proc_fd)
+  _ = close(proc_fd)
 
   if binary_mode != 0:
-    discard write(STDOUT, "PSCH", 4)
-    var version: uint8 = 1
-    discard write(STDOUT, cast[ptr uint8](addr(version)), 1)
-    var fields: uint8 = 5
-    discard write(STDOUT, cast[ptr uint8](addr(fields)), 1)
-    var rec_size: uint16 = 48
-    discard write(STDOUT, cast[ptr uint8](addr(rec_size)), 2)
-    discard write(STDOUT, cast[ptr uint8](addr(record_count)), 4)
-    discard write(STDOUT, out_buf, out_pos)
+    _ = write(STDOUT, "PSCH", 4)
+    version: uint8 = 1
+    _ = write(STDOUT, cast[*uint8](addr(version)), 1)
+    fields: uint8 = 5
+    _ = write(STDOUT, cast[*uint8](addr(fields)), 1)
+    rec_size: uint16 = 48
+    _ = write(STDOUT, cast[*uint8](addr(rec_size)), 2)
+    _ = write(STDOUT, cast[*uint8](addr(record_count)), 4)
+    _ = write(STDOUT, out_buf, out_pos)
   else:
     # Text mode output - header
     println("  PID  PPID S   RSS COMMAND")
@@ -257,11 +257,11 @@ proc main(): int32 =
       print(" ")
       print_num_pad(ppids[i], 5)
       print(" ")
-      discard write(STDOUT, cast[ptr uint8](addr(states[i])), 1)
+      _ = write(STDOUT, cast[*uint8](addr(states[i])), 1)
       print(" ")
       print_num_pad(rsss[i], 5)
       print(" ")
-      print(cast[ptr uint8](cast[int32](names) + i * NAME_SIZE))
+      print(cast[*uint8](cast[int32](names) + i * NAME_SIZE))
       newline()
       i = i + 1
 

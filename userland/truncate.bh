@@ -1,47 +1,47 @@
 # truncate - Shrink or extend file to specified size
 # Usage: truncate -s size file
 
-import "lib/syscalls"
+from lib.syscalls import *
 
-extern get_argc(): int32
-extern get_argv(index: int32): ptr uint8
+extern def get_argc() -> int32
+extern def get_argv(index: int32) -> *uint8
 
-proc print_err(msg: ptr uint8) =
-  var len: int32 = strlen(msg)
-  discard syscall3(SYS_write, STDERR, cast[int32](msg), len)
+def print_err(msg: *uint8):
+  len: int32 = strlen(msg)
+  syscall3(SYS_write, STDERR, cast[int32](msg), len)
 
 # Simple string to integer conversion
 # Check if two strings match
-proc main() =
-  var argc: int32 = get_argc()
+def main():
+  argc: int32 = get_argc()
 
   if argc < 4:
-    print_err(cast[ptr uint8]("Usage: truncate -s size file\n"))
-    discard syscall1(SYS_exit, 1)
+    print_err(cast[*uint8]("Usage: truncate -s size file\n"))
+    syscall1(SYS_exit, 1)
 
   # Parse arguments: expect -s flag
-  var size_flag: ptr uint8 = get_argv(1)
-  if strcmp(size_flag, cast[ptr uint8]("-s")) != 0:
-    print_err(cast[ptr uint8]("truncate: -s option required\n"))
-    print_err(cast[ptr uint8]("Usage: truncate -s size file\n"))
-    discard syscall1(SYS_exit, 1)
+  size_flag: *uint8 = get_argv(1)
+  if strcmp(size_flag, cast[*uint8]("-s")) != 0:
+    print_err(cast[*uint8]("truncate: -s option required\n"))
+    print_err(cast[*uint8]("Usage: truncate -s size file\n"))
+    syscall1(SYS_exit, 1)
 
-  var size_str: ptr uint8 = get_argv(2)
-  var filename: ptr uint8 = get_argv(3)
+  size_str: *uint8 = get_argv(2)
+  filename: *uint8 = get_argv(3)
 
   # Parse size
-  var size: int32 = atoi(size_str)
+  size: int32 = atoi(size_str)
   if size < 0:
-    print_err(cast[ptr uint8]("truncate: invalid size\n"))
-    discard syscall1(SYS_exit, 1)
+    print_err(cast[*uint8]("truncate: invalid size\n"))
+    syscall1(SYS_exit, 1)
 
   # Truncate the file
-  var result: int32 = syscall2(SYS_truncate, cast[int32](filename), size)
+  result: int32 = syscall2(SYS_truncate, cast[int32](filename), size)
 
   if result < 0:
-    print_err(cast[ptr uint8]("truncate: cannot truncate '"))
+    print_err(cast[*uint8]("truncate: cannot truncate '"))
     print_err(filename)
-    print_err(cast[ptr uint8]("'\n"))
-    discard syscall1(SYS_exit, 1)
+    print_err(cast[*uint8]("'\n"))
+    syscall1(SYS_exit, 1)
 
-  discard syscall1(SYS_exit, 0)
+  syscall1(SYS_exit, 0)

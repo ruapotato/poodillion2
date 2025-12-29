@@ -2,10 +2,10 @@
 # Usage: expr ARG1 OP ARG2
 # Supports arithmetic and comparison operations
 
-import "lib/syscalls"
+from lib.syscalls import *
 
-extern get_argc(): int32
-extern get_argv(index: int32): ptr uint8
+extern def get_argc() -> int32
+extern def get_argv(index: int32) -> *uint8
 
 # String length
 # String compare
@@ -13,116 +13,116 @@ extern get_argv(index: int32): ptr uint8
 # Integer to string (using allocated buffer)
 # Print string
 # Print error
-proc print_err(s: ptr uint8) =
-  var len: int32 = strlen(s)
-  discard syscall3(SYS_write, STDERR, cast[int32](s), len)
+def print_err(s: *uint8):
+    len: int32 = strlen(s)
+    syscall3(SYS_write, STDERR, cast[int32](s), len)
 
-proc main() =
-  var argc: int32 = get_argc()
+def main():
+    argc: int32 = get_argc()
 
-  if argc != 4:
-    print_err(cast[ptr uint8]("Usage: expr ARG1 OP ARG2\n"))
-    discard syscall1(SYS_exit, 1)
+    if argc != 4:
+        print_err(cast[*uint8]("Usage: expr ARG1 OP ARG2\n"))
+        syscall1(SYS_exit, 1)
 
-  # Allocate buffer for output
-  var old_brk: int32 = syscall1(SYS_brk, 0)
-  var new_brk: int32 = old_brk + 256
-  discard syscall1(SYS_brk, new_brk)
-  var buf: ptr uint8 = cast[ptr uint8](old_brk)
+    # Allocate buffer for output
+    old_brk: int32 = syscall1(SYS_brk, 0)
+    new_brk: int32 = old_brk + 256
+    syscall1(SYS_brk, new_brk)
+    buf: *uint8 = cast[*uint8](old_brk)
 
-  var arg1: ptr uint8 = get_argv(1)
-  var op: ptr uint8 = get_argv(2)
-  var arg2: ptr uint8 = get_argv(3)
+    arg1: *uint8 = get_argv(1)
+    op: *uint8 = get_argv(2)
+    arg2: *uint8 = get_argv(3)
 
-  # Parse integers
-  var val1: int32 = atoi(arg1)
-  var val2: int32 = atoi(arg2)
-  var result: int32 = 0
+    # Parse integers
+    val1: int32 = atoi(arg1)
+    val2: int32 = atoi(arg2)
+    result: int32 = 0
 
-  # Arithmetic operations
-  if strcmp(op, cast[ptr uint8]("+")) == 0:
-    result = val1 + val2
-    var len: int32 = itoa(result, buf)
-    discard syscall3(SYS_write, STDOUT, cast[int32](buf), len)
-    discard syscall3(SYS_write, STDOUT, cast[int32]("\n"), 1)
-    discard syscall1(SYS_exit, 0)
+    # Arithmetic operations
+    if strcmp(op, cast[*uint8]("+")) == 0:
+        result = val1 + val2
+        len: int32 = itoa(result, buf)
+        syscall3(SYS_write, STDOUT, cast[int32](buf), len)
+        syscall3(SYS_write, STDOUT, cast[int32]("\n"), 1)
+        syscall1(SYS_exit, 0)
 
-  if strcmp(op, cast[ptr uint8]("-")) == 0:
-    result = val1 - val2
-    var len: int32 = itoa(result, buf)
-    discard syscall3(SYS_write, STDOUT, cast[int32](buf), len)
-    discard syscall3(SYS_write, STDOUT, cast[int32]("\n"), 1)
-    discard syscall1(SYS_exit, 0)
+    if strcmp(op, cast[*uint8]("-")) == 0:
+        result = val1 - val2
+        len: int32 = itoa(result, buf)
+        syscall3(SYS_write, STDOUT, cast[int32](buf), len)
+        syscall3(SYS_write, STDOUT, cast[int32]("\n"), 1)
+        syscall1(SYS_exit, 0)
 
-  if strcmp(op, cast[ptr uint8]("*")) == 0:
-    result = val1 * val2
-    var len: int32 = itoa(result, buf)
-    discard syscall3(SYS_write, STDOUT, cast[int32](buf), len)
-    discard syscall3(SYS_write, STDOUT, cast[int32]("\n"), 1)
-    discard syscall1(SYS_exit, 0)
+    if strcmp(op, cast[*uint8]("*")) == 0:
+        result = val1 * val2
+        len: int32 = itoa(result, buf)
+        syscall3(SYS_write, STDOUT, cast[int32](buf), len)
+        syscall3(SYS_write, STDOUT, cast[int32]("\n"), 1)
+        syscall1(SYS_exit, 0)
 
-  if strcmp(op, cast[ptr uint8]("/")) == 0:
-    if val2 == 0:
-      print_err(cast[ptr uint8]("expr: division by zero\n"))
-      discard syscall1(SYS_exit, 1)
-    result = val1 / val2
-    var len: int32 = itoa(result, buf)
-    discard syscall3(SYS_write, STDOUT, cast[int32](buf), len)
-    discard syscall3(SYS_write, STDOUT, cast[int32]("\n"), 1)
-    discard syscall1(SYS_exit, 0)
+    if strcmp(op, cast[*uint8]("/")) == 0:
+        if val2 == 0:
+            print_err(cast[*uint8]("expr: division by zero\n"))
+            syscall1(SYS_exit, 1)
+        result = val1 / val2
+        len: int32 = itoa(result, buf)
+        syscall3(SYS_write, STDOUT, cast[int32](buf), len)
+        syscall3(SYS_write, STDOUT, cast[int32]("\n"), 1)
+        syscall1(SYS_exit, 0)
 
-  if strcmp(op, cast[ptr uint8]("%")) == 0:
-    if val2 == 0:
-      print_err(cast[ptr uint8]("expr: division by zero\n"))
-      discard syscall1(SYS_exit, 1)
-    result = val1 % val2
-    var len: int32 = itoa(result, buf)
-    discard syscall3(SYS_write, STDOUT, cast[int32](buf), len)
-    discard syscall3(SYS_write, STDOUT, cast[int32]("\n"), 1)
-    discard syscall1(SYS_exit, 0)
+    if strcmp(op, cast[*uint8]("%")) == 0:
+        if val2 == 0:
+            print_err(cast[*uint8]("expr: division by zero\n"))
+            syscall1(SYS_exit, 1)
+        result = val1 % val2
+        len: int32 = itoa(result, buf)
+        syscall3(SYS_write, STDOUT, cast[int32](buf), len)
+        syscall3(SYS_write, STDOUT, cast[int32]("\n"), 1)
+        syscall1(SYS_exit, 0)
 
-  # Comparison operations (return 1 for true, 0 for false)
-  if strcmp(op, cast[ptr uint8]("=")) == 0:
-    if strcmp(arg1, arg2) == 0:
-      print(cast[ptr uint8]("1\n"))
-    else:
-      print(cast[ptr uint8]("0\n"))
-    discard syscall1(SYS_exit, 0)
+    # Comparison operations (return 1 for true, 0 for false)
+    if strcmp(op, cast[*uint8]("=")) == 0:
+        if strcmp(arg1, arg2) == 0:
+            print(cast[*uint8]("1\n"))
+        else:
+            print(cast[*uint8]("0\n"))
+        syscall1(SYS_exit, 0)
 
-  if strcmp(op, cast[ptr uint8]("!=")) == 0:
-    if strcmp(arg1, arg2) != 0:
-      print(cast[ptr uint8]("1\n"))
-    else:
-      print(cast[ptr uint8]("0\n"))
-    discard syscall1(SYS_exit, 0)
+    if strcmp(op, cast[*uint8]("!=")) == 0:
+        if strcmp(arg1, arg2) != 0:
+            print(cast[*uint8]("1\n"))
+        else:
+            print(cast[*uint8]("0\n"))
+        syscall1(SYS_exit, 0)
 
-  if strcmp(op, cast[ptr uint8]("<")) == 0:
-    if val1 < val2:
-      print(cast[ptr uint8]("1\n"))
-    else:
-      print(cast[ptr uint8]("0\n"))
-    discard syscall1(SYS_exit, 0)
+    if strcmp(op, cast[*uint8]("<")) == 0:
+        if val1 < val2:
+            print(cast[*uint8]("1\n"))
+        else:
+            print(cast[*uint8]("0\n"))
+        syscall1(SYS_exit, 0)
 
-  if strcmp(op, cast[ptr uint8]("<=")) == 0:
-    if val1 <= val2:
-      print(cast[ptr uint8]("1\n"))
-    else:
-      print(cast[ptr uint8]("0\n"))
-    discard syscall1(SYS_exit, 0)
+    if strcmp(op, cast[*uint8]("<=")) == 0:
+        if val1 <= val2:
+            print(cast[*uint8]("1\n"))
+        else:
+            print(cast[*uint8]("0\n"))
+        syscall1(SYS_exit, 0)
 
-  if strcmp(op, cast[ptr uint8](">")) == 0:
-    if val1 > val2:
-      print(cast[ptr uint8]("1\n"))
-    else:
-      print(cast[ptr uint8]("0\n"))
-    discard syscall1(SYS_exit, 0)
+    if strcmp(op, cast[*uint8](">")) == 0:
+        if val1 > val2:
+            print(cast[*uint8]("1\n"))
+        else:
+            print(cast[*uint8]("0\n"))
+        syscall1(SYS_exit, 0)
 
-  if strcmp(op, cast[ptr uint8](">=")) == 0:
-    if val1 >= val2:
-      print(cast[ptr uint8]("1\n"))
-    else:
-      print(cast[ptr uint8]("0\n"))
-    discard syscall1(SYS_exit, 0)
+    if strcmp(op, cast[*uint8](">=")) == 0:
+        if val1 >= val2:
+            print(cast[*uint8]("1\n"))
+        else:
+            print(cast[*uint8]("0\n"))
+        syscall1(SYS_exit, 0)
 
-  print_err(cast[ptr uint8]("expr: unknown operator\n"))
-  discard syscall1(SYS_exit, 1)
+    print_err(cast[*uint8]("expr: unknown operator\n"))
+    syscall1(SYS_exit, 1)

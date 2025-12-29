@@ -2,21 +2,21 @@
 # Usage: pathchk PATH [PATH...]
 # Checks if paths are valid and portable
 
-import "lib/syscalls"
+from lib.syscalls import *
 
 # POSIX portable filename character set
 const MAX_PATH_LEN: int32 = 4096
 const MAX_NAME_LEN: int32 = 255
 
-extern get_argc(): int32
-extern get_argv(index: int32): ptr uint8
+extern def get_argc() -> int32
+extern def get_argv(index: int32) -> *uint8
 
-proc print_err(msg: ptr uint8) =
-  var len: int32 = strlen(msg)
-  discard syscall3(SYS_write, STDERR, cast[int32](msg), len)
+def print_err(msg: *uint8):
+  len: int32 = strlen(msg)
+  _ = syscall3(SYS_write, STDERR, cast[int32](msg), len)
 
 # Check if character is portable (POSIX portable character set)
-proc is_portable_char(c: uint8): int32 =
+def is_portable_char(c: uint8) -> int32:
   # A-Z
   if c >= cast[uint8](65):
     if c <= cast[uint8](90):
@@ -42,27 +42,27 @@ proc is_portable_char(c: uint8): int32 =
   return 0
 
 # Check a single path
-proc check_path(path: ptr uint8): int32 =
-  var path_len: int32 = strlen(path)
-  var has_error: int32 = 0
+def check_path(path: *uint8) -> int32:
+  path_len: int32 = strlen(path)
+  has_error: int32 = 0
 
   # Check total path length
   if path_len > MAX_PATH_LEN:
-    print_err(cast[ptr uint8]("pathchk: "))
+    print_err(cast[*uint8]("pathchk: "))
     print_err(path)
-    print_err(cast[ptr uint8](": path too long ("))
-    print_err(cast[ptr uint8](")\n"))
+    print_err(cast[*uint8](": path too long ("))
+    print_err(cast[*uint8](")\n"))
     has_error = 1
 
   # Check if path is empty
   if path_len == 0:
-    print_err(cast[ptr uint8]("pathchk: empty path\n"))
+    print_err(cast[*uint8]("pathchk: empty path\n"))
     return 1
 
   # Check each component
-  var i: int32 = 0
-  var component_start: int32 = 0
-  var component_len: int32 = 0
+  i: int32 = 0
+  component_start: int32 = 0
+  component_len: int32 = 0
 
   if path[0] == cast[uint8](47):
     i = 1
@@ -74,9 +74,9 @@ proc check_path(path: ptr uint8): int32 =
       component_len = i - component_start
 
       if component_len > MAX_NAME_LEN:
-        print_err(cast[ptr uint8]("pathchk: "))
+        print_err(cast[*uint8]("pathchk: "))
         print_err(path)
-        print_err(cast[ptr uint8](": component too long\n"))
+        print_err(cast[*uint8](": component too long\n"))
         has_error = 1
 
       break
@@ -86,41 +86,41 @@ proc check_path(path: ptr uint8): int32 =
         component_len = i - component_start
 
         if component_len > MAX_NAME_LEN:
-          print_err(cast[ptr uint8]("pathchk: "))
+          print_err(cast[*uint8]("pathchk: "))
           print_err(path)
-          print_err(cast[ptr uint8](": component too long\n"))
+          print_err(cast[*uint8](": component too long\n"))
           has_error = 1
 
         component_start = i + 1
         i = i + 1
       else:
         # Check character portability
-        var is_portable: int32 = is_portable_char(path[i])
+        is_portable: int32 = is_portable_char(path[i])
         if is_portable == 0:
-          print_err(cast[ptr uint8]("pathchk: "))
+          print_err(cast[*uint8]("pathchk: "))
           print_err(path)
-          print_err(cast[ptr uint8](": non-portable character\n"))
+          print_err(cast[*uint8](": non-portable character\n"))
           has_error = 1
 
         i = i + 1
 
   return has_error
 
-proc main() =
-  var argc: int32 = get_argc()
+def main():
+  argc: int32 = get_argc()
 
   if argc < 2:
-    print_err(cast[ptr uint8]("Usage: pathchk PATH [PATH...]\n"))
-    discard syscall1(SYS_exit, 1)
+    print_err(cast[*uint8]("Usage: pathchk PATH [PATH...]\n"))
+    _ = syscall1(SYS_exit, 1)
 
-  var has_error: int32 = 0
-  var i: int32 = 1
+  has_error: int32 = 0
+  i: int32 = 1
 
   while i < argc:
-    var path: ptr uint8 = get_argv(i)
-    var result: int32 = check_path(path)
+    path: *uint8 = get_argv(i)
+    result: int32 = check_path(path)
     if result != 0:
       has_error = 1
     i = i + 1
 
-  discard syscall1(SYS_exit, has_error)
+  _ = syscall1(SYS_exit, has_error)

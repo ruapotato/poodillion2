@@ -3,15 +3,15 @@
 #        seq START END    -> print START to END
 # Part of BrainhairOS text utilities
 
-import "lib/syscalls"
+from lib.syscalls import *
 
-extern get_argc(): int32
-extern get_argv(index: int32): ptr uint8
+extern def get_argc() -> int32
+extern def get_argv(index: int32) -> *uint8
 
-proc main(): int32 =
-  var argc: int32 = get_argc()
-  var start: int32
-  var end: int32
+def main() -> int32:
+  argc: int32 = get_argc()
+  start: int32
+  end: int32
 
   if argc < 2:
     perror("seq: missing operand")
@@ -30,14 +30,14 @@ proc main(): int32 =
   # Print sequence
   if start <= end:
     # Ascending sequence
-    var i: int32 = start
+    i: int32 = start
     while i <= end:
       print_int(i)
       newline()
       i = i + 1
   else:
     # Descending sequence
-    var i: int32 = start
+    i: int32 = start
     while i >= end:
       print_int(i)
       newline()

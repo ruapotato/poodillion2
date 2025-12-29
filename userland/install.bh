@@ -2,7 +2,7 @@
 # Usage: install SRC DEST
 #        install -m MODE SRC DEST
 
-import "lib/syscalls"
+from lib.syscalls import *
 
 # File open flags
 # Default mode: 0755 (rwxr-xr-x) - executable by default
@@ -12,118 +12,118 @@ const S_IXGRP: int32 = 8     # 0010 - group x
 const S_IROTH: int32 = 4     # 0004 - others r
 const S_IXOTH: int32 = 1     # 0001 - others x
 
-extern get_argc(): int32
-extern get_argv(index: int32): ptr uint8
+extern def get_argc() -> int32
+extern def get_argv(index: int32) -> *uint8
 
-proc print_err(msg: ptr uint8) =
-  var len: int32 = strlen(msg)
-  discard syscall3(SYS_write, STDERR, cast[int32](msg), len)
+def print_err(msg: *uint8):
+    len: int32 = strlen(msg)
+    _ = syscall3(SYS_write, STDERR, cast[int32](msg), len)
 
 # Compare strings
 # Check if character is octal digit (0-7)
-proc is_octal_digit(c: uint8): int32 =
-  if c >= cast[uint8](48):
-    if c <= cast[uint8](55):
-      return 1
-  return 0
+def is_octal_digit(c: uint8) -> int32:
+    if c >= cast[uint8](48):
+        if c <= cast[uint8](55):
+            return 1
+    return 0
 
 # Parse octal mode string to integer
-proc parse_octal_mode(mode_str: ptr uint8): int32 =
-  var mode: int32 = 0
-  var i: int32 = 0
+def parse_octal_mode(mode_str: *uint8) -> int32:
+    mode: int32 = 0
+    i: int32 = 0
 
-  while mode_str[i] != cast[uint8](0):
-    var is_oct: int32 = is_octal_digit(mode_str[i])
-    if is_oct == 0:
-      return -1
+    while mode_str[i] != cast[uint8](0):
+        is_oct: int32 = is_octal_digit(mode_str[i])
+        if is_oct == 0:
+            return -1
 
-    var digit: int32 = cast[int32](mode_str[i]) - 48
-    mode = (mode << 3) | digit
-    i = i + 1
+        digit: int32 = cast[int32](mode_str[i]) - 48
+        mode = (mode << 3) | digit
+        i = i + 1
 
-  return mode
+    return mode
 
-proc main() =
-  var argc: int32 = get_argc()
+def main():
+    argc: int32 = get_argc()
 
-  var source: ptr uint8
-  var dest: ptr uint8
-  var mode: int32 = S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH  # 0755
+    source: *uint8
+    dest: *uint8
+    mode: int32 = S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH  # 0755
 
-  # Parse arguments
-  if argc == 3:
-    # install SRC DEST (default mode)
-    source = get_argv(1)
-    dest = get_argv(2)
-  else:
-    if argc == 5:
-      # install -m MODE SRC DEST
-      var arg1: ptr uint8 = get_argv(1)
-      var cmp_m: int32 = strcmp(arg1, cast[ptr uint8]("-m"))
-
-      if cmp_m == 0:
-        var mode_str: ptr uint8 = get_argv(2)
-        mode = parse_octal_mode(mode_str)
-
-        if mode < 0:
-          print_err(cast[ptr uint8]("install: invalid mode\n"))
-          discard syscall1(SYS_exit, 1)
-
-        source = get_argv(3)
-        dest = get_argv(4)
-      else:
-        print_err(cast[ptr uint8]("Usage: install [-m MODE] SRC DEST\n"))
-        discard syscall1(SYS_exit, 1)
+    # Parse arguments
+    if argc == 3:
+        # install SRC DEST (default mode)
+        source = get_argv(1)
+        dest = get_argv(2)
     else:
-      print_err(cast[ptr uint8]("Usage: install [-m MODE] SRC DEST\n"))
-      discard syscall1(SYS_exit, 1)
+        if argc == 5:
+            # install -m MODE SRC DEST
+            arg1: *uint8 = get_argv(1)
+            cmp_m: int32 = strcmp(arg1, cast[*uint8]("-m"))
 
-  # Open source file for reading
-  var src_fd: int32 = syscall3(SYS_open, cast[int32](source), O_RDONLY, 0)
-  if src_fd < 0:
-    print_err(cast[ptr uint8]("install: cannot open source file\n"))
-    discard syscall1(SYS_exit, 1)
+            if cmp_m == 0:
+                mode_str: *uint8 = get_argv(2)
+                mode = parse_octal_mode(mode_str)
 
-  # Create destination file for writing
-  var dest_fd: int32 = syscall3(SYS_open, cast[int32](dest), O_WRONLY | O_CREAT | O_TRUNC, mode)
-  if dest_fd < 0:
-    print_err(cast[ptr uint8]("install: cannot create destination file\n"))
-    discard syscall1(SYS_close, src_fd)
-    discard syscall1(SYS_exit, 1)
+                if mode < 0:
+                    print_err(cast[*uint8]("install: invalid mode\n"))
+                    _ = syscall1(SYS_exit, 1)
 
-  # Allocate buffer for copying
-  var old_brk: int32 = syscall1(SYS_brk, 0)
-  var new_brk: int32 = old_brk + 4096
-  discard syscall1(SYS_brk, new_brk)
-  var buffer: ptr uint8 = cast[ptr uint8](old_brk)
+                source = get_argv(3)
+                dest = get_argv(4)
+            else:
+                print_err(cast[*uint8]("Usage: install [-m MODE] SRC DEST\n"))
+                _ = syscall1(SYS_exit, 1)
+        else:
+            print_err(cast[*uint8]("Usage: install [-m MODE] SRC DEST\n"))
+            _ = syscall1(SYS_exit, 1)
 
-  # Copy loop
-  var running: int32 = 1
-  while running != 0:
-    var bytes_read: int32 = syscall3(SYS_read, src_fd, cast[int32](buffer), 4096)
+    # Open source file for reading
+    src_fd: int32 = syscall3(SYS_open, cast[int32](source), O_RDONLY, 0)
+    if src_fd < 0:
+        print_err(cast[*uint8]("install: cannot open source file\n"))
+        _ = syscall1(SYS_exit, 1)
 
-    if bytes_read < 0:
-      print_err(cast[ptr uint8]("install: read error\n"))
-      discard syscall1(SYS_close, src_fd)
-      discard syscall1(SYS_close, dest_fd)
-      discard syscall1(SYS_exit, 1)
+    # Create destination file for writing
+    dest_fd: int32 = syscall3(SYS_open, cast[int32](dest), O_WRONLY | O_CREAT | O_TRUNC, mode)
+    if dest_fd < 0:
+        print_err(cast[*uint8]("install: cannot create destination file\n"))
+        _ = syscall1(SYS_close, src_fd)
+        _ = syscall1(SYS_exit, 1)
 
-    if bytes_read == 0:
-      running = 0
+    # Allocate buffer for copying
+    old_brk: int32 = syscall1(SYS_brk, 0)
+    new_brk: int32 = old_brk + 4096
+    _ = syscall1(SYS_brk, new_brk)
+    buffer: *uint8 = cast[*uint8](old_brk)
 
-    if bytes_read > 0:
-      var bytes_written: int32 = syscall3(SYS_write, dest_fd, cast[int32](buffer), bytes_read)
-      if bytes_written != bytes_read:
-        print_err(cast[ptr uint8]("install: write error\n"))
-        discard syscall1(SYS_close, src_fd)
-        discard syscall1(SYS_close, dest_fd)
-        discard syscall1(SYS_exit, 1)
+    # Copy loop
+    running: int32 = 1
+    while running != 0:
+        bytes_read: int32 = syscall3(SYS_read, src_fd, cast[int32](buffer), 4096)
 
-  # Close both files
-  discard syscall1(SYS_close, src_fd)
-  discard syscall1(SYS_close, dest_fd)
+        if bytes_read < 0:
+            print_err(cast[*uint8]("install: read error\n"))
+            _ = syscall1(SYS_close, src_fd)
+            _ = syscall1(SYS_close, dest_fd)
+            _ = syscall1(SYS_exit, 1)
 
-  # Set permissions (in case umask affected them)
-  discard syscall2(SYS_chmod, cast[int32](dest), mode)
+        if bytes_read == 0:
+            running = 0
 
-  discard syscall1(SYS_exit, 0)
+        if bytes_read > 0:
+            bytes_written: int32 = syscall3(SYS_write, dest_fd, cast[int32](buffer), bytes_read)
+            if bytes_written != bytes_read:
+                print_err(cast[*uint8]("install: write error\n"))
+                _ = syscall1(SYS_close, src_fd)
+                _ = syscall1(SYS_close, dest_fd)
+                _ = syscall1(SYS_exit, 1)
+
+    # Close both files
+    _ = syscall1(SYS_close, src_fd)
+    _ = syscall1(SYS_close, dest_fd)
+
+    # Set permissions (in case umask affected them)
+    _ = syscall2(SYS_chmod, cast[int32](dest), mode)
+
+    _ = syscall1(SYS_exit, 0)

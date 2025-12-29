@@ -10,149 +10,149 @@
 # Examples:
 #   lsblk
 
-import "lib/syscalls"
+from lib.syscalls import *
 
-var show_all: int32 = 0
+show_all: int32 = 0
 
-proc show_usage() =
-  println(cast[ptr uint8]("Usage: lsblk [OPTIONS]"))
-  println(cast[ptr uint8](""))
-  println(cast[ptr uint8]("List information about block devices."))
-  println(cast[ptr uint8](""))
-  println(cast[ptr uint8]("Options:"))
-  println(cast[ptr uint8]("  -a         Show all devices"))
-  println(cast[ptr uint8]("  -h         Display this help"))
+def show_usage():
+    println(cast[*uint8]("Usage: lsblk [OPTIONS]"))
+    println(cast[*uint8](""))
+    println(cast[*uint8]("List information about block devices."))
+    println(cast[*uint8](""))
+    println(cast[*uint8]("Options:"))
+    println(cast[*uint8]("  -a         Show all devices"))
+    println(cast[*uint8]("  -h         Display this help"))
 
-proc print_padded(s: ptr uint8, width: int32) =
-  var len: int32 = strlen(s)
-  print(s)
-  while len < width:
-    print(cast[ptr uint8](" "))
-    len = len + 1
+def print_padded(s: *uint8, width: int32):
+    len: int32 = strlen(s)
+    print(s)
+    while len < width:
+        print(cast[*uint8](" "))
+        len = len + 1
 
-proc format_size(bytes: int32, buf: ptr uint8) =
-  # Format size in human-readable format
-  if bytes < 1024:
-    # Bytes
-    var i: int32 = 0
-    var n: int32 = bytes
-    var tmp: array[16, uint8]
-    var ti: int32 = 0
+def format_size(size: int32, buf: *uint8):
+    # Format size in human-readable format
+    if size < 1024:
+        # Bytes
+        i: int32 = 0
+        n: int32 = size
+        tmp: array[16, uint8]
+        ti: int32 = 0
 
-    if n == 0:
-      tmp[ti] = 48
-      ti = ti + 1
+        if n == 0:
+            tmp[ti] = 48
+            ti = ti + 1
+        else:
+            while n > 0:
+                tmp[ti] = cast[uint8](48 + n % 10)
+                n = n / 10
+                ti = ti + 1
+
+        while ti > 0:
+            ti = ti - 1
+            buf[i] = tmp[ti]
+            i = i + 1
+        buf[i] = 66  # 'B'
+        buf[i + 1] = 0
+    elif size < 1048576:
+        # KB
+        kb: int32 = size / 1024
+        i: int32 = 0
+        tmp: array[16, uint8]
+        ti: int32 = 0
+
+        while kb > 0:
+            tmp[ti] = cast[uint8](48 + kb % 10)
+            kb = kb / 10
+            ti = ti + 1
+
+        while ti > 0:
+            ti = ti - 1
+            buf[i] = tmp[ti]
+            i = i + 1
+        buf[i] = 75  # 'K'
+        buf[i + 1] = 0
+    elif size < 1073741824:
+        # MB
+        mb: int32 = size / 1048576
+        i: int32 = 0
+        tmp: array[16, uint8]
+        ti: int32 = 0
+
+        while mb > 0:
+            tmp[ti] = cast[uint8](48 + mb % 10)
+            mb = mb / 10
+            ti = ti + 1
+
+        while ti > 0:
+            ti = ti - 1
+            buf[i] = tmp[ti]
+            i = i + 1
+        buf[i] = 77  # 'M'
+        buf[i + 1] = 0
     else:
-      while n > 0:
-        tmp[ti] = cast[uint8](48 + n % 10)
-        n = n / 10
-        ti = ti + 1
+        # GB
+        gb: int32 = size / 1073741824
+        i: int32 = 0
+        tmp: array[16, uint8]
+        ti: int32 = 0
 
-    while ti > 0:
-      ti = ti - 1
-      buf[i] = tmp[ti]
-      i = i + 1
-    buf[i] = 66  # 'B'
-    buf[i + 1] = 0
-  elif bytes < 1048576:
-    # KB
-    var kb: int32 = bytes / 1024
-    var i: int32 = 0
-    var tmp: array[16, uint8]
-    var ti: int32 = 0
+        while gb > 0:
+            tmp[ti] = cast[uint8](48 + gb % 10)
+            gb = gb / 10
+            ti = ti + 1
 
-    while kb > 0:
-      tmp[ti] = cast[uint8](48 + kb % 10)
-      kb = kb / 10
-      ti = ti + 1
+        while ti > 0:
+            ti = ti - 1
+            buf[i] = tmp[ti]
+            i = i + 1
+        buf[i] = 71  # 'G'
+        buf[i + 1] = 0
 
-    while ti > 0:
-      ti = ti - 1
-      buf[i] = tmp[ti]
-      i = i + 1
-    buf[i] = 75  # 'K'
-    buf[i + 1] = 0
-  elif bytes < 1073741824:
-    # MB
-    var mb: int32 = bytes / 1048576
-    var i: int32 = 0
-    var tmp: array[16, uint8]
-    var ti: int32 = 0
+def try_device(name: *uint8, path: *uint8):
+    fd: int32 = open(path, O_RDONLY)
+    if fd < 0:
+        if show_all != 0:
+            print_padded(name, 12)
+            println(cast[*uint8]("  (not found)"))
+        return
 
-    while mb > 0:
-      tmp[ti] = cast[uint8](48 + mb % 10)
-      mb = mb / 10
-      ti = ti + 1
+    close(fd)
 
-    while ti > 0:
-      ti = ti - 1
-      buf[i] = tmp[ti]
-      i = i + 1
-    buf[i] = 77  # 'M'
-    buf[i + 1] = 0
-  else:
-    # GB
-    var gb: int32 = bytes / 1073741824
-    var i: int32 = 0
-    var tmp: array[16, uint8]
-    var ti: int32 = 0
+    print_padded(name, 12)
+    print_padded(cast[*uint8]("disk"), 8)
+    println(path)
 
-    while gb > 0:
-      tmp[ti] = cast[uint8](48 + gb % 10)
-      gb = gb / 10
-      ti = ti + 1
+def main(argc: int32, argv: Ptr[Ptr[uint8]]) -> int32:
+    i: int32 = 1
 
-    while ti > 0:
-      ti = ti - 1
-      buf[i] = tmp[ti]
-      i = i + 1
-    buf[i] = 71  # 'G'
-    buf[i + 1] = 0
+    while i < argc:
+        arg: *uint8 = argv[i]
 
-proc try_device(name: ptr uint8, path: ptr uint8) =
-  var fd: int32 = open(path, O_RDONLY)
-  if fd < 0:
-    if show_all != 0:
-      print_padded(name, 12)
-      println(cast[ptr uint8]("  (not found)"))
-    return
+        if arg[0] == 45:  # '-'
+            if arg[1] == 97 and arg[2] == 0:  # -a
+                show_all = 1
+            elif arg[1] == 104 and arg[2] == 0:  # -h
+                show_usage()
+                return 0
 
-  close(fd)
+        i = i + 1
 
-  print_padded(name, 12)
-  print_padded(cast[ptr uint8]("disk"), 8)
-  println(path)
+    # Print header
+    print_padded(cast[*uint8]("NAME"), 12)
+    print_padded(cast[*uint8]("TYPE"), 8)
+    println(cast[*uint8]("PATH"))
 
-proc main(argc: int32, argv: ptr ptr uint8): int32 =
-  var i: int32 = 1
+    # Try common device paths
+    try_device(cast[*uint8]("hda"), cast[*uint8]("/dev/hda"))
+    try_device(cast[*uint8]("hdb"), cast[*uint8]("/dev/hdb"))
+    try_device(cast[*uint8]("hdc"), cast[*uint8]("/dev/hdc"))
+    try_device(cast[*uint8]("hdd"), cast[*uint8]("/dev/hdd"))
+    try_device(cast[*uint8]("sda"), cast[*uint8]("/dev/sda"))
+    try_device(cast[*uint8]("sdb"), cast[*uint8]("/dev/sdb"))
+    try_device(cast[*uint8]("fd0"), cast[*uint8]("/dev/fd0"))
+    try_device(cast[*uint8]("fd1"), cast[*uint8]("/dev/fd1"))
+    try_device(cast[*uint8]("loop0"), cast[*uint8]("/dev/loop0"))
+    try_device(cast[*uint8]("loop1"), cast[*uint8]("/dev/loop1"))
 
-  while i < argc:
-    var arg: ptr uint8 = argv[i]
-
-    if arg[0] == 45:  # '-'
-      if arg[1] == 97 and arg[2] == 0:  # -a
-        show_all = 1
-      elif arg[1] == 104 and arg[2] == 0:  # -h
-        show_usage()
-        return 0
-
-    i = i + 1
-
-  # Print header
-  print_padded(cast[ptr uint8]("NAME"), 12)
-  print_padded(cast[ptr uint8]("TYPE"), 8)
-  println(cast[ptr uint8]("PATH"))
-
-  # Try common device paths
-  try_device(cast[ptr uint8]("hda"), cast[ptr uint8]("/dev/hda"))
-  try_device(cast[ptr uint8]("hdb"), cast[ptr uint8]("/dev/hdb"))
-  try_device(cast[ptr uint8]("hdc"), cast[ptr uint8]("/dev/hdc"))
-  try_device(cast[ptr uint8]("hdd"), cast[ptr uint8]("/dev/hdd"))
-  try_device(cast[ptr uint8]("sda"), cast[ptr uint8]("/dev/sda"))
-  try_device(cast[ptr uint8]("sdb"), cast[ptr uint8]("/dev/sdb"))
-  try_device(cast[ptr uint8]("fd0"), cast[ptr uint8]("/dev/fd0"))
-  try_device(cast[ptr uint8]("fd1"), cast[ptr uint8]("/dev/fd1"))
-  try_device(cast[ptr uint8]("loop0"), cast[ptr uint8]("/dev/loop0"))
-  try_device(cast[ptr uint8]("loop1"), cast[ptr uint8]("/dev/loop1"))
-
-  return 0
+    return 0

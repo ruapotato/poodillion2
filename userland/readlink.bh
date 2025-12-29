@@ -1,39 +1,39 @@
 # readlink - Print value of a symbolic link
 # Usage: readlink path
 
-import "lib/syscalls"
+from lib.syscalls import *
 
-extern get_argc(): int32
-extern get_argv(i: int32): ptr uint8
+extern def get_argc() -> int32
+extern def get_argv(i: int32) -> *uint8
 
-proc print_err(msg: ptr uint8) =
-  var len: int32 = strlen(msg)
-  discard syscall3(SYS_write, STDERR, cast[int32](msg), len)
+def print_err(msg: *uint8):
+  len: int32 = strlen(msg)
+  _ = syscall3(SYS_write, STDERR, cast[int32](msg), len)
 
-proc main() =
-  var argc: int32 = get_argc()
+def main():
+  argc: int32 = get_argc()
   if argc < 2:
-    print_err(cast[ptr uint8]("Usage: readlink path\n"))
-    discard syscall1(SYS_exit, 1)
+    print_err(cast[*uint8]("Usage: readlink path\n"))
+    _ = syscall1(SYS_exit, 1)
 
-  var path: ptr uint8 = get_argv(1)
+  path: *uint8 = get_argv(1)
 
   # Allocate buffer for result
-  var old_brk: int32 = syscall1(SYS_brk, 0)
-  var new_brk: int32 = old_brk + 4096
-  discard syscall1(SYS_brk, new_brk)
-  var buf: ptr uint8 = cast[ptr uint8](old_brk)
+  old_brk: int32 = syscall1(SYS_brk, 0)
+  new_brk: int32 = old_brk + 4096
+  _ = syscall1(SYS_brk, new_brk)
+  buf: *uint8 = cast[*uint8](old_brk)
 
   # Read symbolic link
-  var ret: int32 = syscall3(SYS_readlink, cast[int32](path), cast[int32](buf), 4096)
+  ret: int32 = syscall3(SYS_readlink, cast[int32](path), cast[int32](buf), 4096)
   if ret < 0:
-    print_err(cast[ptr uint8]("readlink: "))
+    print_err(cast[*uint8]("readlink: "))
     print_err(path)
-    print_err(cast[ptr uint8](": Not a symbolic link or cannot read\n"))
-    discard syscall1(SYS_exit, 1)
+    print_err(cast[*uint8](": Not a symbolic link or cannot read\n"))
+    _ = syscall1(SYS_exit, 1)
 
   # Print result (readlink does not null-terminate)
-  discard syscall3(SYS_write, STDOUT, cast[int32](buf), ret)
-  discard syscall3(SYS_write, STDOUT, cast[int32]("\n"), 1)
+  _ = syscall3(SYS_write, STDOUT, cast[int32](buf), ret)
+  _ = syscall3(SYS_write, STDOUT, cast[int32]("\n"), 1)
 
-  discard syscall1(SYS_exit, 0)
+  _ = syscall1(SYS_exit, 0)

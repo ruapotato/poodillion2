@@ -3,15 +3,15 @@
 #        yes hello  -> outputs "hello" repeatedly
 # Part of BrainhairOS text utilities
 
-import "lib/syscalls"
+from lib.syscalls import *
 
-extern get_argc(): int32
-extern get_argv(index: int32): ptr uint8
+extern def get_argc() -> int32
+extern def get_argv(index: int32) -> *uint8
 
-proc main(): int32 =
-    var argc: int32 = get_argc()
-    var output: ptr uint8 = "y\n"
-    var output_len: int32 = 2
+def main() -> int32:
+    argc: int32 = get_argc()
+    output: *uint8 = "y\n"
+    output_len: int32 = 2
 
     # If argument provided, use it
     if argc >= 2:
@@ -20,7 +20,7 @@ proc main(): int32 =
 
     # Output repeatedly forever
     while true:
-        discard write(STDOUT, output, output_len)
+        write(STDOUT, output, output_len)
         # If using argument, add newline after each output
         if argc >= 2:
             newline()

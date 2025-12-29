@@ -4,96 +4,96 @@
 # Usage: bhasm <source.asm> <output> [format]
 # Formats: bin (default), elf32
 
-import "lib/syscalls"
+from lib.syscalls import *
 
-extern get_argc(): int32
-extern get_argv(idx: int32): ptr uint8
+extern def get_argc() -> int32
+extern def get_argv(idx: int32) -> *uint8
 
-proc print_err(msg: ptr uint8) =
-  var len: int32 = 0
+def print_err(msg: *uint8):
+  len: int32 = 0
   while msg[len] != cast[uint8](0):
     len = len + 1
-  discard syscall3(SYS_write, STDERR, cast[int32](msg), len)
+  _ = syscall3(SYS_write, STDERR, cast[int32](msg), len)
 
-proc run_cmd(argv: ptr int32): int32 =
-  var pid: int32 = syscall1(SYS_fork, 0)
+def run_cmd(argv: *int32) -> int32:
+  pid: int32 = syscall1(SYS_fork, 0)
 
   if pid == 0:
-    var envp: array[1, int32]
+    envp: array[1, int32]
     envp[0] = 0
-    discard syscall3(SYS_execve, argv[0], cast[int32](argv), cast[int32](addr(envp)))
-    print_err(cast[ptr uint8]("bhasm: exec failed\n"))
-    discard syscall1(SYS_exit, 127)
+    _ = syscall3(SYS_execve, argv[0], cast[int32](argv), cast[int32](addr(envp)))
+    print_err(cast[*uint8]("bhasm: exec failed\n"))
+    _ = syscall1(SYS_exit, 127)
 
   if pid < 0:
     return 1
 
-  var status: int32 = 0
-  discard syscall3(SYS_waitpid, pid, cast[int32](addr(status)), 0)
-  var exit_code: int32 = (status >> 8) & 255
+  status: int32 = 0
+  _ = syscall3(SYS_waitpid, pid, cast[int32](addr(status)), 0)
+  exit_code: int32 = (status >> 8) & 255
   return exit_code
 
-proc main(): int32 =
-  var argc: int32 = get_argc()
+def main() -> int32:
+  argc: int32 = get_argc()
 
   if argc < 3:
-    println(cast[ptr uint8]("bhasm - Brainhair Assembler Wrapper"))
-    println(cast[ptr uint8]("Usage: bhasm <source.asm> <output> [format]"))
-    println(cast[ptr uint8]("Formats: bin (default), elf32"))
+    println(cast[*uint8]("bhasm - Brainhair Assembler Wrapper"))
+    println(cast[*uint8]("Usage: bhasm <source.asm> <output> [format]"))
+    println(cast[*uint8]("Formats: bin (default), elf32"))
     return 1
 
-  var source: ptr uint8 = get_argv(1)
-  var output: ptr uint8 = get_argv(2)
-  var format: ptr uint8 = cast[ptr uint8]("bin")
+  source: *uint8 = get_argv(1)
+  output: *uint8 = get_argv(2)
+  format: *uint8 = cast[*uint8]("bin")
 
   if argc >= 4:
     format = get_argv(3)
 
   # Allocate buffer for argv
-  var old_brk: int32 = syscall1(SYS_brk, 0)
-  var new_brk: int32 = old_brk + 4096
-  discard syscall1(SYS_brk, new_brk)
-  var str_buf: ptr uint8 = cast[ptr uint8](old_brk)
-  var argv_buf: ptr int32 = cast[ptr int32](old_brk + 2048)
+  old_brk: int32 = syscall1(SYS_brk, 0)
+  new_brk: int32 = old_brk + 4096
+  _ = syscall1(SYS_brk, new_brk)
+  str_buf: *uint8 = cast[*uint8](old_brk)
+  argv_buf: *int32 = cast[*int32](old_brk + 2048)
 
-  print(cast[ptr uint8]("  Assembling "))
+  print(cast[*uint8]("  Assembling "))
   print(source)
-  print(cast[ptr uint8](" -> "))
+  print(cast[*uint8](" -> "))
   print(output)
-  print(cast[ptr uint8](" ("))
+  print(cast[*uint8](" ("))
   print(format)
-  println(cast[ptr uint8](")"))
+  println(cast[*uint8](")"))
 
   # Build nasm command: nasm -f <format> <source> -o <output>
-  var p: int32 = 0
-  strcpy(str_buf, cast[ptr uint8]("/usr/bin/nasm"))
+  p: int32 = 0
+  strcpy(str_buf, cast[*uint8]("/usr/bin/nasm"))
   argv_buf[0] = cast[int32](str_buf)
   p = p + 16
 
-  strcpy(cast[ptr uint8](cast[int32](str_buf) + p), cast[ptr uint8]("-f"))
+  strcpy(cast[*uint8](cast[int32](str_buf) + p), cast[*uint8]("-f"))
   argv_buf[1] = cast[int32](str_buf) + p
   p = p + 4
 
-  strcpy(cast[ptr uint8](cast[int32](str_buf) + p), format)
+  strcpy(cast[*uint8](cast[int32](str_buf) + p), format)
   argv_buf[2] = cast[int32](str_buf) + p
   p = p + strlen(format) + 1
 
-  strcpy(cast[ptr uint8](cast[int32](str_buf) + p), source)
+  strcpy(cast[*uint8](cast[int32](str_buf) + p), source)
   argv_buf[3] = cast[int32](str_buf) + p
   p = p + strlen(source) + 1
 
-  strcpy(cast[ptr uint8](cast[int32](str_buf) + p), cast[ptr uint8]("-o"))
+  strcpy(cast[*uint8](cast[int32](str_buf) + p), cast[*uint8]("-o"))
   argv_buf[4] = cast[int32](str_buf) + p
   p = p + 4
 
-  strcpy(cast[ptr uint8](cast[int32](str_buf) + p), output)
+  strcpy(cast[*uint8](cast[int32](str_buf) + p), output)
   argv_buf[5] = cast[int32](str_buf) + p
   argv_buf[6] = 0
 
-  var result: int32 = run_cmd(argv_buf)
+  result: int32 = run_cmd(argv_buf)
   if result != 0:
-    print_err(cast[ptr uint8]("bhasm: assembly failed\n"))
+    print_err(cast[*uint8]("bhasm: assembly failed\n"))
     return 1
 
-  println(cast[ptr uint8]("  Done"))
+  println(cast[*uint8]("  Done"))
   return 0

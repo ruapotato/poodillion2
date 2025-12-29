@@ -2,18 +2,18 @@
 # Switches to another user account (default: root)
 # Usage: su [USER]
 
-import "lib/syscalls"
+from lib.syscalls import *
 
-proc print_err(msg: ptr uint8) =
-  var len: int32 = strlen(msg)
-  discard syscall3(SYS_write, STDERR, cast[int32](msg), len)
+def print_err(msg: *uint8):
+  len: int32 = strlen(msg)
+  syscall3(SYS_write, STDERR, cast[int32](msg), len)
 
 # String comparison
 # Copy string
 # Parse integer from string
-proc parse_int(s: ptr uint8, start: int32, end: int32): int32 =
-  var result: int32 = 0
-  var i: int32 = start
+def parse_int(s: *uint8, start: int32, end: int32) -> int32:
+  result: int32 = 0
+  i: int32 = start
   while i < end:
     if s[i] >= cast[uint8](48):
       if s[i] <= cast[uint8](57):
@@ -21,18 +21,18 @@ proc parse_int(s: ptr uint8, start: int32, end: int32): int32 =
     i = i + 1
   return result
 
-proc main() =
+def main():
   # Allocate memory
-  var old_brk: int32 = syscall1(SYS_brk, 0)
-  var new_brk: int32 = old_brk + 32768
-  discard syscall1(SYS_brk, new_brk)
+  old_brk: int32 = syscall1(SYS_brk, 0)
+  new_brk: int32 = old_brk + 32768
+  syscall1(SYS_brk, new_brk)
 
-  var username: ptr uint8 = cast[ptr uint8](old_brk)
-  var passwd_path: ptr uint8 = cast[ptr uint8](old_brk + 256)
-  var buffer: ptr uint8 = cast[ptr uint8](old_brk + 512)
-  var shell_path: ptr uint8 = cast[ptr uint8](old_brk + 16896)
-  var shell_argv: ptr ptr uint8 = cast[ptr ptr uint8](old_brk + 17152)
-  var shell_envp: ptr ptr uint8 = cast[ptr ptr uint8](old_brk + 17408)
+  username: *uint8 = cast[*uint8](old_brk)
+  passwd_path: *uint8 = cast[*uint8](old_brk + 256)
+  buffer: *uint8 = cast[*uint8](old_brk + 512)
+  shell_path: *uint8 = cast[*uint8](old_brk + 16896)
+  shell_argv: Ptr[Ptr[uint8]] = cast[Ptr[Ptr[uint8]]](old_brk + 17152)
+  shell_envp: Ptr[Ptr[uint8]] = cast[Ptr[Ptr[uint8]]](old_brk + 17408)
 
   # Default to root
   # TODO: Parse command line arguments
@@ -58,41 +58,41 @@ proc main() =
   passwd_path[11] = cast[uint8](0)
 
   # Open /etc/passwd
-  var fd: int32 = syscall3(SYS_open, cast[int32](passwd_path), O_RDONLY, 0)
+  fd: int32 = syscall3(SYS_open, cast[int32](passwd_path), O_RDONLY, 0)
   if fd < 0:
-    print_err(cast[ptr uint8]("su: cannot open /etc/passwd\n"))
-    discard syscall1(SYS_exit, 1)
+    print_err(cast[*uint8]("su: cannot open /etc/passwd\n"))
+    syscall1(SYS_exit, 1)
 
-  var nread: int32 = syscall3(SYS_read, fd, cast[int32](buffer), 16000)
-  discard syscall1(SYS_close, fd)
+  nread: int32 = syscall3(SYS_read, fd, cast[int32](buffer), 16000)
+  syscall1(SYS_close, fd)
 
   if nread <= 0:
-    print_err(cast[ptr uint8]("su: cannot read /etc/passwd\n"))
-    discard syscall1(SYS_exit, 1)
+    print_err(cast[*uint8]("su: cannot read /etc/passwd\n"))
+    syscall1(SYS_exit, 1)
 
   buffer[nread] = cast[uint8](0)
 
   # Parse /etc/passwd to find user
   # Format: username:password:uid:gid:comment:home:shell
-  var i: int32 = 0
-  var found: int32 = 0
-  var target_uid: int32 = 0
-  var target_gid: int32 = 0
-  var username_len: int32 = strlen(username)
+  i: int32 = 0
+  found: int32 = 0
+  target_uid: int32 = 0
+  target_gid: int32 = 0
+  username_len: int32 = strlen(username)
 
   while i < nread:
     # Parse username field
-    var entry_username_start: int32 = i
+    entry_username_start: int32 = i
     while i < nread:
       if buffer[i] == cast[uint8](58):  # colon
         break
       i = i + 1
-    var entry_username_end: int32 = i
+    entry_username_end: int32 = i
 
     # Check if this matches our target username
-    var matched: int32 = 0
+    matched: int32 = 0
     if entry_username_end - entry_username_start == username_len:
-      var j: int32 = 0
+      j: int32 = 0
       matched = 1
       while j < username_len:
         if buffer[entry_username_start + j] != username[j]:
@@ -109,21 +109,21 @@ proc main() =
 
     # Parse UID field
     i = i + 1
-    var uid_start: int32 = i
+    uid_start: int32 = i
     while i < nread:
       if buffer[i] == cast[uint8](58):  # colon
         break
       i = i + 1
-    var uid_end: int32 = i
+    uid_end: int32 = i
 
     # Parse GID field
     i = i + 1
-    var gid_start: int32 = i
+    gid_start: int32 = i
     while i < nread:
       if buffer[i] == cast[uint8](58):  # colon
         break
       i = i + 1
-    var gid_end: int32 = i
+    gid_end: int32 = i
 
     # Skip comment field
     i = i + 1
@@ -141,14 +141,14 @@ proc main() =
 
     # Parse shell field
     i = i + 1
-    var shell_start: int32 = i
+    shell_start: int32 = i
     while i < nread:
       if buffer[i] == cast[uint8](10):  # newline
         break
       if buffer[i] == cast[uint8](0):
         break
       i = i + 1
-    var shell_end: int32 = i
+    shell_end: int32 = i
 
     if matched == 1:
       # Found the user
@@ -156,8 +156,8 @@ proc main() =
       target_gid = parse_int(buffer, gid_start, gid_end)
 
       # Copy shell path
-      var k: int32 = 0
-      var j: int32 = shell_start
+      k: int32 = 0
+      j: int32 = shell_start
       while j < shell_end:
         shell_path[k] = buffer[j]
         k = k + 1
@@ -175,38 +175,38 @@ proc main() =
       i = i + 1
 
   if found == 0:
-    print_err(cast[ptr uint8]("su: user not found\n"))
-    discard syscall1(SYS_exit, 1)
+    print_err(cast[*uint8]("su: user not found\n"))
+    syscall1(SYS_exit, 1)
 
   # Check if we're already root or have permission
-  var current_uid: int32 = syscall1(SYS_getuid, 0)
+  current_uid: int32 = syscall1(SYS_getuid, 0)
   if current_uid != 0:
-    print_err(cast[ptr uint8]("su: must be root to use su\n"))
-    discard syscall1(SYS_exit, 1)
+    print_err(cast[*uint8]("su: must be root to use su\n"))
+    syscall1(SYS_exit, 1)
 
   # Set GID first (must be done before setuid)
-  var result: int32 = syscall1(SYS_setgid, target_gid)
+  result: int32 = syscall1(SYS_setgid, target_gid)
   if result < 0:
-    print_err(cast[ptr uint8]("su: setgid failed\n"))
-    discard syscall1(SYS_exit, 1)
+    print_err(cast[*uint8]("su: setgid failed\n"))
+    syscall1(SYS_exit, 1)
 
   # Set UID
   result = syscall1(SYS_setuid, target_uid)
   if result < 0:
-    print_err(cast[ptr uint8]("su: setuid failed\n"))
-    discard syscall1(SYS_exit, 1)
+    print_err(cast[*uint8]("su: setuid failed\n"))
+    syscall1(SYS_exit, 1)
 
   # Prepare to exec shell
   # argv[0] = shell name, argv[1] = NULL
   shell_argv[0] = shell_path
-  shell_argv[1] = cast[ptr uint8](0)
+  shell_argv[1] = cast[*uint8](0)
 
   # Empty environment
-  shell_envp[0] = cast[ptr uint8](0)
+  shell_envp[0] = cast[*uint8](0)
 
   # Execute shell
   result = syscall3(SYS_execve, cast[int32](shell_path), cast[int32](shell_argv), cast[int32](shell_envp))
 
   # If we get here, exec failed
-  print_err(cast[ptr uint8]("su: cannot execute shell\n"))
-  discard syscall1(SYS_exit, 1)
+  print_err(cast[*uint8]("su: cannot execute shell\n"))
+  syscall1(SYS_exit, 1)

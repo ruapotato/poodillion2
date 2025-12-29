@@ -2,7 +2,7 @@
 # Usage: mknod name type [major minor]
 #   type: p (FIFO), c (character device), b (block device)
 
-import "lib/syscalls"
+from lib.syscalls import *
 
 # File type bits
 const S_IFIFO: int32 = 4096      # 0010000 - FIFO
@@ -11,67 +11,67 @@ const S_IFBLK: int32 = 24576     # 0060000 - block device
 
 # Permission bits (0666)
 
-extern get_argc(): int32
-extern get_argv(index: int32): ptr uint8
+extern def get_argc() -> int32
+extern def get_argv(index: int32) -> *uint8
 
-proc print_err(msg: ptr uint8) =
-  var len: int32 = strlen(msg)
-  discard syscall3(SYS_write, STDERR, cast[int32](msg), len)
+def print_err(msg: *uint8):
+    len: int32 = strlen(msg)
+    _ = syscall3(SYS_write, STDERR, cast[int32](msg), len)
 
 # Simple string to integer conversion
-proc main() =
-  var argc: int32 = get_argc()
+def main():
+    argc: int32 = get_argc()
 
-  if argc < 3:
-    print_err(cast[ptr uint8]("Usage: mknod name type [major minor]\n"))
-    print_err(cast[ptr uint8]("  type: p (FIFO), c (char device), b (block device)\n"))
-    discard syscall1(SYS_exit, 1)
+    if argc < 3:
+        print_err(cast[*uint8]("Usage: mknod name type [major minor]\n"))
+        print_err(cast[*uint8]("  type: p (FIFO), c (char device), b (block device)\n"))
+        _ = syscall1(SYS_exit, 1)
 
-  var name: ptr uint8 = get_argv(1)
-  var type_str: ptr uint8 = get_argv(2)
-  var type_char: uint8 = type_str[0]
+    name: *uint8 = get_argv(1)
+    type_str: *uint8 = get_argv(2)
+    type_char: uint8 = type_str[0]
 
-  var mode: int32 = S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH
-  var dev: int32 = 0
+    mode: int32 = S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH
+    dev: int32 = 0
 
-  # Determine file type
-  if type_char == cast[uint8](112):  # 'p' - FIFO
-    mode = mode | S_IFIFO
-    dev = 0
-  else:
-    # For 'c' (char) or 'b' (block), we need major and minor numbers
-    if argc < 5:
-      print_err(cast[ptr uint8]("mknod: device files require major and minor numbers\n"))
-      discard syscall1(SYS_exit, 1)
-
-    var major_str: ptr uint8 = get_argv(3)
-    var minor_str: ptr uint8 = get_argv(4)
-    var major: int32 = atoi(major_str)
-    var minor: int32 = atoi(minor_str)
-
-    if major < 0 or minor < 0:
-      print_err(cast[ptr uint8]("mknod: invalid major or minor number\n"))
-      discard syscall1(SYS_exit, 1)
-
-    # Create device number: (major << 8) | minor
-    dev = (major * 256) | minor
-
-    if type_char == cast[uint8](99):  # 'c' - character device
-      mode = mode | S_IFCHR
+    # Determine file type
+    if type_char == cast[uint8](112):  # 'p' - FIFO
+        mode = mode | S_IFIFO
+        dev = 0
     else:
-      if type_char == cast[uint8](98):  # 'b' - block device
-        mode = mode | S_IFBLK
-      else:
-        print_err(cast[ptr uint8]("mknod: invalid type (use p, c, or b)\n"))
-        discard syscall1(SYS_exit, 1)
+        # For 'c' (char) or 'b' (block), we need major and minor numbers
+        if argc < 5:
+            print_err(cast[*uint8]("mknod: device files require major and minor numbers\n"))
+            _ = syscall1(SYS_exit, 1)
 
-  # Create the special file
-  var result: int32 = syscall3(SYS_mknod, cast[int32](name), mode, dev)
+        major_str: *uint8 = get_argv(3)
+        minor_str: *uint8 = get_argv(4)
+        major: int32 = atoi(major_str)
+        minor: int32 = atoi(minor_str)
 
-  if result < 0:
-    print_err(cast[ptr uint8]("mknod: cannot create special file '"))
-    print_err(name)
-    print_err(cast[ptr uint8]("'\n"))
-    discard syscall1(SYS_exit, 1)
+        if major < 0 or minor < 0:
+            print_err(cast[*uint8]("mknod: invalid major or minor number\n"))
+            _ = syscall1(SYS_exit, 1)
 
-  discard syscall1(SYS_exit, 0)
+        # Create device number: (major << 8) | minor
+        dev = (major * 256) | minor
+
+        if type_char == cast[uint8](99):  # 'c' - character device
+            mode = mode | S_IFCHR
+        else:
+            if type_char == cast[uint8](98):  # 'b' - block device
+                mode = mode | S_IFBLK
+            else:
+                print_err(cast[*uint8]("mknod: invalid type (use p, c, or b)\n"))
+                _ = syscall1(SYS_exit, 1)
+
+    # Create the special file
+    result: int32 = syscall3(SYS_mknod, cast[int32](name), mode, dev)
+
+    if result < 0:
+        print_err(cast[*uint8]("mknod: cannot create special file '"))
+        print_err(name)
+        print_err(cast[*uint8]("'\n"))
+        _ = syscall1(SYS_exit, 1)
+
+    _ = syscall1(SYS_exit, 0)

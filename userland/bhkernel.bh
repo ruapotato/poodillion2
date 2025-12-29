@@ -4,184 +4,184 @@
 # Usage: bhkernel [kernel.bh] [output]
 # Default: kernel/kernel.bh -> build/kernel.bin
 
-import "lib/syscalls"
+from lib.syscalls import *
 
-extern get_argc(): int32
-extern get_argv(idx: int32): ptr uint8
+extern def get_argc() -> int32
+extern def get_argv(idx: int32) -> *uint8
 
-proc print_err(msg: ptr uint8) =
-  var len: int32 = 0
+def print_err(msg: *uint8):
+  len: int32 = 0
   while msg[len] != cast[uint8](0):
     len = len + 1
-  discard syscall3(SYS_write, STDERR, cast[int32](msg), len)
+  _ = syscall3(SYS_write, STDERR, cast[int32](msg), len)
 
-proc run_cmd(argv: ptr int32): int32 =
-  var pid: int32 = syscall1(SYS_fork, 0)
+def run_cmd(argv: *int32) -> int32:
+  pid: int32 = syscall1(SYS_fork, 0)
   if pid == 0:
-    var envp: array[1, int32]
+    envp: array[1, int32]
     envp[0] = 0
-    discard syscall3(SYS_execve, argv[0], cast[int32](argv), cast[int32](addr(envp)))
-    print_err(cast[ptr uint8]("bhkernel: exec failed\n"))
-    discard syscall1(SYS_exit, 127)
+    _ = syscall3(SYS_execve, argv[0], cast[int32](argv), cast[int32](addr(envp)))
+    print_err(cast[*uint8]("bhkernel: exec failed\n"))
+    _ = syscall1(SYS_exit, 127)
   if pid < 0:
     return 1
-  var status: int32 = 0
-  discard syscall3(SYS_waitpid, pid, cast[int32](addr(status)), 0)
+  status: int32 = 0
+  _ = syscall3(SYS_waitpid, pid, cast[int32](addr(status)), 0)
   return (status >> 8) & 255
 
-proc run_cmd_stdout(argv: ptr int32, outfile: ptr uint8): int32 =
-  var pid: int32 = syscall1(SYS_fork, 0)
+def run_cmd_stdout(argv: *int32, outfile: *uint8) -> int32:
+  pid: int32 = syscall1(SYS_fork, 0)
   if pid == 0:
-    var fd: int32 = syscall3(SYS_open, cast[int32](outfile), O_WRONLY | O_CREAT | O_TRUNC, 420)
+    fd: int32 = syscall3(SYS_open, cast[int32](outfile), O_WRONLY | O_CREAT | O_TRUNC, 420)
     if fd >= 0:
-      discard syscall2(SYS_dup2, fd, STDOUT)
-      discard syscall1(SYS_close, fd)
-    var envp: array[1, int32]
+      _ = syscall2(SYS_dup2, fd, STDOUT)
+      _ = syscall1(SYS_close, fd)
+    envp: array[1, int32]
     envp[0] = 0
-    discard syscall3(SYS_execve, argv[0], cast[int32](argv), cast[int32](addr(envp)))
-    discard syscall1(SYS_exit, 127)
+    _ = syscall3(SYS_execve, argv[0], cast[int32](argv), cast[int32](addr(envp)))
+    _ = syscall1(SYS_exit, 127)
   if pid < 0:
     return 1
-  var status: int32 = 0
-  discard syscall3(SYS_waitpid, pid, cast[int32](addr(status)), 0)
+  status: int32 = 0
+  _ = syscall3(SYS_waitpid, pid, cast[int32](addr(status)), 0)
   return (status >> 8) & 255
 
-proc main(): int32 =
-  var argc: int32 = get_argc()
+def main() -> int32:
+  argc: int32 = get_argc()
 
-  println(cast[ptr uint8]("bhkernel - Brainhair Kernel Builder"))
+  println(cast[*uint8]("bhkernel - Brainhair Kernel Builder"))
 
-  var source: ptr uint8 = cast[ptr uint8]("kernel/kernel.bh")
-  var output: ptr uint8 = cast[ptr uint8]("build/kernel.bin")
+  source: *uint8 = cast[*uint8]("kernel/kernel.bh")
+  output: *uint8 = cast[*uint8]("build/kernel.bin")
 
   if argc >= 2:
     source = get_argv(1)
   if argc >= 3:
     output = get_argv(2)
 
-  var old_brk: int32 = syscall1(SYS_brk, 0)
-  var new_brk: int32 = old_brk + 8192
-  discard syscall1(SYS_brk, new_brk)
-  var str_buf: ptr uint8 = cast[ptr uint8](old_brk)
-  var argv_buf: ptr int32 = cast[ptr int32](old_brk + 4096)
+  old_brk: int32 = syscall1(SYS_brk, 0)
+  new_brk: int32 = old_brk + 8192
+  _ = syscall1(SYS_brk, new_brk)
+  str_buf: *uint8 = cast[*uint8](old_brk)
+  argv_buf: *int32 = cast[*int32](old_brk + 4096)
 
   # Step 1: Compile to assembly
-  print(cast[ptr uint8]("  [1/4] Compiling "))
+  print(cast[*uint8]("  [1/4] Compiling "))
   print(source)
-  println(cast[ptr uint8]("..."))
+  println(cast[*uint8]("..."))
 
-  var p: int32 = 0
-  strcpy(str_buf, cast[ptr uint8]("/usr/bin/python3"))
+  p: int32 = 0
+  strcpy(str_buf, cast[*uint8]("/usr/bin/python3"))
   argv_buf[0] = cast[int32](str_buf)
   p = 20
-  strcpy(cast[ptr uint8](cast[int32](str_buf) + p), cast[ptr uint8]("compiler/brainhair.py"))
+  strcpy(cast[*uint8](cast[int32](str_buf) + p), cast[*uint8]("compiler/brainhair.py"))
   argv_buf[1] = cast[int32](str_buf) + p
   p = p + 24
-  strcpy(cast[ptr uint8](cast[int32](str_buf) + p), source)
+  strcpy(cast[*uint8](cast[int32](str_buf) + p), source)
   argv_buf[2] = cast[int32](str_buf) + p
   p = p + strlen(source) + 1
-  strcpy(cast[ptr uint8](cast[int32](str_buf) + p), cast[ptr uint8]("--kernel"))
+  strcpy(cast[*uint8](cast[int32](str_buf) + p), cast[*uint8]("--kernel"))
   argv_buf[3] = cast[int32](str_buf) + p
   p = p + 12
-  strcpy(cast[ptr uint8](cast[int32](str_buf) + p), cast[ptr uint8]("--asm-only"))
+  strcpy(cast[*uint8](cast[int32](str_buf) + p), cast[*uint8]("--asm-only"))
   argv_buf[4] = cast[int32](str_buf) + p
   argv_buf[5] = 0
 
-  var result: int32 = run_cmd_stdout(argv_buf, cast[ptr uint8]("compiler/kernel.asm"))
+  result: int32 = run_cmd_stdout(argv_buf, cast[*uint8]("compiler/kernel.asm"))
   if result != 0:
-    print_err(cast[ptr uint8]("bhkernel: compilation failed\n"))
+    print_err(cast[*uint8]("bhkernel: compilation failed\n"))
     return 1
 
   # Step 2: Assemble
-  println(cast[ptr uint8]("  [2/4] Assembling..."))
+  println(cast[*uint8]("  [2/4] Assembling..."))
 
   p = 0
-  strcpy(str_buf, cast[ptr uint8]("/usr/bin/nasm"))
+  strcpy(str_buf, cast[*uint8]("/usr/bin/nasm"))
   argv_buf[0] = cast[int32](str_buf)
   p = 16
-  strcpy(cast[ptr uint8](cast[int32](str_buf) + p), cast[ptr uint8]("-f"))
+  strcpy(cast[*uint8](cast[int32](str_buf) + p), cast[*uint8]("-f"))
   argv_buf[1] = cast[int32](str_buf) + p
   p = p + 4
-  strcpy(cast[ptr uint8](cast[int32](str_buf) + p), cast[ptr uint8]("elf32"))
+  strcpy(cast[*uint8](cast[int32](str_buf) + p), cast[*uint8]("elf32"))
   argv_buf[2] = cast[int32](str_buf) + p
   p = p + 8
-  strcpy(cast[ptr uint8](cast[int32](str_buf) + p), cast[ptr uint8]("compiler/kernel.asm"))
+  strcpy(cast[*uint8](cast[int32](str_buf) + p), cast[*uint8]("compiler/kernel.asm"))
   argv_buf[3] = cast[int32](str_buf) + p
   p = p + 24
-  strcpy(cast[ptr uint8](cast[int32](str_buf) + p), cast[ptr uint8]("-o"))
+  strcpy(cast[*uint8](cast[int32](str_buf) + p), cast[*uint8]("-o"))
   argv_buf[4] = cast[int32](str_buf) + p
   p = p + 4
-  strcpy(cast[ptr uint8](cast[int32](str_buf) + p), cast[ptr uint8]("compiler/kernel.o"))
+  strcpy(cast[*uint8](cast[int32](str_buf) + p), cast[*uint8]("compiler/kernel.o"))
   argv_buf[5] = cast[int32](str_buf) + p
   argv_buf[6] = 0
 
   result = run_cmd(argv_buf)
   if result != 0:
-    print_err(cast[ptr uint8]("bhkernel: assembly failed\n"))
+    print_err(cast[*uint8]("bhkernel: assembly failed\n"))
     return 1
 
   # Step 3: Link
-  println(cast[ptr uint8]("  [3/4] Linking..."))
+  println(cast[*uint8]("  [3/4] Linking..."))
 
   p = 0
-  strcpy(str_buf, cast[ptr uint8]("/usr/bin/ld"))
+  strcpy(str_buf, cast[*uint8]("/usr/bin/ld"))
   argv_buf[0] = cast[int32](str_buf)
   p = 16
-  strcpy(cast[ptr uint8](cast[int32](str_buf) + p), cast[ptr uint8]("-m"))
+  strcpy(cast[*uint8](cast[int32](str_buf) + p), cast[*uint8]("-m"))
   argv_buf[1] = cast[int32](str_buf) + p
   p = p + 4
-  strcpy(cast[ptr uint8](cast[int32](str_buf) + p), cast[ptr uint8]("elf_i386"))
+  strcpy(cast[*uint8](cast[int32](str_buf) + p), cast[*uint8]("elf_i386"))
   argv_buf[2] = cast[int32](str_buf) + p
   p = p + 12
-  strcpy(cast[ptr uint8](cast[int32](str_buf) + p), cast[ptr uint8]("-T"))
+  strcpy(cast[*uint8](cast[int32](str_buf) + p), cast[*uint8]("-T"))
   argv_buf[3] = cast[int32](str_buf) + p
   p = p + 4
-  strcpy(cast[ptr uint8](cast[int32](str_buf) + p), cast[ptr uint8]("boot/linker.ld"))
+  strcpy(cast[*uint8](cast[int32](str_buf) + p), cast[*uint8]("boot/linker.ld"))
   argv_buf[4] = cast[int32](str_buf) + p
   p = p + 20
-  strcpy(cast[ptr uint8](cast[int32](str_buf) + p), cast[ptr uint8]("-o"))
+  strcpy(cast[*uint8](cast[int32](str_buf) + p), cast[*uint8]("-o"))
   argv_buf[5] = cast[int32](str_buf) + p
   p = p + 4
-  strcpy(cast[ptr uint8](cast[int32](str_buf) + p), cast[ptr uint8]("build/kernel.elf"))
+  strcpy(cast[*uint8](cast[int32](str_buf) + p), cast[*uint8]("build/kernel.elf"))
   argv_buf[6] = cast[int32](str_buf) + p
   p = p + 20
-  strcpy(cast[ptr uint8](cast[int32](str_buf) + p), cast[ptr uint8]("compiler/kernel.o"))
+  strcpy(cast[*uint8](cast[int32](str_buf) + p), cast[*uint8]("compiler/kernel.o"))
   argv_buf[7] = cast[int32](str_buf) + p
   argv_buf[8] = 0
 
   result = run_cmd(argv_buf)
   if result != 0:
-    print_err(cast[ptr uint8]("bhkernel: linking failed\n"))
+    print_err(cast[*uint8]("bhkernel: linking failed\n"))
     return 1
 
   # Step 4: Extract binary
-  print(cast[ptr uint8]("  [4/4] Creating "))
+  print(cast[*uint8]("  [4/4] Creating "))
   print(output)
-  println(cast[ptr uint8]("..."))
+  println(cast[*uint8]("..."))
 
   p = 0
-  strcpy(str_buf, cast[ptr uint8]("/usr/bin/objcopy"))
+  strcpy(str_buf, cast[*uint8]("/usr/bin/objcopy"))
   argv_buf[0] = cast[int32](str_buf)
   p = 20
-  strcpy(cast[ptr uint8](cast[int32](str_buf) + p), cast[ptr uint8]("-O"))
+  strcpy(cast[*uint8](cast[int32](str_buf) + p), cast[*uint8]("-O"))
   argv_buf[1] = cast[int32](str_buf) + p
   p = p + 4
-  strcpy(cast[ptr uint8](cast[int32](str_buf) + p), cast[ptr uint8]("binary"))
+  strcpy(cast[*uint8](cast[int32](str_buf) + p), cast[*uint8]("binary"))
   argv_buf[2] = cast[int32](str_buf) + p
   p = p + 8
-  strcpy(cast[ptr uint8](cast[int32](str_buf) + p), cast[ptr uint8]("build/kernel.elf"))
+  strcpy(cast[*uint8](cast[int32](str_buf) + p), cast[*uint8]("build/kernel.elf"))
   argv_buf[3] = cast[int32](str_buf) + p
   p = p + 20
-  strcpy(cast[ptr uint8](cast[int32](str_buf) + p), output)
+  strcpy(cast[*uint8](cast[int32](str_buf) + p), output)
   argv_buf[4] = cast[int32](str_buf) + p
   argv_buf[5] = 0
 
   result = run_cmd(argv_buf)
   if result != 0:
-    print_err(cast[ptr uint8]("bhkernel: objcopy failed\n"))
+    print_err(cast[*uint8]("bhkernel: objcopy failed\n"))
     return 1
 
-  println(cast[ptr uint8](""))
-  print(cast[ptr uint8]("Kernel built: "))
+  println(cast[*uint8](""))
+  print(cast[*uint8]("Kernel built: "))
   println(output)
   return 0

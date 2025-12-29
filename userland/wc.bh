@@ -2,31 +2,31 @@
 # Part of BrainhairOS text utilities
 # Reads from stdin and outputs: lines words chars
 
-import "lib/syscalls"
+from lib.syscalls import *
 
-proc main(): int32 =
+def main() -> int32:
   # Allocate buffer for reading
-  var old_brk: int32 = syscall1(SYS_brk, 0)
-  var new_brk: int32 = old_brk + 4096
-  discard syscall1(SYS_brk, new_brk)
-  var buffer: ptr uint8 = cast[ptr uint8](old_brk)
+  old_brk: int32 = syscall1(SYS_brk, 0)
+  new_brk: int32 = old_brk + 4096
+  syscall1(SYS_brk, new_brk)
+  buffer: *uint8 = cast[*uint8](old_brk)
 
-  var lines: int32 = 0
-  var words: int32 = 0
-  var chars: int32 = 0
-  var in_word: int32 = 0
+  lines: int32 = 0
+  words: int32 = 0
+  chars: int32 = 0
+  in_word: int32 = 0
 
-  var running: int32 = 1
+  running: int32 = 1
   while running != 0:
-    var n: int32 = read(STDIN, buffer, 4096)
+    n: int32 = read(STDIN, buffer, 4096)
     if n <= 0:
       running = 0
       break
 
     # Process each character
-    var i: int32 = 0
+    i: int32 = 0
     while i < n:
-      var c: uint8 = buffer[i]
+      c: uint8 = buffer[i]
       chars = chars + 1
 
       # Count newlines

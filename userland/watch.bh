@@ -11,52 +11,52 @@
 #   watch -n 5 ps        Run 'ps' every 5 seconds
 #   watch df -h          Run 'df -h' every 2 seconds
 
-import "lib/syscalls"
+from lib.syscalls import *
 
-var opt_interval: int32 = 2
-var opt_no_header: int32 = 0
+opt_interval: int32 = 2
+opt_no_header: int32 = 0
 
-proc show_usage() =
-  println(cast[ptr uint8]("Usage: watch [-n sec] [-t] command [args...]"))
-  println(cast[ptr uint8](""))
-  println(cast[ptr uint8]("Execute a program periodically, showing output."))
-  println(cast[ptr uint8](""))
-  println(cast[ptr uint8]("Options:"))
-  println(cast[ptr uint8]("  -n SEC   Refresh interval in seconds (default: 2)"))
-  println(cast[ptr uint8]("  -t       Turn off the header"))
-  println(cast[ptr uint8]("  -h       Display this help"))
+def show_usage():
+  println(cast[*uint8]("Usage: watch [-n sec] [-t] command [args...]"))
+  println(cast[*uint8](""))
+  println(cast[*uint8]("Execute a program periodically, showing output."))
+  println(cast[*uint8](""))
+  println(cast[*uint8]("Options:"))
+  println(cast[*uint8]("  -n SEC   Refresh interval in seconds (default: 2)"))
+  println(cast[*uint8]("  -t       Turn off the header"))
+  println(cast[*uint8]("  -h       Display this help"))
 
-proc parse_int(s: ptr uint8): int32 =
-  var result: int32 = 0
-  var i: int32 = 0
+def parse_int(s: *uint8) -> int32:
+  result: int32 = 0
+  i: int32 = 0
   while s[i] >= 48 and s[i] <= 57:
     result = result * 10 + (cast[int32](s[i]) - 48)
     i = i + 1
   return result
 
-proc clear_screen() =
+def clear_screen():
   # ANSI escape sequence to clear screen and move cursor to top-left
-  print(cast[ptr uint8]("\x1B[2J\x1B[H"))
+  print(cast[*uint8]("\x1B[2J\x1B[H"))
 
-proc print_header(cmd: ptr uint8) =
+def print_header(cmd: *uint8):
   if opt_no_header == 1:
     return
 
-  print(cast[ptr uint8]("Every "))
+  print(cast[*uint8]("Every "))
   print_int(opt_interval)
-  print(cast[ptr uint8]("s: "))
+  print(cast[*uint8]("s: "))
   println(cmd)
-  println(cast[ptr uint8](""))
+  println(cast[*uint8](""))
 
-proc run_command(argc: int32, argv: ptr ptr uint8, cmd_start: int32) =
+def run_command(argc: int32, argv: Ptr[Ptr[uint8]], cmd_start: int32):
   # Build command string
-  var cmd: array[1024, uint8]
-  var pos: int32 = 0
-  var i: int32 = cmd_start
+  cmd: array[1024, uint8]
+  pos: int32 = 0
+  i: int32 = cmd_start
 
   while i < argc:
-    var arg: ptr uint8 = argv[i]
-    var j: int32 = 0
+    arg: *uint8 = argv[i]
+    j: int32 = 0
     while arg[j] != 0 and pos < 1020:
       cmd[pos] = arg[j]
       pos = pos + 1
@@ -70,39 +70,39 @@ proc run_command(argc: int32, argv: ptr ptr uint8, cmd_start: int32) =
   cmd[pos] = 0
 
   # Fork and exec
-  var pid: int32 = fork_proc()
+  pid: int32 = fork_proc()
 
   if pid == 0:
     # Child process - execute the command via shell
-    var shell_argv: array[4, ptr uint8]
-    shell_argv[0] = cast[ptr uint8]("/bin/bsh")
-    shell_argv[1] = cast[ptr uint8]("-c")
+    shell_argv: array[4, *uint8]
+    shell_argv[0] = cast[*uint8]("/bin/bsh")
+    shell_argv[1] = cast[*uint8]("-c")
     shell_argv[2] = addr(cmd[0])
-    shell_argv[3] = cast[ptr uint8](0)
+    shell_argv[3] = cast[*uint8](0)
 
-    execve(cast[ptr uint8]("/bin/bsh"), addr(shell_argv[0]), cast[ptr ptr uint8](0))
+    execve(cast[*uint8]("/bin/bsh"), addr(shell_argv[0]), cast[Ptr[Ptr[uint8]]](0))
     exit(1)
   elif pid > 0:
     # Parent - wait for child
-    var status: int32 = 0
+    status: int32 = 0
     waitpid(pid, addr(status), 0)
 
   clear_screen()
   print_header(addr(cmd[0]))
 
-proc main(argc: int32, argv: ptr ptr uint8): int32 =
-  var cmd_start: int32 = 1
-  var i: int32 = 1
+def main(argc: int32, argv: Ptr[Ptr[uint8]]) -> int32:
+  cmd_start: int32 = 1
+  i: int32 = 1
 
   # Parse options
   while i < argc:
-    var arg: ptr uint8 = argv[i]
+    arg: *uint8 = argv[i]
 
     if arg[0] == 45:  # '-'
       if arg[1] == 110 and arg[2] == 0:  # -n
         i = i + 1
         if i >= argc:
-          println(cast[ptr uint8]("watch: -n requires argument"))
+          println(cast[*uint8]("watch: -n requires argument"))
           return 1
         opt_interval = parse_int(argv[i])
         if opt_interval < 1:
@@ -123,17 +123,17 @@ proc main(argc: int32, argv: ptr ptr uint8): int32 =
     i = i + 1
 
   if cmd_start >= argc:
-    println(cast[ptr uint8]("watch: no command specified"))
+    println(cast[*uint8]("watch: no command specified"))
     show_usage()
     return 1
 
   # Build initial command string for header
-  var cmd_str: array[1024, uint8]
-  var pos: int32 = 0
+  cmd_str: array[1024, uint8]
+  pos: int32 = 0
   i = cmd_start
   while i < argc:
-    var arg: ptr uint8 = argv[i]
-    var j: int32 = 0
+    arg: *uint8 = argv[i]
+    j: int32 = 0
     while arg[j] != 0 and pos < 1020:
       cmd_str[pos] = arg[j]
       pos = pos + 1
@@ -150,27 +150,27 @@ proc main(argc: int32, argv: ptr ptr uint8): int32 =
     print_header(addr(cmd_str[0]))
 
     # Fork and exec
-    var pid: int32 = fork_proc()
+    pid: int32 = fork_proc()
 
     if pid == 0:
       # Child process
-      var shell_argv: array[4, ptr uint8]
-      shell_argv[0] = cast[ptr uint8]("/bin/bsh")
-      shell_argv[1] = cast[ptr uint8]("-c")
+      shell_argv: array[4, *uint8]
+      shell_argv[0] = cast[*uint8]("/bin/bsh")
+      shell_argv[1] = cast[*uint8]("-c")
       shell_argv[2] = addr(cmd_str[0])
-      shell_argv[3] = cast[ptr uint8](0)
+      shell_argv[3] = cast[*uint8](0)
 
-      execve(cast[ptr uint8]("/bin/bsh"), addr(shell_argv[0]), cast[ptr ptr uint8](0))
+      execve(cast[*uint8]("/bin/bsh"), addr(shell_argv[0]), cast[Ptr[Ptr[uint8]]](0))
       exit(1)
     elif pid > 0:
       # Parent - wait for child
-      var status: int32 = 0
+      status: int32 = 0
       waitpid(pid, addr(status), 0)
 
     # Sleep for interval using nanosleep syscall
-    var timespec: array[2, int32]
+    timespec: array[2, int32]
     timespec[0] = opt_interval  # seconds
     timespec[1] = 0             # nanoseconds
-    discard syscall2(SYS_nanosleep, cast[int32](addr(timespec[0])), 0)
+    syscall2(SYS_nanosleep, cast[int32](addr(timespec[0])), 0)
 
   return 0

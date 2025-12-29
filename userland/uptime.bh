@@ -2,18 +2,18 @@
 # Uses SYS_uptime syscall to get system uptime
 # Shows uptime in human-readable format with process count
 
-import "lib/syscalls"
+from lib.syscalls import *
 
-extern get_argc(): int32
-extern get_argv(index: int32): ptr uint8
+extern def get_argc() -> int32
+extern def get_argv(index: int32) -> *uint8
 
 # Uptime structure
-var uptime_data: int32[2]
+uptime_data: int32[2]
 
 # Parse integer from string
-proc parse_int(s: ptr uint8): int32 =
-  var result: int32 = 0
-  var i: int32 = 0
+def parse_int(s: *uint8) -> int32:
+  result: int32 = 0
+  i: int32 = 0
   # Skip leading whitespace
   while s[i] == cast[uint8](32):
     i = i + 1
@@ -27,19 +27,19 @@ proc parse_int(s: ptr uint8): int32 =
   return result
 
 # Print integer with padding
-proc print_int_pad(n: int32) =
+def print_int_pad(n: int32):
   if n < 10:
-    discard write(STDOUT, cast[ptr uint8]("0"), 1)
+    _ = write(STDOUT, cast[*uint8]("0"), 1)
   print_int(n)
 
 # Count processes from /proc
-proc count_processes(): int32 =
-  var old_brk: int32 = syscall1(SYS_brk, 0)
-  var new_brk: int32 = old_brk + 16384
-  discard syscall1(SYS_brk, new_brk)
+def count_processes() -> int32:
+  old_brk: int32 = syscall1(SYS_brk, 0)
+  new_brk: int32 = old_brk + 16384
+  syscall1(SYS_brk, new_brk)
 
-  var dent_buf: ptr uint8 = cast[ptr uint8](old_brk)
-  var path_buf: ptr uint8 = cast[ptr uint8](old_brk + 8192)
+  dent_buf: *uint8 = cast[*uint8](old_brk)
+  path_buf: *uint8 = cast[*uint8](old_brk + 8192)
 
   # Build "/proc"
   path_buf[0] = cast[uint8](47)
@@ -49,19 +49,19 @@ proc count_processes(): int32 =
   path_buf[4] = cast[uint8](99)
   path_buf[5] = cast[uint8](0)
 
-  var proc_fd: int32 = open(path_buf, O_RDONLY | O_DIRECTORY, 0)
+  proc_fd: int32 = open(path_buf, O_RDONLY | O_DIRECTORY, 0)
   if proc_fd < 0:
     return 0
 
-  var count: int32 = 0
-  var nread: int32 = syscall3(SYS_getdents64, proc_fd, cast[int32](dent_buf), 8192)
+  count: int32 = 0
+  nread: int32 = syscall3(SYS_getdents64, proc_fd, cast[int32](dent_buf), 8192)
 
   while nread > 0:
-    var pos: int32 = 0
+    pos: int32 = 0
     while pos < nread:
-      var reclen_ptr: ptr uint16 = cast[ptr uint16](cast[int32](dent_buf) + pos + 16)
-      var reclen: int32 = cast[int32](reclen_ptr[0])
-      var d_name: ptr uint8 = cast[ptr uint8](cast[int32](dent_buf) + pos + 19)
+      reclen_ptr: *uint16 = cast[*uint16](cast[int32](dent_buf) + pos + 16)
+      reclen: int32 = cast[int32](reclen_ptr[0])
+      d_name: *uint8 = cast[*uint8](cast[int32](dent_buf) + pos + 19)
 
       # Check if it's a numeric directory (PID)
       if d_name[0] >= cast[uint8](48) and d_name[0] <= cast[uint8](57):
@@ -71,67 +71,67 @@ proc count_processes(): int32 =
 
     nread = syscall3(SYS_getdents64, proc_fd, cast[int32](dent_buf), 8192)
 
-  discard close(proc_fd)
+  _ = close(proc_fd)
   return count
 
-proc main(): int32 =
+def main() -> int32:
   # Get uptime using syscall
-  var result: int32 = syscall1(SYS_uptime, cast[int32](addr(uptime_data[0])))
+  result: int32 = syscall1(SYS_uptime, cast[int32](addr(uptime_data[0])))
 
-  var uptime_seconds: int32 = uptime_data[0]
-  var uptime_millis: int32 = uptime_data[1]
+  uptime_seconds: int32 = uptime_data[0]
+  uptime_millis: int32 = uptime_data[1]
 
   # Convert to days, hours, minutes
-  var days: int32 = uptime_seconds / 86400
-  var remainder: int32 = uptime_seconds % 86400
-  var hours: int32 = remainder / 3600
-  var minutes: int32 = (remainder % 3600) / 60
-  var seconds: int32 = remainder % 60
+  days: int32 = uptime_seconds / 86400
+  remainder: int32 = uptime_seconds % 86400
+  hours: int32 = remainder / 3600
+  minutes: int32 = (remainder % 3600) / 60
+  seconds: int32 = remainder % 60
 
   # Count processes
-  var proc_count: int32 = count_processes()
+  proc_count: int32 = count_processes()
 
   # Print uptime in format similar to Unix uptime command
   # Format: " HH:MM:SS up X days, Y hours, Z minutes, N processes"
 
   # Print current time (using uptime as fake time)
-  print(cast[ptr uint8](" "))
+  print(cast[*uint8](" "))
   print_int_pad(hours)
-  print(cast[ptr uint8](":"))
+  print(cast[*uint8](":"))
   print_int_pad(minutes)
-  print(cast[ptr uint8](":"))
+  print(cast[*uint8](":"))
   print_int_pad(seconds)
 
-  print(cast[ptr uint8](" up "))
+  print(cast[*uint8](" up "))
 
   # Print uptime in human-readable format
   if days > 0:
     print_int(days)
     if days == 1:
-      print(cast[ptr uint8](" day, "))
+      print(cast[*uint8](" day, "))
     else:
-      print(cast[ptr uint8](" days, "))
+      print(cast[*uint8](" days, "))
 
   if hours > 0 or days > 0:
     print_int(hours)
     if hours == 1:
-      print(cast[ptr uint8](" hour, "))
+      print(cast[*uint8](" hour, "))
     else:
-      print(cast[ptr uint8](" hours, "))
+      print(cast[*uint8](" hours, "))
 
   print_int(minutes)
   if minutes == 1:
-    print(cast[ptr uint8](" minute"))
+    print(cast[*uint8](" minute"))
   else:
-    print(cast[ptr uint8](" minutes"))
+    print(cast[*uint8](" minutes"))
 
   # Print process count
-  print(cast[ptr uint8](", "))
+  print(cast[*uint8](", "))
   print_int(proc_count)
   if proc_count == 1:
-    print(cast[ptr uint8](" process"))
+    print(cast[*uint8](" process"))
   else:
-    print(cast[ptr uint8](" processes"))
+    print(cast[*uint8](" processes"))
 
   newline()
 

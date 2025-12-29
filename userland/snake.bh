@@ -2,78 +2,78 @@
 # Use arrow keys or WASD to control the snake
 # Eat food (green) to grow, avoid walls and yourself
 
-import "lib/syscalls"
+from lib.syscalls import *
 
-const O_NONBLOCK: int32 = 2048
-const F_SETFL: int32 = 4
-const F_GETFL: int32 = 3
+O_NONBLOCK: int32 = 2048
+F_SETFL: int32 = 4
+F_GETFL: int32 = 3
 
-const PROT_READ: int32 = 1
-const PROT_WRITE: int32 = 2
-const MAP_SHARED: int32 = 1
+PROT_READ: int32 = 1
+PROT_WRITE: int32 = 2
+MAP_SHARED: int32 = 1
 
 # Game constants
-const GRID_SIZE: int32 = 20      # Pixels per grid cell
-const GRID_WIDTH: int32 = 30     # Game grid width
-const GRID_HEIGHT: int32 = 25    # Game grid height
-const MAX_SNAKE: int32 = 500     # Maximum snake length
+GRID_SIZE: int32 = 20      # Pixels per grid cell
+GRID_WIDTH: int32 = 30     # Game grid width
+GRID_HEIGHT: int32 = 25    # Game grid height
+MAX_SNAKE: int32 = 500     # Maximum snake length
 
 # Colors
-const BG_COLOR: int32 = 0x1A1A2E
-const GRID_COLOR: int32 = 0x252540
-const SNAKE_HEAD: int32 = 0x00FF88
-const SNAKE_BODY: int32 = 0x00CC66
-const FOOD_COLOR: int32 = 0xFF4444
-const WALL_COLOR: int32 = 0x404060
-const TEXT_COLOR: int32 = 0xFFFFFF
-const SCORE_BG: int32 = 0x0F0F1A
+BG_COLOR: int32 = 0x1A1A2E
+GRID_COLOR: int32 = 0x252540
+SNAKE_HEAD: int32 = 0x00FF88
+SNAKE_BODY: int32 = 0x00CC66
+FOOD_COLOR: int32 = 0xFF4444
+WALL_COLOR: int32 = 0x404060
+TEXT_COLOR: int32 = 0xFFFFFF
+SCORE_BG: int32 = 0x0F0F1A
 
 # Direction constants
-const DIR_UP: int32 = 0
-const DIR_DOWN: int32 = 1
-const DIR_LEFT: int32 = 2
-const DIR_RIGHT: int32 = 3
+DIR_UP: int32 = 0
+DIR_DOWN: int32 = 1
+DIR_LEFT: int32 = 2
+DIR_RIGHT: int32 = 3
 
 # Global framebuffer state
-var g_fb: ptr uint32 = cast[ptr uint32](0)
-var g_xres: int32 = 0
-var g_yres: int32 = 0
-var g_fb_fd: int32 = 0
+g_fb: *uint32 = cast[*uint32](0)
+g_xres: int32 = 0
+g_yres: int32 = 0
+g_fb_fd: int32 = 0
 
 # Game state
-var g_snake_x: array[500, int32]  # Snake segment X positions
-var g_snake_y: array[500, int32]  # Snake segment Y positions
-var g_snake_len: int32 = 3        # Current snake length
-var g_direction: int32 = 3        # Current direction (start moving right)
-var g_food_x: int32 = 15
-var g_food_y: int32 = 12
-var g_score: int32 = 0
-var g_game_over: int32 = 0
-var g_game_x: int32 = 0           # Game area offset X
-var g_game_y: int32 = 0           # Game area offset Y
+g_snake_x: array[500, int32]  # Snake segment X positions
+g_snake_y: array[500, int32]  # Snake segment Y positions
+g_snake_len: int32 = 3        # Current snake length
+g_direction: int32 = 3        # Current direction (start moving right)
+g_food_x: int32 = 15
+g_food_y: int32 = 12
+g_score: int32 = 0
+g_game_over: int32 = 0
+g_game_x: int32 = 0           # Game area offset X
+g_game_y: int32 = 0           # Game area offset Y
 
 # Simple PRNG state
-var g_rand_state: int32 = 12345
+g_rand_state: int32 = 12345
 
-proc print_str(s: ptr uint8) =
-  var len: int32 = 0
+def print_str(s: *uint8):
+  len: int32 = 0
   while s[len] != cast[uint8](0):
     len = len + 1
-  discard syscall3(SYS_write, STDOUT, cast[int32](s), len)
+  syscall3(SYS_write, STDOUT, cast[int32](s), len)
 
-proc print_num(n: int32) =
-  var buf: array[16, uint8]
+def print_num(n: int32):
+  buf: array[16, uint8]
   if n == 0:
     buf[0] = cast[uint8](48)
     buf[1] = cast[uint8](0)
-    print_str(cast[ptr uint8](buf))
+    print_str(cast[*uint8](buf))
     return
-  var neg: int32 = 0
-  var tmp: int32 = n
+  neg: int32 = 0
+  tmp: int32 = n
   if n < 0:
     neg = 1
     tmp = 0 - n
-  var i: int32 = 0
+  i: int32 = 0
   while tmp > 0:
     buf[i] = cast[uint8](48 + tmp - (tmp / 10) * 10)
     tmp = tmp / 10
@@ -82,42 +82,42 @@ proc print_num(n: int32) =
     buf[i] = cast[uint8](45)
     i = i + 1
   buf[i] = cast[uint8](0)
-  var j: int32 = 0
-  var k: int32 = i - 1
+  j: int32 = 0
+  k: int32 = i - 1
   while j < k:
-    var t: uint8 = buf[j]
+    t: uint8 = buf[j]
     buf[j] = buf[k]
     buf[k] = t
     j = j + 1
     k = k - 1
-  print_str(cast[ptr uint8](buf))
+  print_str(cast[*uint8](buf))
 
-proc random(): int32 =
+def random() -> int32:
   g_rand_state = g_rand_state * 1103515245 + 12345
-  var r: int32 = g_rand_state / 65536
+  r: int32 = g_rand_state / 65536
   if r < 0:
     r = 0 - r
   return r
 
-proc sleep_ms(ms: int32) =
-  var old_brk: int32 = syscall1(SYS_brk, 0)
-  discard syscall1(SYS_brk, old_brk + 16)
-  var ts: ptr int32 = cast[ptr int32](old_brk)
+def sleep_ms(ms: int32):
+  old_brk: int32 = syscall1(SYS_brk, 0)
+  syscall1(SYS_brk, old_brk + 16)
+  ts: *int32 = cast[*int32](old_brk)
   ts[0] = 0                    # seconds
   ts[1] = ms * 1000000         # nanoseconds
-  discard syscall2(SYS_nanosleep, cast[int32](ts), 0)
+  syscall2(SYS_nanosleep, cast[int32](ts), 0)
 
 # ============ Drawing Primitives ============
 
-proc buf_pixel(x: int32, y: int32, color: int32) =
+def buf_pixel(x: int32, y: int32, color: int32):
   if x >= 0 and x < g_xres and y >= 0 and y < g_yres:
     g_fb[y * g_xres + x] = cast[uint32](color)
 
-proc fill_rect(x: int32, y: int32, w: int32, h: int32, color: int32) =
-  var cy: int32 = y
+def fill_rect(x: int32, y: int32, w: int32, h: int32, color: int32):
+  cy: int32 = y
   while cy < y + h:
     if cy >= 0 and cy < g_yres:
-      var cx: int32 = x
+      cx: int32 = x
       while cx < x + w:
         if cx >= 0 and cx < g_xres:
           g_fb[cy * g_xres + cx] = cast[uint32](color)
@@ -125,11 +125,11 @@ proc fill_rect(x: int32, y: int32, w: int32, h: int32, color: int32) =
     cy = cy + 1
 
 # 8x8 font bitmap data
-var font: array[768, uint8]
+font: array[768, uint8]
 
-proc init_font() =
+def init_font():
   # Initialize font (just digits and some letters for score)
-  var i: int32 = 0
+  i: int32 = 0
   while i < 768:
     font[i] = cast[uint8](0)
     i = i + 1
@@ -294,17 +294,17 @@ proc init_font() =
   font[470] = cast[uint8](0x18)
   font[471] = cast[uint8](0x00)
 
-proc draw_char(x: int32, y: int32, c: uint8, color: int32) =
-  var idx: int32 = cast[int32](c) * 8
+def draw_char(x: int32, y: int32, c: uint8, color: int32):
+  idx: int32 = cast[int32](c) * 8
   if idx < 0 or idx >= 760:
     return
-  var row: int32 = 0
+  row: int32 = 0
   while row < 8:
-    var bits: uint8 = font[idx + row]
-    var col: int32 = 0
+    bits: uint8 = font[idx + row]
+    col: int32 = 0
     while col < 8:
-      var mask: int32 = 128
-      var shift: int32 = col
+      mask: int32 = 128
+      shift: int32 = col
       while shift > 0:
         mask = mask / 2
         shift = shift - 1
@@ -313,48 +313,48 @@ proc draw_char(x: int32, y: int32, c: uint8, color: int32) =
       col = col + 1
     row = row + 1
 
-proc draw_text(x: int32, y: int32, text: ptr uint8, color: int32) =
-  var i: int32 = 0
-  var cx: int32 = x
+def draw_text(x: int32, y: int32, text: *uint8, color: int32):
+  i: int32 = 0
+  cx: int32 = x
   while text[i] != cast[uint8](0):
     draw_char(cx, y, text[i], color)
     cx = cx + 8
     i = i + 1
 
-proc draw_number(x: int32, y: int32, n: int32, color: int32) =
-  var buf: array[12, uint8]
+def draw_number(x: int32, y: int32, n: int32, color: int32):
+  buf: array[12, uint8]
   if n == 0:
     buf[0] = cast[uint8](48)
     buf[1] = cast[uint8](0)
-    draw_text(x, y, cast[ptr uint8](buf), color)
+    draw_text(x, y, cast[*uint8](buf), color)
     return
-  var tmp: int32 = n
+  tmp: int32 = n
   if tmp < 0:
     tmp = 0 - tmp
-  var i: int32 = 0
+  i: int32 = 0
   while tmp > 0:
     buf[i] = cast[uint8](48 + tmp - (tmp / 10) * 10)
     tmp = tmp / 10
     i = i + 1
   buf[i] = cast[uint8](0)
   # Reverse
-  var j: int32 = 0
-  var k: int32 = i - 1
+  j: int32 = 0
+  k: int32 = i - 1
   while j < k:
-    var t: uint8 = buf[j]
+    t: uint8 = buf[j]
     buf[j] = buf[k]
     buf[k] = t
     j = j + 1
     k = k - 1
-  draw_text(x, y, cast[ptr uint8](buf), color)
+  draw_text(x, y, cast[*uint8](buf), color)
 
 # ============ Framebuffer Setup ============
 
-proc init_framebuffer(): int32 =
+def init_framebuffer() -> int32:
   # Open framebuffer
-  var old_brk: int32 = syscall1(SYS_brk, 0)
-  discard syscall1(SYS_brk, old_brk + 256)
-  var path: ptr uint8 = cast[ptr uint8](old_brk)
+  old_brk: int32 = syscall1(SYS_brk, 0)
+  syscall1(SYS_brk, old_brk + 256)
+  path: *uint8 = cast[*uint8](old_brk)
   path[0] = cast[uint8](47)   # /
   path[1] = cast[uint8](100)  # d
   path[2] = cast[uint8](101)  # e
@@ -367,41 +367,41 @@ proc init_framebuffer(): int32 =
 
   g_fb_fd = syscall3(SYS_open, cast[int32](path), O_RDWR, 0)
   if g_fb_fd < 0:
-    print_str(cast[ptr uint8]("Error: cannot open /dev/fb0\n"))
+    print_str(cast[*uint8]("Error: cannot open /dev/fb0\n"))
     return 1
 
   # Get screen info via ioctl
-  var vinfo: ptr int32 = cast[ptr int32](old_brk + 32)
-  var i: int32 = 0
+  vinfo: *int32 = cast[*int32](old_brk + 32)
+  i: int32 = 0
   while i < 40:
     vinfo[i] = 0
     i = i + 1
 
-  const FBIOGET_VSCREENINFO: int32 = 0x4600
-  var ret: int32 = syscall3(SYS_ioctl, g_fb_fd, FBIOGET_VSCREENINFO, cast[int32](vinfo))
+  FBIOGET_VSCREENINFO: int32 = 0x4600
+  ret: int32 = syscall3(SYS_ioctl, g_fb_fd, FBIOGET_VSCREENINFO, cast[int32](vinfo))
   if ret < 0:
-    print_str(cast[ptr uint8]("Error: ioctl failed\n"))
+    print_str(cast[*uint8]("Error: ioctl failed\n"))
     return 1
 
   g_xres = vinfo[0]
   g_yres = vinfo[1]
-  var bpp: int32 = vinfo[6]
+  bpp: int32 = vinfo[6]
 
   if bpp != 32:
-    print_str(cast[ptr uint8]("Error: only 32bpp supported\n"))
+    print_str(cast[*uint8]("Error: only 32bpp supported\n"))
     return 1
 
   # mmap framebuffer
-  var fb_size: int32 = g_xres * g_yres * 4
-  g_fb = cast[ptr uint32](syscall6(SYS_mmap2, 0, fb_size, PROT_READ + PROT_WRITE, MAP_SHARED, g_fb_fd, 0))
+  fb_size: int32 = g_xres * g_yres * 4
+  g_fb = cast[*uint32](syscall6(SYS_mmap2, 0, fb_size, PROT_READ + PROT_WRITE, MAP_SHARED, g_fb_fd, 0))
 
   if cast[int32](g_fb) < 0:
-    print_str(cast[ptr uint8]("Error: mmap failed\n"))
+    print_str(cast[*uint8]("Error: mmap failed\n"))
     return 1
 
   # Set stdin to non-blocking
-  var flags: int32 = syscall2(SYS_fcntl, STDIN, F_GETFL)
-  discard syscall3(SYS_fcntl, STDIN, F_SETFL, flags + O_NONBLOCK)
+  flags: int32 = syscall2(SYS_fcntl, STDIN, F_GETFL)
+  syscall3(SYS_fcntl, STDIN, F_SETFL, flags + O_NONBLOCK)
 
   # Calculate game area position (centered)
   g_game_x = (g_xres - GRID_WIDTH * GRID_SIZE) / 2
@@ -411,11 +411,11 @@ proc init_framebuffer(): int32 =
 
 # ============ Game Logic ============
 
-proc init_game() =
+def init_game():
   # Initialize snake in center
   g_snake_len = 3
-  var start_x: int32 = GRID_WIDTH / 2
-  var start_y: int32 = GRID_HEIGHT / 2
+  start_x: int32 = GRID_WIDTH / 2
+  start_y: int32 = GRID_HEIGHT / 2
 
   g_snake_x[0] = start_x
   g_snake_y[0] = start_y
@@ -437,28 +437,28 @@ proc init_game() =
   g_food_x = (random() % (GRID_WIDTH - 2)) + 1
   g_food_y = (random() % (GRID_HEIGHT - 2)) + 1
 
-proc spawn_food() =
+def spawn_food():
   # Find a spot not occupied by snake
-  var valid: int32 = 0
-  var attempts: int32 = 0
+  valid: int32 = 0
+  attempts: int32 = 0
   while valid == 0 and attempts < 100:
     g_food_x = (random() % (GRID_WIDTH - 2)) + 1
     g_food_y = (random() % (GRID_HEIGHT - 2)) + 1
     valid = 1
-    var i: int32 = 0
+    i: int32 = 0
     while i < g_snake_len:
       if g_snake_x[i] == g_food_x and g_snake_y[i] == g_food_y:
         valid = 0
       i = i + 1
     attempts = attempts + 1
 
-proc move_snake() =
+def move_snake():
   if g_game_over != 0:
     return
 
   # Calculate new head position
-  var new_x: int32 = g_snake_x[0]
-  var new_y: int32 = g_snake_y[0]
+  new_x: int32 = g_snake_x[0]
+  new_y: int32 = g_snake_y[0]
 
   if g_direction == DIR_UP:
     new_y = new_y - 1
@@ -477,7 +477,7 @@ proc move_snake() =
     return
 
   # Check self collision
-  var i: int32 = 0
+  i: int32 = 0
   while i < g_snake_len:
     if g_snake_x[i] == new_x and g_snake_y[i] == new_y:
       g_game_over = 1
@@ -485,7 +485,7 @@ proc move_snake() =
     i = i + 1
 
   # Check food collision
-  var ate_food: int32 = 0
+  ate_food: int32 = 0
   if new_x == g_food_x and new_y == g_food_y:
     ate_food = 1
     g_score = g_score + 10
@@ -504,12 +504,12 @@ proc move_snake() =
   g_snake_x[0] = new_x
   g_snake_y[0] = new_y
 
-proc handle_input() =
-  var buf: array[8, uint8]
-  var n: int32 = syscall3(SYS_read, STDIN, cast[int32](buf), 8)
+def handle_input():
+  buf: array[8, uint8]
+  n: int32 = syscall3(SYS_read, STDIN, cast[int32](buf), 8)
 
   if n > 0:
-    var c: uint8 = buf[0]
+    c: uint8 = buf[0]
     # WASD controls
     if c == cast[uint8](119) or c == cast[uint8](87):  # w/W
       if g_direction != DIR_DOWN:
@@ -554,28 +554,28 @@ proc handle_input() =
 
 # ============ Rendering ============
 
-proc draw_game() =
+def draw_game():
   # Clear screen
-  var i: int32 = 0
-  var total: int32 = g_xres * g_yres
+  i: int32 = 0
+  total: int32 = g_xres * g_yres
   while i < total:
     g_fb[i] = cast[uint32](BG_COLOR)
     i = i + 1
 
   # Draw score bar
   fill_rect(0, 0, g_xres, 36, SCORE_BG)
-  draw_text(10, 10, cast[ptr uint8]("Score: "), TEXT_COLOR)
+  draw_text(10, 10, cast[*uint8]("Score: "), TEXT_COLOR)
   draw_number(66, 10, g_score, TEXT_COLOR)
 
   # Draw game border
   fill_rect(g_game_x - 4, g_game_y - 4, GRID_WIDTH * GRID_SIZE + 8, GRID_HEIGHT * GRID_SIZE + 8, WALL_COLOR)
 
   # Draw game area background with grid
-  var gy: int32 = 0
+  gy: int32 = 0
   while gy < GRID_HEIGHT:
-    var gx: int32 = 0
+    gx: int32 = 0
     while gx < GRID_WIDTH:
-      var color: int32 = BG_COLOR
+      color: int32 = BG_COLOR
       if (gx + gy) % 2 == 0:
         color = GRID_COLOR
       fill_rect(g_game_x + gx * GRID_SIZE, g_game_y + gy * GRID_SIZE, GRID_SIZE, GRID_SIZE, color)
@@ -583,16 +583,16 @@ proc draw_game() =
     gy = gy + 1
 
   # Draw food
-  var food_px: int32 = g_game_x + g_food_x * GRID_SIZE + 2
-  var food_py: int32 = g_game_y + g_food_y * GRID_SIZE + 2
+  food_px: int32 = g_game_x + g_food_x * GRID_SIZE + 2
+  food_py: int32 = g_game_y + g_food_y * GRID_SIZE + 2
   fill_rect(food_px, food_py, GRID_SIZE - 4, GRID_SIZE - 4, FOOD_COLOR)
 
   # Draw snake
   i = g_snake_len - 1
   while i >= 0:
-    var sx: int32 = g_game_x + g_snake_x[i] * GRID_SIZE + 1
-    var sy: int32 = g_game_y + g_snake_y[i] * GRID_SIZE + 1
-    var color: int32 = SNAKE_BODY
+    sx: int32 = g_game_x + g_snake_x[i] * GRID_SIZE + 1
+    sy: int32 = g_game_y + g_snake_y[i] * GRID_SIZE + 1
+    color: int32 = SNAKE_BODY
     if i == 0:
       color = SNAKE_HEAD
     fill_rect(sx, sy, GRID_SIZE - 2, GRID_SIZE - 2, color)
@@ -600,15 +600,15 @@ proc draw_game() =
 
   # Draw game over text
   if g_game_over == 1:
-    var text_x: int32 = g_game_x + (GRID_WIDTH * GRID_SIZE - 80) / 2
-    var text_y: int32 = g_game_y + (GRID_HEIGHT * GRID_SIZE - 16) / 2
+    text_x: int32 = g_game_x + (GRID_WIDTH * GRID_SIZE - 80) / 2
+    text_y: int32 = g_game_y + (GRID_HEIGHT * GRID_SIZE - 16) / 2
     fill_rect(text_x - 10, text_y - 10, 100, 36, SCORE_BG)
-    draw_text(text_x, text_y, cast[ptr uint8]("GAME OVER"), TEXT_COLOR)
+    draw_text(text_x, text_y, cast[*uint8]("GAME OVER"), TEXT_COLOR)
 
 # ============ Main ============
 
-proc main(): int32 =
-  print_str(cast[ptr uint8]("Snake Game - Use WASD or arrow keys, Q to quit, R to restart\n"))
+def main() -> int32:
+  print_str(cast[*uint8]("Snake Game - Use WASD or arrow keys, Q to quit, R to restart\n"))
 
   if init_framebuffer() != 0:
     return 1
@@ -629,16 +629,16 @@ proc main(): int32 =
     sleep_ms(120)
 
   # Clear screen on exit
-  var i: int32 = 0
-  var total: int32 = g_xres * g_yres
+  i: int32 = 0
+  total: int32 = g_xres * g_yres
   while i < total:
     g_fb[i] = cast[uint32](0)
     i = i + 1
 
-  discard syscall1(SYS_close, g_fb_fd)
-  print_str(cast[ptr uint8]("Final Score: "))
+  syscall1(SYS_close, g_fb_fd)
+  print_str(cast[*uint8]("Final Score: "))
   print_num(g_score)
-  print_str(cast[ptr uint8]("\n"))
+  print_str(cast[*uint8]("\n"))
 
   return 0
 

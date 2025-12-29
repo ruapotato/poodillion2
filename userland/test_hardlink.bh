@@ -1,34 +1,34 @@
 # Test hard link functionality
 # Creates a file, links it, verifies both files point to same inode
 
-import "lib/syscalls"
+from lib.syscalls import *
 
-extern get_argc(): int32
-extern get_argv(i: int32): ptr uint8
+extern def get_argc() -> int32
+extern def get_argv(i: int32) -> *uint8
 
-proc main(): int32 =
+def main() -> int32:
   print("=== Hard Link Test ===")
   newline()
 
   # Create a test file
-  var testfile: ptr uint8 = cast[ptr uint8]("testfile.txt")
-  var linkname: ptr uint8 = cast[ptr uint8]("linkname.txt")
-  var content: ptr uint8 = cast[ptr uint8]("Hello from hard link test!\n")
+  testfile: *uint8 = cast[*uint8]("testfile.txt")
+  linkname: *uint8 = cast[*uint8]("linkname.txt")
+  content: *uint8 = cast[*uint8]("Hello from hard link test!\n")
 
   # Create file
-  var fd: int32 = syscall3(SYS_open, cast[int32](testfile), O_WRONLY | O_CREAT | O_TRUNC, 420)
+  fd: int32 = syscall3(SYS_open, cast[int32](testfile), O_WRONLY | O_CREAT | O_TRUNC, 420)
   if fd < 0:
     perror("Failed to create test file")
     return 1
 
   # Write content
-  var len: int32 = strlen(content)
+  len: int32 = strlen(content)
   if syscall3(SYS_write, fd, cast[int32](content), len) != len:
     perror("Failed to write to test file")
-    discard syscall1(SYS_close, fd)
+    syscall1(SYS_close, fd)
     return 1
 
-  discard syscall1(SYS_close, fd)
+  syscall1(SYS_close, fd)
   print("Created testfile.txt")
   newline()
 
@@ -46,9 +46,9 @@ proc main(): int32 =
     perror("Failed to open testfile.txt")
     return 1
 
-  var buf1: array[128, uint8]
-  var n1: int32 = syscall3(SYS_read, fd, cast[int32](addr(buf1[0])), 128)
-  discard syscall1(SYS_close, fd)
+  buf1: array[128, uint8]
+  n1: int32 = syscall3(SYS_read, fd, cast[int32](addr(buf1[0])), 128)
+  syscall1(SYS_close, fd)
 
   print("Content from testfile.txt: ")
   if n1 > 0:
@@ -62,9 +62,9 @@ proc main(): int32 =
     perror("Failed to open linkname.txt")
     return 1
 
-  var buf2: array[128, uint8]
-  var n2: int32 = syscall3(SYS_read, fd, cast[int32](addr(buf2[0])), 128)
-  discard syscall1(SYS_close, fd)
+  buf2: array[128, uint8]
+  n2: int32 = syscall3(SYS_read, fd, cast[int32](addr(buf2[0])), 128)
+  syscall1(SYS_close, fd)
 
   print("Content from linkname.txt: ")
   if n2 > 0:
@@ -74,8 +74,8 @@ proc main(): int32 =
 
   # Verify content is identical
   if n1 == n2:
-    var same: int32 = 1
-    var i: int32 = 0
+    same: int32 = 1
+    i: int32 = 0
     while i < n1:
       if buf1[i] != buf2[i]:
         same = 0
@@ -106,9 +106,9 @@ proc main(): int32 =
     perror("ERROR: linkname.txt disappeared after unlink")
     return 1
 
-  var buf3: array[128, uint8]
-  var n3: int32 = syscall3(SYS_read, fd, cast[int32](addr(buf3[0])), 128)
-  discard syscall1(SYS_close, fd)
+  buf3: array[128, uint8]
+  n3: int32 = syscall3(SYS_read, fd, cast[int32](addr(buf3[0])), 128)
+  syscall1(SYS_close, fd)
 
   if n3 == n1:
     print("SUCCESS: Linked file still readable after unlinking original")
@@ -119,7 +119,7 @@ proc main(): int32 =
     return 1
 
   # Cleanup - unlink the remaining file
-  discard syscall1(SYS_unlink, cast[int32](linkname))
+  syscall1(SYS_unlink, cast[int32](linkname))
 
   print("=== All Tests Passed ===")
   newline()

@@ -2,18 +2,18 @@
 # Usage: tty
 # Reads from /proc/self/fd/0 (symlink to tty)
 
-import "lib/syscalls"
+from lib.syscalls import *
 
-proc main(): int32 =
+def main() -> int32:
   # Allocate memory
-  var old_brk: int32 = syscall1(SYS_brk, 0)
-  var new_brk: int32 = old_brk + 4096
-  discard syscall1(SYS_brk, new_brk)
+  old_brk: int32 = syscall1(SYS_brk, 0)
+  new_brk: int32 = old_brk + 4096
+  syscall1(SYS_brk, new_brk)
 
-  var buf: ptr uint8 = cast[ptr uint8](old_brk)
+  buf: *uint8 = cast[*uint8](old_brk)
 
   # Read symbolic link
-  var ret: int32 = syscall3(SYS_readlink, cast[int32]("/proc/self/fd/0"), cast[int32](buf), 4000)
+  ret: int32 = syscall3(SYS_readlink, cast[int32]("/proc/self/fd/0"), cast[int32](buf), 4000)
 
   if ret < 0:
     println("not a tty")
@@ -42,7 +42,7 @@ proc main(): int32 =
     return 1
 
   # Check for pts or tty
-  var is_tty: int32 = 0
+  is_tty: int32 = 0
 
   # Check for "pts"
   if ret >= 8:
@@ -63,7 +63,7 @@ proc main(): int32 =
     return 1
 
   # Print the full path
-  discard write(STDOUT, buf, ret)
+  write(STDOUT, buf, ret)
   newline()
 
   return 0

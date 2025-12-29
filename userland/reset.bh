@@ -3,47 +3,47 @@
 # Sends terminal reset sequence and restores sane settings
 # Combines terminal reset + stty sane
 
-import "lib/syscalls"
+from lib.syscalls import *
 
 # ioctl commands for terminal control
-const TCGETS: int32 = 0x5401
-const TCSETS: int32 = 0x5402
+TCGETS: int32 = 0x5401
+TCSETS: int32 = 0x5402
 
 # termios flags
-const ECHO: int32 = 0x0008
-const ICANON: int32 = 0x0002
-const ISIG: int32 = 0x0001
-const ICRNL: int32 = 0x0100
-const IXON: int32 = 0x0400
-const OPOST: int32 = 0x0001
+ECHO: int32 = 0x0008
+ICANON: int32 = 0x0002
+ISIG: int32 = 0x0001
+ICRNL: int32 = 0x0100
+IXON: int32 = 0x0400
+OPOST: int32 = 0x0001
 
-proc print_err(msg: ptr uint8) =
-  var len: int32 = strlen(msg)
-  discard syscall3(SYS_write, STDERR, cast[int32](msg), len)
+def print_err(msg: *uint8):
+  len: int32 = strlen(msg)
+  syscall3(SYS_write, STDERR, cast[int32](msg), len)
 
-proc main() =
+def main():
   # Allocate memory for termios structure
-  var old_brk: int32 = syscall1(SYS_brk, 0)
-  var new_brk: int32 = old_brk + 256
-  discard syscall1(SYS_brk, new_brk)
+  old_brk: int32 = syscall1(SYS_brk, 0)
+  new_brk: int32 = old_brk + 256
+  syscall1(SYS_brk, new_brk)
 
-  var termios: ptr int32 = cast[ptr int32](old_brk)
+  termios: *int32 = cast[*int32](old_brk)
 
   # Send terminal reset sequences
   # ESC c - Full reset (RIS - Reset to Initial State)
-  print(cast[ptr uint8]("\x1bc"))
+  print(cast[*uint8]("\x1bc"))
 
   # ESC[!p - Soft terminal reset
-  print(cast[ptr uint8]("\x1b[!p"))
+  print(cast[*uint8]("\x1b[!p"))
 
   # ESC[?25h - Show cursor
-  print(cast[ptr uint8]("\x1b[?25h"))
+  print(cast[*uint8]("\x1b[?25h"))
 
   # Clear screen and home cursor
-  print(cast[ptr uint8]("\x1b[2J\x1b[H"))
+  print(cast[*uint8]("\x1b[2J\x1b[H"))
 
   # Get current terminal attributes
-  var ret: int32 = syscall3(SYS_ioctl, STDIN, TCGETS, cast[int32](termios))
+  ret: int32 = syscall3(SYS_ioctl, STDIN, TCGETS, cast[int32](termios))
 
   if ret >= 0:
     # Reset to sane defaults
@@ -56,6 +56,6 @@ proc main() =
     ret = syscall3(SYS_ioctl, STDIN, TCSETS, cast[int32](termios))
 
   # Print a newline to ensure clean state
-  print(cast[ptr uint8]("\n"))
+  print(cast[*uint8]("\n"))
 
-  discard syscall1(SYS_exit, 0)
+  syscall1(SYS_exit, 0)

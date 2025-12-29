@@ -1,7 +1,7 @@
 # notepad - Simple Graphical Text Editor
 # A basic text editor with file loading and saving
 
-import "lib/syscalls"
+from lib.syscalls import *
 
 const O_NONBLOCK: int32 = 2048
 const F_SETFL: int32 = 4
@@ -29,68 +29,68 @@ const STATUS_FG: int32 = 0xBAC2DE
 const SELECTION_BG: int32 = 0x45475A
 
 # Global framebuffer state
-var g_fb: ptr uint32 = cast[ptr uint32](0)
-var g_xres: int32 = 0
-var g_yres: int32 = 0
-var g_fb_fd: int32 = 0
+g_fb: *uint32 = cast[*uint32](0)
+g_xres: int32 = 0
+g_yres: int32 = 0
+g_fb_fd: int32 = 0
 
 # Editor state
-var g_text: ptr uint8 = cast[ptr uint8](0)  # Text buffer
-var g_text_len: int32 = 0                    # Current text length
-var g_cursor_pos: int32 = 0                  # Cursor position in text
-var g_scroll_y: int32 = 0                    # Vertical scroll offset (lines)
-var g_filename: array[256, uint8]            # Current filename
-var g_modified: int32 = 0                    # Has file been modified?
-var g_running: int32 = 1
+g_text: *uint8 = cast[*uint8](0)  # Text buffer
+g_text_len: int32 = 0                    # Current text length
+g_cursor_pos: int32 = 0                  # Cursor position in text
+g_scroll_y: int32 = 0                    # Vertical scroll offset (lines)
+g_filename: array[256, uint8]            # Current filename
+g_modified: int32 = 0                    # Has file been modified?
+g_running: int32 = 1
 
 # Computed values
-var g_visible_lines: int32 = 0
-var g_visible_cols: int32 = 0
-var g_text_start_x: int32 = 50               # After line numbers
+g_visible_lines: int32 = 0
+g_visible_cols: int32 = 0
+g_text_start_x: int32 = 50               # After line numbers
 
-proc print_str(s: ptr uint8) =
-  var len: int32 = 0
+def print_str(s: *uint8):
+  len: int32 = 0
   while s[len] != cast[uint8](0):
     len = len + 1
-  discard syscall3(SYS_write, STDOUT, cast[int32](s), len)
+  _ = syscall3(SYS_write, STDOUT, cast[int32](s), len)
 
-proc print_num(n: int32) =
-  var buf: array[16, uint8]
+def print_num(n: int32):
+  buf: array[16, uint8]
   if n == 0:
     buf[0] = cast[uint8](48)
     buf[1] = cast[uint8](0)
-    print_str(cast[ptr uint8](buf))
+    print_str(cast[*uint8](buf))
     return
-  var tmp: int32 = n
+  tmp: int32 = n
   if tmp < 0:
     tmp = 0 - tmp
-  var i: int32 = 0
+  i: int32 = 0
   while tmp > 0:
     buf[i] = cast[uint8](48 + tmp - (tmp / 10) * 10)
     tmp = tmp / 10
     i = i + 1
   buf[i] = cast[uint8](0)
-  var j: int32 = 0
-  var k: int32 = i - 1
+  j: int32 = 0
+  k: int32 = i - 1
   while j < k:
-    var t: uint8 = buf[j]
+    t: uint8 = buf[j]
     buf[j] = buf[k]
     buf[k] = t
     j = j + 1
     k = k - 1
-  print_str(cast[ptr uint8](buf))
+  print_str(cast[*uint8](buf))
 
 # ============ Drawing Primitives ============
 
-proc buf_pixel(x: int32, y: int32, color: int32) =
+def buf_pixel(x: int32, y: int32, color: int32):
   if x >= 0 and x < g_xres and y >= 0 and y < g_yres:
     g_fb[y * g_xres + x] = cast[uint32](color)
 
-proc fill_rect(x: int32, y: int32, w: int32, h: int32, color: int32) =
-  var cy: int32 = y
+def fill_rect(x: int32, y: int32, w: int32, h: int32, color: int32):
+  cy: int32 = y
   while cy < y + h:
     if cy >= 0 and cy < g_yres:
-      var cx: int32 = x
+      cx: int32 = x
       while cx < x + w:
         if cx >= 0 and cx < g_xres:
           g_fb[cy * g_xres + cx] = cast[uint32](color)
@@ -98,10 +98,10 @@ proc fill_rect(x: int32, y: int32, w: int32, h: int32, color: int32) =
     cy = cy + 1
 
 # Simple 8x8 font
-var font: array[768, uint8]
+font: array[768, uint8]
 
-proc init_font() =
-  var i: int32 = 0
+def init_font():
+  i: int32 = 0
   while i < 768:
     font[i] = cast[uint8](0)
     i = i + 1
@@ -223,17 +223,17 @@ proc init_font() =
   font[782] = cast[uint8](0x3E)
   font[783] = cast[uint8](0x00)
 
-proc draw_char(x: int32, y: int32, c: uint8, color: int32) =
-  var idx: int32 = cast[int32](c) * 8
+def draw_char(x: int32, y: int32, c: uint8, color: int32):
+  idx: int32 = cast[int32](c) * 8
   if idx < 0 or idx >= 760:
     return
-  var row: int32 = 0
+  row: int32 = 0
   while row < 8:
-    var bits: uint8 = font[idx + row]
-    var col: int32 = 0
+    bits: uint8 = font[idx + row]
+    col: int32 = 0
     while col < 8:
-      var mask: int32 = 128
-      var shift: int32 = col
+      mask: int32 = 128
+      shift: int32 = col
       while shift > 0:
         mask = mask / 2
         shift = shift - 1
@@ -242,44 +242,44 @@ proc draw_char(x: int32, y: int32, c: uint8, color: int32) =
       col = col + 1
     row = row + 1
 
-proc draw_text(x: int32, y: int32, text: ptr uint8, color: int32) =
-  var i: int32 = 0
-  var cx: int32 = x
+def draw_text(x: int32, y: int32, text: *uint8, color: int32):
+  i: int32 = 0
+  cx: int32 = x
   while text[i] != cast[uint8](0):
     draw_char(cx, y, text[i], color)
     cx = cx + FONT_WIDTH
     i = i + 1
 
-proc draw_number(x: int32, y: int32, n: int32, color: int32) =
-  var buf: array[12, uint8]
+def draw_number(x: int32, y: int32, n: int32, color: int32):
+  buf: array[12, uint8]
   if n == 0:
     buf[0] = cast[uint8](48)
     buf[1] = cast[uint8](0)
-    draw_text(x, y, cast[ptr uint8](buf), color)
+    draw_text(x, y, cast[*uint8](buf), color)
     return
-  var tmp: int32 = n
-  var i: int32 = 0
+  tmp: int32 = n
+  i: int32 = 0
   while tmp > 0:
     buf[i] = cast[uint8](48 + tmp - (tmp / 10) * 10)
     tmp = tmp / 10
     i = i + 1
   buf[i] = cast[uint8](0)
-  var j: int32 = 0
-  var k: int32 = i - 1
+  j: int32 = 0
+  k: int32 = i - 1
   while j < k:
-    var t: uint8 = buf[j]
+    t: uint8 = buf[j]
     buf[j] = buf[k]
     buf[k] = t
     j = j + 1
     k = k - 1
-  draw_text(x, y, cast[ptr uint8](buf), color)
+  draw_text(x, y, cast[*uint8](buf), color)
 
 # ============ Framebuffer Setup ============
 
-proc init_framebuffer(): int32 =
-  var old_brk: int32 = syscall1(SYS_brk, 0)
-  discard syscall1(SYS_brk, old_brk + 512)
-  var path: ptr uint8 = cast[ptr uint8](old_brk)
+def init_framebuffer() -> int32:
+  old_brk: int32 = syscall1(SYS_brk, 0)
+  _ = syscall1(SYS_brk, old_brk + 512)
+  path: *uint8 = cast[*uint8](old_brk)
   path[0] = cast[uint8](47)
   path[1] = cast[uint8](100)
   path[2] = cast[uint8](101)
@@ -292,30 +292,30 @@ proc init_framebuffer(): int32 =
 
   g_fb_fd = syscall3(SYS_open, cast[int32](path), O_RDWR, 0)
   if g_fb_fd < 0:
-    print_str(cast[ptr uint8]("Error: cannot open /dev/fb0\n"))
+    print_str(cast[*uint8]("Error: cannot open /dev/fb0\n"))
     return 1
 
-  var vinfo: ptr int32 = cast[ptr int32](old_brk + 32)
-  var i: int32 = 0
+  vinfo: *int32 = cast[*int32](old_brk + 32)
+  i: int32 = 0
   while i < 40:
     vinfo[i] = 0
     i = i + 1
 
   const FBIOGET_VSCREENINFO: int32 = 0x4600
-  var ret: int32 = syscall3(SYS_ioctl, g_fb_fd, FBIOGET_VSCREENINFO, cast[int32](vinfo))
+  ret: int32 = syscall3(SYS_ioctl, g_fb_fd, FBIOGET_VSCREENINFO, cast[int32](vinfo))
   if ret < 0:
     return 1
 
   g_xres = vinfo[0]
   g_yres = vinfo[1]
-  var bpp: int32 = vinfo[6]
+  bpp: int32 = vinfo[6]
 
   if bpp != 32:
-    print_str(cast[ptr uint8]("Error: only 32bpp supported\n"))
+    print_str(cast[*uint8]("Error: only 32bpp supported\n"))
     return 1
 
-  var fb_size: int32 = g_xres * g_yres * 4
-  g_fb = cast[ptr uint32](syscall6(SYS_mmap2, 0, fb_size, PROT_READ + PROT_WRITE, MAP_SHARED, g_fb_fd, 0))
+  fb_size: int32 = g_xres * g_yres * 4
+  g_fb = cast[*uint32](syscall6(SYS_mmap2, 0, fb_size, PROT_READ + PROT_WRITE, MAP_SHARED, g_fb_fd, 0))
 
   if cast[int32](g_fb) < 0:
     return 1
@@ -325,39 +325,39 @@ proc init_framebuffer(): int32 =
   g_visible_cols = (g_xres - g_text_start_x) / FONT_WIDTH
 
   # Set stdin non-blocking
-  var flags: int32 = syscall2(SYS_fcntl, STDIN, F_GETFL)
-  discard syscall3(SYS_fcntl, STDIN, F_SETFL, flags + O_NONBLOCK)
+  flags: int32 = syscall2(SYS_fcntl, STDIN, F_GETFL)
+  _ = syscall3(SYS_fcntl, STDIN, F_SETFL, flags + O_NONBLOCK)
 
   return 0
 
 # ============ Text Buffer Operations ============
 
-proc get_line_start(line_num: int32): int32 =
+def get_line_start(line_num: int32) -> int32:
   # Returns position of the start of line_num (0-indexed)
   if line_num <= 0:
     return 0
-  var pos: int32 = 0
-  var line: int32 = 0
+  pos: int32 = 0
+  line: int32 = 0
   while pos < g_text_len and line < line_num:
     if g_text[pos] == cast[uint8](10):  # newline
       line = line + 1
     pos = pos + 1
   return pos
 
-proc get_cursor_line(): int32 =
+def get_cursor_line() -> int32:
   # Returns which line the cursor is on
-  var line: int32 = 0
-  var i: int32 = 0
+  line: int32 = 0
+  i: int32 = 0
   while i < g_cursor_pos and i < g_text_len:
     if g_text[i] == cast[uint8](10):
       line = line + 1
     i = i + 1
   return line
 
-proc get_cursor_col(): int32 =
+def get_cursor_col() -> int32:
   # Returns column position on current line
-  var col: int32 = 0
-  var i: int32 = g_cursor_pos - 1
+  col: int32 = 0
+  i: int32 = g_cursor_pos - 1
   while i >= 0:
     if g_text[i] == cast[uint8](10):
       return col
@@ -365,20 +365,20 @@ proc get_cursor_col(): int32 =
     i = i - 1
   return col
 
-proc get_total_lines(): int32 =
-  var lines: int32 = 1
-  var i: int32 = 0
+def get_total_lines() -> int32:
+  lines: int32 = 1
+  i: int32 = 0
   while i < g_text_len:
     if g_text[i] == cast[uint8](10):
       lines = lines + 1
     i = i + 1
   return lines
 
-proc insert_char(c: uint8) =
+def insert_char(c: uint8):
   if g_text_len >= MAX_TEXT - 1:
     return
   # Shift text after cursor
-  var i: int32 = g_text_len
+  i: int32 = g_text_len
   while i > g_cursor_pos:
     g_text[i] = g_text[i - 1]
     i = i - 1
@@ -387,9 +387,9 @@ proc insert_char(c: uint8) =
   g_cursor_pos = g_cursor_pos + 1
   g_modified = 1
 
-proc delete_char() =
+def delete_char():
   if g_cursor_pos > 0:
-    var i: int32 = g_cursor_pos - 1
+    i: int32 = g_cursor_pos - 1
     while i < g_text_len - 1:
       g_text[i] = g_text[i + 1]
       i = i + 1
@@ -397,26 +397,26 @@ proc delete_char() =
     g_cursor_pos = g_cursor_pos - 1
     g_modified = 1
 
-proc move_cursor_up() =
-  var cur_line: int32 = get_cursor_line()
-  var cur_col: int32 = get_cursor_col()
+def move_cursor_up():
+  cur_line: int32 = get_cursor_line()
+  cur_col: int32 = get_cursor_col()
   if cur_line > 0:
-    var new_line_start: int32 = get_line_start(cur_line - 1)
-    var new_line_end: int32 = get_line_start(cur_line) - 1
-    var new_line_len: int32 = new_line_end - new_line_start
+    new_line_start: int32 = get_line_start(cur_line - 1)
+    new_line_end: int32 = get_line_start(cur_line) - 1
+    new_line_len: int32 = new_line_end - new_line_start
     if cur_col > new_line_len:
       g_cursor_pos = new_line_end
     else:
       g_cursor_pos = new_line_start + cur_col
 
-proc move_cursor_down() =
-  var cur_line: int32 = get_cursor_line()
-  var cur_col: int32 = get_cursor_col()
-  var total_lines: int32 = get_total_lines()
+def move_cursor_down():
+  cur_line: int32 = get_cursor_line()
+  cur_col: int32 = get_cursor_col()
+  total_lines: int32 = get_total_lines()
   if cur_line < total_lines - 1:
-    var new_line_start: int32 = get_line_start(cur_line + 1)
-    var next_line_start: int32 = get_line_start(cur_line + 2)
-    var new_line_len: int32 = next_line_start - new_line_start - 1
+    new_line_start: int32 = get_line_start(cur_line + 1)
+    next_line_start: int32 = get_line_start(cur_line + 2)
+    new_line_len: int32 = next_line_start - new_line_start - 1
     if next_line_start > g_text_len:
       new_line_len = g_text_len - new_line_start
     if cur_col > new_line_len:
@@ -426,14 +426,14 @@ proc move_cursor_down() =
 
 # ============ File Operations ============
 
-proc load_file(filename: ptr uint8): int32 =
-  var fd: int32 = syscall3(SYS_open, cast[int32](filename), O_RDONLY, 0)
+def load_file(filename: *uint8) -> int32:
+  fd: int32 = syscall3(SYS_open, cast[int32](filename), O_RDONLY, 0)
   if fd < 0:
     return 1
 
   # Get file size
-  var size: int32 = syscall3(SYS_lseek, fd, 0, SEEK_END)
-  discard syscall3(SYS_lseek, fd, 0, SEEK_SET)
+  size: int32 = syscall3(SYS_lseek, fd, 0, SEEK_END)
+  _ = syscall3(SYS_lseek, fd, 0, SEEK_SET)
 
   if size > MAX_TEXT - 1:
     size = MAX_TEXT - 1
@@ -443,38 +443,38 @@ proc load_file(filename: ptr uint8): int32 =
   else:
     g_text_len = 0
 
-  discard syscall1(SYS_close, fd)
+  _ = syscall1(SYS_close, fd)
   g_cursor_pos = 0
   g_scroll_y = 0
   g_modified = 0
-  strcpy(cast[ptr uint8](g_filename), filename)
+  strcpy(cast[*uint8](g_filename), filename)
   return 0
 
-proc save_file(): int32 =
+def save_file() -> int32:
   if g_filename[0] == cast[uint8](0):
     return 1
 
-  var fd: int32 = syscall3(SYS_open, cast[int32](g_filename), O_WRONLY + O_CREAT + O_TRUNC, 420)  # 0644
+  fd: int32 = syscall3(SYS_open, cast[int32](g_filename), O_WRONLY + O_CREAT + O_TRUNC, 420)  # 0644
   if fd < 0:
     return 1
 
   if g_text_len > 0:
-    discard syscall3(SYS_write, fd, cast[int32](g_text), g_text_len)
+    _ = syscall3(SYS_write, fd, cast[int32](g_text), g_text_len)
 
-  discard syscall1(SYS_close, fd)
+  _ = syscall1(SYS_close, fd)
   g_modified = 0
   return 0
 
 # ============ Input Handling ============
 
-proc handle_input() =
-  var buf: array[16, uint8]
-  var n: int32 = syscall3(SYS_read, STDIN, cast[int32](buf), 16)
+def handle_input():
+  buf: array[16, uint8]
+  n: int32 = syscall3(SYS_read, STDIN, cast[int32](buf), 16)
 
   if n <= 0:
     return
 
-  var c: uint8 = buf[0]
+  c: uint8 = buf[0]
 
   # Escape sequences (arrow keys)
   if n >= 3 and c == cast[uint8](27) and buf[1] == cast[uint8](91):
@@ -500,7 +500,7 @@ proc handle_input() =
 
   # Ctrl+S = save
   if c == cast[uint8](19):
-    discard save_file()
+    _ = save_file()
     return
 
   # Backspace
@@ -515,7 +515,7 @@ proc handle_input() =
 
   # Tab
   if c == cast[uint8](9):
-    var spaces: int32 = 0
+    spaces: int32 = 0
     while spaces < TAB_SIZE:
       insert_char(cast[uint8](32))
       spaces = spaces + 1
@@ -527,10 +527,10 @@ proc handle_input() =
 
 # ============ Rendering ============
 
-proc draw_editor() =
+def draw_editor():
   # Clear background
-  var i: int32 = 0
-  var total: int32 = g_xres * g_yres
+  i: int32 = 0
+  total: int32 = g_xres * g_yres
   while i < total:
     g_fb[i] = cast[uint32](BG_COLOR)
     i = i + 1
@@ -539,18 +539,18 @@ proc draw_editor() =
   fill_rect(0, 0, g_text_start_x - 5, g_yres - 24, LINE_NUM_BG)
 
   # Draw text content
-  var line: int32 = g_scroll_y
-  var y: int32 = 2
-  var pos: int32 = get_line_start(g_scroll_y)
+  line: int32 = g_scroll_y
+  y: int32 = 2
+  pos: int32 = get_line_start(g_scroll_y)
 
   while line < g_scroll_y + g_visible_lines and pos <= g_text_len:
     # Draw line number
     draw_number(5, y, line + 1, LINE_NUM_FG)
 
     # Draw line content
-    var x: int32 = g_text_start_x
+    x: int32 = g_text_start_x
     while pos < g_text_len and g_text[pos] != cast[uint8](10):
-      var ch: uint8 = g_text[pos]
+      ch: uint8 = g_text[pos]
 
       # Draw cursor
       if pos == g_cursor_pos:
@@ -574,38 +574,38 @@ proc draw_editor() =
 
   # Draw cursor at end of file
   if g_cursor_pos == g_text_len:
-    var cursor_line: int32 = get_cursor_line()
-    var cursor_col: int32 = get_cursor_col()
+    cursor_line: int32 = get_cursor_line()
+    cursor_col: int32 = get_cursor_col()
     if cursor_line >= g_scroll_y and cursor_line < g_scroll_y + g_visible_lines:
-      var cx: int32 = g_text_start_x + cursor_col * FONT_WIDTH
-      var cy: int32 = 2 + (cursor_line - g_scroll_y) * FONT_HEIGHT
+      cx: int32 = g_text_start_x + cursor_col * FONT_WIDTH
+      cy: int32 = 2 + (cursor_line - g_scroll_y) * FONT_HEIGHT
       fill_rect(cx, cy, 2, FONT_HEIGHT, CURSOR_COLOR)
 
   # Draw status bar
-  var status_y: int32 = g_yres - 22
+  status_y: int32 = g_yres - 22
   fill_rect(0, status_y, g_xres, 22, STATUS_BG)
 
   # Filename
   if g_filename[0] != cast[uint8](0):
-    draw_text(10, status_y + 4, cast[ptr uint8](g_filename), STATUS_FG)
+    draw_text(10, status_y + 4, cast[*uint8](g_filename), STATUS_FG)
     if g_modified != 0:
-      draw_text(10 + strlen(cast[ptr uint8](g_filename)) * FONT_WIDTH, status_y + 4, cast[ptr uint8](" [+]"), STATUS_FG)
+      draw_text(10 + strlen(cast[*uint8](g_filename)) * FONT_WIDTH, status_y + 4, cast[*uint8](" [+]"), STATUS_FG)
   else:
-    draw_text(10, status_y + 4, cast[ptr uint8]("[New File]"), STATUS_FG)
+    draw_text(10, status_y + 4, cast[*uint8]("[New File]"), STATUS_FG)
 
   # Line/column indicator
-  var cur_line: int32 = get_cursor_line()
-  var cur_col: int32 = get_cursor_col()
-  var info_x: int32 = g_xres - 150
-  draw_text(info_x, status_y + 4, cast[ptr uint8]("Ln "), STATUS_FG)
+  cur_line: int32 = get_cursor_line()
+  cur_col: int32 = get_cursor_col()
+  info_x: int32 = g_xres - 150
+  draw_text(info_x, status_y + 4, cast[*uint8]("Ln "), STATUS_FG)
   draw_number(info_x + 24, status_y + 4, cur_line + 1, STATUS_FG)
-  draw_text(info_x + 60, status_y + 4, cast[ptr uint8]("Col "), STATUS_FG)
+  draw_text(info_x + 60, status_y + 4, cast[*uint8]("Col "), STATUS_FG)
   draw_number(info_x + 92, status_y + 4, cur_col + 1, STATUS_FG)
 
 # ============ Main ============
 
-proc main(): int32 =
-  print_str(cast[ptr uint8]("Notepad - Ctrl+S to save, Ctrl+Q to quit\n"))
+def main() -> int32:
+  print_str(cast[*uint8]("Notepad - Ctrl+S to save, Ctrl+Q to quit\n"))
 
   if init_framebuffer() != 0:
     return 1
@@ -613,9 +613,9 @@ proc main(): int32 =
   init_font()
 
   # Allocate text buffer
-  var old_brk: int32 = syscall1(SYS_brk, 0)
-  discard syscall1(SYS_brk, old_brk + MAX_TEXT)
-  g_text = cast[ptr uint8](old_brk)
+  old_brk: int32 = syscall1(SYS_brk, 0)
+  _ = syscall1(SYS_brk, old_brk + MAX_TEXT)
+  g_text = cast[*uint8](old_brk)
   g_text_len = 0
   g_cursor_pos = 0
 
@@ -627,7 +627,7 @@ proc main(): int32 =
     handle_input()
 
     # Ensure cursor is visible (auto-scroll)
-    var cursor_line: int32 = get_cursor_line()
+    cursor_line: int32 = get_cursor_line()
     if cursor_line < g_scroll_y:
       g_scroll_y = cursor_line
     if cursor_line >= g_scroll_y + g_visible_lines:
@@ -636,22 +636,22 @@ proc main(): int32 =
     draw_editor()
 
     # Small delay to reduce CPU usage
-    var old_brk2: int32 = syscall1(SYS_brk, 0)
-    discard syscall1(SYS_brk, old_brk2 + 16)
-    var ts: ptr int32 = cast[ptr int32](old_brk2)
+    old_brk2: int32 = syscall1(SYS_brk, 0)
+    _ = syscall1(SYS_brk, old_brk2 + 16)
+    ts: *int32 = cast[*int32](old_brk2)
     ts[0] = 0
     ts[1] = 16000000  # 16ms
     const SYS_nanosleep: int32 = 162
-    discard syscall2(SYS_nanosleep, cast[int32](ts), 0)
+    _ = syscall2(SYS_nanosleep, cast[int32](ts), 0)
 
   # Clear screen
-  var i: int32 = 0
-  var total: int32 = g_xres * g_yres
+  i: int32 = 0
+  total: int32 = g_xres * g_yres
   while i < total:
     g_fb[i] = cast[uint32](0)
     i = i + 1
 
-  discard syscall1(SYS_close, g_fb_fd)
+  _ = syscall1(SYS_close, g_fb_fd)
   return 0
 
 main()

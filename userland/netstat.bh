@@ -1,9 +1,9 @@
 # netstat - Display network connections, routing tables, interface statistics
 # Reads from /proc/net/tcp and /proc/net/udp
 
-import "lib/syscalls"
+from lib.syscalls import *
 
-proc hexchar_to_int(c: uint8): int32 =
+def hexchar_to_int(c: uint8) -> int32:
   if c >= cast[uint8](48):
     if c <= cast[uint8](57):
       return cast[int32](c) - 48
@@ -15,27 +15,27 @@ proc hexchar_to_int(c: uint8): int32 =
       return cast[int32](c) - 97 + 10
   return 0
 
-proc int_to_char(val: int32): uint8 =
+def int_to_char(val: int32) -> uint8:
   if val < 10:
     return cast[uint8](val + 48)
   return cast[uint8](0)
 
-proc print_hex_as_ip(hex_str: ptr uint8, out: ptr uint8) =
+def print_hex_as_ip(hex_str: *uint8, out: *uint8):
   # Convert hex IP address (little endian) to dotted decimal
   # Example: 0100007F -> 127.0.0.1
-  var i: int32 = 0
-  var j: int32 = 0
-  var byte_val: int32 = 0
-  var octet: int32 = 0
+  i: int32 = 0
+  j: int32 = 0
+  byte_val: int32 = 0
+  octet: int32 = 0
 
   # Process 4 octets (8 hex chars, 2 per byte)
   while i < 8:
     byte_val = hexchar_to_int(hex_str[i]) * 16 + hexchar_to_int(hex_str[i + 1])
 
     # Convert byte to decimal string
-    var d1: int32 = byte_val / 100
-    var d2: int32 = (byte_val % 100) / 10
-    var d3: int32 = byte_val % 10
+    d1: int32 = byte_val / 100
+    d2: int32 = (byte_val % 100) / 10
+    d3: int32 = byte_val % 10
 
     if d1 > 0:
       out[j] = int_to_char(d1)
@@ -63,23 +63,23 @@ proc print_hex_as_ip(hex_str: ptr uint8, out: ptr uint8) =
 
   out[j] = cast[uint8](0)
 
-proc print_hex_as_port(hex_str: ptr uint8, out: ptr uint8) =
+def print_hex_as_port(hex_str: *uint8, out: *uint8):
   # Convert hex port (4 chars) to decimal
-  var port: int32 = 0
-  var i: int32 = 0
+  port: int32 = 0
+  i: int32 = 0
 
   while i < 4:
     port = port * 16 + hexchar_to_int(hex_str[i])
     i = i + 1
 
   # Convert to string
-  var j: int32 = 0
+  j: int32 = 0
   if port == 0:
     out[j] = cast[uint8](48)  # 0
     j = j + 1
   if port > 0:
-    var temp: int32 = port
-    var digits: int32 = 0
+    temp: int32 = port
+    digits: int32 = 0
 
     # Count digits
     while temp > 0:
@@ -98,11 +98,11 @@ proc print_hex_as_port(hex_str: ptr uint8, out: ptr uint8) =
 
   out[j] = cast[uint8](0)
 
-proc parse_line(line: ptr uint8, local: ptr uint8, remote: ptr uint8, state: ptr uint8) =
+def parse_line(line: *uint8, local: *uint8, remote: *uint8, state: *uint8):
   # Parse format: "  sl  local_address rem_address   st tx_queue rx_queue..."
   # Skip to local address (after spaces and sl)
-  var i: int32 = 0
-  var field: int32 = 0
+  i: int32 = 0
+  field: int32 = 0
 
   # Skip initial spaces and sl field
   while line[i] == cast[uint8](32):
@@ -117,16 +117,16 @@ proc parse_line(line: ptr uint8, local: ptr uint8, remote: ptr uint8, state: ptr
     i = i + 1
 
   # Parse local address (format: HEXIP:HEXPORT)
-  var local_start: int32 = i
+  local_start: int32 = i
   while line[i] != cast[uint8](58):  # :
     if line[i] == cast[uint8](0):
       return
     i = i + 1
 
   # Extract IP
-  var ip_buf: ptr uint8 = cast[ptr uint8](cast[int32](local) + 100)
-  var k: int32 = 0
-  var j: int32 = local_start
+  ip_buf: *uint8 = cast[*uint8](cast[int32](local) + 100)
+  k: int32 = 0
+  j: int32 = local_start
   while j < i:
     ip_buf[k] = line[j]
     k = k + 1
@@ -146,7 +146,7 @@ proc parse_line(line: ptr uint8, local: ptr uint8, remote: ptr uint8, state: ptr
   i = i + 1
 
   # Extract port
-  var port_buf: ptr uint8 = cast[ptr uint8](cast[int32](local) + 150)
+  port_buf: *uint8 = cast[*uint8](cast[int32](local) + 150)
   j = 0
   while line[i] != cast[uint8](32):
     if line[i] == cast[uint8](0):
@@ -156,7 +156,7 @@ proc parse_line(line: ptr uint8, local: ptr uint8, remote: ptr uint8, state: ptr
     i = i + 1
   port_buf[j] = cast[uint8](0)
 
-  print_hex_as_port(port_buf, cast[ptr uint8](cast[int32](local) + k))
+  print_hex_as_port(port_buf, cast[*uint8](cast[int32](local) + k))
 
   # Skip spaces to remote address
   while line[i] == cast[uint8](32):
@@ -200,7 +200,7 @@ proc parse_line(line: ptr uint8, local: ptr uint8, remote: ptr uint8, state: ptr
     i = i + 1
   port_buf[j] = cast[uint8](0)
 
-  print_hex_as_port(port_buf, cast[ptr uint8](cast[int32](remote) + k))
+  print_hex_as_port(port_buf, cast[*uint8](cast[int32](remote) + k))
 
   # Skip spaces to state
   while line[i] == cast[uint8](32):
@@ -212,32 +212,32 @@ proc parse_line(line: ptr uint8, local: ptr uint8, remote: ptr uint8, state: ptr
   state[1] = line[i]
   state[2] = cast[uint8](0)
 
-proc process_file(path: ptr uint8, proto: ptr uint8) =
-  var fd: int32 = syscall3(SYS_open, cast[int32](path), O_RDONLY, 0)
+def process_file(path: *uint8, proto: *uint8):
+  fd: int32 = syscall3(SYS_open, cast[int32](path), O_RDONLY, 0)
   if fd < 0:
     return
 
   # Allocate buffer
-  var old_brk: int32 = syscall1(SYS_brk, 0)
-  var new_brk: int32 = old_brk + 16384
-  discard syscall1(SYS_brk, new_brk)
+  old_brk: int32 = syscall1(SYS_brk, 0)
+  new_brk: int32 = old_brk + 16384
+  _ = syscall1(SYS_brk, new_brk)
 
-  var buffer: ptr uint8 = cast[ptr uint8](old_brk)
-  var line_buf: ptr uint8 = cast[ptr uint8](old_brk + 8192)
-  var local_buf: ptr uint8 = cast[ptr uint8](old_brk + 8192 + 512)
-  var remote_buf: ptr uint8 = cast[ptr uint8](old_brk + 8192 + 512 + 200)
-  var state_buf: ptr uint8 = cast[ptr uint8](old_brk + 8192 + 512 + 400)
+  buffer: *uint8 = cast[*uint8](old_brk)
+  line_buf: *uint8 = cast[*uint8](old_brk + 8192)
+  local_buf: *uint8 = cast[*uint8](old_brk + 8192 + 512)
+  remote_buf: *uint8 = cast[*uint8](old_brk + 8192 + 512 + 200)
+  state_buf: *uint8 = cast[*uint8](old_brk + 8192 + 512 + 400)
 
-  var nread: int32 = syscall3(SYS_read, fd, cast[int32](buffer), 8192)
-  discard syscall1(SYS_close, fd)
+  nread: int32 = syscall3(SYS_read, fd, cast[int32](buffer), 8192)
+  _ = syscall1(SYS_close, fd)
 
   if nread <= 0:
     return
 
   # Process line by line
-  var line_start: int32 = 0
-  var i: int32 = 0
-  var first_line: int32 = 1
+  line_start: int32 = 0
+  i: int32 = 0
+  first_line: int32 = 1
 
   while i < nread:
     if buffer[i] == cast[uint8](10):  # newline
@@ -250,8 +250,8 @@ proc process_file(path: ptr uint8, proto: ptr uint8) =
           return
       if first_line == 0:
         # Copy line
-        var j: int32 = 0
-        var k: int32 = line_start
+        j: int32 = 0
+        k: int32 = line_start
         while k < i:
           line_buf[j] = buffer[k]
           j = j + 1
@@ -262,13 +262,13 @@ proc process_file(path: ptr uint8, proto: ptr uint8) =
         parse_line(line_buf, local_buf, remote_buf, state_buf)
 
         print(proto)
-        print(cast[ptr uint8]("  "))
+        print(cast[*uint8]("  "))
         print(local_buf)
 
         # Pad to 24 chars
-        var len: int32 = strlen(local_buf)
+        len: int32 = strlen(local_buf)
         while len < 24:
-          print(cast[ptr uint8](" "))
+          print(cast[*uint8](" "))
           len = len + 1
 
         print(remote_buf)
@@ -276,26 +276,26 @@ proc process_file(path: ptr uint8, proto: ptr uint8) =
         # Pad to 24 chars
         len = strlen(remote_buf)
         while len < 24:
-          print(cast[ptr uint8](" "))
+          print(cast[*uint8](" "))
           len = len + 1
 
         print(state_buf)
-        print(cast[ptr uint8]("\n"))
+        print(cast[*uint8]("\n"))
 
         line_start = i + 1
 
     i = i + 1
 
-proc main() =
+def main():
   # Allocate memory for paths
-  var old_brk: int32 = syscall1(SYS_brk, 0)
-  var new_brk: int32 = old_brk + 1024
-  discard syscall1(SYS_brk, new_brk)
+  old_brk: int32 = syscall1(SYS_brk, 0)
+  new_brk: int32 = old_brk + 1024
+  _ = syscall1(SYS_brk, new_brk)
 
-  var tcp_path: ptr uint8 = cast[ptr uint8](old_brk)
-  var udp_path: ptr uint8 = cast[ptr uint8](old_brk + 256)
-  var tcp_label: ptr uint8 = cast[ptr uint8](old_brk + 512)
-  var udp_label: ptr uint8 = cast[ptr uint8](old_brk + 520)
+  tcp_path: *uint8 = cast[*uint8](old_brk)
+  udp_path: *uint8 = cast[*uint8](old_brk + 256)
+  tcp_label: *uint8 = cast[*uint8](old_brk + 512)
+  udp_label: *uint8 = cast[*uint8](old_brk + 520)
 
   # Build /proc/net/tcp
   tcp_path[0] = cast[uint8](47)   # /
@@ -341,7 +341,7 @@ proc main() =
   udp_label[3] = cast[uint8](0)
 
   # Print header
-  print(cast[ptr uint8]("Proto Local Address          Foreign Address        State\n"))
+  print(cast[*uint8]("Proto Local Address          Foreign Address        State\n"))
 
   # Process TCP connections
   process_file(tcp_path, tcp_label)
@@ -349,4 +349,4 @@ proc main() =
   # Process UDP connections
   process_file(udp_path, udp_label)
 
-  discard syscall1(SYS_exit, 0)
+  _ = syscall1(SYS_exit, 0)

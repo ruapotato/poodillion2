@@ -1,34 +1,34 @@
 # link - Create hard link
 # Usage: link target linkname
 
-import "lib/syscalls"
+from lib.syscalls import *
 
-extern get_argc(): int32
-extern get_argv(index: int32): ptr uint8
+extern def get_argc() -> int32
+extern def get_argv(index: int32) -> *uint8
 
-proc print_err(msg: ptr uint8) =
-  var len: int32 = strlen(msg)
-  discard syscall3(SYS_write, STDERR, cast[int32](msg), len)
+def print_err(msg: *uint8):
+    len: int32 = strlen(msg)
+    _ = syscall3(SYS_write, STDERR, cast[int32](msg), len)
 
-proc main() =
-  var argc: int32 = get_argc()
+def main():
+    argc: int32 = get_argc()
 
-  if argc < 3:
-    print_err(cast[ptr uint8]("Usage: link target linkname\n"))
-    discard syscall1(SYS_exit, 1)
+    if argc < 3:
+        print_err(cast[*uint8]("Usage: link target linkname\n"))
+        _ = syscall1(SYS_exit, 1)
 
-  var target: ptr uint8 = get_argv(1)
-  var linkname: ptr uint8 = get_argv(2)
+    target: *uint8 = get_argv(1)
+    linkname: *uint8 = get_argv(2)
 
-  # Create hard link
-  var result: int32 = syscall2(SYS_link, cast[int32](target), cast[int32](linkname))
+    # Create hard link
+    result: int32 = syscall2(SYS_link, cast[int32](target), cast[int32](linkname))
 
-  if result < 0:
-    print_err(cast[ptr uint8]("link: cannot create link '"))
-    print_err(linkname)
-    print_err(cast[ptr uint8]("' to '"))
-    print_err(target)
-    print_err(cast[ptr uint8]("'\n"))
-    discard syscall1(SYS_exit, 1)
+    if result < 0:
+        print_err(cast[*uint8]("link: cannot create link '"))
+        print_err(linkname)
+        print_err(cast[*uint8]("' to '"))
+        print_err(target)
+        print_err(cast[*uint8]("'\n"))
+        _ = syscall1(SYS_exit, 1)
 
-  discard syscall1(SYS_exit, 0)
+    _ = syscall1(SYS_exit, 0)

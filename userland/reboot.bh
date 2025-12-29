@@ -3,25 +3,25 @@
 #
 # Simple wrapper: sync filesystems + reboot syscall
 
-import "lib/syscalls"
+from lib.syscalls import *
 
-proc main(): int32 =
+def main() -> int32:
   println("reboot: syncing filesystems...")
 
   # Sync filesystems three times for safety
-  discard syscall1(SYS_sync, 0)
-  discard syscall1(SYS_sync, 0)
-  discard syscall1(SYS_sync, 0)
+  syscall1(SYS_sync, 0)
+  syscall1(SYS_sync, 0)
+  syscall1(SYS_sync, 0)
 
   println("reboot: rebooting system now...")
 
   # Call reboot syscall
   # SYS_reboot: syscall4(88, MAGIC1, MAGIC2, cmd, 0)
   # MAGIC1 = 0xfee1dead, MAGIC2 = 672274793, CMD_RESTART = 0x01234567 = 19088743
-  var magic1: int32 = 4276215469
-  var magic2: int32 = 672274793
-  var cmd: int32 = 19088743
-  var result: int32 = syscall4(SYS_reboot, magic1, magic2, cmd, 0)
+  magic1: int32 = 4276215469
+  magic2: int32 = 672274793
+  cmd: int32 = 19088743
+  result: int32 = syscall4(SYS_reboot, magic1, magic2, cmd, 0)
 
   # If we get here, reboot failed
   perror("reboot: failed to reboot system")
