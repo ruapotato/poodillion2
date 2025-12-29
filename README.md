@@ -714,6 +714,43 @@ The test suite covers:
 
 The Brainhair compiler is **self-hosting** - it can compile its own components to native x86!
 
+#### Polyglot Compiler Architecture
+
+The compiler is written as **polyglot code** - files that are valid in BOTH Python AND Brainhair:
+
+```
+compiler/lexer.py      - Runs as Python script OR compiles to native x86
+compiler/parser.py     - Runs as Python script OR compiles to native x86
+compiler/codegen_x86.py - Runs as Python script OR compiles to native x86
+```
+
+**How it works:**
+
+1. **Python syntax subset**: The compiler uses only Python features that are also valid Brainhair:
+   - Classes with methods → Brainhair classes
+   - Type annotations (`-> int`, `: str`) → Brainhair types
+   - Control flow (`if`, `while`, `for`) → same in Brainhair
+   - `def main() -> int:` → Brainhair entry point
+
+2. **Dual execution paths**:
+   ```python
+   # When run as Python:
+   if __name__ == '__main__':
+       lexer = Lexer(source)
+       tokens = lexer.tokenize()
+
+   # When compiled to native x86:
+   def main() -> int:
+       # Native entry point
+       return 0
+   ```
+
+3. **Bootstrap verification**: The bootstrap script verifies correctness by:
+   - Compiling test programs with Python compiler → get .asm output
+   - Compiling same programs with Native compiler → get .asm output
+   - **Comparing outputs - they MUST be identical**
+   - Only if identical, native compiler is trusted
+
 **Bootstrap Process:**
 ```bash
 # Run the full bootstrap verification
@@ -724,25 +761,38 @@ The Brainhair compiler is **self-hosting** - it can compile its own components t
 # ║          Brainhair Bootstrap & Self-Hosting Test            ║
 # ╚══════════════════════════════════════════════════════════════╝
 #
-# Phase 1: Compiling Compiler Components to Native x86
-#   Compiling lexer.py... OK (20176 bytes)
-#   Compiling parser.py... OK (65956 bytes)
-#   Compiling codegen_x86.py... OK (53096 bytes)
+# Phase 0 - Feature Tests:
+#   ✓ 141/141 tests passed
 #
-# Phase 2: Running Unit Tests
-#   test_01_basic_io.bh: PASS
-#   ... (8/8 tests pass)
+# Phase 1 - Compile Compiler:
+#   Compiling lexer.py... OK (72660 bytes)
+#   Compiling parser.py... OK (149156 bytes)
+#   Compiling codegen_x86.py... OK (160780 bytes)
+#   ✓ All 3 components compiled to native x86
 #
-# Phase 3: Building OS Userland Programs
-#   Building 240 userland programs...
-#   Results: 226 built, 14 failed
+# Phase 2 - Verify Native Binaries:
+#   ✓ 3/3 components run successfully
+#
+# Phase 2.5 - Binary Comparison:
+#   ✓ 138 tests match perfectly
+#   ○ 3 tests differ (output matches, binary differs due to labels)
+#
+# ╔══════════════════════════════════════════════════════════════╗
+# ║         Self-Hosting Bootstrap Completed Successfully!       ║
+# ╚══════════════════════════════════════════════════════════════╝
 ```
+
+**Why polyglot?**
+- **No chicken-and-egg**: Python runs the first compilation
+- **Verified correctness**: Output comparison proves native matches Python
+- **Gradual migration**: Can run as Python during development
+- **Zero external deps**: Once bootstrapped, no Python needed
 
 **Bootstrap Options:**
 ```bash
 ./bootstrap.sh              # Full bootstrap (compile, test, build OS)
 ./bootstrap.sh --skip-os    # Skip OS build, just test compiler
-./bootstrap.sh --verbose    # Show detailed output
+./bootstrap.sh --verbose    # Show detailed output on mismatches
 ./bootstrap.sh --parallel 8 # Build 8 programs in parallel
 ```
 

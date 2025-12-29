@@ -8,9 +8,11 @@ It can be run as a Python script OR compiled to native x86.
 Tokenizes Brainhair source code with Python-style syntax.
 """
 
-# Python-only imports (Brainhair ignores these)
+# Python-only imports and type aliases (Brainhair ignores these)
 try:
     from typing import List, Optional
+    # In Python, 'char' is just a string - define alias for compatibility
+    char = str
 except:
     pass
 
@@ -166,6 +168,11 @@ TT_INDENT: int = 120
 TT_DEDENT: int = 121
 TT_EOF: int = 122
 
+# Brainhair native syntax
+TT_VAR: int = 123
+TT_DISCARD: int = 124
+TT_CONST: int = 125
+
 # ============================================================================
 # Polyglot Helper Functions (work in both Python and Brainhair)
 # ============================================================================
@@ -317,6 +324,9 @@ try:
         ISINSTANCE = TT_ISINSTANCE
         FIELD = TT_FIELD
         PROPERTY = TT_PROPERTY
+        VAR = TT_VAR
+        DISCARD = TT_DISCARD
+        CONST = TT_CONST
         IDENT = TT_IDENT
         NUMBER = TT_NUMBER
         STRING = TT_STRING
@@ -547,8 +557,161 @@ def lookup_keyword(word: str) -> int:
         return TT_INT
     if str_eq(word, "float") == 1:
         return TT_FLOAT
+    # Brainhair native keywords
+    if str_eq(word, "var") == 1:
+        return TT_VAR
+    if str_eq(word, "discard") == 1:
+        return TT_DISCARD
+    if str_eq(word, "const") == 1:
+        return TT_CONST
     # Not a keyword
     return 0
+
+
+def get_keyword_name(tt: int) -> str:
+    """Get the keyword name for a token type, or empty string if not a keyword."""
+    # Python keywords
+    if tt == TT_DEF:
+        return "def"
+    if tt == TT_CLASS:
+        return "class"
+    if tt == TT_FROM:
+        return "from"
+    if tt == TT_IMPORT:
+        return "import"
+    if tt == TT_AS:
+        return "as"
+    if tt == TT_RETURN:
+        return "return"
+    if tt == TT_IF:
+        return "if"
+    if tt == TT_ELIF:
+        return "elif"
+    if tt == TT_ELSE:
+        return "else"
+    if tt == TT_WHILE:
+        return "while"
+    if tt == TT_FOR:
+        return "for"
+    if tt == TT_IN:
+        return "in"
+    if tt == TT_BREAK:
+        return "break"
+    if tt == TT_CONTINUE:
+        return "continue"
+    if tt == TT_PASS:
+        return "pass"
+    if tt == TT_WITH:
+        return "with"
+    if tt == TT_RAISE:
+        return "raise"
+    if tt == TT_TRY:
+        return "try"
+    if tt == TT_EXCEPT:
+        return "except"
+    if tt == TT_FINALLY:
+        return "finally"
+    if tt == TT_LAMBDA:
+        return "lambda"
+    if tt == TT_YIELD:
+        return "yield"
+    if tt == TT_ASYNC:
+        return "async"
+    if tt == TT_AWAIT:
+        return "await"
+    if tt == TT_AND:
+        return "and"
+    if tt == TT_OR:
+        return "or"
+    if tt == TT_NOT:
+        return "not"
+    if tt == TT_IS:
+        return "is"
+    if tt == TT_TRUE:
+        return "true"
+    if tt == TT_FALSE:
+        return "false"
+    if tt == TT_NONE:
+        return "none"
+    # Brainhair-specific
+    if tt == TT_EXTERN:
+        return "extern"
+    if tt == TT_ASM:
+        return "asm"
+    if tt == TT_DEFER:
+        return "defer"
+    if tt == TT_MATCH:
+        return "match"
+    # Type keywords (these can be used as names in some contexts)
+    if tt == TT_FINAL:
+        return "final"
+    if tt == TT_PTR:
+        return "ptr"
+    if tt == TT_LIST:
+        return "list"
+    if tt == TT_DICT:
+        return "dict"
+    if tt == TT_TUPLE:
+        return "tuple"
+    if tt == TT_OPTIONAL:
+        return "optional"
+    if tt == TT_ENUM:
+        return "enum"
+    if tt == TT_AUTO:
+        return "auto"
+    if tt == TT_ARRAY:
+        return "array"
+    if tt == TT_REF:
+        return "ref"
+    if tt == TT_DATACLASS:
+        return "dataclass"
+    if tt == TT_ISINSTANCE:
+        return "isinstance"
+    # Primitive types
+    if tt == TT_INT8:
+        return "int8"
+    if tt == TT_INT16:
+        return "int16"
+    if tt == TT_INT32:
+        return "int32"
+    if tt == TT_INT64:
+        return "int64"
+    if tt == TT_UINT8:
+        return "uint8"
+    if tt == TT_UINT16:
+        return "uint16"
+    if tt == TT_UINT32:
+        return "uint32"
+    if tt == TT_UINT64:
+        return "uint64"
+    if tt == TT_FLOAT32:
+        return "float32"
+    if tt == TT_FLOAT64:
+        return "float64"
+    if tt == TT_BOOL:
+        return "bool"
+    if tt == TT_CHAR:
+        return "char"
+    if tt == TT_STR:
+        return "str"
+    if tt == TT_BYTES:
+        return "bytes"
+    if tt == TT_INT:
+        return "int"
+    if tt == TT_FLOAT:
+        return "float"
+    if tt == TT_VAR:
+        return "var"
+    if tt == TT_DISCARD:
+        return "discard"
+    if tt == TT_CONST:
+        return "const"
+    if tt == TT_PROPERTY:
+        return "property"
+    if tt == TT_FIELD:
+        return "field"
+    # Not a keyword
+    return ""
 
 
 class Lexer:
@@ -560,8 +723,8 @@ class Lexer:
         self.tokens: List[Token] = []
 
         # Track indentation for Python-style blocks
-        self.indent_stack = [0]
-        self.at_line_start = True
+        self.indent_stack: List[int] = [0]
+        self.at_line_start: bool = True
 
         # Keywords dict is Python-only (uses TokenType enum)
         # Native code uses lookup_keyword() function instead
@@ -600,20 +763,30 @@ class Lexer:
                 'bool': TokenType.BOOL, 'char': TokenType.CHAR,
                 'str': TokenType.STR, 'bytes': TokenType.BYTES,
                 'int': TokenType.INT, 'float': TokenType.FLOAT,
+                'var': TokenType.VAR, 'discard': TokenType.DISCARD,
+                'const': TokenType.CONST,
             }
         except:
             self.keywords = {}
 
-    def current_char(self) -> Optional[str]:
-        if self.pos >= len(self.source):
-            return None
+    def at_end(self) -> bool:
+        """Return True if at end of input."""
+        return self.pos >= len(self.source)
+
+    def current_char(self) -> char:
+        """Return current character. Check at_end() before calling."""
         return self.source[self.pos]
 
-    def peek_char(self, offset=1) -> Optional[str]:
-        pos = self.pos + offset
+    def peek_char(self, offset: int = 1) -> char:
+        """Return character at offset. Returns space if out of bounds."""
+        pos: int = self.pos + offset
         if pos >= len(self.source):
-            return None
+            return ' '
         return self.source[pos]
+
+    def peek_valid(self, offset: int = 1) -> bool:
+        """Return True if peek offset is valid."""
+        return self.pos + offset < len(self.source)
 
     def advance(self):
         if self.pos < len(self.source):
@@ -630,14 +803,16 @@ class Lexer:
 
     def skip_whitespace_on_line(self):
         """Skip spaces and tabs but not newlines."""
-        ch = self.current_char()
-        while ch == ' ' or ch == '\t':
-            self.advance()
-            ch = self.current_char()
+        while not self.at_end():
+            ch: char = self.current_char()
+            if ch == ' ' or ch == '\t':
+                self.advance()
+            else:
+                break
 
     def skip_comment(self):
         if self.current_char() == '#':
-            while self.current_char() and self.current_char() != '\n':
+            while not self.at_end() and self.current_char() != '\n':
                 self.advance()
 
     def count_indent(self) -> int:
@@ -662,11 +837,11 @@ class Lexer:
 
         # Hex number
         pk = self.peek_char()
-        if self.current_char() == '0' and pk and (pk == 'x' or pk == 'X'):
+        if self.current_char() == '0' and self.peek_valid() and (pk == 'x' or pk == 'X'):
             self.advance()  # 0
             self.advance()  # x
             ch = self.current_char()
-            while ch and is_hex(ord(ch)) == 1 or ch == '_':
+            while not self.at_end() and (is_hex(ord(ch)) == 1 or ch == '_'):
                 if ch != '_':
                     num_str += ch
                 self.advance()
@@ -676,11 +851,11 @@ class Lexer:
 
         # Binary number
         pk = self.peek_char()
-        if self.current_char() == '0' and pk and (pk == 'b' or pk == 'B'):
+        if self.current_char() == '0' and self.peek_valid() and (pk == 'b' or pk == 'B'):
             self.advance()  # 0
             self.advance()  # b
             ch = self.current_char()
-            while ch and (ch == '0' or ch == '1' or ch == '_'):
+            while not self.at_end() and (ch == '0' or ch == '1' or ch == '_'):
                 if ch != '_':
                     num_str += ch
                 self.advance()
@@ -690,11 +865,11 @@ class Lexer:
 
         # Octal number
         pk = self.peek_char()
-        if self.current_char() == '0' and pk and (pk == 'o' or pk == 'O'):
+        if self.current_char() == '0' and self.peek_valid() and (pk == 'o' or pk == 'O'):
             self.advance()  # 0
             self.advance()  # o
             ch = self.current_char()
-            while ch and ((ord(ch) >= 48 and ord(ch) <= 55) or ch == '_'):
+            while not self.at_end() and ((ord(ch) >= 48 and ord(ch) <= 55) or ch == '_'):
                 if ch != '_':
                     num_str += ch
                 self.advance()
@@ -704,7 +879,7 @@ class Lexer:
 
         # Decimal number (with optional underscores)
         ch = self.current_char()
-        while ch and (is_digit(ord(ch)) == 1 or ch == '_'):
+        while not self.at_end() and (is_digit(ord(ch)) == 1 or ch == '_'):
             if ch != '_':
                 num_str += ch
             self.advance()
@@ -727,8 +902,8 @@ class Lexer:
 
         string = ''
         while True:
-            ch = self.current_char()
-            if ch is None:
+            ch: char = self.current_char()
+            if self.at_end():
                 raise SyntaxError(f"Unterminated string at line {start_line}")
 
             if triple:
@@ -811,31 +986,30 @@ class Lexer:
         start_line, start_col = self.line, self.column
         ident = ''
 
-        ch = self.current_char()
-        while ch and (is_alnum(ord(ch)) == 1 or ch == '_'):
-            ident += ch
-            self.advance()
+        while not self.at_end():
             ch = self.current_char()
+            if is_alnum(ord(ch)) == 1 or ch == '_':
+                ident += ch
+                self.advance()
+            else:
+                break
 
-        # Check if it's a keyword - use polyglot lookup_keyword if dict fails
-        try:
-            token_type = self.keywords.get(ident, TT_IDENT)
-        except:
-            token_type = lookup_keyword(ident)
-            if token_type == 0:
-                token_type = TT_IDENT
+        # Check if it's a keyword - use lookup_keyword directly
+        # (Native code doesn't support try/except with dict access)
+        token_type: int = lookup_keyword(ident)
+        if token_type == 0:
+            token_type = TT_IDENT
         value = None if token_type != TT_IDENT else ident
 
         return Token(token_type, value, start_line, start_col,
                     self.line, self.column)
 
     def tokenize(self) -> List[Token]:
-        while self.pos < len(self.source):
-            ch = self.current_char()
-            if not ch:
-                break
+        while not self.at_end():
+            ch: char = self.current_char()
 
-            start_line, start_col = self.line, self.column
+            start_line: int = self.line
+            start_col: int = self.column
 
             # Handle newlines
             if ch == '\n':
@@ -881,8 +1055,48 @@ class Lexer:
                 self.tokens.append(self.read_number())
                 continue
 
-            # Strings
-            if ch == '"' or ch == "'":
+            # Strings (double quotes and single quotes)
+            # In Python-compatible mode, single quotes are strings too
+            if ch == '"':
+                self.tokens.append(self.read_string())
+                continue
+            if ch == "'":
+                # Check if it's a single char followed by closing quote (char literal)
+                # or a multi-char string
+                next_char = self.peek_char()
+                if self.peek_valid():
+                    # Save position for lookahead
+                    pos = self.pos
+                    saved_col = self.column
+                    self.advance()  # skip opening '
+
+                    if next_char == '\\':
+                        # Escape sequence: '\n', '\t', etc - pattern is '\x'
+                        self.advance()  # skip backslash
+                        if not self.at_end():
+                            self.advance()  # skip escape char
+                            if not self.at_end() and self.current_char() == "'":
+                                # It's a char literal with escape sequence
+                                self.pos = pos
+                                self.column = saved_col
+                                self.tokens.append(self.read_char())
+                                continue
+                    else:
+                        # Regular char: 'x' pattern
+                        c = self.current_char()
+                        self.advance()  # skip char
+                        if not self.at_end() and self.current_char() == "'":
+                            # It's a char literal like 'x'
+                            self.pos = pos
+                            self.column = saved_col
+                            self.tokens.append(self.read_char())
+                            continue
+
+                    # Restore position
+                    self.pos = pos
+                    self.column = saved_col
+
+                # Otherwise treat as string
                 self.tokens.append(self.read_string())
                 continue
 
@@ -1132,39 +1346,42 @@ class Lexer:
                                 self.line, self.column))
         return self.tokens
 
-# Test the lexer
-if __name__ == '__main__':
-    code = """
-from lib.syscalls import *
+# Brainhair native entry point - tests the lexer
+def main() -> int:
+    print("Lexer test\n")
 
-# Constants
-SYS_EXIT: Final[int32] = 1
+    print("Creating code\n")
+    code: str = "x: int = 42"
+    print("Creating lexer\n")
+    lexer: Lexer = Lexer(code)
+    print("Created\n")
+    print("Tokenizing\n")
+    tokens: List[Token] = lexer.tokenize()
+    print("Done tokenizing\n")
 
-@inline
-def add(a: int32, b: int32) -> int32:
-    return a + b
+    # Print token count
+    n: int = len(tokens)
+    print("Token count: ")
+    # Simple int printing (digit by digit)
+    if n >= 10:
+        d: int = n // 10
+        c: char = chr(48 + d)
+        print(c)
+    c2: char = chr(48 + (n % 10))
+    print(c2)
+    print("\n")
 
-class Point:
-    x: int32
-    y: int32
-
-    def move(self, dx: int32):
-        self.x += dx
-
-def main() -> int32:
-    p: Ptr[int32] = Ptr[int32](0xB8000)
-    p[0] = 0x0F41
+    print("Done!\n")
     return 0
-"""
 
-    lexer = Lexer(code)
-    tokens = lexer.tokenize()
-
-    print("Tokens:")
-    for token in tokens:
-        print(f"  {token}")
-
-# Brainhair native entry point (stub for standalone testing)
-# Renamed to avoid conflict when imported
-def _lexer_main() -> int:
-    return 0
+# Python-only test (Brainhair ignores try/except at module level)
+try:
+    if __name__ == '__main__':
+        code = "x: int = 42 + y"
+        lexer = Lexer(code)
+        tokens = lexer.tokenize()
+        print("Tokens:")
+        for token in tokens:
+            print(f"  {token}")
+except:
+    pass

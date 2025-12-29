@@ -10,6 +10,81 @@ Phase 2: Assemble to machine code
 from ast_nodes import *
 from typing import Dict, List
 
+
+def is_char_type(t) -> int:
+    """Check if type is 'char'. Returns 1 if true, 0 otherwise."""
+    if t is None:
+        return 0
+    if isinstance(t, Type):
+        if t.name == 'char':
+            return 1
+    return 0
+
+
+def is_str_type(t) -> int:
+    """Check if type is 'str' or string pointer. Returns 1 if true, 0 otherwise."""
+    if t is None:
+        return 0
+    if isinstance(t, Type):
+        if t.name == 'str' or t.name == 'string':
+            return 1
+    if isinstance(t, PointerType):
+        if isinstance(t.base_type, Type):
+            if t.base_type.name == 'uint8' or t.base_type.name == 'char':
+                return 1
+    return 0
+
+
+def get_type_name(t) -> str:
+    """Get the type name from a Type or PointerType. Returns empty string if not available."""
+    if t is None:
+        return ""
+    if isinstance(t, Type):
+        return t.name
+    if isinstance(t, PointerType):
+        if isinstance(t.base_type, Type):
+            return t.base_type.name
+    return ""
+
+
+def filter_non_self_params(params: List) -> List:
+    """Filter out 'self' parameter from params list."""
+    result: List = []
+    for p in params:
+        if p.name != 'self':
+            result.append(p)
+    return result
+
+
+def get_field_names(fields: List) -> List[str]:
+    """Get list of field names from field declarations."""
+    result: List[str] = []
+    for f in fields:
+        result.append(f.name)
+    return result
+
+
+def get_param_defaults(params: List) -> List:
+    """Get list of (name, default_value) tuples for params with defaults."""
+    result: List = []
+    for p in params:
+        if p.default_value is not None:
+            result.append((p.name, p.default_value))
+    return result
+
+
+def join_str_list(sep: str, parts: List[str]) -> str:
+    """Join a list of strings with a separator."""
+    if len(parts) == 0:
+        return ""
+    result: str = parts[0]
+    i: int = 1
+    while i < len(parts):
+        result = result + sep + parts[i]
+        i = i + 1
+    return result
+
+
 class X86CodeGen:
     def __init__(self, kernel_mode=False):
         self.output = []
@@ -42,6 +117,9 @@ class X86CodeGen:
 
         # Defer stack for current function
         self.defer_stack: List[ASTNode] = []
+
+        # Method return types (TypeName_methodName -> return_type)
+        self.method_return_types: Dict[str, Type] = {}
 
     def emit(self, instruction: str):
         """Emit an assembly instruction"""
@@ -108,6 +186,86 @@ class X86CodeGen:
         self.emit("mov ebx, 1")  # stdout
         self.emit("mov eax, 4")  # sys_write
         self.emit("int 0x80")
+
+    def _print_char_expr(self, expr):
+        """Helper: Print a single character to stdout"""
+        self.gen_expression(expr)
+        # Character value is in AL, store on stack and print 1 byte
+        self.emit("sub esp, 4")
+        self.emit("mov byte [esp], al")
+        self.emit("mov ecx, esp")
+        self.emit("mov edx, 1")
+        self.emit("mov ebx, 1")  # stdout
+        self.emit("mov eax, 4")  # sys_write
+        self.emit("int 0x80")
+        self.emit("add esp, 4")
+
+    def _emit_print_int_eax(self):
+        """Helper: Print integer in eax as decimal string"""
+        # Handle negative numbers
+        pos_label = self.new_label("print_int_pos")
+        done_label = self.new_label("print_int_done")
+        div_loop = self.new_label("print_int_div")
+        out_loop = self.new_label("print_int_out")
+
+        self.emit("test eax, eax")
+        self.emit(f"jns {pos_label}")  # Jump if positive or zero
+        # Print minus sign
+        self.emit("push eax")
+        self.emit("sub esp, 4")
+        self.emit("mov byte [esp], 45")  # '-'
+        self.emit("mov ecx, esp")
+        self.emit("mov edx, 1")
+        self.emit("mov ebx, 1")
+        self.emit("mov eax, 4")
+        self.emit("int 0x80")
+        self.emit("add esp, 4")
+        self.emit("pop eax")
+        self.emit("neg eax")  # Make positive
+
+        self.emit_label(pos_label)
+        # Special case for 0
+        self.emit("test eax, eax")
+        self.emit(f"jnz {div_loop}")
+        self.emit("sub esp, 4")
+        self.emit("mov byte [esp], 48")  # '0'
+        self.emit("mov ecx, esp")
+        self.emit("mov edx, 1")
+        self.emit("mov ebx, 1")
+        self.emit("mov eax, 4")
+        self.emit("int 0x80")
+        self.emit("add esp, 4")
+        self.emit(f"jmp {done_label}")
+
+        # Convert to decimal digits (reversed on stack)
+        self.emit_label(div_loop)
+        self.emit("xor esi, esi")  # Digit count
+        div_inner = self.new_label("print_int_div_inner")
+        self.emit_label(div_inner)
+        self.emit("test eax, eax")
+        self.emit(f"jz {out_loop}")
+        self.emit("xor edx, edx")
+        self.emit("mov ebx, 10")
+        self.emit("div ebx")  # eax = eax/10, edx = eax%10
+        self.emit("add edx, 48")  # Convert to ASCII
+        self.emit("push edx")
+        self.emit("inc esi")
+        self.emit(f"jmp {div_inner}")
+
+        # Print digits
+        self.emit_label(out_loop)
+        self.emit("test esi, esi")
+        self.emit(f"jz {done_label}")
+        self.emit("mov ecx, esp")
+        self.emit("mov edx, 1")
+        self.emit("mov ebx, 1")
+        self.emit("mov eax, 4")
+        self.emit("int 0x80")
+        self.emit("add esp, 4")
+        self.emit("dec esi")
+        self.emit(f"jmp {out_loop}")
+
+        self.emit_label(done_label)
 
     def _print_fstring(self, fstring_value: str):
         """Helper: Parse and print an f-string with interpolation"""
@@ -240,28 +398,40 @@ class X86CodeGen:
                     self.emit("int 0x80")
             elif var_name in self.local_vars:
                 offset = self.local_vars[var_name]
-                if offset > 0:
-                    self.emit(f"mov eax, [ebp+{offset}]")
+                # Check if variable is an integer type
+                var_type = self.type_table.get(var_name)
+                is_int = False
+                if var_type and hasattr(var_type, 'name'):
+                    type_name = var_type.name
+                    if type_name in ('int32', 'int16', 'int8', 'uint32', 'uint16', 'uint8', 'i32', 'i16', 'i8', 'u32', 'u16', 'u8'):
+                        is_int = True
+
+                # Load variable value
+                self.emit(f"mov eax, {self.ebp_addr(offset)}")
+
+                if is_int:
+                    # Print integer value
+                    self._emit_print_int_eax()
                 else:
-                    self.emit(f"mov eax, {self.ebp_addr(-offset)}")
-                self.emit("push eax")
-                self.emit("xor ecx, ecx")
-                strlen_loop = self.new_label("fstr_strlen")
-                strlen_done = self.new_label("fstr_strlen_done")
-                self.emit_label(strlen_loop)
-                self.emit("mov bl, [eax]")
-                self.emit("test bl, bl")
-                self.emit(f"jz {strlen_done}")
-                self.emit("inc eax")
-                self.emit("inc ecx")
-                self.emit(f"jmp {strlen_loop}")
-                self.emit_label(strlen_done)
-                self.emit("pop ebx")
-                self.emit("mov edx, ecx")
-                self.emit("mov ecx, ebx")
-                self.emit("mov ebx, 1")
-                self.emit("mov eax, 4")
-                self.emit("int 0x80")
+                    # Print as string
+                    self.emit("push eax")
+                    self.emit("xor ecx, ecx")
+                    strlen_loop = self.new_label("fstr_strlen")
+                    strlen_done = self.new_label("fstr_strlen_done")
+                    self.emit_label(strlen_loop)
+                    self.emit("mov bl, [eax]")
+                    self.emit("test bl, bl")
+                    self.emit(f"jz {strlen_done}")
+                    self.emit("inc eax")
+                    self.emit("inc ecx")
+                    self.emit(f"jmp {strlen_loop}")
+                    self.emit_label(strlen_done)
+                    self.emit("pop ebx")
+                    self.emit("mov edx, ecx")
+                    self.emit("mov ecx, ebx")
+                    self.emit("mov ebx, 1")
+                    self.emit("mov eax, 4")
+                    self.emit("int 0x80")
             else:
                 # Unknown variable - print placeholder
                 placeholder = "<" + var_name + ">"
@@ -386,8 +556,21 @@ class X86CodeGen:
                     return enum_name
         return None
 
+    def _infer_assignment_type(self, expr: ASTNode) -> Type:
+        # Infer type from assignment value for Python-style implicit declarations
+        # Class instantiation: ClassName(...) -> PointerType(Type(ClassName))
+        # In Python-style, instances are references (pointers) to the struct
+        if isinstance(expr, CallExpr):
+            # expr.func is typically a string (function name)
+            func_name = expr.func
+            if func_name and func_name[0].isupper():
+                # This is a class constructor - returns pointer to struct
+                return PointerType(Type(func_name))
+        # Delegate to regular type inference
+        return self._get_expr_type(expr)
+
     def _get_expr_type(self, expr: ASTNode) -> Type:
-        """Determine the type of an expression"""
+        # Determine the type of an expression
         if isinstance(expr, Identifier):
             return self.type_table.get(expr.name)
         if isinstance(expr, FieldAccessExpr):
@@ -436,6 +619,24 @@ class X86CodeGen:
             return PointerType(Type('uint8'))
         if isinstance(expr, FStringLiteral):
             return PointerType(Type('uint8'))
+        if isinstance(expr, MethodCallExpr):
+            # Get return type of method call
+            obj_type = self._get_expr_type(expr.object)
+            if obj_type:
+                # Get class name from object type
+                if isinstance(obj_type, PointerType):
+                    class_name = obj_type.base_type.name
+                else:
+                    class_name = obj_type.name
+                method_full_name = f"{class_name}_{expr.method_name}"
+                return self.method_return_types.get(method_full_name)
+        if isinstance(expr, CallExpr):
+            # Class constructor call: ClassName(...) -> PointerType(Type(ClassName))
+            func_name = expr.func
+            if func_name and func_name[0].isupper() and func_name in self.struct_types:
+                return PointerType(Type(func_name))
+            # For other function calls, check if we have return type info
+            # TODO: track function return types
         return None
 
     # Expression code generation
@@ -538,20 +739,131 @@ class X86CodeGen:
             return "eax"
 
         if isinstance(expr, BinaryExpr):
-            # Evaluate left operand
-            self.gen_expression(expr.left)
-            self.emit("push eax")  # Save left result
+            # Special handling for OR and AND - they need short-circuit evaluation
+            # and return actual values, not booleans
+            if expr.op == BinOp.OR:
+                # Python OR: return left if truthy, else return right
+                end_label = self.new_label("or_end")
+                self.gen_expression(expr.left)
+                self.emit("test eax, eax")
+                self.emit(f"jnz {end_label}")  # If left is truthy, return it
+                # Left was falsy, evaluate and return right
+                self.gen_expression(expr.right)
+                self.emit_label(end_label)
+                return "eax"
 
-            # Evaluate right operand
-            self.gen_expression(expr.right)
-            self.emit("mov ebx, eax")  # Right result in EBX
+            if expr.op == BinOp.AND:
+                # Python AND: return left if falsy, else return right
+                end_label = self.new_label("and_end")
+                self.gen_expression(expr.left)
+                self.emit("test eax, eax")
+                self.emit(f"jz {end_label}")  # If left is falsy, return it
+                # Left was truthy, evaluate and return right
+                self.gen_expression(expr.right)
+                self.emit_label(end_label)
+                return "eax"
 
-            # Pop left result
-            self.emit("pop eax")  # Left result in EAX
+            # Special handling for char comparison with single-char string literal
+            # e.g., ch == "'" should compare char values, not string pointers
+            char_cmp_with_single_char_string = False
+            if expr.op in (BinOp.EQ, BinOp.NEQ):
+                left_type = self._get_expr_type(expr.left)
+                right_type = self._get_expr_type(expr.right)
+                # Check: left is char, right is single-char StringLiteral
+                if is_char_type(left_type) == 1 and isinstance(expr.right, StringLiteral) and len(expr.right.value) == 1:
+                    char_cmp_with_single_char_string = True
+                    # Generate left as char
+                    self.gen_expression(expr.left)
+                    self.emit("push eax")
+                    # Generate right as char value (ASCII code)
+                    char_val = ord(expr.right.value[0])
+                    self.emit(f"mov eax, {char_val}")
+                    self.emit("mov ebx, eax")
+                    self.emit("pop eax")
+                # Check: right is char, left is single-char StringLiteral
+                elif is_char_type(right_type) == 1 and isinstance(expr.left, StringLiteral) and len(expr.left.value) == 1:
+                    char_cmp_with_single_char_string = True
+                    # Generate left as char value (ASCII code)
+                    char_val = ord(expr.left.value[0])
+                    self.emit(f"mov eax, {char_val}")
+                    self.emit("push eax")
+                    # Generate right as char
+                    self.gen_expression(expr.right)
+                    self.emit("mov ebx, eax")
+                    self.emit("pop eax")
+
+            if not char_cmp_with_single_char_string:
+                # Evaluate left operand
+                self.gen_expression(expr.left)
+                self.emit("push eax")  # Save left result
+
+                # Evaluate right operand
+                self.gen_expression(expr.right)
+                self.emit("mov ebx, eax")  # Right result in EBX
+
+                # Pop left result
+                self.emit("pop eax")  # Left result in EAX
 
             # Perform operation
             if expr.op == BinOp.ADD:
-                self.emit("add eax, ebx")
+                # Check if this is string concatenation
+                left_type = self._get_expr_type(expr.left)
+                right_type = self._get_expr_type(expr.right)
+                is_string_concat = False
+                right_is_char = False
+                left_is_string = False
+
+                # Check if left is a string (either StringLiteral or string type)
+                if isinstance(expr.left, StringLiteral):
+                    is_string_concat = True
+                    left_is_string = True
+                elif left_type:
+                    # Check for Type('str') or Type('string') or PointerType(Type('uint8'))
+                    if is_str_type(left_type) == 1:
+                        is_string_concat = True
+                        left_is_string = True
+
+                # Check if right is a string literal
+                if isinstance(expr.right, StringLiteral):
+                    is_string_concat = True
+                elif is_str_type(right_type) == 1:
+                    is_string_concat = True
+
+                # Check if right operand is a char (from string indexing like s[i])
+                # If left is a string and right type is unknown, assume char for safety
+                # NOTE: A char is Type('char') or Type('uint8'), NOT PointerType
+                # PointerType(uint8) is a string, not a char
+                if is_string_concat:
+                    is_right_ptr: int = 0
+                    if right_type and isinstance(right_type, PointerType):
+                        is_right_ptr = 1
+                    rt_name: str = get_type_name(right_type)
+                    if (rt_name == 'uint8' or rt_name == 'char' or rt_name == 'int8') and is_right_ptr == 0:
+                        right_is_char = True
+                    elif left_is_string and right_type is None:
+                        # If left is definitely a string and right type is unknown,
+                        # check if the right operand looks like it could be a char
+                        # (not a StringLiteral, and left is a string)
+                        if not isinstance(expr.right, StringLiteral):
+                            right_is_char = True
+
+                if is_string_concat:
+                    if right_is_char:
+                        # String + char concatenation: call strcat_char(s, c)
+                        # eax = s (string pointer), ebx = c (char value)
+                        self.emit("push ebx")  # c (char)
+                        self.emit("push eax")  # s (string)
+                        self.emit("call strcat_char")
+                        self.emit("add esp, 8")
+                    else:
+                        # String + string concatenation: call strcat_alloc(s1, s2)
+                        # eax = s1 (left), ebx = s2 (right)
+                        self.emit("push ebx")  # s2
+                        self.emit("push eax")  # s1
+                        self.emit("call strcat_alloc")
+                        self.emit("add esp, 8")
+                else:
+                    self.emit("add eax, ebx")
             elif expr.op == BinOp.SUB:
                 self.emit("sub eax, ebx")
             elif expr.op == BinOp.MUL:
@@ -565,14 +877,39 @@ class X86CodeGen:
                 self.emit("mov eax, edx")  # Remainder is in EDX, move to EAX
             elif expr.op == BinOp.EQ:
                 # Check if comparing strings (either operand is StringLiteral)
+                # CharLiteral means char comparison, NOT string comparison
+                is_char_cmp = isinstance(expr.left, CharLiteral) or isinstance(expr.right, CharLiteral)
                 is_string_cmp = isinstance(expr.left, StringLiteral) or isinstance(expr.right, StringLiteral)
-                # Also check if comparing against a variable that's likely a string (e.g., from argv)
-                left_type = self._get_expr_type(expr.left)
-                right_type = self._get_expr_type(expr.right)
-                if left_type and hasattr(left_type, 'name') and left_type.name in ('str', 'uint8', 'any'):
-                    is_string_cmp = True
-                if right_type and hasattr(right_type, 'name') and right_type.name in ('str', 'uint8', 'any'):
-                    is_string_cmp = True
+                if is_char_cmp:
+                    is_string_cmp = False  # Char comparison, not string
+                elif is_string_cmp:
+                    # Check if comparing char variable with single-char string literal
+                    # e.g., ch == "'" should be char comparison, not string comparison
+                    left_type = self._get_expr_type(expr.left)
+                    right_type = self._get_expr_type(expr.right)
+                    # If left is char type and right is single-char StringLiteral
+                    if is_char_type(left_type) == 1 and isinstance(expr.right, StringLiteral) and len(expr.right.value) == 1:
+                        is_string_cmp = False
+                        is_char_cmp = True
+                    # If right is char type and left is single-char StringLiteral
+                    elif is_char_type(right_type) == 1 and isinstance(expr.left, StringLiteral) and len(expr.left.value) == 1:
+                        is_string_cmp = False
+                        is_char_cmp = True
+                if not is_string_cmp and not is_char_cmp:
+                    # Also check if comparing against a variable that's likely a string (e.g., from argv)
+                    # Only PointerType(uint8) is a string, raw 'uint8' or 'char' is a byte value
+                    left_type = self._get_expr_type(expr.left)
+                    right_type = self._get_expr_type(expr.right)
+                    if is_str_type(left_type) == 1:
+                        is_string_cmp = True
+                    lt_name: str = get_type_name(left_type)
+                    if lt_name == 'str' or lt_name == 'any':
+                        is_string_cmp = True
+                    if is_str_type(right_type) == 1:
+                        is_string_cmp = True
+                    rt_name2: str = get_type_name(right_type)
+                    if rt_name2 == 'str' or rt_name2 == 'any':
+                        is_string_cmp = True
                 if is_string_cmp:
                     # Use strcmp for string comparison
                     self.emit("push ebx")  # s2
@@ -588,13 +925,25 @@ class X86CodeGen:
                     self.emit("movzx eax, al")
             elif expr.op == BinOp.NEQ:
                 # Check if comparing strings
+                # CharLiteral means char comparison, NOT string comparison
+                is_char_cmp = isinstance(expr.left, CharLiteral) or isinstance(expr.right, CharLiteral)
                 is_string_cmp = isinstance(expr.left, StringLiteral) or isinstance(expr.right, StringLiteral)
-                left_type = self._get_expr_type(expr.left)
-                right_type = self._get_expr_type(expr.right)
-                if left_type and hasattr(left_type, 'name') and left_type.name in ('str', 'uint8', 'any'):
-                    is_string_cmp = True
-                if right_type and hasattr(right_type, 'name') and right_type.name in ('str', 'uint8', 'any'):
-                    is_string_cmp = True
+                if is_char_cmp:
+                    is_string_cmp = False  # Char comparison, not string
+                elif not is_string_cmp:
+                    # Only PointerType(uint8) is a string, raw 'uint8' or 'char' is a byte value
+                    left_type = self._get_expr_type(expr.left)
+                    right_type = self._get_expr_type(expr.right)
+                    if is_str_type(left_type) == 1:
+                        is_string_cmp = True
+                    lt_name2: str = get_type_name(left_type)
+                    if lt_name2 == 'str' or lt_name2 == 'any':
+                        is_string_cmp = True
+                    if is_str_type(right_type) == 1:
+                        is_string_cmp = True
+                    rt_name3: str = get_type_name(right_type)
+                    if rt_name3 == 'str' or rt_name3 == 'any':
+                        is_string_cmp = True
                 if is_string_cmp:
                     # Use strcmp for string comparison
                     self.emit("push ebx")  # s2
@@ -637,31 +986,6 @@ class X86CodeGen:
             elif expr.op == BinOp.SHR:
                 self.emit("mov ecx, ebx")  # Shift count must be in CL
                 self.emit("shr eax, cl")
-            # Logical operators
-            elif expr.op == BinOp.AND:
-                self.emit("test eax, eax")  # Test left
-                short_label = self.new_label("and_short")
-                end_label = self.new_label("and_end")
-                self.emit(f"jz {short_label}")  # If left is false, short-circuit
-                self.emit("test ebx, ebx")  # Test right
-                self.emit(f"jz {short_label}")  # If right is false, result is false
-                self.emit("mov eax, 1")  # Both true
-                self.emit(f"jmp {end_label}")
-                self.emit_label(short_label)
-                self.emit("xor eax, eax")  # Result is false
-                self.emit_label(end_label)
-            elif expr.op == BinOp.OR:
-                self.emit("test eax, eax")  # Test left
-                short_label = self.new_label("or_short")
-                end_label = self.new_label("or_end")
-                self.emit(f"jnz {short_label}")  # If left is true, short-circuit
-                self.emit("test ebx, ebx")  # Test right
-                self.emit(f"jnz {short_label}")  # If right is true, result is true
-                self.emit("xor eax, eax")  # Both false
-                self.emit(f"jmp {end_label}")
-                self.emit_label(short_label)
-                self.emit("mov eax, 1")  # Result is true
-                self.emit_label(end_label)
 
             return "eax"
 
@@ -690,6 +1014,11 @@ class X86CodeGen:
                 elif isinstance(arg_type, ArrayType):
                     # Array: compile-time known size
                     self.emit(f"mov eax, {arg_type.size}")
+                    return "eax"
+                elif type(arg_type).__name__ == 'ListType' or (hasattr(arg_type, 'name') and 'List' in str(arg_type.name)):
+                    # List: len is at offset 4 in the list struct
+                    self.gen_expression(arg)  # Get list pointer
+                    self.emit("mov eax, [eax+4]")  # len is at offset 4
                     return "eax"
                 elif arg_type and (arg_type.name == "str" or isinstance(arg_type, PointerType)):
                     # String length - call strlen or compute inline
@@ -722,33 +1051,41 @@ class X86CodeGen:
 
             # Check for struct constructors (e.g., Token(...) or Compiler(...))
             if expr.func in self.struct_types:
-                # Struct constructor - allocate on stack and call __init__ if exists
                 struct_name = expr.func
                 struct_decl = self.struct_types[struct_name]
                 struct_sz = self.struct_size(struct_name)
 
-                # Allocate space on stack
-                self.stack_offset += struct_sz
-                struct_offset = -self.stack_offset
-
                 # Check if this class has an __init__ method
-                init_func = f"{struct_name}___init__"
+                init_func = f"{struct_name}___init__"  # Compiler___init__
                 if init_func in self.func_names:
-                    # Python-style class: call __init__(self, args...)
-                    # Push args in reverse order
+                    # Python-style class: ALWAYS heap-allocate for reference semantics
+                    # This ensures the object survives function returns
+                    self.emit(f"; Allocate {struct_name} instance on heap ({struct_sz} bytes)")
+                    self.emit(f"push {struct_sz}")
+                    self.emit("call alloc")
+                    self.emit("add esp, 4")
+                    # Save heap pointer
+                    self.emit("push eax")
+
+                    # Push args in reverse order for __init__
                     for arg in reversed(expr.args):
                         self.gen_expression(arg)
                         self.emit("push eax")
-                    # Push self pointer
-                    self.emit(f"lea eax, {self.ebp_addr(struct_offset)}")
+                    # Push self pointer (from saved heap pointer)
+                    self.emit(f"mov eax, [esp+{len(expr.args) * 4}]")
                     self.emit("push eax")
                     # Call __init__
                     self.emit(f"call {init_func}")
                     # Clean up stack (self + args)
                     self.emit(f"add esp, {4 + len(expr.args) * 4}")
+                    # Restore heap pointer as return value
+                    self.emit("pop eax")
                 else:
-                    # Brainhair-style struct: initialize fields from arguments (positional)
-                    fields = [f.name for f in struct_decl.fields]
+                    # Brainhair-style struct: allocate on stack
+                    self.stack_offset += struct_sz
+                    struct_offset = -self.stack_offset
+
+                    fields = get_field_names(struct_decl.fields)
                     for i, arg in enumerate(expr.args):
                         if i < len(fields):
                             field_name = fields[i]
@@ -760,11 +1097,11 @@ class X86CodeGen:
                             else:
                                 self.emit(f"mov {self.ebp_addr(total_offset)}, eax")
 
-                # Return pointer to struct
-                if struct_offset >= 0:
-                    self.emit(f"lea eax, [ebp+{struct_offset}]")
-                else:
-                    self.emit(f"lea eax, {self.ebp_addr(struct_offset)}")
+                    # Return pointer to struct
+                    if struct_offset >= 0:
+                        self.emit(f"lea eax, [ebp+{struct_offset}]")
+                    else:
+                        self.emit(f"lea eax, {self.ebp_addr(struct_offset)}")
                 return "eax"
 
             # Handle open() - open file and return file descriptor
@@ -796,9 +1133,17 @@ class X86CodeGen:
                     # Check for f-string with interpolation
                     if isinstance(arg, FStringLiteral):
                         self._print_fstring(arg.value)
+                    elif isinstance(arg, CharLiteral):
+                        # Print single char literal
+                        self._print_char_expr(arg)
                     else:
-                        # Regular string - print it
-                        self._print_string_expr(arg)
+                        # Check if argument is char type
+                        arg_type = self._get_expr_type(arg)
+                        if arg_type and hasattr(arg_type, 'name') and arg_type.name == 'char':
+                            self._print_char_expr(arg)
+                        else:
+                            # Regular string - print it
+                            self._print_string_expr(arg)
                 # Print newline
                 newline_label = self.add_string("\n")
                 self.emit(f"mov ecx, {newline_label}")
@@ -809,9 +1154,39 @@ class X86CodeGen:
                 self.emit("xor eax, eax")
                 return "eax"
 
+            # Handle hasattr(obj, 'attr_name') - check if object has named attribute
+            if expr.func == 'hasattr' and len(expr.args) == 2:
+                # Get the object's type
+                obj_type = self._get_expr_type(expr.args[0])
+                # Get the attribute name (should be a string literal)
+                attr_name = None
+                if isinstance(expr.args[1], StringLiteral):
+                    attr_name = expr.args[1].value
+
+                # Check if the type has this attribute
+                has_attr = False
+                if obj_type and attr_name:
+                    type_name = obj_type.name
+                    if type_name and type_name in self.struct_types:
+                        struct_decl = self.struct_types[type_name]
+                        for field in struct_decl.fields:
+                            if field.name == attr_name:
+                                has_attr = True
+                                break
+                    # For unknown types, assume True (duck typing)
+                    elif type_name is None or type_name == 'any':
+                        has_attr = True
+                elif attr_name:
+                    # Unknown object type - assume True for duck typing
+                    has_attr = True
+
+                # Return 1 (True) or 0 (False)
+                self.emit(f"mov eax, {1 if has_attr else 0}")
+                return "eax"
+
             # Handle Python builtins that don't exist in compiled code
             python_builtins = ('set', 'dict', 'list', 'tuple', 'frozenset', 'types', 'type',
-                               'isinstance', 'issubclass', 'hasattr', 'getattr', 'setattr',
+                               'isinstance', 'issubclass', 'getattr', 'setattr',
                                'iter', 'next', 'enumerate', 'zip', 'map', 'filter', 'sorted',
                                'reversed', 'all', 'any', 'sum', 'min', 'max', 'abs', 'int',
                                'str', 'bool', 'float', 'chr', 'ord', 'hex', 'bin', 'oct',
@@ -979,13 +1354,13 @@ class X86CodeGen:
             else:
                 type_name = "Unknown"
 
-            # Handle string methods regardless of detected type (for Python compatibility)
+            # Handle string methods ONLY for string types (check type first)
             # Python strings use methods like .replace(), .lower() etc
             string_methods = ('lower', 'upper', 'strip', 'lstrip', 'rstrip', 'split', 'join',
                             'replace', 'startswith', 'endswith', 'find', 'rfind', 'index',
                             'rindex', 'count', 'format', 'center', 'ljust', 'rjust', 'zfill',
                             'capitalize', 'title', 'swapcase', 'encode', 'decode')
-            if expr.method_name in string_methods:
+            if expr.method_name in string_methods and type_name in ('str', 'string', 'Unknown', ''):
                 # String methods - evaluate receiver and return it (no-op stub)
                 self.gen_expression(expr.object)
                 return "eax"
@@ -1065,15 +1440,27 @@ class X86CodeGen:
                 self.emit("int 0x80")
                 return "eax"
 
-            # Handle list.append() on any type - fallback to list_append_i32
+            # Handle list.append() on any type - but NOT if class has its own append method
             if expr.method_name == 'append' and len(expr.args) == 1:
-                self.gen_expression(expr.args[0])  # Get value
-                self.emit("push eax")
-                self.gen_expression(expr.object)  # Get list ptr
-                self.emit("push eax")
-                self.emit("call list_append_i32")
-                self.emit("add esp, 8")
-                return "eax"
+                # Check if this is a user-defined class with an append method
+                obj_type = self._get_expr_type(expr.object)
+                class_name = None
+                if obj_type:
+                    if isinstance(obj_type, PointerType):
+                        class_name = obj_type.base_type.name
+                    else:
+                        class_name = obj_type.name
+                # If it's a known class with an append method, don't use fallback
+                append_method = f"{class_name}_append" if class_name else None
+                if not (append_method and append_method in self.func_names):
+                    # Use list fallback
+                    self.gen_expression(expr.args[0])  # Get value
+                    self.emit("push eax")
+                    self.gen_expression(expr.object)  # Get list ptr
+                    self.emit("push eax")
+                    self.emit("call list_append_i32")
+                    self.emit("add esp, 8")
+                    return "eax"
 
             # Handle lookup() method on scope-like objects (symbol tables, etc.)
             if expr.method_name == 'lookup':
@@ -1082,8 +1469,8 @@ class X86CodeGen:
                 self.emit("xor eax, eax")  # Return null
                 return "eax"
 
-            # Handle Dict methods
-            if type_name.startswith("Dict"):
+            # Handle Dict methods (both 'Dict' and 'dict' lowercase)
+            if type_name.startswith("Dict") or type_name == "dict":
                 if expr.method_name == 'get':
                     # dict.get(key) or dict.get(key, default) -> dict_get or dict_get_default
                     if len(expr.args) >= 2:
@@ -1143,6 +1530,11 @@ class X86CodeGen:
                     self.emit("call dict_clear")
                     self.emit("add esp, 4")
                     self.emit("xor eax, eax")
+                    return "eax"
+                elif expr.method_name in ('keys', 'values', 'items'):
+                    # dict.keys/values/items() - stub: just return empty list for now
+                    self.gen_expression(expr.object)
+                    self.emit("xor eax, eax")  # Return empty/null list
                     return "eax"
 
             # Handle common methods on unknown or dynamic types (Python-style code)
@@ -1237,13 +1629,34 @@ class X86CodeGen:
 
             mangled_name = self.sanitize_label(f"{type_name}_{expr.method_name}")
 
+            # Check for default arguments - fill in missing args with defaults
+            actual_args = list(expr.args)
+            if mangled_name in self.func_param_defaults:
+                params = self.func_param_defaults[mangled_name]
+                # params includes 'self', so skip first param when counting
+                non_self_params = filter_non_self_params(params)
+                num_provided = len(actual_args)
+                num_expected = len(non_self_params)
+
+                # If fewer args provided than expected, add defaults
+                if num_provided < num_expected:
+                    for i in range(num_provided, num_expected):
+                        param = non_self_params[i]
+                        if param.default_value is not None:
+                            actual_args.append(param.default_value)
+                        else:
+                            # No default - use 0 as fallback
+                            actual_args.append(IntLiteral(0))
+
             # Push explicit arguments in reverse order
-            for arg in reversed(expr.args):
+            for arg in reversed(actual_args):
                 self.gen_expression(arg)
                 self.emit("push eax")
 
             # Push the receiver object's address as first (implicit) argument
             # If object is already a pointer, just use the value; otherwise take address
+            is_class_type = type_name in self.struct_types
+
             if is_pointer:
                 # Already a pointer, just use the value
                 self.gen_expression(expr.object)
@@ -1254,6 +1667,10 @@ class X86CodeGen:
                 # Unknown type - just generate the expression value directly
                 # This handles untyped 'self' and other Python-style patterns
                 self.gen_expression(expr.object)
+            elif is_class_type:
+                # Class type: variable contains a pointer, load it
+                # (class instances are heap-allocated with reference semantics)
+                self.gen_expression(expr.object)
             else:
                 # Need to take address of the object
                 self.gen_lvalue_address(expr.object)
@@ -1263,7 +1680,7 @@ class X86CodeGen:
             self.emit(f"call {mangled_name}")
 
             # Clean up stack (explicit args + implicit self)
-            total_args = len(expr.args) + 1
+            total_args = len(actual_args) + 1
             self.emit(f"add esp, {total_args * 4}")
 
             return "eax"
@@ -1366,6 +1783,20 @@ class X86CodeGen:
                 self.gen_expression(expr.base)  # Evaluate to get pointer
                 self.emit("pop ebx")  # Restore index
 
+            # For List types, dereference list struct to get data pointer first
+            base_type = self._get_expr_type(expr.base)
+            is_list: int = 0
+            if base_type:
+                if type(base_type).__name__ == 'ListType':
+                    is_list = 1
+                bt_name: str = get_type_name(base_type)
+                if 'List' in bt_name:
+                    is_list = 1
+            if is_list == 1:
+                # eax has list struct pointer, need data pointer at offset 0
+                self.emit("mov eax, [eax]")  # eax = data pointer
+                element_size = 4  # List elements are 4 bytes
+
             # Calculate address: base + index * element_size
             if element_size > 1:
                 # Multiply index by element size
@@ -1409,6 +1840,8 @@ class X86CodeGen:
                 element_size = self.type_size(arr_type.element_type)
             elif isinstance(arr_type, PointerType):
                 element_size = self.type_size(arr_type.base_type)
+            elif arr_type and arr_type.name == 'str':
+                element_size = 1  # String chars are 1 byte each
 
             # Calculate pointer = array_base + start * element_size
             # start is still in ecx
@@ -1450,6 +1883,45 @@ class X86CodeGen:
 
             # Restore len to edx
             self.emit("pop edx")  # len in edx
+
+            # For string slices, allocate a new null-terminated string
+            if arr_type and arr_type.name == 'str':
+                # eax = source ptr, edx = length
+                # Stack layout: [source_ptr] [length]
+                self.emit("push eax")  # Save source ptr [esp]
+                self.emit("push edx")  # Save length [esp]
+
+                # Allocate len+1 bytes
+                self.emit("lea eax, [edx+1]")  # len+1
+                self.emit("push eax")
+                self.emit("call alloc")
+                self.emit("add esp, 4")
+                # eax = dest buffer
+
+                self.emit("mov edi, eax")  # edi = dest start (save for return)
+                self.emit("pop ecx")       # ecx = length
+                self.emit("pop esi")       # esi = source
+
+                # Copy loop: copy ecx bytes from esi to eax
+                slice_copy = self.new_label("slice_copy")
+                slice_done = self.new_label("slice_done")
+                self.emit("test ecx, ecx")
+                self.emit(f"jz {slice_done}")
+                self.emit_label(slice_copy)
+                self.emit("mov bl, [esi]")
+                self.emit("mov [eax], bl")
+                self.emit("inc esi")
+                self.emit("inc eax")
+                self.emit("dec ecx")
+                self.emit(f"jnz {slice_copy}")
+                self.emit_label(slice_done)
+
+                # Null terminate
+                self.emit("mov byte [eax], 0")
+
+                # Return dest start
+                self.emit("mov eax, edi")
+                return "eax"
 
             # Return with ptr in eax, len in edx
             # Caller needs to handle the fat pointer appropriately
@@ -1623,43 +2095,47 @@ class X86CodeGen:
             return "eax"
 
         if isinstance(expr, ArrayLiteral):
-            # Array literal: [1, 2, 3]
-            # Allocate space on stack and initialize elements
-            if not expr.elements:
-                # Empty array - just return address of nothing
-                self.emit("xor eax, eax")
-                return "eax"
+            # Array/List literal: [] or [1, 2, 3]
+            # For dynamic lists (like Python), use list structure (16 bytes)
+            # List structure: [data_ptr, len, cap, elem_size]
 
-            # Determine element type from first element
-            first_type = self._get_expr_type(expr.elements[0])
-            element_size = self.type_size(first_type) if first_type else 4
-            array_size = len(expr.elements) * element_size
+            initial_cap = max(len(expr.elements), 4)
 
-            # Allocate space on stack
-            self.stack_offset += array_size
-            array_offset = -self.stack_offset
+            # Allocate 16 bytes on HEAP for list header
+            self.emit("push 16")
+            self.emit("call alloc")
+            self.emit("add esp, 4")
+            self.emit("push eax")  # Save list header ptr
 
-            # Initialize each element
-            for i, elem in enumerate(expr.elements):
+            # Allocate data array: cap * 4 bytes
+            self.emit(f"push {initial_cap * 4}")
+            self.emit("call alloc")
+            self.emit("add esp, 4")
+            self.emit("mov ebx, eax")  # ebx = data ptr
+            self.emit("pop eax")       # eax = list header ptr
+
+            # Save list header in a local variable
+            self.stack_offset += 4
+            list_var_offset = -self.stack_offset
+            list_var_addr = self.ebp_addr(list_var_offset)
+            self.emit(f"mov {list_var_addr}, eax")
+
+            # Initialize list header: [data_ptr, len, cap, elem_size]
+            self.emit("mov [eax], ebx")      # list[0] = data_ptr
+            self.emit("mov dword [eax+4], 0")   # list[1] = len = 0
+            self.emit(f"mov dword [eax+8], {initial_cap}")   # list[2] = cap
+            self.emit("mov dword [eax+12], 4")  # list[3] = elem_size = 4
+
+            # Append each element using list_append_i32
+            for elem in expr.elements:
                 self.gen_expression(elem)
-                elem_offset = array_offset + (i * element_size)
-                if elem_offset >= 0:
-                    addr = f"[ebp+{elem_offset}]"
-                else:
-                    addr = self.ebp_addr(elem_offset)
+                self.emit("push eax")  # value
+                self.emit(f"push dword {list_var_addr}")  # list pointer
+                self.emit("call list_append_i32")
+                self.emit("add esp, 8")
 
-                if element_size == 1:
-                    self.emit(f"mov byte {addr}, al")
-                elif element_size == 2:
-                    self.emit(f"mov word {addr}, ax")
-                else:
-                    self.emit(f"mov {addr}, eax")
-
-            # Return pointer to array
-            if array_offset >= 0:
-                self.emit(f"lea eax, [ebp+{array_offset}]")
-            else:
-                self.emit(f"lea eax, {self.ebp_addr(array_offset)}")
+            # Return pointer to list
+            self.emit(f"mov eax, {list_var_addr}")
             return "eax"
 
         if isinstance(expr, FieldAccessExpr):
@@ -1747,19 +2223,33 @@ class X86CodeGen:
                 self.gen_expression(expr.object)
                 # eax now has pointer to struct
             else:
-                # Direct struct value - get its address
+                # Check if this is a class type (reference semantics - var holds pointer)
+                # In Python/Brainhair, class instances are always heap-allocated
+                is_class_type = struct_name in self.struct_types
+
                 if isinstance(expr.object, Identifier):
                     if expr.object.name in self.local_vars:
                         offset = self.local_vars[expr.object.name]
-                        if offset > 0:
-                            self.emit(f"lea eax, [ebp+{offset}]")
+                        if is_class_type:
+                            # Class type: variable contains a pointer, load it
+                            if offset > 0:
+                                self.emit(f"mov eax, [ebp+{offset}]")
+                            else:
+                                self.emit(f"mov eax, {self.ebp_addr(offset)}")
                         else:
-                            self.emit(f"lea eax, {self.ebp_addr(offset)}")
+                            # Plain struct: get address of struct on stack
+                            if offset > 0:
+                                self.emit(f"lea eax, [ebp+{offset}]")
+                            else:
+                                self.emit(f"lea eax, {self.ebp_addr(offset)}")
                     else:
                         addr = f"[{expr.object.name}]"
-                        self.emit(f"lea eax, {addr}")
+                        if is_class_type:
+                            self.emit(f"mov eax, {addr}")
+                        else:
+                            self.emit(f"lea eax, {addr}")
                 else:
-                    # For complex expressions, generate and assume it returns struct address
+                    # For complex expressions, generate and assume it returns struct address/pointer
                     self.gen_expression(expr.object)
 
             # Get field offset and type
@@ -1994,26 +2484,42 @@ class X86CodeGen:
                         else:
                             self.emit(f"mov {addr}, eax")
                 elif isinstance(stmt.value, ArrayLiteral):
-                    # Initialize array elements directly into allocated space
-                    elements = stmt.value.elements
-                    if elements:
-                        first_type = self._get_expr_type(elements[0])
-                        element_size = self.type_size(first_type) if first_type else 4
+                    # Check if this is a List type (dynamic) or Array type (fixed)
+                    is_list_type = False
+                    if stmt.var_type:
+                        # Check for ListType class
+                        if type(stmt.var_type).__name__ == 'ListType':
+                            is_list_type = True
+                        # Also check for 'List' in the name (for types like List[int])
+                        elif hasattr(stmt.var_type, 'name') and 'List' in str(stmt.var_type.name):
+                            is_list_type = True
 
-                        for i, elem in enumerate(elements):
-                            self.gen_expression(elem)
-                            elem_offset = var_offset + (i * element_size)
-                            if elem_offset >= 0:
-                                addr = f"[ebp+{elem_offset}]"
-                            else:
-                                addr = self.ebp_addr(elem_offset)
+                    if is_list_type:
+                        # Dynamic list - use heap allocation via gen_expression
+                        self.gen_expression(stmt.value)
+                        addr = self.ebp_addr(var_offset) if var_offset < 0 else f"[ebp+{var_offset}]"
+                        self.emit(f"mov {addr}, eax")
+                    else:
+                        # Fixed-size array - initialize elements directly into stack space
+                        elements = stmt.value.elements
+                        if elements:
+                            first_type = self._get_expr_type(elements[0])
+                            element_size = self.type_size(first_type) if first_type else 4
 
-                            if element_size == 1:
-                                self.emit(f"mov byte {addr}, al")
-                            elif element_size == 2:
-                                self.emit(f"mov word {addr}, ax")
-                            else:
-                                self.emit(f"mov {addr}, eax")
+                            for i, elem in enumerate(elements):
+                                self.gen_expression(elem)
+                                elem_offset = var_offset + (i * element_size)
+                                if elem_offset >= 0:
+                                    addr = f"[ebp+{elem_offset}]"
+                                else:
+                                    addr = self.ebp_addr(elem_offset)
+
+                                if element_size == 1:
+                                    self.emit(f"mov byte {addr}, al")
+                                elif element_size == 2:
+                                    self.emit(f"mov word {addr}, ax")
+                                else:
+                                    self.emit(f"mov {addr}, eax")
                 elif isinstance(stmt.value, CallExpr) and self.is_enum_constructor(stmt.value.func):
                     # Enum variant constructor: Some(5)
                     enum_name = self.is_enum_constructor(stmt.value.func)
@@ -2051,17 +2557,112 @@ class X86CodeGen:
                     len_offset = var_offset + 4
                     len_addr = self.ebp_addr(len_offset) if len_offset < 0 else f"[ebp+{len_offset}]"
                     self.emit(f"mov {len_addr}, edx")
+                elif isinstance(stmt.value, CallExpr) and stmt.value.func in self.struct_types:
+                    # Struct/class constructor: MyClass(args...)
+                    # For Python semantics: allocate on heap, store pointer in variable
+                    struct_name = stmt.value.func
+                    struct_sz = self.struct_size(struct_name)
+                    init_func = f"{struct_name}___init__"
+
+                    # Allocate heap memory for the class instance
+                    self.emit(f"; Allocate {struct_name} instance ({struct_sz} bytes)")
+                    self.emit(f"push {struct_sz}")
+                    self.emit("call alloc")
+                    self.emit("add esp, 4")
+                    # eax now has pointer to heap-allocated struct
+
+                    # Store heap pointer in variable
+                    var_addr = self.ebp_addr(var_offset)
+                    self.emit(f"mov {var_addr}, eax")
+
+                    if init_func in self.func_names:
+                        # Check for default arguments - fill in missing args with defaults
+                        actual_args = list(stmt.value.args)
+                        if init_func in self.func_param_defaults:
+                            params = self.func_param_defaults[init_func]
+                            # params includes 'self', so skip first param when counting
+                            non_self_params = filter_non_self_params(params)
+                            num_provided = len(actual_args)
+                            num_expected = len(non_self_params)
+
+                            # If fewer args provided than expected, add defaults
+                            if num_provided < num_expected:
+                                for i in range(num_provided, num_expected):
+                                    param = non_self_params[i]
+                                    if param.default_value is not None:
+                                        actual_args.append(param.default_value)
+                                    else:
+                                        # No default - use 0 as fallback
+                                        actual_args.append(IntLiteral(0))
+
+                        # Push args in reverse order
+                        for arg in reversed(actual_args):
+                            self.gen_expression(arg)
+                            self.emit("push eax")
+                        # Push pointer to heap-allocated struct (load from variable)
+                        self.emit(f"mov eax, {var_addr}")
+                        self.emit("push eax")
+                        # Call __init__
+                        self.emit(f"call {init_func}")
+                        self.emit(f"add esp, {4 + len(actual_args) * 4}")
+                    else:
+                        # No __init__ - initialize fields from positional args
+                        struct_decl = self.struct_types[struct_name]
+                        fields = get_field_names(struct_decl.fields)
+                        for i, arg in enumerate(stmt.value.args):
+                            if i < len(fields):
+                                field_name = fields[i]
+                                field_offset = self.get_field_offset(struct_name, field_name)
+                                self.gen_expression(arg)
+                                self.emit("push eax")  # Save field value
+                                self.emit(f"mov ebx, {var_addr}")  # Load struct pointer
+                                self.emit("pop eax")  # Restore field value
+                                if field_offset > 0:
+                                    self.emit(f"mov [ebx+{field_offset}], eax")
+                                else:
+                                    self.emit("mov [ebx], eax")
                 else:
                     self.gen_expression(stmt.value)
                     # Store with appropriate size
+                    # Use var_offset (not stack_offset) since gen_expression may allocate more stack
+                    var_addr = self.ebp_addr(var_offset)
                     if size == 1:
-                        self.emit(f"mov byte [ebp-{self.stack_offset}], al")
+                        self.emit(f"mov byte {var_addr}, al")
                     elif size == 2:
-                        self.emit(f"mov word [ebp-{self.stack_offset}], ax")
+                        self.emit(f"mov word {var_addr}, ax")
                     else:
-                        self.emit(f"mov [ebp-{self.stack_offset}], eax")
+                        self.emit(f"mov {var_addr}, eax")
 
         elif isinstance(stmt, Assignment):
+            # For Python-style code, infer and track type from value expression
+            # This must be done BEFORE generating the value, so we know the type
+            if isinstance(stmt.target, Identifier) and stmt.target.name not in self.type_table:
+                inferred_type = self._infer_assignment_type(stmt.value)
+                if inferred_type:
+                    self.type_table[stmt.target.name] = inferred_type
+
+            # Special case: assigning single-char string to char variable
+            # e.g., ch = "'" should store ASCII 39, not string pointer
+            is_single_char_assign: int = 0
+            if isinstance(stmt.target, Identifier) and isinstance(stmt.value, StringLiteral):
+                if len(stmt.value.value) == 1:
+                    is_single_char_assign = 1
+            if is_single_char_assign == 1:
+                var_type = self.type_table.get(stmt.target.name)
+                if is_char_type(var_type) == 1:
+                    # Generate char value instead of string pointer
+                    char_val = ord(stmt.value.value[0])
+                    self.emit(f"mov eax, {char_val}")
+                    # Store value - get var info
+                    if stmt.target.name in self.local_vars:
+                        offset = self.local_vars[stmt.target.name]
+                        addr = self.ebp_addr(offset)
+                        self.emit(f"mov byte {addr}, al")
+                    else:
+                        addr = f"[{stmt.target.name}]"
+                        self.emit(f"mov byte {addr}, al")
+                    return  # Done with this statement
+
             # Generate value
             self.gen_expression(stmt.value)
 
@@ -2074,7 +2675,7 @@ class X86CodeGen:
                 # For Python-style implicit variable declaration, allocate local if not exists
                 if stmt.target.name not in self.local_vars:
                     # Check if it's a global (defined at module level)
-                    if stmt.target.name not in getattr(self, 'global_vars', {}):
+                    if stmt.target.name not in self.global_var_names:
                         # Create new local variable
                         self.stack_offset += var_size
                         self.local_vars[stmt.target.name] = -self.stack_offset
@@ -2299,17 +2900,39 @@ class X86CodeGen:
 
         elif isinstance(stmt, IfStmt):
             end_label = self.new_label("endif")
+
+            # Handle elif blocks by creating chain of labels
+            elif_labels = []
+            elif_blocks = getattr(stmt, 'elif_blocks', None) or []
+            for i in range(len(elif_blocks)):
+                elif_labels.append(self.new_label("elif"))
             else_label = self.new_label("else")
 
-            # Generate condition
+            # Generate main if condition
             self.gen_expression(stmt.condition)
             self.emit("test eax, eax")
-            self.emit(f"jz {else_label}")
+            if elif_labels:
+                self.emit(f"jz {elif_labels[0]}")
+            else:
+                self.emit(f"jz {else_label}")
 
             # Then block
             for s in stmt.then_block:
                 self.gen_statement(s)
             self.emit(f"jmp {end_label}")
+
+            # Generate elif blocks
+            for i, (elif_cond, elif_body) in enumerate(elif_blocks):
+                self.emit_label(elif_labels[i])
+                self.gen_expression(elif_cond)
+                self.emit("test eax, eax")
+                if i + 1 < len(elif_blocks):
+                    self.emit(f"jz {elif_labels[i + 1]}")
+                else:
+                    self.emit(f"jz {else_label}")
+                for s in elif_body:
+                    self.gen_statement(s)
+                self.emit(f"jmp {end_label}")
 
             # Else block
             self.emit_label(else_label)
@@ -2607,7 +3230,7 @@ class X86CodeGen:
             if stmt.var_name:
                 # Allocate stack space and store the context value
                 self.stack_offset += 4
-                self.local_vars[stmt.var_name] = self.stack_offset
+                self.local_vars[stmt.var_name] = -self.stack_offset  # negative offset for local vars
                 self.emit(f"mov [ebp-{self.stack_offset}], eax")
             # Execute body
             for s in stmt.body:
@@ -2797,7 +3420,12 @@ class X86CodeGen:
         self.constants = {}
         self.externs = []
         self.func_names = set()  # Track function names for function pointer support
-        for decl in program.declarations:
+        self.func_param_defaults = {}  # Track function parameter defaults: func_name -> [(param_name, default_value), ...]
+
+        # Use a stack to process declarations including those inside TryExceptStmt
+        decl_stack = list(program.declarations)
+        while decl_stack:
+            decl = decl_stack.pop(0)
             if isinstance(decl, StructDecl):
                 # Register struct type for field offset calculations
                 self.struct_types[decl.name] = decl
@@ -2821,15 +3449,41 @@ class X86CodeGen:
             elif isinstance(decl, ProcDecl):
                 # Track procedure names for function pointer support
                 self.func_names.add(decl.name)
+                # Track parameter defaults
+                if decl.params:
+                    defaults = get_param_defaults(decl.params)
+                    if defaults:
+                        self.func_param_defaults[decl.name] = decl.params
             elif isinstance(decl, MethodDecl):
-                # Track method names (ClassName___methodName)
+                # Track method names (ClassName_methodName) - same format as gen_method
                 # receiver_type can be PointerType(base_type=Type(name='ClassName'))
                 if isinstance(decl.receiver_type, PointerType):
                     class_name = decl.receiver_type.base_type.name
                 else:
                     class_name = decl.receiver_type.name
-                method_name = f"{class_name}___{decl.name}"
+                method_name = f"{class_name}_{decl.name}"
                 self.func_names.add(method_name)
+                # Track method return types for type inference
+                if decl.return_type:
+                    self.method_return_types[method_name] = decl.return_type
+                # Track parameter defaults (excluding 'self' which is first param)
+                if decl.params:
+                    defaults = get_param_defaults(decl.params)
+                    if defaults:
+                        self.func_param_defaults[method_name] = decl.params
+            elif isinstance(decl, TryExceptStmt):
+                # Also check inside try/except for polyglot code
+                for stmt in decl.try_body:
+                    decl_stack.append(stmt)
+                for stmt in decl.except_body:
+                    decl_stack.append(stmt)
+
+        # First pass: collect all global variable names so assignments work correctly
+        for decl in program.declarations:
+            if isinstance(decl, VarDecl) and not decl.is_const:
+                if decl.name not in self.global_var_names:
+                    self.global_var_names[decl.name] = 0
+                    self.type_table[decl.name] = decl.var_type
 
         # Generate code for all declarations
         for decl in program.declarations:
@@ -2856,24 +3510,31 @@ class X86CodeGen:
                 # Generate unique global variable name to avoid label collisions
                 # Only rename if this name has already been used
                 var_name = decl.name
-                if var_name in self.global_var_names:
-                    # Already used - append counter to make unique
+                if var_name in self.global_var_names and self.global_var_names[var_name] > 0:
+                    # Already processed - append counter to make unique
                     self.global_var_names[var_name] += 1
                     unique_name = f"_g_{var_name}_{self.global_var_names[var_name]}"
                 else:
-                    # First use - keep original name
-                    self.global_var_names[var_name] = 0
+                    # First use - keep original name (counter was 0 from first pass or not present)
+                    self.global_var_names[var_name] = 1  # Mark as processed (1 = first BSS entry)
                     unique_name = var_name  # Use original name for first occurrence
 
                 # Global variable - record type for proper address calculation
                 # Use original name for type_table so code references work
                 self.type_table[var_name] = decl.var_type
 
-                # Check if initialized with a string literal
+                # Check if initialized with a literal - put in data section
                 if decl.value and isinstance(decl.value, StringLiteral):
                     # Put in data section with initialized value
                     str_label = self.add_string(decl.value.value)
                     self.data_section.append(f"{unique_name}: dd {str_label}")
+                elif decl.value and isinstance(decl.value, IntLiteral):
+                    # Integer literal - put in data section
+                    self.data_section.append(f"{unique_name}: dd {decl.value.value}")
+                elif decl.value and isinstance(decl.value, BoolLiteral):
+                    # Bool literal - put in data section
+                    val = 1 if decl.value.value else 0
+                    self.data_section.append(f"{unique_name}: dd {val}")
                 else:
                     # Uninitialized - goes in BSS
                     self.bss_section.append(f"{unique_name}: resb {self.type_size(decl.var_type)}")
@@ -2934,7 +3595,8 @@ class X86CodeGen:
                 if current_str:
                     parts.append(f"'{current_str}'")
                 parts.append('0')  # Null terminator
-                asm_lines.append(f'{label}: db {", ".join(parts)}')
+                db_str: str = join_str_list(", ", parts)
+                asm_lines.append(f'{label}: db {db_str}')
             asm_lines.extend(self.data_section)
             asm_lines.append("")
 
@@ -3031,6 +3693,125 @@ class X86CodeGen:
             asm_lines.append("    pop ebp")
             asm_lines.append("    ret")
             asm_lines.append("")
+            asm_lines.append("; strcat_alloc(s1, s2) - allocates new string with s1+s2 concatenated")
+            asm_lines.append("strcat_alloc:")
+            asm_lines.append("    push ebp")
+            asm_lines.append("    mov ebp, esp")
+            asm_lines.append("    push esi")
+            asm_lines.append("    push edi")
+            asm_lines.append("    push ebx")
+            asm_lines.append("    ; Calculate strlen(s1)")
+            asm_lines.append("    mov esi, [ebp+8]   ; s1")
+            asm_lines.append("    xor ecx, ecx       ; len1 = 0")
+            asm_lines.append(".strlen1_loop:")
+            asm_lines.append("    mov al, [esi+ecx]")
+            asm_lines.append("    test al, al")
+            asm_lines.append("    jz .strlen1_done")
+            asm_lines.append("    inc ecx")
+            asm_lines.append("    jmp .strlen1_loop")
+            asm_lines.append(".strlen1_done:")
+            asm_lines.append("    mov ebx, ecx       ; ebx = len1")
+            asm_lines.append("    ; Calculate strlen(s2)")
+            asm_lines.append("    mov edi, [ebp+12]  ; s2")
+            asm_lines.append("    xor ecx, ecx       ; len2 = 0")
+            asm_lines.append(".strlen2_loop:")
+            asm_lines.append("    mov al, [edi+ecx]")
+            asm_lines.append("    test al, al")
+            asm_lines.append("    jz .strlen2_done")
+            asm_lines.append("    inc ecx")
+            asm_lines.append("    jmp .strlen2_loop")
+            asm_lines.append(".strlen2_done:")
+            asm_lines.append("    ; ecx = len2, ebx = len1")
+            asm_lines.append("    add ecx, ebx       ; ecx = len1 + len2")
+            asm_lines.append("    inc ecx            ; +1 for null terminator")
+            asm_lines.append("    push ecx           ; save total size")
+            asm_lines.append("    push ebx           ; save len1")
+            asm_lines.append("    ; Allocate buffer: call alloc(size)")
+            asm_lines.append("    push ecx")
+            asm_lines.append("    call alloc")
+            asm_lines.append("    add esp, 4")
+            asm_lines.append("    mov edx, eax       ; edx = new buffer pointer")
+            asm_lines.append("    pop ebx            ; restore len1")
+            asm_lines.append("    pop ecx            ; restore total size (not needed anymore)")
+            asm_lines.append("    ; Copy s1 to buffer")
+            asm_lines.append("    mov esi, [ebp+8]   ; s1")
+            asm_lines.append("    mov edi, edx       ; dest = buffer")
+            asm_lines.append(".copy1_loop:")
+            asm_lines.append("    mov al, [esi]")
+            asm_lines.append("    mov [edi], al")
+            asm_lines.append("    test al, al")
+            asm_lines.append("    jz .copy1_done")
+            asm_lines.append("    inc esi")
+            asm_lines.append("    inc edi")
+            asm_lines.append("    jmp .copy1_loop")
+            asm_lines.append(".copy1_done:")
+            asm_lines.append("    ; edi points to null terminator position, copy s2 there")
+            asm_lines.append("    mov esi, [ebp+12]  ; s2")
+            asm_lines.append(".copy2_loop:")
+            asm_lines.append("    mov al, [esi]")
+            asm_lines.append("    mov [edi], al")
+            asm_lines.append("    test al, al")
+            asm_lines.append("    jz .copy2_done")
+            asm_lines.append("    inc esi")
+            asm_lines.append("    inc edi")
+            asm_lines.append("    jmp .copy2_loop")
+            asm_lines.append(".copy2_done:")
+            asm_lines.append("    mov eax, edx       ; return buffer pointer")
+            asm_lines.append("    pop ebx")
+            asm_lines.append("    pop edi")
+            asm_lines.append("    pop esi")
+            asm_lines.append("    pop ebp")
+            asm_lines.append("    ret")
+            asm_lines.append("")
+            asm_lines.append("; strcat_char(s, c) - concatenates string s with single char c")
+            asm_lines.append("strcat_char:")
+            asm_lines.append("    push ebp")
+            asm_lines.append("    mov ebp, esp")
+            asm_lines.append("    push esi")
+            asm_lines.append("    push edi")
+            asm_lines.append("    push ebx")
+            asm_lines.append("    ; Calculate strlen(s)")
+            asm_lines.append("    mov esi, [ebp+8]   ; s")
+            asm_lines.append("    xor ecx, ecx       ; len = 0")
+            asm_lines.append(".strcat_char_strlen:")
+            asm_lines.append("    mov al, [esi+ecx]")
+            asm_lines.append("    test al, al")
+            asm_lines.append("    jz .strcat_char_strlen_done")
+            asm_lines.append("    inc ecx")
+            asm_lines.append("    jmp .strcat_char_strlen")
+            asm_lines.append(".strcat_char_strlen_done:")
+            asm_lines.append("    ; ecx = len(s), need len+2 for new string (char + null)")
+            asm_lines.append("    mov ebx, ecx       ; save len")
+            asm_lines.append("    add ecx, 2         ; +1 for char, +1 for null")
+            asm_lines.append("    push ebx           ; save len")
+            asm_lines.append("    push ecx")
+            asm_lines.append("    call alloc")
+            asm_lines.append("    add esp, 4")
+            asm_lines.append("    mov edx, eax       ; edx = new buffer")
+            asm_lines.append("    pop ebx            ; restore len")
+            asm_lines.append("    ; Copy s to buffer")
+            asm_lines.append("    mov esi, [ebp+8]   ; s")
+            asm_lines.append("    mov edi, edx       ; dest")
+            asm_lines.append(".strcat_char_copy:")
+            asm_lines.append("    mov al, [esi]")
+            asm_lines.append("    mov [edi], al")
+            asm_lines.append("    test al, al")
+            asm_lines.append("    jz .strcat_char_copy_done")
+            asm_lines.append("    inc esi")
+            asm_lines.append("    inc edi")
+            asm_lines.append("    jmp .strcat_char_copy")
+            asm_lines.append(".strcat_char_copy_done:")
+            asm_lines.append("    ; edi points to null terminator, add char there")
+            asm_lines.append("    mov eax, [ebp+12]  ; c (char value)")
+            asm_lines.append("    mov [edi], al      ; store char")
+            asm_lines.append("    mov byte [edi+1], 0  ; null terminator")
+            asm_lines.append("    mov eax, edx       ; return buffer")
+            asm_lines.append("    pop ebx")
+            asm_lines.append("    pop edi")
+            asm_lines.append("    pop esi")
+            asm_lines.append("    pop ebp")
+            asm_lines.append("    ret")
+            asm_lines.append("")
             asm_lines.append("uint8_join:")
             asm_lines.append("    ; String join stub - just return first arg")
             asm_lines.append("    mov eax, [esp+4]")
@@ -3098,7 +3879,7 @@ class X86CodeGen:
 
         asm_lines.extend(self.output)
 
-        return '\n'.join(asm_lines)
+        return join_str_list("\n", asm_lines)
 
 # Test the code generator
 if __name__ == '__main__':

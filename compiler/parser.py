@@ -12,7 +12,7 @@ except:
     pass
 
 # Import token types as integers (works in both Python and Brainhair)
-from lexer import Token, TokenType, Lexer
+from lexer import Token, TokenType, Lexer, get_keyword_name
 # Keywords
 from lexer import TT_DEF, TT_CLASS, TT_FROM, TT_IMPORT, TT_AS, TT_RETURN
 from lexer import TT_IF, TT_ELIF, TT_ELSE, TT_WHILE, TT_FOR, TT_IN
@@ -42,6 +42,7 @@ from lexer import TT_AND, TT_OR, TT_NOT, TT_IS, TT_IS_NOT, TT_IN_OP, TT_NOT_IN
 from lexer import TT_LPAREN, TT_RPAREN, TT_LBRACKET, TT_RBRACKET, TT_LBRACE, TT_RBRACE
 from lexer import TT_COMMA, TT_DOT, TT_DOTDOT, TT_COLON, TT_ARROW, TT_AT
 from lexer import TT_NEWLINE, TT_INDENT, TT_DEDENT, TT_EOF
+from lexer import TT_VAR, TT_DISCARD, TT_CONST
 from ast_nodes import *
 
 # Compatibility aliases for code that uses short names
@@ -51,7 +52,7 @@ TT_LT = TT_LESS
 TT_LE = TT_LESS_EQUALS
 TT_GT = TT_GREATER
 TT_GE = TT_GREATER_EQUALS
-TT_ASSIGN = TT_EQUALS
+TT_EQUALS = TT_EQUALS
 TT_PLUS_EQ = TT_PLUS_EQUALS
 TT_MINUS_EQ = TT_MINUS_EQUALS
 TT_STAR_EQ = TT_STAR_EQUALS
@@ -63,6 +64,88 @@ TT_CARET_EQ = TT_CARET_EQUALS
 TT_SHL_EQ = TT_SHL_EQUALS
 TT_SHR_EQ = TT_SHR_EQUALS
 TT_AMP = TT_AMPERSAND
+
+def keyword_name_from_type(tt: int) -> str:
+    """Get keyword string from token type. Used for field names in class bodies."""
+    if tt == TT_VAR:
+        return "var"
+    if tt == TT_DEF:
+        return "def"
+    if tt == TT_CLASS:
+        return "class"
+    if tt == TT_FROM:
+        return "from"
+    if tt == TT_IMPORT:
+        return "import"
+    if tt == TT_AS:
+        return "as"
+    if tt == TT_RETURN:
+        return "return"
+    if tt == TT_IF:
+        return "if"
+    if tt == TT_ELIF:
+        return "elif"
+    if tt == TT_ELSE:
+        return "else"
+    if tt == TT_WHILE:
+        return "while"
+    if tt == TT_FOR:
+        return "for"
+    if tt == TT_IN:
+        return "in"
+    if tt == TT_BREAK:
+        return "break"
+    if tt == TT_CONTINUE:
+        return "continue"
+    if tt == TT_PASS:
+        return "pass"
+    if tt == TT_WITH:
+        return "with"
+    if tt == TT_RAISE:
+        return "raise"
+    if tt == TT_TRY:
+        return "try"
+    if tt == TT_EXCEPT:
+        return "except"
+    if tt == TT_FINALLY:
+        return "finally"
+    if tt == TT_MATCH:
+        return "match"
+    if tt == TT_CONST:
+        return "const"
+    if tt == TT_EXTERN:
+        return "extern"
+    if tt == TT_ASM:
+        return "asm"
+    if tt == TT_DEFER:
+        return "defer"
+    if tt == TT_PTR:
+        return "ptr"
+    if tt == TT_LIST:
+        return "list"
+    if tt == TT_DICT:
+        return "dict"
+    if tt == TT_TUPLE:
+        return "tuple"
+    if tt == TT_OPTIONAL:
+        return "optional"
+    if tt == TT_ARRAY:
+        return "array"
+    if tt == TT_ENUM:
+        return "enum"
+    if tt == TT_INT:
+        return "int"
+    if tt == TT_FLOAT:
+        return "float"
+    if tt == TT_BOOL:
+        return "bool"
+    if tt == TT_STR:
+        return "str"
+    if tt == TT_CHAR:
+        return "char"
+    if tt == TT_BYTES:
+        return "bytes"
+    return "unknown"
 
 # ============================================================================
 # Polyglot Helper Functions
@@ -129,6 +212,51 @@ def lookup_basic_type(tt: int) -> str:
     if tt == TT_FLOAT:
         return 'float32'
     return ''
+
+
+def join_paths(parts: List[str]) -> str:
+    """Join a list of path parts with '/' separator."""
+    if len(parts) == 0:
+        return ""
+    result: str = parts[0]
+    i: int = 1
+    while i < len(parts):
+        result = result + "/" + parts[i]
+        i = i + 1
+    return result
+
+
+def is_type_keyword(tt: int) -> int:
+    """Check if token type is a type keyword. Returns 1 if true, 0 if false."""
+    if tt == TT_PTR:
+        return 1
+    if tt == TT_INT8:
+        return 1
+    if tt == TT_INT16:
+        return 1
+    if tt == TT_INT32:
+        return 1
+    if tt == TT_INT64:
+        return 1
+    if tt == TT_UINT8:
+        return 1
+    if tt == TT_UINT16:
+        return 1
+    if tt == TT_UINT32:
+        return 1
+    if tt == TT_UINT64:
+        return 1
+    if tt == TT_FLOAT32:
+        return 1
+    if tt == TT_FLOAT64:
+        return 1
+    if tt == TT_BOOL:
+        return 1
+    if tt == TT_CHAR:
+        return 1
+    if tt == TT_STR:
+        return 1
+    return 0
 
 class Parser:
     def __init__(self, tokens: List[Token]):
@@ -204,12 +332,17 @@ class Parser:
             self.advance()
             return Type(type_name)
 
-        # Ptr[T] - pointer type
+        # Ptr[T] or ptr T - pointer type
         if token.type == TT_PTR:
             self.advance()
-            self.expect(TT_LBRACKET)
-            base_type = self.parse_type()
-            self.expect(TT_RBRACKET)
+            # Support both Ptr[T] and ptr T syntax
+            if self.current_token().type == TT_LBRACKET:
+                self.advance()
+                base_type = self.parse_type()
+                self.expect(TT_RBRACKET)
+            else:
+                # C-style: ptr uint8 (without brackets)
+                base_type = self.parse_type()
             return PointerType(base_type)
 
         # *T - C-style pointer type
@@ -379,40 +512,61 @@ class Parser:
             self.expect(TT_RBRACKET)
             return ArrayLiteral(elements)
 
-        # Dict literal: {key: value, ...} or set comprehension: {expr for x in iterable}
+        # Dict literal: {key: value, ...} or set literal: {a, b, c}
         if token.type == TT_LBRACE:
             self.advance()
             self.skip_newlines()
-            pairs = []
 
-            if self.current_token().type != TT_RBRACE:
-                first_expr = self.parse_expression()
+            # Empty dict/set
+            if self.current_token().type == TT_RBRACE:
+                self.advance()
+                return DictLiteral([])
 
-                # Check for set comprehension: {expr for var in iterable}
-                if self.current_token().type == TT_FOR:
-                    self.advance()  # skip 'for'
-                    var_name = self.expect(TT_IDENT).value
-                    self.expect(TT_IN)
-                    iterable = self.parse_expression()
-                    self.skip_newlines()
-                    self.expect(TT_RBRACE)
-                    # Return empty set/dict as placeholder for now
-                    return DictLiteral([])  # TODO: proper set comprehension support
+            first_expr = self.parse_expression()
 
-                # It's a dict literal - expect colon
-                self.expect(TT_COLON)
-                value = self.parse_expression()
-                pairs.append((first_expr, value))
+            # Check for set comprehension: {expr for var in iterable}
+            if self.current_token().type == TT_FOR:
+                self.advance()  # skip 'for'
+                var_name = self.expect(TT_IDENT).value
+                self.expect(TT_IN)
+                iterable = self.parse_expression()
+                self.skip_newlines()
+                self.expect(TT_RBRACE)
+                return SetLiteral([first_expr])  # Placeholder
 
+            # Check if it's a set literal (comma after first expr) or dict (colon)
+            if self.current_token().type == TT_COMMA:
+                # Set literal: {a, b, c}
+                elements = [first_expr]
                 while self.current_token().type == TT_COMMA:
                     self.advance()
                     self.skip_newlines()
                     if self.current_token().type == TT_RBRACE:
                         break
-                    key = self.parse_expression()
-                    self.expect(TT_COLON)
-                    value = self.parse_expression()
-                    pairs.append((key, value))
+                    elements.append(self.parse_expression())
+                self.skip_newlines()
+                self.expect(TT_RBRACE)
+                return SetLiteral(elements)
+
+            if self.current_token().type == TT_RBRACE:
+                # Single element set: {a}
+                self.advance()
+                return SetLiteral([first_expr])
+
+            # Dict literal - expect colon
+            self.expect(TT_COLON)
+            value = self.parse_expression()
+            pairs = [(first_expr, value)]
+
+            while self.current_token().type == TT_COMMA:
+                self.advance()
+                self.skip_newlines()
+                if self.current_token().type == TT_RBRACE:
+                    break
+                key = self.parse_expression()
+                self.expect(TT_COLON)
+                value = self.parse_expression()
+                pairs.append((key, value))
 
             self.skip_newlines()
             self.expect(TT_RBRACE)
@@ -436,10 +590,10 @@ class Parser:
             return Identifier(name)
 
         # Keywords used as identifiers (when not followed by their special syntax)
-        # This handles cases like: asm = [], match = {}, etc.
-        keyword_as_ident = [TT_ASM, TT_MATCH, TT_DEFER]
-        if token.type in keyword_as_ident:
-            name = token.type.name.lower()
+        # This handles cases like: var = x, asm = [], match = {}, etc.
+        # Python allows these as variable names, so we need to support them
+        name = keyword_name_from_type(token.type)
+        if name != "unknown":
             self.advance()
             return Identifier(name)
 
@@ -878,8 +1032,8 @@ class Parser:
                 if tok.type == TT_IDENT:
                     field_name = tok.value
                     self.advance()
-                elif tok.type.name.isupper():
-                    field_name = tok.type.name.lower()
+                elif get_keyword_name(tok.type) != "":
+                    field_name = get_keyword_name(tok.type)
                     self.advance()
                 else:
                     raise SyntaxError(f"Expected field name, got {tok.type} at line {tok.line}")
@@ -1293,6 +1447,34 @@ class Parser:
 
         return VarDecl(name, var_type, value, is_const=is_final)
 
+    def parse_var_stmt(self) -> VarDecl:
+        """Parse Brainhair native: var name: Type = value"""
+        self.advance()  # Skip 'var'
+        name = self.expect(TT_IDENT).value
+        self.expect(TT_COLON)
+        var_type = self.parse_type()
+
+        value = None
+        if self.current_token().type == TT_EQUALS:
+            self.advance()
+            value = self.parse_expression()
+
+        return VarDecl(name, var_type, value, is_const=False)
+
+    def parse_const_stmt(self) -> VarDecl:
+        """Parse Brainhair native: const name: Type = value"""
+        self.advance()  # Skip 'const'
+        name = self.expect(TT_IDENT).value
+        self.expect(TT_COLON)
+        var_type = self.parse_type()
+
+        value = None
+        if self.current_token().type == TT_EQUALS:
+            self.advance()
+            value = self.parse_expression()
+
+        return VarDecl(name, var_type, value, is_const=True)
+
     def parse_return_stmt(self) -> ReturnStmt:
         self.advance()  # Skip 'return'
 
@@ -1354,25 +1536,40 @@ class Parser:
         body = self.parse_block()
         return WhileStmt(condition, body)
 
+    def parse_var_name(self) -> str:
+        """Parse a variable name - could be an identifier or a keyword used as a name"""
+        token = self.current_token()
+        if token.type == TT_IDENT:
+            name = token.value
+            self.advance()
+            return name
+        # Keywords can be used as variable names in Python-style code
+        # Check if next token indicates this is being used as a name (followed by 'in', ':', '=', etc.)
+        name = keyword_name_from_type(token.type)
+        if name != "unknown":
+            self.advance()
+            return name
+        raise SyntaxError(f"Expected identifier, got {token.type} at line {token.line}")
+
     def parse_for_stmt(self):
         """Parse for loop: for i in range(n) or for item in iterable or for a, b in pairs"""
         self.advance()  # Skip 'for'
 
         # Parse variable names (supports tuple unpacking: for a, b in ... or for i, (a, b) in ...)
         var_names: List[str] = []
-        var_names.append(self.expect(TT_IDENT).value)
+        var_names.append(self.parse_var_name())
         while self.current_token().type == TT_COMMA:
             self.advance()  # Skip comma
             if self.current_token().type == TT_LPAREN:
                 # Nested tuple like (a, b) - parse and flatten
                 self.advance()  # skip (
-                var_names.append(self.expect(TT_IDENT).value)
+                var_names.append(self.parse_var_name())
                 while self.current_token().type == TT_COMMA:
                     self.advance()
-                    var_names.append(self.expect(TT_IDENT).value)
+                    var_names.append(self.parse_var_name())
                 self.expect(TT_RPAREN)
             else:
-                var_names.append(self.expect(TT_IDENT).value)
+                var_names.append(self.parse_var_name())
 
         var_name = var_names[0]  # For ForStmt compatibility
         self.expect(TT_IN)
@@ -1462,6 +1659,20 @@ class Parser:
         if token.type == TT_PASS:
             self.advance()
             return PassStmt()
+
+        # Brainhair native: var name: Type = value
+        if token.type == TT_VAR:
+            return self.parse_var_stmt()
+
+        # Brainhair native: const name: Type = value
+        if token.type == TT_CONST:
+            return self.parse_const_stmt()
+
+        # Brainhair native: discard expression
+        if token.type == TT_DISCARD:
+            self.advance()
+            expr = self.parse_expression()
+            return ExprStmt(expr)  # Just evaluate and discard
 
         if token.type == TT_IF:
             return self.parse_if_stmt()
@@ -1663,13 +1874,27 @@ class Parser:
         self.skip_newlines()
         self.expect(TT_RPAREN)
 
-        # Parse return type: -> Type
+        # Parse return type: -> Type or : Type (for proc syntax)
         return_type = None
         if self.current_token().type == TT_ARROW:
             self.advance()
             return_type = self.parse_type()
+            self.expect(TT_COLON)
+        elif self.current_token().type == TT_EQUALS:
+            # proc syntax with no return type: name() = body
+            self.advance()  # Skip '='
+        elif self.current_token().type == TT_COLON:
+            # Could be Python-style body start OR proc-style return type
+            self.advance()
+            next_tok = self.current_token().type
+            # If next token is a type keyword, it's a return type
+            if is_type_keyword(next_tok) == 1 or next_tok == TT_IDENT:
+                return_type = self.parse_type()
+                # Expect = for proc syntax
+                if self.current_token().type == TT_EQUALS:
+                    # proc syntax: name(): Type = body
+                    self.advance()  # Skip '='
 
-        self.expect(TT_COLON)
         self.skip_newlines()
 
         # Parse body
@@ -1719,7 +1944,11 @@ class Parser:
                             field_name: str = stmt.target.field_name
                             if field_name not in existing_names:
                                 if field_name not in seen_fields:
-                                    field_type: Type = self._infer_type_from_expr(stmt.value, param_types)
+                                    # Use explicit type hint if present, otherwise infer from value
+                                    if hasattr(stmt, 'type_hint') and stmt.type_hint is not None:
+                                        field_type: Type = stmt.type_hint
+                                    else:
+                                        field_type: Type = self._infer_type_from_expr(stmt.value, param_types)
                                     inferred_fields.append(StructField(field_name, field_type, None))
                                     seen_fields.add(field_name)
             if isinstance(stmt, IfStmt):
@@ -1831,8 +2060,14 @@ class Parser:
                 self.advance()
             # Field definition: name: Type or name: Type = default
             # Or class variable: name = value (no type annotation)
-            elif token.type == TT_IDENT:
-                field_name = token.value
+            # Keywords can also be field names (e.g., 'var: str' in Python classes)
+            elif token.type == TT_IDENT or self.peek_token().type == TT_COLON:
+                # Get field name - use token.value for IDENT, or keyword name for keywords
+                if token.type == TT_IDENT:
+                    field_name = token.value
+                else:
+                    # It's a keyword being used as a field name
+                    field_name = keyword_name_from_type(token.type)
                 self.advance()
 
                 if self.current_token().type == TT_COLON:
@@ -1881,9 +2116,9 @@ class Parser:
         if token.type == TT_IDENT:
             method_name = token.value
             self.advance()
-        elif token.type.name.isupper():
+        elif get_keyword_name(token.type) != "":
             # Allow keywords as method names (match, etc.)
-            method_name = token.type.name.lower()
+            method_name = get_keyword_name(token.type)
             self.advance()
         else:
             raise SyntaxError(f"Expected method name, got {token.type} at line {token.line}")
@@ -2046,9 +2281,10 @@ class Parser:
         """Parse extern declaration: extern def func(params) -> Type OR extern name: Type"""
         self.advance()  # Skip 'extern'
 
-        # Check for 'def' keyword (function declaration)
-        if self.current_token().type == TT_DEF:
-            self.advance()
+        # Check for 'def' or 'proc' keyword (function declaration)
+        token = self.current_token()
+        if token.type == TT_DEF or (token.type == TT_IDENT and token.value == 'proc'):
+            self.advance()  # Skip 'def' or 'proc'
             name = self.expect(TT_IDENT).value
             self.expect(TT_LPAREN)
         else:
@@ -2082,7 +2318,8 @@ class Parser:
         self.expect(TT_RPAREN)
 
         return_type = None
-        if self.current_token().type == TT_ARROW:
+        # Accept both -> Type and : Type for return type (for Brainhair-native syntax)
+        if self.current_token().type == TT_ARROW or self.current_token().type == TT_COLON:
             self.advance()
             return_type = self.parse_type()
 
@@ -2117,7 +2354,7 @@ class Parser:
                 self.advance()
                 path_parts.append(self.expect(TT_IDENT).value)
 
-            path = '/'.join(path_parts)
+            path = join_paths(path_parts)
 
             self.expect(TT_IMPORT)
 
@@ -2160,7 +2397,7 @@ class Parser:
                 self.advance()
                 path_parts.append(self.expect(TT_IDENT).value)
 
-            path = '/'.join(path_parts)
+            path = join_paths(path_parts)
 
             alias = None
             if self.current_token().type == TT_AS:
@@ -2207,7 +2444,10 @@ class Parser:
 
             if token.type == TT_EXTERN:
                 declarations.append(self.parse_extern_decl())
-            elif token.type == TT_DEF:
+            elif token.type == TT_CONST:
+                # Top-level constant declaration
+                declarations.append(self.parse_const_stmt())
+            elif token.type == TT_DEF or (token.type == TT_IDENT and token.value == 'proc'):
                 declarations.append(self.parse_def(decorators))
             elif token.type == TT_CLASS:
                 result = self.parse_class(decorators)
